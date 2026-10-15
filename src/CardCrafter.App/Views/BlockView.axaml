@@ -27,7 +27,7 @@
             </DataTemplate>
             <DataTemplate DataType="vm:IntSegmentViewModel">
               <NumericUpDown Classes="inline" Value="{Binding Value}" Minimum="{Binding Minimum}" Maximum="{Binding Maximum}"
-                             Increment="{Binding Increment}" FormatString="0" Width="{Binding Width}" ShowButtonSpinner="False" ToolTip.Tip="{Binding Label}" />
+                             Increment="{Binding Increment}" FormatString="0" Width="{Binding Width}" ShowButtonSpinner="False" ToolTip.Tip="{Binding Label}" IsVisible="{Binding IsShown}" />
             </DataTemplate>
             <DataTemplate DataType="vm:ChoiceSegmentViewModel">
               <ComboBox Classes="inline" ItemsSource="{Binding Choices}" SelectedItem="{Binding Selected}" ToolTip.Tip="{Binding Label}" IsVisible="{Binding IsShown}">

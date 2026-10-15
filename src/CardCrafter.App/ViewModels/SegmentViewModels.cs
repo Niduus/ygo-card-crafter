@@ -21,6 +21,10 @@ public sealed class IntSegmentViewModel(ParamSpec spec, BlockInstance inst, Acti
     public decimal Increment => spec.Max > 1000 ? 100 : 1;
     public double Width => spec.Max > 999 ? 76 : 48;
 
+    /// <summary>False while the blank doesn't apply, like an ATK amount for "cannot be destroyed".</summary>
+    public bool IsShown => spec.ShownWhen?.Invoke(inst) ?? true;
+    public void RefreshShown() => OnPropertyChanged(nameof(IsShown));
+
     public decimal? Value
     {
         get => decimal.TryParse(inst.Values.GetValueOrDefault(spec.Key, spec.Default), NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) ? v : null;

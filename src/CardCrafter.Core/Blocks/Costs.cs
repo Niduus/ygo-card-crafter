@@ -17,19 +17,34 @@ public sealed class DiscardCost : CostBlock
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Int("count", "How many", 1, 1, 10),
-        ParamSpec.Cards("cards", "Which cards", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Hand }, Zone.Hand),
+        new ParamSpec
+        {
+            Key = "cards", Label = "Which cards", Type = ParamType.Cards, AllowThisCard = true, AllowedZones = Zone.Hand,
+            DefaultFilter = () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Hand },
+        },
     ];
+
+    public override string Describe(BlockArgs args) => args.Cards("cards").ThisCard ? "discard this card" : base.Describe(args);
 
     public override void Compile(BlockContext ctx)
     {
         var filter = ctx.Args.Cards("cards").Clone();
+        if (filter.ThisCard)
+        {
+            ctx.Effect.CostChecks.Add("e:GetHandler():IsDiscardable()");
+            ctx.Effect.CostLines.Add("Duel.SendtoGrave(e:GetHandler(),REASON_COST+REASON_DISCARD)");
+            return;
+        }
         filter.Owner = CardOwner.You;
         filter.Zones = Zone.Hand;
         var f = ctx.Script.Filter(filter, "c:IsDiscardable()", "discardfilter");
         var n = ctx.Args.Int("count");
-        // The card itself never counts: it is the one being activated.
-        ctx.Effect.CostChecks.Add($"Duel.IsExistingMatchingCard({f.Function},tp,LOCATION_HAND,0,{n},e:GetHandler(),e,tp)");
-        ctx.Effect.CostLines.Add($"Duel.DiscardHand(tp,{f.Function},{n},{n},REASON_COST+REASON_DISCARD,e:GetHandler(),e,tp)");
+        // The card being activated doesn't count ("discard 1 card; Special Summon this card"), unless the cost names it:
+        // "discard 1 "Sundering - Inferno"" on Sundering - Inferno can discard this very card.
+        var namesItself = filter.CardCode == ctx.Card.Id || filter.AltCodes.Contains(ctx.Card.Id);
+        var exclude = namesItself && !filter.ExcludeThisCard ? "nil" : "e:GetHandler()";
+        ctx.Effect.CostChecks.Add($"Duel.IsExistingMatchingCard({f.Function},tp,LOCATION_HAND,0,{n},{exclude},e,tp)");
+        ctx.Effect.CostLines.Add($"Duel.DiscardHand(tp,{f.Function},{n},{n},REASON_COST+REASON_DISCARD,{exclude},e,tp)");
     }
 }
 
@@ -55,6 +70,17 @@ public sealed class SelfCost : CostBlock
     public override string Group => "This card";
     public override string Name => "Tribute, banish, send or discard this card";
     public override string Sentence => "{how} this card";
+
+    public override IReadOnlyList<MenuShortcut> Shortcuts { get; } =
+    [
+        new("Discard this card", new Dictionary<string, string> { ["how"] = "discard" }),
+        new("Tribute this card", new Dictionary<string, string> { ["how"] = "tribute" }),
+        new("Banish this card", new Dictionary<string, string> { ["how"] = "banish" }),
+        new("Send this card to the GY", new Dictionary<string, string> { ["how"] = "grave" }),
+        new("Shuffle this card into the Deck", new Dictionary<string, string> { ["how"] = "deck" }),
+        new("Return this card to the hand", new Dictionary<string, string> { ["how"] = "hand" }),
+        new("Return this card to the Extra Deck", new Dictionary<string, string> { ["how"] = "extra" }),
+    ];
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Choice("how", "How",

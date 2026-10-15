@@ -248,6 +248,43 @@ static void respond(intptr_t pd, Scenario& sc) {
 		set_responseb(pd, b);
 		return;
 	}
+	case PROCESSOR_SELECT_SUM: {
+		// Materials whose Levels add up to the total (Synchro, Ritual): the first set of cards that fits.
+		int32_t acc = (int32_t)unit.arg1, min = (int32_t)unit.arg3, max = (int32_t)unit.arg4;
+		auto& cards = f->core.select_cards;
+		int must = (int)std::min<size_t>(f->core.must_select_cards.size(), 32);
+		int must_sum = 0;
+		for (int i = 0; i < must; ++i) {
+			int32_t o1, o2;
+			field::get_sum_params(f->core.must_select_cards[i]->sum_param, o1, o2);
+			must_sum += o1;
+		}
+		int n = (int)std::min<size_t>(cards.size(), 16);
+		for (uint32_t mask = 1; mask < (1u << n); ++mask) {
+			int k = __builtin_popcount(mask);
+			if (max && (k < min || k > max)) continue;
+			std::vector<int> sums{must_sum};
+			for (int i = 0; i < n; ++i) {
+				if (!(mask & (1u << i))) continue;
+				int32_t o1, o2;
+				field::get_sum_params(cards[i]->sum_param, o1, o2);
+				std::vector<int> next;
+				for (int s : sums) { next.push_back(s + o1); if (o2) next.push_back(s + o2); }
+				sums.swap(next);
+			}
+			bool ok = max ? std::find(sums.begin(), sums.end(), acc) != sums.end()
+			              : std::any_of(sums.begin(), sums.end(), [acc](int s) { return s >= acc; });
+			if (!ok) continue;
+			int idx = 0;
+			b[idx++] = (uint8_t)(must + k);
+			for (int i = 0; i < must; ++i) b[idx++] = 0;
+			for (int i = 0; i < n; ++i) if (mask & (1u << i)) b[idx++] = (uint8_t)i;
+			set_responseb(pd, b);
+			return;
+		}
+		set_responseb(pd, b);
+		return;
+	}
 	case PROCESSOR_SELECT_UNSELECT_CARD: {
 		bool finishable = unit.arg3 & 0xff;
 		if (finishable || f->core.select_cards.empty()) { set_responsei(pd, -1); return; }

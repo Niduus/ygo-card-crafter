@@ -146,9 +146,11 @@ public sealed partial class EffectViewModel : ObservableObject
         _changed();
     }
 
-    public void AddBlock(BlockDefinition def)
+    public void AddBlock(BlockDefinition def, IReadOnlyDictionary<string, string>? values = null, IReadOnlyDictionary<string, Func<CardFilter>>? filters = null)
     {
         var inst = def.CreateInstance();
+        foreach (var (key, value) in values ?? MenuShortcut.NoValues) inst.Values[key] = value;
+        foreach (var (key, make) in filters ?? new Dictionary<string, Func<CardFilter>>()) inst.Filters[key] = make();
         switch (def.Kind)
         {
             case BlockKind.Condition: Model.If.Add(inst); break;

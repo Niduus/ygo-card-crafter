@@ -29,7 +29,7 @@ public class AllBlocksTests
                     foreach (var c in p.Choices.Skip(1))
                     {
                         // Special Summoning or Setting "all" is refused (each card needs a free zone); BlockModeTests checks that.
-                        if (p.Key == "mode" && c.Value == "all" && def.Id is "do.special_summon" or "do.set") continue;
+                        if (p.Key == "mode" && c.Value == "all" && def.Id is "do.special_summon" or "do.set" or "do.place") continue;
                         var inst = def.CreateInstance().With(p.Key, c.Value);
                         if (def.Id == "cost.move_cards" && c.Value == "grave") inst.Filters["cards"].Zones = Zone.Hand;
                         yield return ($"{p.Key}={c.Value}", inst);

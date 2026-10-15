@@ -77,6 +77,21 @@ public class SummonConditionTests
             .SpSummon(p.Card.Id).Check($"Duel.IsExistingMatchingCard(Card.IsCode,0,LOCATION_MZONE,0,1,nil,{p.Card.Id})").AssertPasses();
     }
 
+    [EngineFact]
+    public void Synchro_SummonsWithATunerAndANonTuner()
+    {
+        var tuner = new CardProject { Card = new CardData { Id = 100004011, Name = "Plain Tuner", Frame = MonsterFrame.Normal, Level = 2, Abilities = MonsterAbility.Tuner } };
+        var syn = new CardProject
+        {
+            Card = new CardData { Id = 100004012, Name = "Level 6", Frame = MonsterFrame.Synchro, Level = 6, Atk = 2000 },
+            Procedure = new SummonProcedure { Kind = SummonProcedureKind.Synchro, MinMaterials = 1 },
+        };
+        Assert.Contains("aux.AddSynchroProcedure(c,nil,aux.NonTuner(nil),1)", ScriptCompiler.Compile(syn).Lua);
+        new EngineScenario(tuner, syn).Card(tuner.Card.Id, 0, "mzone").Card(Warrior, 0, "mzone").Card(syn.Card.Id, 0, "extra")
+            .Card(Warrior, 0, "deck", 5).Card(Warrior, 1, "deck", 5).SpSummon(syn.Card.Id)
+            .Check($"Duel.IsExistingMatchingCard(Card.IsCode,0,LOCATION_MZONE,0,1,nil,{syn.Card.Id})").AssertPasses();
+    }
+
     [Fact]
     public void Synchro_TunerAndNonTuners()
     {

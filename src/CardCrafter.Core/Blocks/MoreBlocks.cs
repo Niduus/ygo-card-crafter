@@ -352,6 +352,18 @@ public sealed class SetSpellTrapAction : CardGroupAction
 
     protected override IReadOnlyList<ParamSpec> BuildParams() => [.. base.BuildParams(), ParamSpec.Flag("this_turn", "it can be activated this turn", false)];
 
+    private static Dictionary<string, Func<CardFilter>> From(Zone zones, FilterCardType type) =>
+        new() { ["cards"] = () => new CardFilter { Owner = CardOwner.You, Zones = zones, CardType = type } };
+
+    public override IReadOnlyList<MenuShortcut> Shortcuts { get; } =
+    [
+        new("Set 1 Spell/Trap from your hand or Deck", MenuShortcut.NoValues, From(Zone.Hand | Zone.Deck, FilterCardType.SpellTrap)),
+        new("Set 1 Trap from your hand or Deck; it can be activated this turn", new Dictionary<string, string> { ["this_turn"] = "true" }, From(Zone.Hand | Zone.Deck, FilterCardType.Trap)),
+        new("Set 1 Spell/Trap from your GY", MenuShortcut.NoValues, From(Zone.Graveyard, FilterCardType.SpellTrap)),
+        new("Set this card", MenuShortcut.NoValues, new Dictionary<string, Func<CardFilter>> { ["cards"] = () => new CardFilter { ThisCard = true } }),
+        new("Set Spells/Traps (pick which)", MenuShortcut.NoValues),
+    ];
+
     /// <summary>Rosepamela: "Set 1 Trap from your Deck. It can be activated this turn."</summary>
     public override string Afterword(BlockArgs args) => args.Bool("this_turn") ? $"{(args.IsPlural ? "They" : "It")} can be activated this turn." : "";
 
@@ -416,7 +428,7 @@ public sealed class ThisCardAction : ActionBlock
 {
     public override string Id => "do.this_card";
     public override string Group => "This card";
-    public override string Name => "Destroy, banish or return this card";
+    public override string Name => "Destroy, banish, discard or return this card";
     public override string Sentence => "{how} this card";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
@@ -425,7 +437,18 @@ public sealed class ThisCardAction : ActionBlock
             new("destroy", "Destroy"),
             new("banish", "Banish"),
             new("grave", "Send to the GY"),
-            new("deck", "Shuffle into the Deck")),
+            new("deck", "Shuffle into the Deck"),
+            new("discard", "Discard")),
+    ];
+
+    public override IReadOnlyList<MenuShortcut> Shortcuts { get; } =
+    [
+        new("Destroy this card", new Dictionary<string, string> { ["how"] = "destroy" }),
+        new("Banish this card", new Dictionary<string, string> { ["how"] = "banish" }),
+        new("Discard this card", new Dictionary<string, string> { ["how"] = "discard" }),
+        new("Send this card to the GY", new Dictionary<string, string> { ["how"] = "grave" }),
+        new("Return this card to the hand", new Dictionary<string, string> { ["how"] = "hand" }),
+        new("Shuffle this card into the Deck", new Dictionary<string, string> { ["how"] = "deck" }),
     ];
 
     public override string Describe(BlockArgs args) => args.Choice("how") switch
@@ -434,6 +457,7 @@ public sealed class ThisCardAction : ActionBlock
         "destroy" => "destroy this card",
         "banish" => "banish this card",
         "grave" => "send this card to the GY",
+        "discard" => "discard this card",
         _ => "shuffle this card into the Deck",
     };
 
@@ -445,6 +469,7 @@ public sealed class ThisCardAction : ActionBlock
             "banish" => ("CATEGORY_REMOVE", "e:GetHandler():IsAbleToRemove()", "Duel.Remove(c,POS_FACEUP,REASON_EFFECT)"),
             "grave" => ("CATEGORY_TOGRAVE", "e:GetHandler():IsAbleToGrave()", "Duel.SendtoGrave(c,REASON_EFFECT)"),
             "deck" => ("CATEGORY_TODECK", "e:GetHandler():IsAbleToDeck()", "Duel.SendtoDeck(c,nil,SEQ_DECKSHUFFLE,REASON_EFFECT)"),
+            "discard" => ("CATEGORY_HANDES", "e:GetHandler():IsDiscardable(REASON_EFFECT)", "Duel.SendtoGrave(c,REASON_EFFECT+REASON_DISCARD)"),
             _ => ("CATEGORY_TOHAND", "e:GetHandler():IsAbleToHand()", "Duel.SendtoHand(c,nil,REASON_EFFECT)"),
         };
         var r = ctx.Effect.NewLocal("r");

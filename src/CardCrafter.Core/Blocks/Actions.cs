@@ -330,12 +330,74 @@ public sealed class BanishAction : CardGroupAction
     protected override string TargetedWording => "banish {0}";
     public override string Id => "do.banish";
     public override string Name => "Banish cards";
-    public override string Sentence => "Banish {count} {cards} {target}";
+    public override string Sentence => "Banish {count} {cards} {target} {until}";
     protected override string Category => "CATEGORY_REMOVE";
     protected override string Hint => "HINTMSG_REMOVE";
     protected override Func<CardFilter> DefaultCards => () => CardFilter.OpponentField();
     protected override string? AbleCheck(BlockContext ctx) => "c:IsAbleToRemove()";
-    protected override string Apply(string g, BlockContext ctx) => $"Duel.Remove({g},POS_FACEUP,REASON_EFFECT)";
+
+    /// <summary>S:P Little Knight's "banish them until the End Phase": cards banished from the field come back then.</summary>
+    protected override IReadOnlyList<ParamSpec> BuildParams() =>
+        [.. base.BuildParams(), ParamSpec.Choice("until", "For how long", new("always", "", "for good"), new("end_phase", "until the End Phase"))];
+
+    protected override string TargetedAction(BlockArgs args, string pronoun, bool single) =>
+        base.TargetedAction(args, pronoun, single) + (args.Choice("until") == "end_phase" ? " until the End Phase" : "");
+
+    protected override string Apply(string g, BlockContext ctx)
+    {
+        if (ctx.Args.Choice("until") != "end_phase") return $"Duel.Remove({g},POS_FACEUP,REASON_EFFECT)";
+        if (!ctx.Args.Cards("cards").ThisCard && (ctx.Args.Cards("cards").Zones & ~Zone.Field) != Zone.None)
+            ctx.Effect.Warn("Only cards banished from the field come back in the End Phase.");
+        var retFilter = ctx.Script.AddFunction("tmpretfilter", "c,fid", ["return c:GetFlagEffectLabel(id)==fid"]);
+        var retCon = ctx.Script.AddFunction("tmpretcon", "e,tp,eg,ep,ev,re,r,rp",
+        [
+            $"if not e:GetLabelObject():IsExists({retFilter},1,nil,e:GetLabel()) then",
+            "	e:GetLabelObject():DeleteGroup()",
+            "	e:Reset()",
+            "	return false",
+            "end",
+            "return true",
+        ]);
+        var retOp = ctx.Script.AddFunction("tmpretop", "e,tp,eg,ep,ev,re,r,rp",
+        [
+            $"local g=e:GetLabelObject():Filter({retFilter},nil,e:GetLabel())",
+            "for p=0,1 do",
+            "	local tg=g:Filter(Card.IsPreviousControler,nil,p)",
+            "	local ft=Duel.GetLocationCount(p,LOCATION_MZONE)",
+            "	if tg:GetCount()>1 and ft==1 then",
+            "		Duel.Hint(HINT_SELECTMSG,p,HINTMSG_TOFIELD)",
+            "		local sg=tg:Select(p,1,1,nil)",
+            "		Duel.ReturnToField(sg:GetFirst())",
+            "		tg:Sub(sg)",
+            "	end",
+            "	local tc=tg:GetFirst()",
+            "	while tc do Duel.ReturnToField(tc) tc=tg:GetNext() end",
+            "end",
+            "e:GetLabelObject():DeleteGroup()",
+        ]);
+        var banish = ctx.Script.AddFunction("tmpbanish", "g,e,tp",
+        [
+            "local n=Duel.Remove(g,POS_FACEUP,REASON_EFFECT+REASON_TEMPORARY)",
+            "local og=Duel.GetOperatedGroup():Filter(Card.IsLocation,nil,LOCATION_REMOVED)",
+            "if og:GetCount()==0 then return n end",
+            "local fid=e:GetHandler():GetFieldID()",
+            "local tc=og:GetFirst()",
+            "while tc do tc:RegisterFlagEffect(id,RESET_EVENT+RESETS_STANDARD+RESET_PHASE+PHASE_END,0,1,fid) tc=og:GetNext() end",
+            "og:KeepAlive()",
+            "local e1=Effect.CreateEffect(e:GetHandler())",
+            "e1:SetType(EFFECT_TYPE_FIELD+EFFECT_TYPE_CONTINUOUS)",
+            "e1:SetCode(EVENT_PHASE+PHASE_END)",
+            "e1:SetReset(RESET_PHASE+PHASE_END)",
+            "e1:SetLabel(fid)",
+            "e1:SetLabelObject(og)",
+            "e1:SetCountLimit(1)",
+            $"e1:SetCondition({retCon})",
+            $"e1:SetOperation({retOp})",
+            "Duel.RegisterEffect(e1,tp)",
+            "return n",
+        ]);
+        return $"{banish}({g},e,tp)";
+    }
 }
 
 public sealed class SendToGraveAction : CardGroupAction

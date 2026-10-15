@@ -6,8 +6,8 @@ using static CardCrafter.Core.Tests.EngineScenario;
 namespace CardCrafter.Core.Tests;
 
 /// <summary>
-/// The game finds a card's effect texts through aux.Stringid(id,n) = id*16+n, kept in 32 bits: passcodes above
-/// 268435455 point at another card, and prompts show "hand" instead of the effect.
+/// The game finds a card's effect texts through aux.Stringid(id,n) = id*16+n, which YGO Omega reads as a signed
+/// 32-bit number: passcodes above 134217727 point nowhere, and prompts show "hand" or "Unknown (...)".
 /// </summary>
 public class PasscodeStringsTests
 {
@@ -19,7 +19,8 @@ public class PasscodeStringsTests
         {
             var id = PasscodeGenerator.Generate([], rng);
             Assert.InRange(id, PasscodeGenerator.First, PasscodeGenerator.MaxForStrings);
-            Assert.True((id * 16 + 15) <= uint.MaxValue);
+            // YGO Omega reads aux.Stringid as a signed 32-bit number.
+            Assert.True((id * 16 + 15) <= int.MaxValue);
         }
     }
 
@@ -28,7 +29,9 @@ public class PasscodeStringsTests
     {
         CardProject Card(long id) => new() { Card = new CardData { Id = id, Name = "X", Level = 4 } };
         Assert.Contains(ScriptCompiler.Compile(Card(995260000)).Diagnostics, d => d.Severity == Severity.Warning && d.Message.Contains("too large for the game's effect texts"));
-        Assert.DoesNotContain(ScriptCompiler.Compile(Card(268430000)).Diagnostics, d => d.Message.Contains("too large"));
+        Assert.DoesNotContain(ScriptCompiler.Compile(Card(134210000)).Diagnostics, d => d.Message.Contains("too large"));
+        // 145430000 * 16 is past 2^31: Omega showed "Unknown (-1968087296)".
+        Assert.Contains(ScriptCompiler.Compile(Card(145430000)).Diagnostics, d => d.Message.Contains("too large"));
     }
 
     [Fact]
@@ -39,13 +42,13 @@ public class PasscodeStringsTests
         add.Filters["cards"] = new CardFilter { CardCode = 995260000, Zones = Zone.Deck, Owner = CardOwner.You };
         var searcher = new CardProject
         {
-            Card = new CardData { Id = 200000000, Name = "Searcher", Kind = CardKind.Spell },
+            Card = new CardData { Id = 120000000, Name = "Searcher", Kind = CardKind.Spell },
             Effects = [new EffectEvent { When = BlockRegistry.Find("when.activate")!.CreateInstance(), Do = [add] }],
         };
         var script = new CardProject
         {
-            Card = new CardData { Id = 210000000, Name = "Scripted", Level = 4 }, UseCustomLua = true,
-            CustomLua = "local s,id=c210000000,210000000\nfunction s.initial_effect(c)\n\taux.AddCodeList(c,995260000)\nend\n",
+            Card = new CardData { Id = 121000000, Name = "Scripted", Level = 4 }, UseCustomLua = true,
+            CustomLua = "local s,id=c121000000,121000000\nfunction s.initial_effect(c)\n\taux.AddCodeList(c,995260000)\nend\n",
         };
         var pack = new CardPack { Cards = [big, searcher, script] };
         var map = PasscodeFix.Apply(pack);
@@ -54,7 +57,7 @@ public class PasscodeStringsTests
         Assert.InRange(now, PasscodeGenerator.First, PasscodeGenerator.MaxForStrings);
         Assert.Equal(now, add.Filters["cards"].CardCode);
         Assert.Contains($"aux.AddCodeList(c,{now})", script.CustomLua);
-        Assert.Equal(200000000, searcher.Card.Id);
+        Assert.Equal(120000000, searcher.Card.Id);
         Assert.Empty(PasscodeFix.Apply(pack));
     }
 
@@ -62,7 +65,7 @@ public class PasscodeStringsTests
     public void InTheEngine_TheDescriptionPointsAtTheCard_OnlyWhenThePasscodeFits()
     {
         // The engine's own value for SetDescription(aux.Stringid(id,0)), read back and split into card and index.
-        foreach (var (id, fits) in new[] { (268430000L, true), (995260000L, false) })
+        foreach (var (id, fits) in new[] { (134210000L, true), (995260000L, false) })
         {
             var p = new CardProject
             {

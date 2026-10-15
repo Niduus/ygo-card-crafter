@@ -165,7 +165,7 @@ public class CompilerTests
     }
 
     [Theory]
-    [InlineData(SummonProcedureKind.Synchro, MonsterFrame.Synchro, "aux.AddSynchroProcedure(c,aux.Tuner(nil),aux.NonTuner(nil),1)")]
+    [InlineData(SummonProcedureKind.Synchro, MonsterFrame.Synchro, "aux.AddSynchroProcedure(c,nil,aux.NonTuner(nil),1)")]
     [InlineData(SummonProcedureKind.Xyz, MonsterFrame.Xyz, "aux.AddXyzProcedure(c,nil,4,2)")]
     [InlineData(SummonProcedureKind.Link, MonsterFrame.Link, "aux.AddLinkProcedure(c,nil,2)")]
     public void ExtraDeckProcedures(SummonProcedureKind kind, MonsterFrame frame, string expected)

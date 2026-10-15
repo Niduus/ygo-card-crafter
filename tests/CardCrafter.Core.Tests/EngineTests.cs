@@ -419,12 +419,12 @@ public class EngineTests
     }
 
     // Negation needs an opponent's activation to respond to, so it has its own duel below; negating a Summon
-    // and Tokens have theirs in ScanBlockEngineTests.
+    // and Tokens have theirs in ScanBlockEngineTests; Summons using this card have theirs in StaplesTests, placing in PlaceTests.
     public static IEnumerable<object[]> DoBlocks() =>
         // Responses to an activation, a Trap's column and Ritual Summons have their own duels in UniqueEngineTests.
         BlockRegistry.OfKind(BlockKind.Action).Where(b => b.Id is not ("do.negate" or "do.negate_summon" or "do.tokens" or "do.negate_unless" or "do.that_card"
-            or "do.negate_column" or "do.ritual_summon" or "do.fusion_summon")).Select(b => new object[] { b.Id, false })
-            .Concat(BlockRegistry.OfKind(BlockKind.Action).Where(b => b.Param("target") is not null).Select(b => new object[] { b.Id, true }));
+            or "do.negate_column" or "do.ritual_summon" or "do.fusion_summon" or "do.summon_using_this" or "do.place")).Select(b => new object[] { b.Id, false })
+            .Concat(BlockRegistry.OfKind(BlockKind.Action).Where(b => b.Param("target") is not null && b.Id != "do.place").Select(b => new object[] { b.Id, true }));
 
     /// <summary>Every DO block, with its default settings, activated from a monster on a well-stocked board.</summary>
     [EngineTheory]
@@ -593,6 +593,13 @@ public class EngineTemplateTests
                 s.Card(id, 0, "hand").Card(EffectFiller, 1, "mzone").ExpectActivations(1)
                     .Check($"Duel.IsExistingMatchingCard(Card.IsCode,0,LOCATION_GRAVE,0,1,nil,{id})");
                 break;
+            // Played for real in StaplesTests: here they load and wait for their moment (the opponent's turn, a Link Summon...).
+            case "Link Summon on the opponent's turn":
+            case "Synchro Summon on the opponent's turn":
+            case "Protect what it becomes":
+            case "Banish on Link Summon with Extra Deck materials":
+            case "Banish 2 monsters until the End Phase":
+                s.Card(id, 0, "mzone").Card(Warrior, 0, "mzone").ExpectActivations(0); break;
             case "Link support":
                 s.Card(Warrior, 0, "mzone").Card(id, 0, "mzone").ExpectActivations(0)
                     .Check("Duel.GetFieldCard(0,LOCATION_MZONE,0):GetAttack()==2000");

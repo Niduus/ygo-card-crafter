@@ -249,7 +249,15 @@ public static partial class EffectTextGenerator
         if (effect.AlsoWhen.Count > 0 && Combined(effect, pack) is null)
             foreach (var also in effect.AlsoWhen.Select(b => Text(b, pack)).Where(t => t.Length > 0))
                 when = when.Length == 0 ? also : $"{when}, or {SentenceCase.Lower(also)}";
-        var conditions = effect.If.Select(b => Text(b, pack)).Where(t => t.Length > 0).ToList();
+        // S:P Little Knight: "If this card is Link Summoned using a Fusion, Synchro, Xyz, or Link Monster as material".
+        var ifs = effect.If;
+        if (effect.AlsoWhen.Count == 0 && effect.When!.BlockId == SummonedTrigger.BlockId && ifs.FirstOrDefault(b => b.BlockId == SummonedUsingCondition.BlockId) is { } usedMats
+            && BlockRegistry.Find(usedMats.BlockId) is { } usedDef)
+        {
+            when += " " + SummonedUsingCondition.Using(new BlockArgs(usedDef, usedMats, pack));
+            ifs = ifs.Where(b => !ReferenceEquals(b, usedMats)).ToList();
+        }
+        var conditions = ifs.Select(b => Text(b, pack)).Where(t => t.Length > 0).ToList();
         var cond = string.Join(" and ", conditions);
 
         // "When your opponent Normal Summons a monster during their turn", not "during your opponent's turn".
@@ -267,6 +275,8 @@ public static partial class EffectTextGenerator
         else if (when.Length == 0) head = Clause(cond, passive && !effect.Do.All(b => b.BlockId is ActivateFromHandPassive.BlockId or NoTributeSummonPassive.BlockId or SelfDestroyPassive.BlockId) ? "while" : "if");
         else head = $"{when} {Clause(cond, "while")}";
 
+        // "During your opponent's Main Phase", not "During the Main Phase during your opponent's turn".
+        head = PhaseTurn().Replace(head, m => $"{m.Groups[1].Value} {(m.Groups[3].Value == "your opponent's" ? "your opponent's" : "your")} {m.Groups[2].Value} Phase");
         if (trigger is QuickTrigger) head = head.Length == 0 ? "(Quick Effect)" : $"{head} (Quick Effect)";
         return head;
     }
@@ -387,6 +397,9 @@ public static partial class EffectTextGenerator
 
     [GeneratedRegex(@"\s{2,}")]
     private static partial Regex Spaces();
+
+    [GeneratedRegex(@"\b([Dd]uring) the (Main|Standby|Battle|End) Phase,? during (your opponent's|your) turn")]
+    private static partial Regex PhaseTurn();
 }
 
 /// <summary>Capitalisation that never lowercases card terms like "Dragon", "GY" or "Special Summon".</summary>
@@ -395,7 +408,7 @@ public static class SentenceCase
     private static readonly HashSet<string> OrdinaryWords = new(StringComparer.Ordinal)
     {
         "Add", "Activate", "Banish", "Destroy", "Discard", "Draw", "During", "Gain", "Gains", "If", "Inflict", "It",
-        "Pay", "Return", "Send", "Shuffle", "There", "This", "While", "You", "Your", "When", "Once",
+        "Pay", "Return", "Send", "Shuffle", "There", "This", "While", "You", "Your", "When", "Once", "Place", "Reveal", "Take", "Target", "Change", "Look", "Excavate", "Detach", "Attach", "Equip", "Negate",
     };
 
     /// <summary>Lowercases the first letter only when the first word is an ordinary word.</summary>

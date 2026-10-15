@@ -126,7 +126,7 @@ internal static class Procedures
                     var tuner = script.MaterialFilter(proc.TunerFilter, "tunerfilter", SummonProcedureKind.Synchro);
                     var non = script.MaterialFilter(proc.MaterialFilter, "nontunerfilter", SummonProcedureKind.Synchro);
                     var max = proc.MaxMaterials > 0 ? "," + proc.MaxMaterials : "";
-                    lines.Add($"aux.AddSynchroProcedure(c,aux.Tuner({tuner}),aux.NonTuner({non}),{Math.Max(1, proc.MinMaterials)}{max})");
+                    lines.Add($"aux.AddSynchroProcedure(c,{tuner},aux.NonTuner({non}),{Math.Max(1, proc.MinMaterials)}{max})");
                     break;
                 }
                 case SummonProcedureKind.Xyz:

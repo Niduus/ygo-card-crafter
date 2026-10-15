@@ -21,6 +21,15 @@ public partial class EffectSheetView : UserControl
             var header = new MenuItem { Header = group.Key };
             foreach (var def in group)
             {
+                // "Discard this card", "Banish this card"...: the block already set up, findable by what it does.
+                foreach (var shortcut in def.Shortcuts)
+                {
+                    var quick = new MenuItem { Header = shortcut.Label };
+                    if (def.Help.Length > 0) ToolTip.SetTip(quick, def.Help);
+                    quick.Click += (_, _) => effect.AddBlock(def, shortcut.Values, shortcut.Filters);
+                    header.Items.Add(quick);
+                }
+                if (def.Shortcuts.Count > 0) continue;
                 var item = new MenuItem { Header = def.Name };
                 if (def.Help.Length > 0) ToolTip.SetTip(item, def.Help);
                 item.Click += (_, _) => effect.AddBlock(def);

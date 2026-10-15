@@ -10,14 +10,14 @@ public static class PasscodeGenerator
 {
     public const long BlockSize = 10_000;
     public const long First = 100_000_000;
-    public const long Last = 268_430_000;
+    public const long Last = 134_210_000;
 
     /// <summary>
-    /// The largest passcode whose effect texts the game can find. aux.Stringid(id,n) is id*16+n and the engine keeps
-    /// descriptions in 32 bits, so a larger passcode points at another card's texts: prompts then show the card's
-    /// location ("hand") instead of the effect.
+    /// The largest passcode whose effect texts the game can find. aux.Stringid(id,n) is id*16+n, and YGO Omega reads
+    /// it as a signed 32-bit number, so it must stay under 2^31: a larger passcode points nowhere, and prompts show
+    /// the card's location ("hand") or "Unknown (-1968087296)" instead of the effect.
     /// </summary>
-    public const long MaxForStrings = 268_435_455;
+    public const long MaxForStrings = 134_217_727;
 
     public static long Generate(IEnumerable<long> used, Random? random = null)
     {

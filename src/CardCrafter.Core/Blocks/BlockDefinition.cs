@@ -96,6 +96,12 @@ public abstract class BlockDefinition
     /// </summary>
     public virtual EventPhrase? Phrase(BlockArgs args) => null;
 
+    /// <summary>
+    /// Extra menu entries that add this block already set up, so "Discard this card" is found by name rather than
+    /// inside "Tribute, banish, send or discard this card".
+    /// </summary>
+    public virtual IReadOnlyList<MenuShortcut> Shortcuts => [];
+
     /// <summary>Kept so older packs load, but no longer offered in the menus (another block does its job).</summary>
     public virtual bool Hidden => false;
 
@@ -132,6 +138,12 @@ public abstract class BlockDefinition
         // Cards print "..., except "Card Name"" at the end of the sentence.
         return sb.ToString().TrimEnd() + args.ExceptText();
     }
+}
+
+/// <summary>A menu entry that adds a block with some of its blanks filled in, and maybe its card pickers.</summary>
+public sealed record MenuShortcut(string Label, IReadOnlyDictionary<string, string> Values, IReadOnlyDictionary<string, Func<CardFilter>>? Filters = null)
+{
+    public static readonly IReadOnlyDictionary<string, string> NoValues = new Dictionary<string, string>();
 }
 
 /// <summary>

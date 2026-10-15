@@ -682,6 +682,65 @@ public static class EffectTemplates
             Description = "A Continuous Spell: your opponent must keep their hand revealed.",
             Create = () => new EffectEvent { Label = "Reveal", When = B("when.while_face_up"), Do = [B("passive.reveal_hand")] },
         },
+        new()
+        {
+            Name = "Link Summon on the opponent's turn", LikeCard = "I:P Masquerena", For = CardKind.Monster, Group = "Extra Deck",
+            Description = "During your opponent's Main Phase (Quick Effect): You can Link Summon 1 Link Monster using materials you control, including this card. Change Link to Synchro or Xyz for the same with other Summons.",
+            Create = () => new EffectEvent
+            {
+                Label = "Quick Link", When = B("when.quick").With("timing", "main_phase").With("zone", "monster_zone"), Limit = OncePerTurn.Hard,
+                If = [B("if.turn").With("whose", "opponent")],
+                Do = [B(SummonUsingThisAction.BlockId).With("kind", "link")],
+            },
+        },
+        new()
+        {
+            Name = "Protect what it becomes", LikeCard = "I:P Masquerena", For = CardKind.Monster, Group = "Extra Deck",
+            Description = "A Link Monster that used this card as material cannot be destroyed by your opponent's card effects. Pick another Summon or ability.",
+            Create = () => new EffectEvent { Label = "Material bonus", When = B("when.while_face_up"), Do = [B(MaterialGrantPassive.BlockId)] },
+        },
+        new()
+        {
+            Name = "Banish on Link Summon with Extra Deck materials", LikeCard = "S:P Little Knight", For = CardKind.Monster, Group = "Extra Deck",
+            Description = "If this card is Link Summoned using a Fusion, Synchro, Xyz, or Link Monster as material: You can target 1 card on the field or in either GY; banish it.",
+            Create = () =>
+            {
+                var banish = B("do.banish").With("target", true);
+                banish.Filters["cards"] = new CardFilter { Owner = CardOwner.Either, Zones = Zone.Field | Zone.Graveyard, CardType = FilterCardType.Any };
+                return new EffectEvent
+                {
+                    Label = "Banish", When = B("when.summoned").With("how", "link"), Limit = OncePerTurn.Hard,
+                    If = [B(SummonedUsingCondition.BlockId)],
+                    Do = [banish],
+                };
+            },
+        },
+        new()
+        {
+            Name = "Banish 2 monsters until the End Phase", LikeCard = "S:P Little Knight", For = CardKind.Monster, Group = "Extra Deck",
+            Description = "When your opponent activates a card or effect (Quick Effect): You can target 2 face-up monsters on the field; banish them until the End Phase.",
+            Create = () =>
+            {
+                var banish = B("do.banish").With("count", 2).With("target", true).With("until", "end_phase");
+                banish.Filters["cards"] = new CardFilter { Owner = CardOwner.Either, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster, FaceUpOnly = true };
+                return new EffectEvent
+                {
+                    Label = "Banish 2", When = B("when.quick").With("timing", "chain_any").With("zone", "monster_zone"), Limit = OncePerTurn.Hard, SharedLimitGroup = 0,
+                    Do = [banish],
+                };
+            },
+        },
+        new()
+        {
+            Name = "Synchro Summon on the opponent's turn", LikeCard = "Formula Synchron", For = CardKind.Monster, Group = "Extra Deck",
+            Description = "During your opponent's Main Phase (Quick Effect): You can Synchro Summon using this card you control. Works best on a Tuner.",
+            Create = () => new EffectEvent
+            {
+                Label = "Quick Synchro", When = B("when.quick").With("timing", "main_phase").With("zone", "monster_zone"), Limit = OncePerTurn.Hard,
+                If = [B("if.turn").With("whose", "opponent")],
+                Do = [B(SummonUsingThisAction.BlockId).With("kind", "synchro")],
+            },
+        },
     ];
 
     private static CardFilter Narrow(CardFilter f)

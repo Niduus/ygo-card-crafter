@@ -149,6 +149,26 @@ become clones of the effect with their own type, zone and checks, as official sc
 hidden, like "from the GY" on a Normal Summon. Packs from older versions, and their combined choices ("Normal or
 Special", the old tick-several block), open already split into single WHENs.
 
+**Extra Deck staples.** Blocks to make your own I:P Masquerena or S:P Little Knight:
+- **Link/Synchro/Xyz Summon using this card**: "Link Summon 1 Link Monster using materials you control, including this
+  card". With a Quick Effect "during the Main Phase" and "during your opponent's turn", it reads "During your opponent's
+  Main Phase (Quick Effect)". A Tuner is the Synchro's Tuner; any other card is made a material the Summon must use.
+- **A monster Summoned using this card as material gains...**: "A Link Monster that used this card as material cannot be
+  destroyed by your opponent's card effects", or can't be targeted, is unaffected, gains ATK, pierces, attacks twice.
+- **This card was Summoned using certain materials**: "If this card is Link Summoned using a Fusion, Synchro, Xyz, or
+  Link Monster as material", or "using 3 or more monsters".
+- **Banish ... until the End Phase**: the banished cards come back to the field in the End Phase.
+- Templates for each, in the "Extra Deck" group.
+
+**Placing and Setting.** **Place cards face-up** puts Spells/Traps from your hand, Deck, GY or banishment face-up in
+your Spell & Trap Zone, Field Zone or Pendulum Zone without activating them, or places a card (a monster too, like the
+Crystal Beasts) "as a Continuous Spell/Trap". **Set Spells/Traps** has "it can be activated this turn".
+
+**Menu shortcuts.** The add menus list blocks by what they do: COST → This card → **Discard this card**, **Tribute this
+card**, **Banish this card**...; DO → This card → **Destroy this card**, **Discard this card**...; DO → Cards → **Set 1
+Trap from your hand or Deck; it can be activated this turn**, **Place 1 Field Spell from your hand or Deck in your Field
+Zone** and more. A discard cost that names this card ("discard 1 "Sundering - Inferno"") can discard this very card.
+
 **More events.** Things that can happen to this card: Special Summoned from the hand, Deck, GY, banishment or Extra
 Deck; banished face-down; leaves the field because of an opponent's card (effect); drawn; returned to the Deck or Extra
 Deck; placed face-up in the Extra Deck; detached from an Xyz Monster; its battle position is changed; control of it
@@ -257,9 +277,10 @@ pack or anywhere in Omega uses. Each generated passcode starts its own block of 
 limits never collide between cards. If a passcode is ever taken later, for example by a new official card, the card
 shows a warning the next time Card Crafter scans Omega, and installing is refused until it is changed.
 
-Passcodes stay at or under **268,435,455**. The game finds a card's effect texts (its prompts, "you can" questions
-and effect lists) through `aux.Stringid(id,n)`, which is `id*16+n` kept in 32 bits; a larger passcode points at
-another card, so the game shows the card's location ("hand") instead of the effect. Cards made with older versions
+Passcodes stay at or under **134,217,727**. The game finds a card's effect texts (its prompts, "you can" questions
+and effect lists) through `aux.Stringid(id,n)`, which is `id*16+n`, and YGO Omega reads it as a signed 32-bit number;
+a larger passcode points nowhere, so the game shows the card's location ("hand") or "Unknown (-1968087296)" instead
+of the effect. Cards made with older versions
 can have such passcodes: the Card tab warns about them, and **Fix all passcodes in this pack** gives each a new one
 and updates the cards and scripts that name them. Save again afterwards; decks that held the old passcodes need those
 cards added again.
