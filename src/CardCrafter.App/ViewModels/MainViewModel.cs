@@ -165,7 +165,24 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     private CardViewModel NewCardViewModel(CardProject p) =>
-        new(p, () => _pack, MarkDirty, () => Catalog, NewPasscode) { PackFolder = PackPath is null ? null : Path.GetDirectoryName(PackPath) };
+        new(p, () => _pack, MarkDirty, () => Catalog, NewPasscode) { PackFolder = PackPath is null ? null : Path.GetDirectoryName(PackPath), FixAllPasscodes = FixPasscodes };
+
+    /// <summary>
+    /// Gives every card whose passcode is too large for the game's effect texts a new one, and updates the cards that
+    /// name them. The card stays selected.
+    /// </summary>
+    public void FixPasscodes()
+    {
+        var map = PasscodeFix.Apply(_pack, Catalog.Passcodes.Keys);
+        if (map.Count == 0) return;
+        var selected = SelectedCard is { } s ? Cards.IndexOf(s) : -1;
+        Cards.Clear();
+        foreach (var c in _pack.Cards) Cards.Add(NewCardViewModel(c));
+        SelectedCard = selected >= 0 && selected < Cards.Count ? Cards[selected] : Cards.FirstOrDefault();
+        MarkDirty();
+        Status = $"Gave {map.Count} card{(map.Count == 1 ? "" : "s")} a passcode that fits ({string.Join(", ", map.Select(kv => $"{kv.Key} → {kv.Value}"))}). " +
+                 "Save again so the game gets them; decks with the old passcodes need those cards added again.";
+    }
 
     /// <summary>A free passcode: not in this pack (except the card asking) and not anywhere in Omega.</summary>
     public long NewPasscode(long except = 0) =>
@@ -204,7 +221,7 @@ public sealed partial class MainViewModel : ObservableObject
                 _settings.AddRecent(path);
                 _settings.Save();
             }
-            Status = $"Opened {Path.GetFileName(path)}.";
+            Status = $"Opened {Path.GetFileName(path)}.{PasscodeNote()}";
             return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or InvalidDataException)
@@ -212,6 +229,14 @@ public sealed partial class MainViewModel : ObservableObject
             Status = $"Couldn't open {Path.GetFileName(path)}: {ex.Message}";
             return false;
         }
+    }
+
+    /// <summary>" 3 cards have passcodes too large for their effect texts ...", or "".</summary>
+    private string PasscodeNote()
+    {
+        var n = _pack.Cards.Count(c => PasscodeFix.TooLarge(c.Card.Id));
+        return n == 0 ? "" : $" {n} card{(n == 1 ? " has a passcode" : "s have passcodes")} too large for the game's effect texts (prompts show \"hand\"): " +
+                             "use \"Fix all passcodes in this pack\" on the Card tab.";
     }
 
     /// <summary>Opens a .db or .cdb as the pack, with scripts and art from the folders that go with it. Save writes back into it.</summary>
@@ -229,6 +254,7 @@ public sealed partial class MainViewModel : ObservableObject
             Status = opened.HadCardCrafterData
                 ? $"Opened {Path.GetFileName(path)}: {n} cards with their effects. Save writes back into it."
                 : $"Opened {Path.GetFileName(path)}: {n} cards, {opened.Scripts} scripts (as hand-written Lua, from {opened.ScriptFolder}), {opened.Arts} artworks. Save writes back into it.";
+            Status += PasscodeNote();
             if (Inventory is not null) _ = ReloadCatalogAsync(Inventory);
             return true;
         }

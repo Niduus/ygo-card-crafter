@@ -146,7 +146,7 @@ public sealed partial class CardViewModel : ObservableObject
             if (!result.HasErrors) all.AddRange(ScriptChecker.Check(result.Lua));
             var passcode = PasscodeProblems(pack);
             all.AddRange(passcode);
-            PasscodeWarning = string.Join("\n", passcode.Select(d => d.Message));
+            PasscodeWarning = string.Join("\n", passcode.Concat(result.Diagnostics.Where(d => d.Message.StartsWith("Passcode", StringComparison.Ordinal))).Select(d => d.Message));
             Codes = CodeRowViewModel.Rows(Core.Text.CardCodes.Of(Project.Card, pack));
             RefreshStrings(result, pack);
             Diagnostics.Clear();
@@ -184,7 +184,18 @@ public sealed partial class CardViewModel : ObservableObject
     // ---- passcode
     [ObservableProperty] private string _passcodeWarning = "";
     public bool HasPasscodeWarning => PasscodeWarning.Length > 0;
-    partial void OnPasscodeWarningChanged(string value) => OnPropertyChanged(nameof(HasPasscodeWarning));
+
+    /// <summary>Set by the main window: gives every card in the pack whose passcode is too large one that fits.</summary>
+    public Action? FixAllPasscodes { get; init; }
+    public bool IsPasscodeTooLarge => PasscodeFix.TooLarge(C.Id);
+
+    [RelayCommand]
+    private void FixPasscodes() => FixAllPasscodes?.Invoke();
+    partial void OnPasscodeWarningChanged(string value)
+    {
+        OnPropertyChanged(nameof(HasPasscodeWarning));
+        OnPropertyChanged(nameof(IsPasscodeTooLarge));
+    }
 
     private List<Diagnostic> PasscodeProblems(CardPack pack)
     {

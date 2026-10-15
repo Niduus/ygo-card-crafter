@@ -257,6 +257,13 @@ pack or anywhere in Omega uses. Each generated passcode starts its own block of 
 limits never collide between cards. If a passcode is ever taken later, for example by a new official card, the card
 shows a warning the next time Card Crafter scans Omega, and installing is refused until it is changed.
 
+Passcodes stay at or under **268,435,455**. The game finds a card's effect texts (its prompts, "you can" questions
+and effect lists) through `aux.Stringid(id,n)`, which is `id*16+n` kept in 32 bits; a larger passcode points at
+another card, so the game shows the card's location ("hand") instead of the effect. Cards made with older versions
+can have such passcodes: the Card tab warns about them, and **Fix all passcodes in this pack** gives each a new one
+and updates the cards and scripts that name them. Save again afterwards; decks that held the old passcodes need those
+cards added again.
+
 **Card face.** The Card tab shows a live preview laid out like a printed card: name, Attribute, Level/Rank stars or
 Link Arrows, Pendulum scales, the set number under the art, "[Type/Effect]", card text, ATK/DEF, the passcode with its
 edition, and the copyright line (left panel; it defaults to "©year author"). **Choose art…** sets the illustration.

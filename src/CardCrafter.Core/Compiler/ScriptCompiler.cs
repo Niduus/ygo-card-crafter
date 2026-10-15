@@ -432,6 +432,9 @@ public static class ScriptCompiler
             d.Add(new(Severity.Error, "The card's passcode must be a positive number up to 4294967295."));
         else if (card.Id < 100000000)
             d.Add(new(Severity.Warning, "Passcodes under 9 digits can clash with official cards. Custom cards usually use 9-digit codes."));
+        else if (card.Id > PasscodeGenerator.MaxForStrings)
+            d.Add(new(Severity.Warning, $"Passcode {card.Id} is too large for the game's effect texts (the most is {PasscodeGenerator.MaxForStrings}): " +
+                                        "its prompts show \"hand\" instead of the effect. Click Generate for a passcode that fits, then save again."));
         if (string.IsNullOrWhiteSpace(card.Name))
             d.Add(new(Severity.Error, "The card needs a name."));
         if (project.Effects.Count > 16)

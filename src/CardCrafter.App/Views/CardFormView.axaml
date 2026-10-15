@@ -116,7 +116,12 @@
         </Expander>
 
         <Border IsVisible="{Binding HasPasscodeWarning}" Background="#3B2F12" CornerRadius="6" Padding="10,6" Margin="0,8,0,0">
-          <TextBlock Text="{Binding PasscodeWarning}" TextWrapping="Wrap" Foreground="#FCD34D" />
+          <StackPanel Spacing="6">
+            <TextBlock Text="{Binding PasscodeWarning}" TextWrapping="Wrap" Foreground="#FCD34D" />
+            <Button Content="Fix all passcodes in this pack" Command="{Binding FixPasscodesCommand}" IsVisible="{Binding IsPasscodeTooLarge}"
+                    HorizontalAlignment="Left" Padding="8,2" FontSize="12"
+                    ToolTip.Tip="Gives every card whose passcode is too large one that fits, and updates the cards that name them" />
+          </StackPanel>
         </Border>
 
         <CheckBox Content="You can only control 1 of this card" IsChecked="{Binding OnlyOneOnField}" Margin="0,8,0,0"

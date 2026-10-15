@@ -4,12 +4,20 @@ namespace CardCrafter.Core.Model;
 /// Picks passcodes for new cards so players never have to. Each card gets its own block of 10,000 numbers
 /// (passcodes ending in 0000), because the engine also uses passcode+100, +200... internally for
 /// "once per turn" limits; a whole free block keeps those from clashing with other cards too.
+/// Passcodes stay at or under <see cref="MaxForStrings"/>, so the card's effect texts work in the game.
 /// </summary>
 public static class PasscodeGenerator
 {
     public const long BlockSize = 10_000;
     public const long First = 100_000_000;
-    public const long Last = 999_990_000;
+    public const long Last = 268_430_000;
+
+    /// <summary>
+    /// The largest passcode whose effect texts the game can find. aux.Stringid(id,n) is id*16+n and the engine keeps
+    /// descriptions in 32 bits, so a larger passcode points at another card's texts: prompts then show the card's
+    /// location ("hand") instead of the effect.
+    /// </summary>
+    public const long MaxForStrings = 268_435_455;
 
     public static long Generate(IEnumerable<long> used, Random? random = null)
     {
