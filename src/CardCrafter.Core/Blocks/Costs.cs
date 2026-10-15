@@ -116,41 +116,65 @@ public sealed class TributeCost : CostBlock
     }
 }
 
-/// <summary>"Banish 1 card from your GY" or "send 1 card from your hand to the GY" as a cost.</summary>
+/// <summary>
+/// "Banish 1 card from your GY", "send 2 cards from your hand to the GY", "shuffle up to 3 cards from your GY into the
+/// Deck" as a cost. How many it used is kept, for DO blocks that count "for each card used for the cost".
+/// </summary>
 public sealed class MoveCardsCost : CostBlock
 {
     public override string Id => "cost.move_cards";
     public override string Group => "Cards";
-    public override string Name => "Banish or send cards to the GY";
+    public override string Name => "Banish, send or return cards (cost)";
     public override string Sentence => "{how} {count} {cards}";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
-        ParamSpec.Choice("how", "How", new("banish", "Banish"), new("grave", "Send to the GY")),
+        ParamSpec.Choice("how", "How",
+            new("banish", "Banish"), new("grave", "Send to the GY:"), new("deck", "Shuffle into the Deck:"),
+            new("deck_bottom", "Place on the bottom of the Deck:"), new("hand", "Return to the hand:"), new("extra", "Return to the Extra Deck:")),
         ParamSpec.Int("count", "How many", 1, 1, 10),
+        ParamSpec.Choice("mode", "Exactly / up to", new("exact", "", "exactly"), new("up_to", "up to")),
         ParamSpec.Cards("cards", "Which cards", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Graveyard }),
     ];
 
-    public override string Describe(BlockArgs args) => args.Choice("how") == "grave"
-        ? $"send {args.Int("count")} {args.Describe("cards")} to the GY"
-        : $"banish {args.Int("count")} {args.Describe("cards")}";
+    private static (string Verb, string Tail, string Able, string Hint, string Call) Way(string how) => how switch
+    {
+        "grave" => ("send", " to the GY", "c:IsAbleToGraveAsCost()", "HINTMSG_TOGRAVE", "Duel.SendtoGrave({0},REASON_COST)"),
+        "deck" => ("shuffle", " into the Deck", "c:IsAbleToDeckAsCost()", "HINTMSG_TODECK", "Duel.SendtoDeck({0},nil,SEQ_DECKSHUFFLE,REASON_COST)"),
+        "deck_bottom" => ("place", " on the bottom of the Deck", "c:IsAbleToDeckAsCost()", "HINTMSG_TODECK", "Duel.SendtoDeck({0},nil,SEQ_DECKBOTTOM,REASON_COST)"),
+        "hand" => ("return", " to the hand", "c:IsAbleToHandAsCost()", "HINTMSG_RTOHAND", "Duel.SendtoHand({0},nil,REASON_COST)"),
+        "extra" => ("return", " to the Extra Deck", "c:IsAbleToExtraAsCost()", "HINTMSG_TODECK", "Duel.SendtoDeck({0},nil,SEQ_DECKSHUFFLE,REASON_COST)"),
+        _ => ("banish", "", "c:IsAbleToRemoveAsCost()", "HINTMSG_REMOVE", "Duel.Remove({0},POS_FACEUP,REASON_COST)"),
+    };
+
+    public override string Describe(BlockArgs args)
+    {
+        var (verb, tail, _, _, _) = Way(args.Choice("how"));
+        return $"{verb} {args.Describe("count")} {args.Describe("cards")}{tail}{args.ExceptText()}";
+    }
 
     public override void Compile(BlockContext ctx)
     {
-        var banish = ctx.Args.Choice("how") == "banish";
+        var how = ctx.Args.Choice("how");
         var filter = ctx.Args.Cards("cards").Clone();
-        if (!banish && filter.Zones.HasFlag(Zone.Graveyard))
+        var zone = how switch { "grave" => Zone.Graveyard, "deck" or "deck_bottom" => Zone.Deck, "hand" => Zone.Hand, "extra" => Zone.ExtraDeck, _ => Zone.Banished };
+        if (filter.Zones.HasFlag(zone))
         {
-            ctx.Effect.Error("\"Send to the GY\" can't use cards that are already in the GY. Pick the hand, Deck or field.");
+            ctx.Effect.Error($"\"{Name}\" can't move cards to where they already are. Pick other places to take them from.");
             return;
         }
         filter.Owner = CardOwner.You;
-        var f = ctx.Script.Filter(filter, banish ? "c:IsAbleToRemoveAsCost()" : "c:IsAbleToGraveAsCost()", banish ? "rmcostfilter" : "gycostfilter");
+        var (_, _, able, hint, call) = Way(how);
+        var f = ctx.Script.Filter(filter, able, how + "costfilter");
         var n = ctx.Args.Int("count");
+        var min = ctx.Args.Choice("mode") == "up_to" ? 1 : n;
         var g = ctx.Effect.NewLocal("g");
         // The activated card itself can never pay its own cost this way.
-        ctx.Effect.CostChecks.Add($"Duel.IsExistingMatchingCard({f.Function},tp,{f.Self},0,{n},e:GetHandler(),e,tp)");
-        ctx.Effect.CostLines.Add($"Duel.Hint(HINT_SELECTMSG,tp,{(banish ? "HINTMSG_REMOVE" : "HINTMSG_TOGRAVE")})");
-        ctx.Effect.CostLines.Add($"local {g}=Duel.SelectMatchingCard(tp,{f.Function},tp,{f.Self},0,{n},{n},e:GetHandler(),e,tp)");
-        ctx.Effect.CostLines.Add(banish ? $"Duel.Remove({g},POS_FACEUP,REASON_COST)" : $"Duel.SendtoGrave({g},REASON_COST)");
+        ctx.Effect.CostChecks.Add($"Duel.IsExistingMatchingCard({f.Function},tp,{f.Self},0,{min},e:GetHandler(),e,tp)");
+        ctx.Effect.CostLines.Add($"Duel.Hint(HINT_SELECTMSG,tp,{hint})");
+        ctx.Effect.CostLines.Add($"local {g}=Duel.SelectMatchingCard(tp,{f.Function},tp,{f.Self},0,{min},{n},e:GetHandler(),e,tp)");
+        if ((filter.Zones & Zone.Field) != Zone.None) ctx.Effect.CostLines.Add($"Duel.HintSelection({g})");
+        // Kept for "for each card used for the cost".
+        ctx.Effect.CostLines.Add($"e:SetLabel({string.Format(System.Globalization.CultureInfo.InvariantCulture, call, g)})");
+        ctx.Effect.CostCounts = true;
     }
 }

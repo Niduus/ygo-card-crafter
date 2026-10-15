@@ -28,6 +28,8 @@ public class AllBlocksTests
                 case ParamType.Choice:
                     foreach (var c in p.Choices.Skip(1))
                     {
+                        // Special Summoning or Setting "all" is refused (each card needs a free zone); BlockModeTests checks that.
+                        if (p.Key == "mode" && c.Value == "all" && def.Id is "do.special_summon" or "do.set") continue;
                         var inst = def.CreateInstance().With(p.Key, c.Value);
                         if (def.Id == "cost.move_cards" && c.Value == "grave") inst.Filters["cards"].Zones = Zone.Hand;
                         yield return ($"{p.Key}={c.Value}", inst);
@@ -105,6 +107,11 @@ public class AllBlocksTests
                 inst.Values["token"] = TokenId.ToString(System.Globalization.CultureInfo.InvariantCulture);
                 break;
         }
+        // "For each card used for the cost" needs a cost that counts; "for each of those cards" needs an action before.
+        if (inst.Values.GetValueOrDefault("per") == "per_cost")
+            project.Effects[0].Cost.Add(new BlockInstance("cost.move_cards").With("how", "banish"));
+        if (inst.Values.GetValueOrDefault("per") == "per_previous")
+            project.Effects[0].Do.Insert(0, BlockRegistry.Find("do.destroy")!.CreateInstance());
         // A card Special Summons itself from where it is, never from the field.
         if (def.Id == "do.special_summon_self") project.Effects[0].When = new BlockInstance("when.ignition").With("zone", "hand");
         return project;
@@ -147,7 +154,8 @@ public class AllBlocksTests
         {
             var keys = SentenceParser.Parse(def.Sentence).Where(s => s.Key is not null).Select(s => s.Key!).ToList();
             foreach (var k in keys) Assert.True(def.Param(k) is not null, $"{def.Id}: sentence blank {{{k}}} has no parameter");
-            foreach (var p in def.Params) Assert.True(keys.Contains(p.Key) || p.Type == ParamType.Bool, $"{def.Id}: parameter {p.Key} is not in the sentence");
+            // "exactly / up to / all" sits before the count and "for each" at the end, without a blank of their own.
+            foreach (var p in def.Params) Assert.True(keys.Contains(p.Key) || p.Type == ParamType.Bool || p.Key is "mode" or "per", $"{def.Id}: parameter {p.Key} is not in the sentence");
         }
     }
 }

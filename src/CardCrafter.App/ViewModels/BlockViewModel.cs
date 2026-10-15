@@ -16,6 +16,13 @@ public sealed partial class BlockViewModel : ObservableObject
         Instance = instance;
         Owner = owner;
         _changed = changed;
+        // Changing how many cards changes the cards' wording ("card" or "cards").
+        void Changed()
+        {
+            foreach (var c in Segments.OfType<CardsSegmentViewModel>()) c.Refresh();
+            changed();
+        }
+        var mode = definition.Param("mode");
         foreach (var seg in SentenceParser.Parse(definition.Sentence))
         {
             if (seg.Key is null)
@@ -27,17 +34,20 @@ public sealed partial class BlockViewModel : ObservableObject
             }
             var spec = definition.Param(seg.Key);
             if (spec is null) continue;
+            // "exactly / up to / all" goes right before the count it qualifies.
+            if (spec.Key == "count" && mode is not null && !definition.Sentence.Contains("{mode}"))
+                Segments.Add(new ChoiceSegmentViewModel(mode, instance, Changed));
             Segments.Add(spec.Type switch
             {
-                ParamType.Integer => new IntSegmentViewModel(spec, instance, changed),
-                ParamType.Choice => new ChoiceSegmentViewModel(spec, instance, changed),
-                ParamType.Bool => new BoolSegmentViewModel(spec, instance, changed),
-                _ => new CardsSegmentViewModel(spec, instance, pack, changed),
+                ParamType.Integer => new IntSegmentViewModel(spec, instance, Changed),
+                ParamType.Choice => new ChoiceSegmentViewModel(spec, instance, Changed),
+                ParamType.Bool => new BoolSegmentViewModel(spec, instance, Changed),
+                _ => new CardsSegmentViewModel(spec, instance, pack, Changed),
             });
         }
-        // Flags that are not in the sentence (like "optional") go at the end.
-        foreach (var spec in definition.Params.Where(p => p.Type == ParamType.Bool && !definition.Sentence.Contains("{" + p.Key + "}")))
-            Segments.Add(new BoolSegmentViewModel(spec, instance, changed));
+        // Choices and flags that are not in the sentence (like "for each" or "optional") go at the end.
+        foreach (var spec in definition.Params.Where(p => p.Type is ParamType.Choice or ParamType.Bool && p.Key != "mode" && !definition.Sentence.Contains("{" + p.Key + "}")))
+            Segments.Add(spec.Type == ParamType.Bool ? new BoolSegmentViewModel(spec, instance, Changed) : new ChoiceSegmentViewModel(spec, instance, Changed));
     }
 
     public BlockDefinition Definition { get; }

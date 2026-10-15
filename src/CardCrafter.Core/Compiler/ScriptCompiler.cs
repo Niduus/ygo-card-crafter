@@ -21,7 +21,7 @@ public static class ScriptCompiler
         var card = project.Card;
         var strings = project.UseCustomLua && project.ScriptStrings.Count > 0
             ? project.ScriptStrings.Take(16).ToList()
-            : project.Effects.Take(16).Select(e => e.Label).ToList();
+            : EffectStrings(project, pack);
 
         CheckCard(project, script.Diagnostics);
 
@@ -198,6 +198,13 @@ public static class ScriptCompiler
             "c:RegisterEffect(el)",
         ];
     }
+
+    /// <summary>
+    /// The database's str1..str16: what the game shows when it asks whether to activate an effect. Each is the
+    /// effect's own card text, so the prompt says the whole effect; an effect with no text gets its name.
+    /// </summary>
+    private static List<string> EffectStrings(CardProject project, CardPack? pack) =>
+        project.Effects.Take(16).Select(e => Text.EffectTextGenerator.Describe(e, project.Card, pack) is { Length: > 0 } t ? t : e.Label).ToList();
 
     /// <summary>Continuous, Field and Equip cards need a plain "activate this card" effect to be placed on the field.</summary>
     private static bool NeedsActivationEffect(CardData card, List<EffectBuilder> effects)

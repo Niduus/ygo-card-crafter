@@ -7,6 +7,9 @@
   <StackPanel Spacing="2">
     <TextBlock Text="Which cards?" FontWeight="SemiBold" />
     <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" Foreground="#C7D7FE" Margin="0,0,0,6" />
+    <CheckBox Name="ThisCardBox" Content="This card itself" IsChecked="{Binding ThisCard}" IsVisible="{Binding AllowThisCard}" FontWeight="SemiBold" Margin="0,0,0,6"
+              ToolTip.Tip="This exact card, wherever its effect is used from (&quot;Special Summon this card from your hand&quot;). A card name or passcode below means any copy." />
+    <StackPanel IsEnabled="{Binding NotThisCard}">
 
     <TextBlock Classes="label" Text="Whose" IsVisible="{Binding ShowOwner}" />
     <ComboBox ItemsSource="{Binding OwnerOptions}" SelectedItem="{Binding Owner}" IsVisible="{Binding ShowOwner}" HorizontalAlignment="Stretch" />
@@ -71,6 +74,11 @@
         <TextBox Text="{Binding CardCode}" Watermark="any card" />
       </StackPanel>
     </Grid>
+    <Grid ColumnDefinitions="Auto,8,*" Margin="0,6,0,0">
+      <CheckBox Content="except this card's name" IsChecked="{Binding ExceptOwnName}" VerticalAlignment="Center"
+                ToolTip.Tip="Not a card with this card's name, e.g. &quot;1 Warrior monster from your Deck, except &quot;Card Name&quot;&quot;" />
+      <TextBox Grid.Column="2" Text="{Binding ExceptCode}" Watermark="except (passcode)" />
+    </Grid>
     <CheckBox Content="Face-up only" IsChecked="{Binding FaceUpOnly}" IsVisible="{Binding !MaterialMode}" Margin="0,6,0,0" />
     <CheckBox Content="Not this card itself (&quot;other&quot;)" IsChecked="{Binding ExcludeThisCard}" IsVisible="{Binding !MaterialMode}" />
     <CheckBox IsChecked="{Binding PointedToByThisCard}" IsVisible="{Binding !MaterialMode}"
@@ -80,5 +88,6 @@
         <TextBlock Text="Only cards this card points to (Link Arrows)" />
       </StackPanel>
     </CheckBox>
+    </StackPanel>
   </StackPanel>
 </UserControl>

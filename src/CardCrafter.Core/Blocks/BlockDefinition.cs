@@ -41,6 +41,8 @@ public sealed class ParamSpec
     public Func<CardFilter>? DefaultFilter { get; init; }
     /// <summary>For card filters: zones the user may pick from. None means any.</summary>
     public Zone AllowedZones { get; init; }
+    /// <summary>For card filters: the picker offers "This card itself".</summary>
+    public bool AllowThisCard { get; init; }
 
     public static ParamSpec Int(string key, string label, int def, int min = 0, int max = 999999) =>
         new() { Key = key, Label = label, Type = ParamType.Integer, Default = def.ToString(CultureInfo.InvariantCulture), Min = min, Max = max };
@@ -104,7 +106,8 @@ public abstract class BlockDefinition
         var sb = new System.Text.StringBuilder();
         foreach (var seg in SentenceParser.Parse(sentence))
             sb.Append(seg.Key is null ? seg.Text : args.Describe(seg.Key));
-        return sb.ToString();
+        // Cards print "..., except "Card Name"" at the end of the sentence.
+        return sb.ToString().TrimEnd() + args.ExceptText();
     }
 }
 
@@ -139,6 +142,18 @@ public sealed class BlockArgs(BlockDefinition def, BlockInstance inst, CardPack?
     public CardPack? Pack { get; } = pack;
     /// <summary>The effect the block is in, when the wording depends on it (e.g. "from your hand" after a hand trigger).</summary>
     public EffectEvent? Effect { get; init; }
+    /// <summary>The card's name, for "except "Card Name"".</summary>
+    public string? CardName { get; init; }
+
+    /// <summary>Whether the block's cards read as plural: a count other than 1, or "all".</summary>
+    public bool IsPlural => (Definition.Param("count") is { Type: ParamType.Integer } && Int("count") != 1)
+                            || (Definition.Param("mode") is not null && Choice("mode") == "all");
+
+    /// <summary>", except "Card Name"" for this block's card filters, or "".</summary>
+    public string ExceptText() => string.Concat(Definition.Params.Where(p => p.Type == ParamType.Cards).Select(p => Text.FilterText.ExceptText(Cards(p.Key), Pack, CardName)));
+
+    /// <summary>True when the block's cards are "this card itself".</summary>
+    public bool IsThisCard => Definition.Params.Any(p => p.Type == ParamType.Cards && Cards(p.Key).ThisCard);
 
     /// <summary>Where this card is while its effect is used, from the WHEN block's zone, or null.</summary>
     public string? TriggerZone => Effect?.When is { } w && w.Values.TryGetValue("zone", out var z) ? z : null;
@@ -180,11 +195,17 @@ public sealed class BlockArgs(BlockDefinition def, BlockInstance inst, CardPack?
         if (spec is null) return "{" + key + "}";
         return spec.Type switch
         {
+            // "Special Summon this card", not "Special Summon 1 this card".
+            ParamType.Integer when key == "count" && IsThisCard => "",
+            // "up to 3", "all": card actions say how many with their count.
+            ParamType.Integer when key == "count" && Definition.Param("mode") is not null && Choice("mode") == "all" => "all",
+            ParamType.Integer when key == "count" && Definition.Param("mode") is not null && Choice("mode") == "up_to" => $"up to {Int(key).ToString(CultureInfo.InvariantCulture)}",
             ParamType.Integer => Int(key).ToString(CultureInfo.InvariantCulture),
             ParamType.Choice => spec.Choices.First(c => c.Value == Choice(key)).Label,
             ParamType.Bool => Bool(key) ? spec.Label : "",
             // "Discard 2 cards": a block's "count" blank decides whether its cards are plural.
-            ParamType.Cards => Text.FilterText.Describe(Cards(key), Pack, plural: Definition.Param("count") is { Type: ParamType.Integer } && Int("count") != 1),
+            ParamType.Cards when Cards(key).ThisCard => TriggerZone is { } z && Zones.From(z) is { } from ? $"this card {from}" : "this card",
+            ParamType.Cards => Text.FilterText.Describe(Cards(key), Pack, plural: IsPlural, ownName: CardName, withExcept: false),
             _ => "",
         };
     }

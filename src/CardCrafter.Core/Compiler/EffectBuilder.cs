@@ -77,6 +77,12 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
     public void AddPassive(Func<string, IEnumerable<string>> write) => _passives.Add(write);
 
     public bool HasSteps => _steps.Count > 0;
+
+    /// <summary>The Lua variable with how many cards the last DO step affected, for "for each of those cards".</summary>
+    public string? LastResult => _steps.LastOrDefault(s => s.Result is not null)?.Result;
+
+    /// <summary>True once a COST block has stored how many cards it used (in the effect's label).</summary>
+    public bool CostCounts { get; set; }
     public bool HasPassives => _passives.Count > 0;
 
     /// <summary>Writes the lines that go inside initial_effect for this effect.</summary>

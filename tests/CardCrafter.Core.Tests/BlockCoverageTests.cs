@@ -189,3 +189,126 @@ public class OncePerTurnWordingTests
         Assert.Equal("You can draw 1 card. You can only use this effect of \"New Monster\" once per turn. Once per turn: You can draw 1 card.", text);
     }
 }
+
+public class ThisCardPickerTests
+{
+    private static CardProject Card(CardFilter filter) => new()
+    {
+        Card = new CardData { Id = 100007001, Name = "New Monster", Frame = MonsterFrame.Effect, Level = 4, Atk = 1800, Def = 1000 },
+        Effects =
+        [
+            new EffectEvent
+            {
+                Limit = OncePerTurn.Hard,
+                When = BlockRegistry.Find("when.quick")!.CreateInstance().With("zone", "hand"),
+                Do = [BlockRegistry.Find("do.special_summon")!.CreateInstance().With("cards", filter)],
+            },
+        ],
+    };
+
+    [Fact]
+    public void ThisCardItself_ReadsAndCompilesAsThisCard()
+    {
+        var p = Card(new CardFilter { ThisCard = true });
+        Assert.Equal("(Quick Effect): You can Special Summon this card from your hand. You can only use this effect of \"New Monster\" once per turn.",
+            CardCrafter.Core.Text.EffectTextGenerator.Generate(p));
+        var r = ScriptCompiler.Compile(p);
+        Assert.False(r.HasErrors, string.Join("\n", r.Diagnostics));
+        Assert.Contains("Group.FromCards(c)", r.Lua);
+        Assert.Contains("e:GetHandler():IsCanBeSpecialSummoned(e,0,tp,false,false)", r.Lua);
+    }
+
+    [Fact]
+    public void PickingItsOwnName_WarnsThatAnyCopyCounts()
+    {
+        var p = Card(new CardFilter { Owner = CardOwner.You, Zones = Zone.Hand, CardType = FilterCardType.Monster, CardCode = 100007001 });
+        Assert.Contains(ScriptCompiler.Compile(p).Diagnostics, d => d.Severity == Severity.Warning && d.Message.Contains("This card itself"));
+    }
+
+    [EngineFact]
+    public void ThisCardItself_SummonsThisCopy()
+    {
+        var p = Card(new CardFilter { ThisCard = true });
+        p.Effects[0].Limit = OncePerTurn.None;
+        new EngineScenario(p).Card(p.Card.Id, 0, "hand", 2).Card(EngineScenario.Warrior, 0, "deck", 5)
+            .Activate(p.Card.Id).ExpectActivations(1)
+            .Check($"Duel.GetMatchingGroupCount(Card.IsCode,0,LOCATION_MZONE,0,nil,{p.Card.Id})==1")
+            .Check($"Duel.GetMatchingGroupCount(Card.IsCode,0,LOCATION_HAND,0,nil,{p.Card.Id})==1")
+            .AssertPasses();
+    }
+
+    [Fact]
+    public void ExceptItsOwnName()
+    {
+        var f = new CardFilter { Owner = CardOwner.You, Zones = Zone.Deck, CardType = FilterCardType.Monster, Race = CardRace.Warrior, ExceptOwnName = true };
+        var p = Card(f);
+        p.Effects[0].Do[0] = BlockRegistry.Find("do.add_to_hand")!.CreateInstance().With("cards", f);
+        Assert.Contains("add 1 Warrior monster from your Deck to your hand, except \"New Monster\"", CardCrafter.Core.Text.EffectTextGenerator.Generate(p));
+        Assert.Contains("not c:IsCode(id)", ScriptCompiler.Compile(p).Lua);
+    }
+}
+
+public class BlockModeTests
+{
+    private static BlockInstance B(string id) => BlockRegistry.Find(id)!.CreateInstance();
+
+    private static CardProject Card(params BlockInstance[] actions) => new()
+    {
+        Card = new CardData { Id = 100008001, Name = "Sweeper", Frame = MonsterFrame.Effect, Level = 4 },
+        Effects = [new EffectEvent { When = B("when.ignition"), Do = [.. actions] }],
+    };
+
+    [Fact]
+    public void UpToAndAll_ReadAsCardsSayThem()
+    {
+        var upTo = B("do.send_to_gy").With("count", 3).With("mode", "up_to").With("cards", CardFilter.OpponentField());
+        Assert.Equal("You can send up to 3 cards your opponent controls to the GY.", CardCrafter.Core.Text.EffectTextGenerator.Generate(Card(upTo)));
+        Assert.Contains(",1,3,", ScriptCompiler.Compile(Card(upTo)).Lua);
+        var all = B("do.destroy").With("mode", "all").With("cards", CardFilter.OpponentField(FilterCardType.Monster) );
+        all.Filters["cards"].Zones = Zone.MonsterZone;
+        Assert.Equal("You can destroy all monsters your opponent controls.", CardCrafter.Core.Text.EffectTextGenerator.Generate(Card(all)));
+        Assert.Contains("Duel.GetMatchingGroup(", ScriptCompiler.Compile(Card(all)).Lua);
+    }
+
+    [Fact]
+    public void SpecialSummoningAll_IsRefused()
+    {
+        var p = Card(B("do.special_summon").With("mode", "all"));
+        Assert.Contains(ScriptCompiler.Compile(p).Diagnostics, d => d.Severity == Severity.Error && d.Message.Contains("all"));
+    }
+
+    [Fact]
+    public void ForEachCardUsedForTheCost()
+    {
+        var p = Card(B("do.damage").With("amount", 300).With("per", "per_cost"));
+        p.Effects[0].Cost.Add(B("cost.move_cards").With("how", "grave").With("count", 3).With("mode", "up_to").With("cards", new CardFilter { Owner = CardOwner.You, Zones = Zone.Hand }));
+        Assert.Equal("You can send up to 3 cards from your hand to the GY; inflict 300 damage to your opponent for each card used for the cost.",
+            CardCrafter.Core.Text.EffectTextGenerator.Generate(p));
+        var lua = ScriptCompiler.Compile(p).Lua;
+        Assert.Contains("e:SetLabel(Duel.SendtoGrave(", lua);
+        Assert.Contains("Duel.Damage(1-tp,300*e:GetLabel(),REASON_EFFECT)", lua);
+    }
+
+    [EngineFact]
+    public void ForEachOfThoseCards_CountsTheActionBefore()
+    {
+        var destroy = B("do.destroy").With("mode", "all").With("cards", CardFilter.OpponentField(FilterCardType.Monster));
+        destroy.Filters["cards"].Zones = Zone.MonsterZone;
+        var p = Card(destroy, B("do.damage").With("amount", 300).With("per", "per_previous"));
+        new EngineScenario(p).Card(p.Card.Id, 0, "mzone").Card(EngineScenario.Fiend, 1, "mzone", 3).Card(EngineScenario.Warrior, 0, "deck", 5)
+            .Activate(p.Card.Id).ExpectActivations(1)
+            .Check("Duel.GetFieldGroupCount(1,LOCATION_MZONE,0)==0")
+            .Check("Duel.GetLP(1)==8000-900")
+            .AssertPasses();
+    }
+
+    [EngineFact]
+    public void UpToThree_SendsWhatThereIs()
+    {
+        var p = Card(B("do.send_to_gy").With("count", 3).With("mode", "up_to").With("cards", CardFilter.OpponentField()));
+        new EngineScenario(p).Card(p.Card.Id, 0, "mzone").Card(EngineScenario.Fiend, 1, "mzone", 2).Card(EngineScenario.Warrior, 0, "deck", 5)
+            .Activate(p.Card.Id).ExpectActivations(1)
+            .Check("Duel.GetFieldGroupCount(1,LOCATION_GRAVE,0)>=1")
+            .AssertPasses();
+    }
+}

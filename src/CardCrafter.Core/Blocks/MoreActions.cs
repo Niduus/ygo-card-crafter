@@ -179,8 +179,8 @@ public sealed class ChangePositionAction : CardGroupAction
     {
         var n = args.Int("count");
         return args.Choice("to") == "toggle"
-            ? $"change the battle position of {n} {args.Describe("cards")}"
-            : $"change {n} {args.Describe("cards")} {args.Describe("to")}";
+            ? $"change the battle position of {n} {args.Describe("cards")}{args.ExceptText()}"
+            : $"change {n} {args.Describe("cards")} {args.Describe("to")}{args.ExceptText()}";
     }
 
     protected override string TargetedAction(BlockArgs args, string pronoun, bool single) =>
@@ -384,7 +384,7 @@ public sealed class SetAttackAction : CardGroupAction
         var n = args.Int("count");
         var cards = $"{n} {args.Describe("cards")}";
         var verb = args.Choice("mode") == "half" ? "is halved" : $"becomes {Becomes(args)}";
-        return $"the ATK of {cards} {(n == 1 ? verb : verb.Replace("is halved", "are halved"))} {args.Describe("duration")}".TrimEnd();
+        return $"the ATK of {cards} {(n == 1 ? verb : verb.Replace("is halved", "are halved"))} {args.Describe("duration")}".TrimEnd() + args.ExceptText();
     }
 
     protected override string TargetedAction(BlockArgs args, string pronoun, bool single) =>
@@ -443,7 +443,7 @@ public sealed class ChangeLevelAction : CardGroupAction
     public override string Describe(BlockArgs args)
     {
         var n = args.Int("count");
-        return $"the {Change(args, n == 1)} of {n} {args.Describe("cards")} {args.Describe("duration")}".TrimEnd()
+        return ($"the {Change(args, n == 1)} of {n} {args.Describe("cards")} {args.Describe("duration")}".TrimEnd() + args.ExceptText())
             .Replace("the Level becomes", "the Level becomes", StringComparison.Ordinal);
     }
 
@@ -547,7 +547,7 @@ public sealed class BattleRuleAction : CardGroupAction
     };
 
     public override string Describe(BlockArgs args) =>
-        $"{args.Int("count")} {args.Describe("cards")} {args.Describe("rule")} this turn";
+        $"{args.Int("count")} {args.Describe("cards")} {args.Describe("rule")} this turn{args.ExceptText()}";
 
     protected override string TargetedAction(BlockArgs args, string pronoun, bool single)
     {

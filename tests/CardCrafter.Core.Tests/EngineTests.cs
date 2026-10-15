@@ -459,9 +459,11 @@ public class EngineTests
 
     public static IEnumerable<object[]> CostBlocks() =>
         // Detaching needs an Xyz monster with materials; Xyz_DetachMaterialAsCost covers it.
+        // Returning cards to the Extra Deck needs Extra Deck monsters in the GY, which this board doesn't have.
         BlockRegistry.OfKind(BlockKind.Cost).Where(b => b.Id != "cost.detach").SelectMany(def =>
             new[] { def.CreateInstance() }
-                .Concat(def.Params.Where(p => p.Type == ParamType.Choice).SelectMany(p => p.Choices.Skip(1).Select(c => def.CreateInstance().With(p.Key, c.Value))))
+                .Concat(def.Params.Where(p => p.Type == ParamType.Choice).SelectMany(p => p.Choices.Skip(1).Where(c => !(def.Id == "cost.move_cards" && c.Value == "extra"))
+                    .Select(c => def.CreateInstance().With(p.Key, c.Value))))
                 .Select(inst => new object[] { def.Id, string.Join(",", inst.Values.Select(kv => $"{kv.Key}={kv.Value}")) }));
 
     [EngineTheory]

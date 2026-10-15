@@ -55,7 +55,7 @@ Paid before the effect resolves. Lasting effects have no cost.
 | Pay Life Points | Pay {amount} LP | **Amount**: 1–99999 |
 | Tribute, banish, send or discard this card | {how} this card | **How**: Tribute, Banish, Send to the GY, Discard |
 | Tribute monsters | Tribute {count} {cards} | **How many**: 1–5; **Which monsters**: card picker |
-| Banish or send cards to the GY | {how} {count} {cards} | **How**: Banish, Send to the GY; **How many**: 1–10; **Which cards**: card picker |
+| Banish, send or return cards (cost) | {how} {count} {cards} | **How**: Banish, Send to the GY:, Shuffle into the Deck:, Place on the bottom of the Deck:, Return to the hand:, Return to the Extra Deck:; **How many**: 1–10; **Exactly / up to**: exactly, up to; **Which cards**: card picker |
 | Detach Xyz Materials | Detach {count} material(s) from this card | **How many**: 1–10 |
 
 ## DO: what happens
@@ -64,22 +64,22 @@ Run in order. Each action after the first says how it links to the one before: *
 
 | Block | Reads as | Options |
 |---|---|---|
-| Draw cards | {who} draw(s) {count} card(s) | **Who**: You, Your opponent; **How many**: 1–10 |
-| Add cards to your hand (search) | Add {count} {cards} to your hand {target} | **How many**: 1–10; **Which cards**: card picker; **(targeting)** on/off |
-| Special Summon monsters | Special Summon {count} {cards} {target} {position} {zone} | **How many**: 1–5; **Which cards**: card picker; **(targeting)** on/off; **Position**: face-up, in Attack Position, in Defense Position; **Zone**: to any zone, to a zone this card points to |
+| Draw cards | {who} draw(s) {count} card(s) | **Who**: You, Your opponent; **How many**: 1–10; **For each**: (once), for each card the action before affected, for each card used for the cost |
+| Add cards to your hand (search) | Add {count} {cards} to your hand {target} | **How many**: 1–10; **Exactly / up to / all**: exactly, up to, all; **Which cards**: card picker; **(targeting)** on/off |
+| Special Summon monsters | Special Summon {count} {cards} {target} {position} {zone} | **How many**: 1–5; **Exactly / up to / all**: exactly, up to, all; **Which cards**: card picker; **(targeting)** on/off; **Position**: face-up, in Attack Position, in Defense Position; **Zone**: to any zone, to a zone this card points to |
 | Special Summon this card<br><sub>Summons this card from wherever the effect is used: the WHEN block's "in the hand" or "in the GY".</sub> | Special Summon this card {position} | **Position**: face-up, in Attack Position, in Defense Position, in face-down Defense Position |
-| Destroy cards | Destroy {count} {cards} {target} | **How many**: 1–10; **Which cards**: card picker; **(targeting)** on/off |
-| Banish cards | Banish {count} {cards} {target} | **How many**: 1–10; **Which cards**: card picker; **(targeting)** on/off |
-| Send cards to the GY | Send {count} {cards} to the GY {target} | **How many**: 1–10; **Which cards**: card picker; **(targeting)** on/off |
-| Return cards to the hand (bounce) | Return {count} {cards} to the hand {target} | **How many**: 1–10; **Which cards**: card picker; **(targeting)** on/off |
-| Shuffle cards into the Deck | Shuffle {count} {cards} into the Deck {target} | **How many**: 1–10; **Which cards**: card picker; **(targeting)** on/off |
-| Inflict damage | Inflict {amount} damage to {who} | **Amount**: 1–99999; **Who**: your opponent, you |
-| Gain Life Points | {who} gain(s) {amount} LP | **Who**: You, Your opponent; **Amount**: 1–99999 |
-| This card gains or loses ATK/DEF | This card {dir} {amount} {stat} {duration} | **Gains/loses**: gains, loses; **Amount**: 1–99999; **Stat**: ATK, DEF, ATK/DEF; **Until**: until the end of this turn, while face-up |
+| Destroy cards | Destroy {count} {cards} {target} | **How many**: 1–10; **Exactly / up to / all**: exactly, up to, all; **Which cards**: card picker; **(targeting)** on/off |
+| Banish cards | Banish {count} {cards} {target} | **How many**: 1–10; **Exactly / up to / all**: exactly, up to, all; **Which cards**: card picker; **(targeting)** on/off |
+| Send cards to the GY | Send {count} {cards} to the GY {target} | **How many**: 1–10; **Exactly / up to / all**: exactly, up to, all; **Which cards**: card picker; **(targeting)** on/off |
+| Return cards to the hand (bounce) | Return {count} {cards} to the hand {target} | **How many**: 1–10; **Exactly / up to / all**: exactly, up to, all; **Which cards**: card picker; **(targeting)** on/off |
+| Shuffle cards into the Deck | Shuffle {count} {cards} into the Deck {target} | **How many**: 1–10; **Exactly / up to / all**: exactly, up to, all; **Which cards**: card picker; **(targeting)** on/off |
+| Inflict damage | Inflict {amount} damage to {who} | **Amount**: 1–99999; **Who**: your opponent, you; **For each**: (once), for each card the action before affected, for each card used for the cost |
+| Gain Life Points | {who} gain(s) {amount} LP | **Who**: You, Your opponent; **Amount**: 1–99999; **For each**: (once), for each card the action before affected, for each card used for the cost |
+| This card gains or loses ATK/DEF | This card {dir} {amount} {stat} {duration} | **Gains/loses**: gains, loses; **Amount**: 1–99999; **Stat**: ATK, DEF, ATK/DEF; **Until**: until the end of this turn, while face-up; **For each**: (once), for each card the action before affected, for each card used for the cost |
 | Negate the activation or effect<br><sub>Use with a WHEN timing like "when your opponent activates a card or effect", like Ash Blossom or Solemn Judgment.</sub> | Negate {what} {and} | **What**: the activation, the effect; **And**: and nothing else, and if you do, destroy that card, and if you do, banish that card |
-| Negate the effects of face-up cards<br><sub>Like Effect Veiler or Infinite Impermanence: the chosen face-up cards lose their effects.</sub> | Negate the effects of {count} {cards} {target} {duration} | **How many**: 1–10; **Which cards**: card picker; **(targeting)** on/off; **Until**: until the end of this turn, while face-up |
+| Negate the effects of face-up cards<br><sub>Like Effect Veiler or Infinite Impermanence: the chosen face-up cards lose their effects.</sub> | Negate the effects of {count} {cards} {target} {duration} | **How many**: 1–10; **Exactly / up to / all**: exactly, up to, all; **Which cards**: card picker; **(targeting)** on/off; **Until**: until the end of this turn, while face-up |
 | Monsters gain or lose ATK/DEF | {count} {cards} {target} {dir} {amount} {stat} {duration} | **How many**: 1–10; **Which monsters**: card picker; **(targeting)** on/off; **Gain/lose**: gain(s), lose(s); **Amount**: 1–99999; **Stat**: ATK, DEF, ATK/DEF; **Until**: until the end of this turn, while face-up |
-| Set Spells/Traps | Set {count} {cards} {target} | **How many**: 1–10; **Which cards**: card picker; **(targeting)** on/off |
+| Set Spells/Traps | Set {count} {cards} {target} | **How many**: 1–10; **Exactly / up to / all**: exactly, up to, all; **Which cards**: card picker; **(targeting)** on/off |
 | Send the top cards of a Deck to the GY | Send the top {count} card(s) of {whose} Deck to the GY | **How many**: 1–20; **Whose**: your, your opponent's |
 | Destroy, banish or return this card | {how} this card | **How**: Return to the hand, Destroy, Banish, Send to the GY, Shuffle into the Deck |
 | Negate the Summon<br><sub>Like Solemn Strike: use with the WHEN timing "when your opponent would Normal or Special Summon a monster(s)".</sub> | Negate the Summon {and} | **And**: and if you do, destroy that monster(s), and if you do, banish that monster(s), and nothing else |
@@ -87,7 +87,7 @@ Run in order. Each action after the first says how it links to the one before: *
 | Discard cards (as an effect) | {who} discard(s) {count} card(s) {how} | **Who**: Your opponent, You, Each player; **How many**: 1–10; **How**: of their choice, at random |
 | Change battle positions | Change {count} {cards} {target} {to} | **How many**: 1–10; **Which monsters**: card picker; **(targeting)** on/off; **To**: to face-up Defense Position, to face-up Attack Position, to face-down Defense Position, to the other battle position |
 | Take control of monsters | Take control of {count} {cards} {target} {duration} | **How many**: 1–5; **Which monsters**: card picker; **(targeting)** on/off; **Until**: until the End Phase, permanently |
-| Attach cards to this card as material<br><sub>Xyz Monsters only: the cards go under this card as Xyz Materials.</sub> | Attach {count} {cards} {target} to this card as material | **How many**: 1–10; **Which cards**: card picker; **(targeting)** on/off |
+| Attach cards to this card as material<br><sub>Xyz Monsters only: the cards go under this card as Xyz Materials.</sub> | Attach {count} {cards} {target} to this card as material | **How many**: 1–10; **Exactly / up to / all**: exactly, up to, all; **Which cards**: card picker; **(targeting)** on/off |
 | Normal Summon a monster<br><sub>An extra Normal Summon right now, like Ultimate Offering. It doesn't use up the turn's Normal Summon.</sub> | Normal Summon {count} {cards} | **How many**: 1–1; **Which monster**: card picker |
 | Special Summon Tokens<br><sub>Make the Token as its own card in this pack (Monster, frame "Token") and enter its passcode here; its Level, Type, Attribute, ATK and DEF come from that card.</sub> | Special Summon {count} Token(s) (passcode {token}) {position} {side} | **How many**: 1–5; **Token passcode**: 0–2147483647; **Position**: face-up, in Attack Position, in Defense Position; **Whose field**: to your field, to your opponent's field |
 | Monsters' ATK becomes a value (halve, 0...) | {count} {cards} {target}: ATK becomes {mode} {amount} {duration} | **How many**: 1–10; **Which monsters**: card picker; **(targeting)** on/off; **Becomes**: half its current ATK, 0, a number:; **Number (for "a number")**: 0–99999; **Until**: until the end of this turn, while face-up |

@@ -82,8 +82,12 @@ public static partial class EffectTextGenerator
 
     public static string Describe(EffectEvent effect, CardData card, CardPack? pack = null) => Describe(effect, card, pack, limitSentence: true);
 
+    /// <summary>The name of the card being described, for "except "Card Name"".</summary>
+    [ThreadStatic] private static string? _cardName;
+
     private static string Describe(EffectEvent effect, CardData card, CardPack? pack, bool limitSentence)
     {
+        _cardName = card.Name;
         if (effect.When is null || BlockRegistry.Find(effect.When.BlockId) is not { } trigger) return "";
         if (trigger is SummonProcedureTrigger) return DescribeProcedure(effect, card, pack);
 
@@ -191,7 +195,8 @@ public static partial class EffectTextGenerator
 
     /// <summary>Costs and actions on this card that already say where it is ("discard this card", "Special Summon this card from your hand").</summary>
     private static bool SaysWhereThisCardIs(EffectEvent effect) =>
-        effect.Cost.Concat(effect.Do).Any(b => b.BlockId is "cost.this_card" or "do.special_summon_self" or "do.this_card");
+        effect.Cost.Concat(effect.Do).Any(b => b.BlockId is "cost.this_card" or "do.special_summon_self" or "do.this_card"
+                                               || b.Filters.Values.Any(f => f.ThisCard));
 
     /// <summary>"during your turn" stays as is; anything else gets a joining word such as "if" or "while".</summary>
     private static string Clause(string cond, string joiner) =>
@@ -204,7 +209,7 @@ public static partial class EffectTextGenerator
         foreach (var b in blocks)
         {
             if (BlockRegistry.Find(b.BlockId) is not { } def) continue;
-            var args = new BlockArgs(def, b, pack) { Effect = effect };
+            var args = new BlockArgs(def, b, pack) { Effect = effect, CardName = _cardName };
             string t;
             if (target is null && def.DescribeTargeting(args) is { } targeted)
             {
@@ -231,7 +236,7 @@ public static partial class EffectTextGenerator
     private static string Text(BlockInstance b, CardPack? pack, EffectEvent? effect = null)
     {
         var def = BlockRegistry.Find(b.BlockId);
-        return def is null ? "" : SentenceCase.Lower(Clean(def.Describe(new BlockArgs(def, b, pack) { Effect = effect })));
+        return def is null ? "" : SentenceCase.Lower(Clean(def.Describe(new BlockArgs(def, b, pack) { Effect = effect, CardName = _cardName })));
     }
 
     /// <summary>Collapses the double spaces left by empty blanks.</summary>

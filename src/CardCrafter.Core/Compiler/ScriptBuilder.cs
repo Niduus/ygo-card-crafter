@@ -60,6 +60,7 @@ public sealed class ScriptBuilder(CardProject project, CardPack? pack)
         var parts = FilterCompiler.Conditions(new CardFilter
         {
             CardType = f.CardType, MonsterKind = f.MonsterKind, Race = f.Race, Attribute = f.Attribute, Archetype = f.Archetype, CardCode = f.CardCode,
+            ExceptOwnName = f.ExceptOwnName, ExceptCode = f.ExceptCode,
             LevelMin = f.LevelMin, LevelMax = f.LevelMax, AtkMin = f.AtkMin, AtkMax = f.AtkMax,
         }, "c", kind);
         parts.Remove("c:IsType(TYPE_MONSTER)");

@@ -50,6 +50,12 @@ public sealed class CardFilter
     public int? AtkMax { get; set; }
     public bool FaceUpOnly { get; set; }
     public bool ExcludeThisCard { get; set; }
+    /// <summary>This exact card, not any card with its name: "Special Summon this card from your hand".</summary>
+    public bool ThisCard { get; set; }
+    /// <summary>"except "Card Name"": not a card with this card's name.</summary>
+    public bool ExceptOwnName { get; set; }
+    /// <summary>Not this card (passcode), 0 for none: "except "Dark Magician"".</summary>
+    public long ExceptCode { get; set; }
     /// <summary>Only cards in the zones this Link monster's arrows point to.</summary>
     public bool PointedToByThisCard { get; set; }
 

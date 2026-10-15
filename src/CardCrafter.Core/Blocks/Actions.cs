@@ -8,6 +8,34 @@ public abstract class ActionBlock : BlockDefinition
     public override BlockKind Kind => BlockKind.Action;
 
     protected static string PlayerOf(string who) => who == "opponent" ? "1-tp" : "tp";
+
+    /// <summary>"exactly 3", "up to 3" or "all": how many cards a card action takes.</summary>
+    public static ParamSpec ModeParam => ParamSpec.Choice("mode", "Exactly / up to / all",
+        new("exact", "", "exactly"), new("up_to", "up to"), new("all", "all"));
+
+    /// <summary>"for each of those cards": an amount multiplied by how many cards the cost or the action before used.</summary>
+    public static ParamSpec PerParam => ParamSpec.Choice("per", "For each",
+        new("once", "", "(once)"),
+        new("per_previous", "for each of those cards", "for each card the action before affected"),
+        new("per_cost", "for each card used for the cost", "for each card used for the cost"));
+
+    /// <summary>The multiplier for an amount: "" for once, or "*n" for each card of the cost or the action before.</summary>
+    protected static string Multiplier(BlockContext ctx, bool inTarget = false)
+    {
+        if (ctx.Args.Definition.Param("per") is null) return "";
+        switch (ctx.Args.Choice("per"))
+        {
+            case "per_cost":
+                if (!ctx.Effect.CostCounts) { ctx.Effect.Error("\"For each card used for the cost\" needs a COST block that sends, banishes or moves cards."); return ""; }
+                return "*e:GetLabel()";
+            case "per_previous":
+                if (inTarget) return "";
+                if (ctx.Effect.LastResult is not { } r) { ctx.Effect.Error("\"For each of those cards\" needs a DO block before it that affects cards."); return ""; }
+                return "*" + r;
+            default:
+                return "";
+        }
+    }
 }
 
 /// <summary>
@@ -35,9 +63,9 @@ public abstract class CardGroupAction : ActionBlock
     public override (string Target, string Action)? DescribeTargeting(BlockArgs args)
     {
         if (Param("target") is null || !args.Bool("target")) return null;
-        var n = args.Int("count");
-        var target = $"target {n} {args.Describe("cards")}";
-        return (target, TargetedAction(args, n == 1 ? "it" : "them", n == 1));
+        var single = !args.IsPlural && !(Param("mode") is not null && args.Choice("mode") == "up_to" && args.Int("count") > 1);
+        var target = $"target {args.Describe("count")} {args.Describe("cards")}{args.ExceptText()}";
+        return (target, TargetedAction(args, single ? "it" : "them", single));
     }
 
     /// <summary>What follows the semicolon, e.g. "destroy it". Override when the wording needs more blanks.</summary>
@@ -51,16 +79,82 @@ public abstract class CardGroupAction : ActionBlock
     public override IReadOnlyList<ParamSpec> Params => _params ??= BuildParams();
     private IReadOnlyList<ParamSpec>? _params;
 
+    /// <summary>Whether the card picker offers "This card itself" (move, destroy or Summon this exact card).</summary>
+    protected virtual bool AllowsThisCard => false;
+
+    /// <summary>Whether "all" makes sense (it doesn't for Special Summons, which need a free zone for each card).</summary>
+    protected virtual bool AllowsAll => true;
+
     protected virtual IReadOnlyList<ParamSpec> BuildParams() =>
     [
         ParamSpec.Int("count", "How many", 1, 1, MaxCount),
-        ParamSpec.Cards("cards", "Which cards", DefaultCards),
+        ModeParam,
+        new ParamSpec { Key = "cards", Label = "Which cards", Type = ParamType.Cards, DefaultFilter = DefaultCards, AllowThisCard = AllowsThisCard },
         ParamSpec.Flag("target", "(targeting)", false),
     ];
+
+    private string Mode(BlockContext ctx) => Param("mode") is null ? "exact" : ctx.Args.Choice("mode");
+
+    /// <summary>The action on this card itself: wherever the effect is used from, only if it is still there.</summary>
+    private void CompileThisCard(BlockContext ctx)
+    {
+        var e = ctx.Effect;
+        if (Param("target") is not null && ctx.Args.Bool("target"))
+            e.Error($"\"{Name}\": this card itself isn't targeted. Turn off targeting.");
+        if (Category.Length > 0) e.AddCategory(Category);
+        var able = AbleCheck(ctx)?.Replace("c:", "e:GetHandler():", StringComparison.Ordinal);
+        var space = SpaceCheck(1, new CardFilter { Zones = Zone.Hand }, ctx);
+        if (able is not null) e.TargetChecks.Add(able);
+        if (space is not null) e.TargetChecks.Add(space);
+        if (Category.Length > 0) e.TargetLines.Add($"Duel.SetOperationInfo(0,{Category},e:GetHandler(),1,0,0)");
+        var g = e.NewLocal("g");
+        var r = e.NewLocal("r");
+        var body = new List<string>
+        {
+            $"local {r}=0",
+            $"if c:IsRelateToEffect(e){(space is null ? "" : " and " + space)} then",
+            $"\tlocal {g}=Group.FromCards(c)",
+            $"\t{r}={Apply(g, ctx)}",
+        };
+        body.AddRange(After(g, ctx.Script.Filter(new CardFilter { Zones = Zone.Hand })).Select(l => "\t" + l));
+        body.Add("end");
+        e.AddStep(body, r, ctx.Link);
+    }
+
+    /// <summary>"Destroy all monsters your opponent controls": every matching card, nothing chosen.</summary>
+    private void CompileAll(BlockContext ctx, CardFilter filter, FilterRef f)
+    {
+        var e = ctx.Effect;
+        if (Category.Length > 0) e.AddCategory(Category);
+        foreach (var c in ExtraCategories(filter)) e.AddCategory(c);
+        e.TargetChecks.Add($"Duel.IsExistingMatchingCard({f.Function},tp,{f.Self},{f.Opp},1,{f.Exclude},e,tp)");
+        var ig = e.NewLocal("ig");
+        e.TargetLines.Add($"local {ig}=Duel.GetMatchingGroup({f.Function},tp,{f.Self},{f.Opp},{f.Exclude},e,tp)");
+        if (Category.Length > 0) e.TargetLines.Add($"Duel.SetOperationInfo(0,{Category},{ig},{ig}:GetCount(),0,0)");
+        var g = e.NewLocal("g");
+        var r = e.NewLocal("r");
+        var body = new List<string>
+        {
+            $"local {r}=0",
+            $"local {g}=Duel.GetMatchingGroup({f.ForSelection},tp,{f.Self},{f.Opp},{f.Exclude},e,tp)",
+            $"if {g}:GetCount()>0 then",
+            $"\t{r}={Apply(g, ctx)}",
+        };
+        body.AddRange(After(g, f).Select(l => "\t" + l));
+        body.Add("end");
+        e.AddStep(body, r, ctx.Link);
+    }
 
     public override void Compile(BlockContext ctx)
     {
         var filter = ctx.Args.Cards("cards");
+        if (filter.ThisCard && Param("cards")?.AllowThisCard == true)
+        {
+            CompileThisCard(ctx);
+            return;
+        }
+        if (filter.CardCode != 0 && filter.CardCode == ctx.Card.Id)
+            ctx.Effect.Warn($"\"{Name}\" picks any card named \"{ctx.Card.Name}\", not necessarily this one. To use this exact card, tick \"This card itself\" in the card picker.");
         if (filter.Zones == Zone.None)
         {
             ctx.Effect.Error($"\"{Name}\": pick at least one place to look for cards.");
@@ -68,7 +162,16 @@ public abstract class CardGroupAction : ActionBlock
         }
         var f = ctx.Script.Filter(filter, AbleCheck(ctx));
         var n = ctx.Args.Int("count");
+        var mode = Mode(ctx);
+        var min = mode == "up_to" ? 1 : n;
         var targeting = Param("target") is not null && ctx.Args.Bool("target");
+        if (mode == "all")
+        {
+            if (!AllowsAll) { ctx.Effect.Error($"\"{Name}\" can't take \"all\" cards: pick exactly or up to a number."); return; }
+            if (targeting) { ctx.Effect.Error($"\"{Name}\": \"all\" cards aren't targeted. Turn off targeting."); return; }
+            CompileAll(ctx, filter, f);
+            return;
+        }
         var e = ctx.Effect;
         if (Category.Length > 0) e.AddCategory(Category);
         foreach (var c in ExtraCategories(filter)) e.AddCategory(c);
@@ -87,10 +190,10 @@ public abstract class CardGroupAction : ActionBlock
             }
             // With more than one target the engine never re-checks a single card, so chkc is false.
             e.SetChkc(n == 1 ? f.ChkcCheck : "false");
-            e.TargetChecks.Add($"Duel.IsExistingTarget({f.Function},tp,{f.Self},{f.Opp},{n},{f.Exclude},e,tp)");
+            e.TargetChecks.Add($"Duel.IsExistingTarget({f.Function},tp,{f.Self},{f.Opp},{min},{f.Exclude},e,tp)");
             var tg = e.NewLocal("tg");
             e.TargetLines.Add($"Duel.Hint(HINT_SELECTMSG,tp,{Hint})");
-            e.TargetLines.Add($"local {tg}=Duel.SelectTarget(tp,{f.Function},tp,{f.Self},{f.Opp},{n},{n},{f.Exclude},e,tp)");
+            e.TargetLines.Add($"local {tg}=Duel.SelectTarget(tp,{f.Function},tp,{f.Self},{f.Opp},{min},{n},{f.Exclude},e,tp)");
             if (Category.Length > 0) e.TargetLines.Add($"Duel.SetOperationInfo(0,{Category},{tg},{tg}:GetCount(),0,0)");
             body.Add($"local {g}=Duel.GetChainInfo(0,CHAININFO_TARGET_CARDS):Filter(Card.IsRelateToEffect,nil,e)");
             body.Add($"local {r}=0");
@@ -98,13 +201,13 @@ public abstract class CardGroupAction : ActionBlock
         }
         else
         {
-            e.TargetChecks.Add($"Duel.IsExistingMatchingCard({f.Function},tp,{f.Self},{f.Opp},{n},{f.Exclude},e,tp)");
-            if (Category.Length > 0) e.TargetLines.Add($"Duel.SetOperationInfo(0,{Category},nil,{n},{f.InfoPlayer},{f.InfoLocation})");
+            e.TargetChecks.Add($"Duel.IsExistingMatchingCard({f.Function},tp,{f.Self},{f.Opp},{min},{f.Exclude},e,tp)");
+            if (Category.Length > 0) e.TargetLines.Add($"Duel.SetOperationInfo(0,{Category},nil,{min},{f.InfoPlayer},{f.InfoLocation})");
             body.Add($"local {r}=0");
             if (space is not null) body.Add($"if {space} then");
             var ind = space is null ? "" : "\t";
             body.Add($"{ind}Duel.Hint(HINT_SELECTMSG,tp,{Hint})");
-            body.Add($"{ind}local {g}=Duel.SelectMatchingCard(tp,{f.ForSelection},tp,{f.Self},{f.Opp},{n},{n},{f.Exclude},e,tp)");
+            body.Add($"{ind}local {g}=Duel.SelectMatchingCard(tp,{f.ForSelection},tp,{f.Self},{f.Opp},{min},{n},{f.Exclude},e,tp)");
             body.Add($"{ind}if {g}:GetCount()>0 then");
             if ((filter.Zones & Zone.Field) != Zone.None) body.Add($"{ind}\tDuel.HintSelection({g})");
             body.Add($"{ind}\t{r}={Apply(g, ctx)}");
@@ -123,6 +226,7 @@ public abstract class CardGroupAction : ActionBlock
 
 public sealed class AddToHandAction : CardGroupAction
 {
+    protected override bool AllowsThisCard => true;
     protected override string TargetedWording => "add {0} to your hand";
     public override string Id => "do.add_to_hand";
     public override string Name => "Add cards to your hand (search)";
@@ -139,6 +243,8 @@ public sealed class AddToHandAction : CardGroupAction
 
 public sealed class SpecialSummonAction : CardGroupAction
 {
+    protected override bool AllowsThisCard => true;
+    protected override bool AllowsAll => false;
     protected override string TargetedWording => "Special Summon {0}";
     public override string Id => "do.special_summon";
     public override string Name => "Special Summon monsters";
@@ -198,6 +304,7 @@ public sealed class SpecialSummonAction : CardGroupAction
 
 public sealed class DestroyAction : CardGroupAction
 {
+    protected override bool AllowsThisCard => true;
     protected override string TargetedWording => "destroy {0}";
     public override string Id => "do.destroy";
     public override string Name => "Destroy cards";
@@ -210,6 +317,7 @@ public sealed class DestroyAction : CardGroupAction
 
 public sealed class BanishAction : CardGroupAction
 {
+    protected override bool AllowsThisCard => true;
     protected override string TargetedWording => "banish {0}";
     public override string Id => "do.banish";
     public override string Name => "Banish cards";
@@ -223,6 +331,7 @@ public sealed class BanishAction : CardGroupAction
 
 public sealed class SendToGraveAction : CardGroupAction
 {
+    protected override bool AllowsThisCard => true;
     protected override string TargetedWording => "send {0} to the GY";
     public override string Id => "do.send_to_gy";
     public override string Name => "Send cards to the GY";
@@ -236,6 +345,7 @@ public sealed class SendToGraveAction : CardGroupAction
 
 public sealed class ReturnToHandAction : CardGroupAction
 {
+    protected override bool AllowsThisCard => true;
     protected override string TargetedWording => "return {0} to the hand";
     public override string Id => "do.return_to_hand";
     public override string Name => "Return cards to the hand (bounce)";
@@ -249,6 +359,7 @@ public sealed class ReturnToHandAction : CardGroupAction
 
 public sealed class ShuffleIntoDeckAction : CardGroupAction
 {
+    protected override bool AllowsThisCard => true;
     protected override string TargetedWording => "shuffle {0} into the Deck";
     public override string Id => "do.shuffle_into_deck";
     public override string Name => "Shuffle cards into the Deck";
@@ -270,24 +381,27 @@ public sealed class DrawAction : ActionBlock
     [
         ParamSpec.Choice("who", "Who", new("you", "You"), new("opponent", "Your opponent")),
         ParamSpec.Int("count", "How many", 1, 1, 10),
+        PerParam,
     ];
 
     public override string Describe(BlockArgs args)
     {
         var n = args.Int("count");
         var cards = n == 1 ? "1 card" : $"{n} cards";
-        return args.Choice("who") == "you" ? $"draw {cards}" : $"your opponent draws {cards}";
+        var text = args.Choice("who") == "you" ? $"draw {cards}" : $"your opponent draws {cards}";
+        return args.Describe("per") is { Length: > 0 } per ? $"{text} {per}" : text;
     }
 
     public override void Compile(BlockContext ctx)
     {
         var p = PlayerOf(ctx.Args.Choice("who"));
         var n = ctx.Args.Int("count");
+        var per = Multiplier(ctx);
         var r = ctx.Effect.NewLocal("r");
         ctx.Effect.AddCategory("CATEGORY_DRAW");
         ctx.Effect.TargetChecks.Add($"Duel.IsPlayerCanDraw({p},{n})");
         ctx.Effect.TargetLines.Add($"Duel.SetOperationInfo(0,CATEGORY_DRAW,nil,0,{p},{n})");
-        ctx.Effect.AddStep([$"local {r}=Duel.Draw({p},{n},REASON_EFFECT)"], r, ctx.Link);
+        ctx.Effect.AddStep([$"local {r}=Duel.Draw({p},{n}{per},REASON_EFFECT)"], r, ctx.Link);
     }
 }
 
@@ -301,16 +415,24 @@ public sealed class DamageAction : ActionBlock
     [
         ParamSpec.Int("amount", "Amount", 500, 1, 99999),
         ParamSpec.Choice("who", "Who", new("opponent", "your opponent"), new("you", "you")),
+        PerParam,
     ];
+
+    public override string Describe(BlockArgs args)
+    {
+        var text = $"inflict {args.Int("amount")} damage to {args.Describe("who")}";
+        return args.Describe("per") is { Length: > 0 } per ? $"{text} {per}" : text;
+    }
 
     public override void Compile(BlockContext ctx)
     {
         var p = PlayerOf(ctx.Args.Choice("who"));
         var n = ctx.Args.Int("amount");
+        var per = Multiplier(ctx);
         var r = ctx.Effect.NewLocal("r");
         ctx.Effect.AddCategory("CATEGORY_DAMAGE");
-        ctx.Effect.TargetLines.Add($"Duel.SetOperationInfo(0,CATEGORY_DAMAGE,nil,0,{p},{n})");
-        ctx.Effect.AddStep([$"local {r}=Duel.Damage({p},{n},REASON_EFFECT)"], r, ctx.Link);
+        ctx.Effect.TargetLines.Add($"Duel.SetOperationInfo(0,CATEGORY_DAMAGE,nil,0,{p},{n}{Multiplier(ctx, inTarget: true)})");
+        ctx.Effect.AddStep([$"local {r}=Duel.Damage({p},{n}{per},REASON_EFFECT)"], r, ctx.Link);
     }
 }
 
@@ -324,19 +446,24 @@ public sealed class GainLifePointsAction : ActionBlock
     [
         ParamSpec.Choice("who", "Who", new("you", "You"), new("opponent", "Your opponent")),
         ParamSpec.Int("amount", "Amount", 1000, 1, 99999),
+        PerParam,
     ];
 
-    public override string Describe(BlockArgs args) =>
-        args.Choice("who") == "you" ? $"gain {args.Int("amount")} LP" : $"your opponent gains {args.Int("amount")} LP";
+    public override string Describe(BlockArgs args)
+    {
+        var text = args.Choice("who") == "you" ? $"gain {args.Int("amount")} LP" : $"your opponent gains {args.Int("amount")} LP";
+        return args.Describe("per") is { Length: > 0 } per ? $"{text} {per}" : text;
+    }
 
     public override void Compile(BlockContext ctx)
     {
         var p = PlayerOf(ctx.Args.Choice("who"));
         var n = ctx.Args.Int("amount");
+        var per = Multiplier(ctx);
         var r = ctx.Effect.NewLocal("r");
         ctx.Effect.AddCategory("CATEGORY_RECOVER");
-        ctx.Effect.TargetLines.Add($"Duel.SetOperationInfo(0,CATEGORY_RECOVER,nil,0,{p},{n})");
-        ctx.Effect.AddStep([$"local {r}=Duel.Recover({p},{n},REASON_EFFECT)"], r, ctx.Link);
+        ctx.Effect.TargetLines.Add($"Duel.SetOperationInfo(0,CATEGORY_RECOVER,nil,0,{p},{n}{Multiplier(ctx, inTarget: true)})");
+        ctx.Effect.AddStep([$"local {r}=Duel.Recover({p},{n}{per},REASON_EFFECT)"], r, ctx.Link);
     }
 }
 
@@ -404,11 +531,20 @@ public sealed class ChangeSelfStatsAction : ActionBlock
         ParamSpec.Int("amount", "Amount", 500, 1, 99999),
         ParamSpec.Choice("stat", "Stat", new("atk", "ATK"), new("def", "DEF"), new("both", "ATK/DEF")),
         ParamSpec.Choice("duration", "Until", new("turn", "until the end of this turn"), new("always", "", "while face-up")),
+        PerParam,
     ];
+
+    public override string Describe(BlockArgs args)
+    {
+        var text = $"this card {args.Describe("dir")} {args.Int("amount")} {args.Describe("stat")}";
+        if (args.Describe("per") is { Length: > 0 } per) text += " " + per;
+        return args.Describe("duration") is { Length: > 0 } d ? $"{text} {d}" : text;
+    }
 
     public override void Compile(BlockContext ctx)
     {
         Zones.RequireMonster(ctx, Name);
+        var per = Multiplier(ctx);
         var amount = ctx.Args.Int("amount") * (ctx.Args.Choice("dir") == "lose" ? -1 : 1);
         var reset = ctx.Args.Choice("duration") == "turn"
             ? "RESET_EVENT+RESETS_STANDARD+RESET_DISABLE+RESET_PHASE+PHASE_END"
@@ -428,7 +564,7 @@ public sealed class ChangeSelfStatsAction : ActionBlock
             body.Add($"\tlocal {v}=Effect.CreateEffect(c)");
             body.Add($"\t{v}:SetType(EFFECT_TYPE_SINGLE)");
             body.Add($"\t{v}:SetCode({code})");
-            body.Add($"\t{v}:SetValue({amount})");
+            body.Add($"\t{v}:SetValue({amount}{per})");
             body.Add($"\t{v}:SetReset({reset})");
             body.Add($"\tc:RegisterEffect({v})");
         }

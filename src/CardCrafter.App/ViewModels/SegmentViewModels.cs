@@ -72,8 +72,15 @@ public sealed class BoolSegmentViewModel(ParamSpec spec, BlockInstance inst, Act
 
 public sealed class CardsSegmentViewModel : SegmentViewModel
 {
+    private readonly BlockInstance _inst;
+    private readonly ParamSpec _spec;
+    private readonly Func<CardPack> _pack;
+
     public CardsSegmentViewModel(ParamSpec spec, BlockInstance inst, Func<CardPack> pack, Action changed)
     {
+        _inst = inst;
+        _spec = spec;
+        _pack = pack;
         Label = spec.Label;
         if (!inst.Filters.TryGetValue(spec.Key, out var filter))
             inst.Filters[spec.Key] = filter = spec.DefaultFilter?.Invoke() ?? new CardFilter();
@@ -81,10 +88,24 @@ public sealed class CardsSegmentViewModel : SegmentViewModel
         {
             OnPropertyChanged(nameof(Summary));
             changed();
-        });
+        }, allowThisCard: spec.AllowThisCard);
     }
 
     public string Label { get; }
     public FilterEditorViewModel Editor { get; }
-    public string Summary => Editor.Summary;
+
+    /// <summary>"cards your opponent controls" when the block takes more than one card, as the card text says it.</summary>
+    public string Summary
+    {
+        get
+        {
+            var filter = _inst.Filters[_spec.Key];
+            if (filter.ThisCard) return "this card";
+            var count = int.TryParse(_inst.Values.GetValueOrDefault("count"), out var n) ? n : 1;
+            var plural = count != 1 || _inst.Values.GetValueOrDefault("mode") == "all";
+            return Core.Text.FilterText.Describe(filter, _pack(), plural);
+        }
+    }
+
+    public void Refresh() => OnPropertyChanged(nameof(Summary));
 }

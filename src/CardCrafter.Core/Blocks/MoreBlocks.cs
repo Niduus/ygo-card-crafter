@@ -284,7 +284,7 @@ public sealed class ChangeStatsAction : CardGroupAction
         var n = args.Int("count");
         var verb = args.Choice("dir") == "gain" ? (n == 1 ? "gains" : "gain") : (n == 1 ? "loses" : "lose");
         var tail = $"{verb} {args.Int("amount")} {args.Describe("stat")} {args.Describe("duration")}".TrimEnd();
-        return $"{n} {args.Describe("cards")} {tail}";
+        return $"{n} {args.Describe("cards")} {tail}{args.ExceptText()}";
     }
 
     protected override string TargetedAction(BlockArgs args, string pronoun, bool single)
@@ -325,6 +325,8 @@ public sealed class ChangeStatsAction : CardGroupAction
 
 public sealed class SetSpellTrapAction : CardGroupAction
 {
+    protected override bool AllowsThisCard => true;
+    protected override bool AllowsAll => false;
     public override string Id => "do.set";
     public override string Name => "Set Spells/Traps";
     public override string Sentence => "Set {count} {cards} {target}";

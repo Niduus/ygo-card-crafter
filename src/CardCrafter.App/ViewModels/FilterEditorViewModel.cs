@@ -17,8 +17,9 @@ public sealed partial class FilterEditorViewModel : ObservableObject
     private readonly Action _changed;
     private readonly Func<CardPack> _pack;
 
-    public FilterEditorViewModel(CardFilter filter, Zone allowedZones, bool materialMode, Func<CardPack> pack, Action changed, bool ownerChoice = false)
+    public FilterEditorViewModel(CardFilter filter, Zone allowedZones, bool materialMode, Func<CardPack> pack, Action changed, bool ownerChoice = false, bool allowThisCard = false)
     {
+        AllowThisCard = allowThisCard;
         _f = filter;
         _pack = pack;
         _changed = changed;
@@ -35,7 +36,31 @@ public sealed partial class FilterEditorViewModel : ObservableObject
     public bool ShowWhere => !MaterialMode && (AllowedZones == Zone.None || System.Numerics.BitOperations.PopCount((uint)AllowedZones) > 1);
     public bool ShowOwner => _ownerChoice || (!MaterialMode && AllowedZones == Zone.None);
 
-    public string Summary => MaterialMode
+    /// <summary>The picker offers "This card itself" (for actions that can move, destroy or Summon this exact card).</summary>
+    public bool AllowThisCard { get; }
+
+    public bool ThisCard
+    {
+        get => _f.ThisCard;
+        set { if (_f.ThisCard == value) return; _f.ThisCard = value; OnPropertyChanged(nameof(NotThisCard)); Changed(nameof(ThisCard)); }
+    }
+    public bool NotThisCard => !_f.ThisCard;
+
+    public bool ExceptOwnName { get => _f.ExceptOwnName; set { if (_f.ExceptOwnName == value) return; _f.ExceptOwnName = value; Changed(nameof(ExceptOwnName)); } }
+
+    public string ExceptCode
+    {
+        get => _f.ExceptCode == 0 ? "" : _f.ExceptCode.ToString(CultureInfo.InvariantCulture);
+        set
+        {
+            var code = long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) ? v : 0;
+            if (code == _f.ExceptCode) return;
+            _f.ExceptCode = code;
+            Changed();
+        }
+    }
+
+    public string Summary => _f.ThisCard ? "this card" : MaterialMode
         ? FilterText.Describe(_f, _pack(), plural: true, withLocation: false)
         : FilterText.Describe(_f, _pack(), plural: false);
 

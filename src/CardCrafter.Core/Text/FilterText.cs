@@ -7,8 +7,20 @@ public static class FilterText
 {
     public static bool IsFieldOnly(CardFilter f) => f.Zones != Zone.None && (f.Zones & ~Zone.Field) == Zone.None;
 
-    public static string Describe(CardFilter f, CardPack? pack, bool plural = false, string preposition = "from", bool withLocation = true)
+    /// <summary>", except "Card Name"" for filters that leave cards out, or "".</summary>
+    public static string ExceptText(CardFilter f, CardPack? pack, string? ownName)
     {
+        var except = new List<string>();
+        if (f.ExceptOwnName) except.Add(ownName is { Length: > 0 } n ? $"\"{n}\"" : "cards with this card's name");
+        if (f.ExceptCode != 0)
+            except.Add(pack?.Cards.FirstOrDefault(c => c.Card.Id == f.ExceptCode)?.Card.Name is { Length: > 0 } en ? $"\"{en}\"" : $"passcode {f.ExceptCode}");
+        return except.Count == 0 || f.ThisCard ? "" : ", except " + string.Join(" or ", except);
+    }
+
+    /// <param name="withExcept">False when the caller puts ", except ..." at the end of its own sentence, as cards print it.</param>
+    public static string Describe(CardFilter f, CardPack? pack, bool plural = false, string preposition = "from", bool withLocation = true, string? ownName = null, bool withExcept = true)
+    {
+        if (f.ThisCard) return "this card";
         var words = new List<string>();
         if (f.ExcludeThisCard) words.Add("other");
         if (f.FaceUpOnly) words.Add("face-up");
@@ -56,7 +68,9 @@ public static class FilterText
             var where = Location(f, preposition);
             if (where.Length > 0) words.Add(where);
         }
-        return string.Join(" ", words);
+        var text = string.Join(" ", words);
+        // "1 Warrior monster from your Deck, except "Card Name"".
+        return withExcept ? text + ExceptText(f, pack, ownName) : text;
     }
 
     /// <summary>

@@ -86,6 +86,8 @@ public static class FilterCompiler
         if (KindType(f.MonsterKind) is { } kind)
             parts.Add(kind.Not ? $"not {card}:{isType}({kind.Type})" : $"{card}:{isType}({kind.Type})");
         if (f.CardCode != 0) parts.Add($"{card}:{isCode}({Lua.Num(f.CardCode)})");
+        if (f.ExceptOwnName) parts.Add($"not {card}:{isCode}(id)");
+        if (f.ExceptCode != 0) parts.Add($"not {card}:{isCode}({Lua.Num(f.ExceptCode)})");
         if (f.Archetype != 0) parts.Add($"{card}:{isSet}({Lua.Hex(f.Archetype)})");
         if (f.Race != CardRace.None) parts.Add($"{card}:{isRace}({EnumNames.LuaConstant(f.Race)})");
         if (f.Attribute != CardAttribute.None) parts.Add($"{card}:{isAttr}({EnumNames.LuaConstant(f.Attribute)})");
