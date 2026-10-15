@@ -77,6 +77,21 @@ public static class Lists
         (MonsterKind.Flip, "Flip monster"), (MonsterKind.Toon, "Toon monster"), (MonsterKind.Spirit, "Spirit monster"),
         (MonsterKind.Union, "Union monster"), (MonsterKind.Gemini, "Gemini monster"), (MonsterKind.Token, "Token"), (MonsterKind.NonToken, "non-Token"));
 
+    public static readonly IReadOnlyList<Option<FilterPosition>> Positions = Options.Of(
+        (FilterPosition.Any, "Any position"), (FilterPosition.Attack, "Attack Position"), (FilterPosition.Defense, "Defense Position"),
+        (FilterPosition.FaceUpAttack, "face-up Attack Position"), (FilterPosition.FaceUpDefense, "face-up Defense Position"),
+        (FilterPosition.FaceDownDefense, "face-down Defense Position"));
+
+    public static readonly IReadOnlyList<Option<SpellTrapKind>> SpellTrapKinds = Options.Of(
+        (SpellTrapKind.Any, "Any Spell/Trap kind"), (SpellTrapKind.Normal, "Normal"), (SpellTrapKind.Continuous, "Continuous"),
+        (SpellTrapKind.QuickPlay, "Quick-Play"), (SpellTrapKind.Field, "Field"), (SpellTrapKind.Equip, "Equip"), (SpellTrapKind.Ritual, "Ritual"),
+        (SpellTrapKind.Counter, "Counter"));
+
+    public static readonly IReadOnlyList<Option<FilterSummoned>> Summoned = Options.Of(
+        (FilterSummoned.Any, "However it was Summoned"), (FilterSummoned.Special, "Special Summoned"),
+        (FilterSummoned.FromExtra, "Special Summoned from the Extra Deck"), (FilterSummoned.Tribute, "Tribute Summoned"),
+        (FilterSummoned.ThisTurn, "Summoned this turn"));
+
     public static readonly IReadOnlyList<Option<FilterCardType>> FilterTypes = Options.Of(
         (FilterCardType.Any, "Any card"), (FilterCardType.Monster, "Monster"), (FilterCardType.Spell, "Spell"), (FilterCardType.Trap, "Trap"), (FilterCardType.SpellTrap, "Spell/Trap"));
 }

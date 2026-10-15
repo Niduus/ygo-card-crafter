@@ -322,3 +322,14 @@ public sealed class CardPresentCondition : ConditionBlock
         ctx.Effect.Conditions.Add($"{not}Duel.IsExistingMatchingCard({r.Function},tp,{self},{opp},1,{r.Exclude},e,tp)");
     }
 }
+
+/// <summary>"If this card battled this turn" (at the end of the Battle Phase, during the End Phase...).</summary>
+public sealed class BattledThisTurnCondition : ConditionBlock
+{
+    public override string Id => "if.battled_this_turn";
+    public override string Group => "This card";
+    public override string Name => "This card battled this turn";
+    public override string Sentence => "This card battled this turn";
+    public override string Describe(BlockArgs args) => "this card battled this turn";
+    public override void Compile(BlockContext ctx) => ctx.Effect.Conditions.Add("e:GetHandler():GetBattledGroupCount()>0");
+}

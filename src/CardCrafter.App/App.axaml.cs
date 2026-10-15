@@ -19,6 +19,7 @@ public partial class App : Application
         {
             var window = new MainWindow();
             var dialogs = new DialogService(window);
+            ViewModels.CodeRowViewModel.Copier = dialogs.CopyToClipboardAsync;
             var vm = new MainViewModel(dialogs);
             window.DataContext = vm;
             desktop.MainWindow = window;

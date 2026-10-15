@@ -192,6 +192,20 @@ Fusion Materials are listed one by one, each a specific card or a filter; Xyz Mo
 than their Rank; Link Monsters can require "including a ..." material. Filters can ask for Effect Monsters, Tuners,
 non-Tuners and other kinds, and several Attributes at once. Other ways to Summon a monster, like TY-PHON's, are effects.
 
+**Card filters.** Besides Type, Attribute, Level, ATK and archetype, a filter can ask for a position ("face-down
+Defense Position"), a Spell/Trap kind ("Field Spell", "Counter Trap"), how it was Summoned ("Special Summoned from the
+Extra Deck"), DEF ("with 0 ATK and 0 DEF"), two archetypes or several names (""Dark Magician" or "Dark Magician
+Girl""), cards that mention a card, and cards in the hand that aren't revealed yet.
+
+**Codes.** The Card tab and the card browser list the card's passcode, card type, Type, Attribute and every archetype
+code (with its name), each with a **Copy** button, plus **Copy all codes**.
+
+**Strings (str1–str16).** Like DataEditorX's string section, the Card tab's **Strings** section shows what the database
+gets for each `aux.Stringid`: each effect's own text, then the options of "Activate 1 of these effects". Type over any
+of them; **Reset** goes back to the effect's text. The game shows these in its list of effects to activate, "you can"
+questions and option choices. When your effect is the *only* one that can be activated, the engine itself asks "From
+[Hand], activate [card]'s effect?" without any effect text (official cards too), so that prompt shows the location.
+
 **Summoning rules.** "Cannot be Normal Summoned" is a rule about the card, not an ability, so it lives in the Card tab's
 **Summoning** choice:
 

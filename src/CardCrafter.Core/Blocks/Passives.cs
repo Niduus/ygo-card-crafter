@@ -112,13 +112,22 @@ public sealed class IndestructiblePassive : PassiveBlock
             new("battle", "by battle"),
             new("effect", "by card effects"),
             new("both", "by battle or card effects"),
-            new("opponent_effect", "by your opponent's card effects")),
+            new("opponent_effect", "by your opponent's card effects"),
+            new("spelltrap_effect", "by Spell/Trap effects"),
+            new("monster_effect", "by monster effects")),
     ];
 
     public override void Compile(BlockContext ctx)
     {
         var range = RangeOf(ctx);
         var by = ctx.Args.Choice("by");
+        if (by is "spelltrap_effect" or "monster_effect")
+        {
+            var test = by == "monster_effect" ? "re:IsActiveType(TYPE_MONSTER)" : "re:IsActiveType(TYPE_SPELL+TYPE_TRAP)";
+            var fn = ctx.Script.AddFunction("indval", "e,re,rp", [$"return {test}"]);
+            ctx.Effect.AddPassive(v => SelfEffect(v, range, "EFFECT_INDESTRUCTABLE_EFFECT", fn));
+            return;
+        }
         if (by is "battle" or "both")
         {
             Zones.RequireMonster(ctx, "Cannot be destroyed by battle");
@@ -372,6 +381,117 @@ public sealed class NameBecomesPassive : PassiveBlock
             $"{v}:SetCode(EFFECT_CHANGE_CODE)",
             $"{v}:SetRange({loc})",
             $"{v}:SetValue({Lua.Num(code)})",
+        ]);
+    }
+}
+
+/// <summary>"Cannot be used as Synchro Material, except for the Synchro Summon of a WATER monster."</summary>
+public sealed class MaterialBanPassive : PassiveBlock
+{
+    public const string BlockId = "passive.material_ban";
+    public override string Id => BlockId;
+    public override string Group => "This card";
+    public override string Name => "This card cannot be used as Fusion/Synchro/Xyz/Link Material";
+    public override string Sentence => "This card cannot be used as {kind} Material, except for {cards}";
+    public override string Help => "Leave the exception as plain monsters for none.";
+    public override IReadOnlyList<ParamSpec> Params { get; } =
+    [
+        ParamSpec.Choice("kind", "Material for", new("synchro", "Synchro"), new("xyz", "Xyz"), new("link", "Link"), new("fusion", "Fusion")),
+        ParamSpec.Cards("cards", "Except for the Summon of (plain monsters for none)", () => new CardFilter { CardType = FilterCardType.Monster }, Zone.MonsterZone),
+    ];
+
+    private static bool HasExcept(CardFilter f) => FilterCompiler.Conditions(f).Any(c => c != "c:IsType(TYPE_MONSTER)");
+
+    public override string Describe(BlockArgs args)
+    {
+        var kind = args.Describe("kind");
+        var f = args.Cards("cards");
+        if (!HasExcept(f)) return $"this card cannot be used as {kind} Material";
+        var noun = Text.FilterText.Describe(f, args.Pack, withLocation: false);
+        return $"this card cannot be used as {kind} Material, except for the {kind} Summon of {(noun.StartsWith('"') ? "" : "AEIOUaeiou".Contains(noun[0]) ? "an " : "a ")}{noun}";
+    }
+
+    public override void Compile(BlockContext ctx)
+    {
+        Zones.RequireMonster(ctx, Name);
+        var code = ctx.Args.Choice("kind") switch
+        {
+            "xyz" => "EFFECT_CANNOT_BE_XYZ_MATERIAL",
+            "link" => "EFFECT_CANNOT_BE_LINK_MATERIAL",
+            "fusion" => "EFFECT_CANNOT_BE_FUSION_MATERIAL",
+            _ => "EFFECT_CANNOT_BE_SYNCHRO_MATERIAL",
+        };
+        var f = ctx.Args.Cards("cards");
+        var value = "1";
+        if (HasExcept(f))
+        {
+            var mf = ctx.Script.MaterialFilter(f, "matlimit");
+            value = ctx.Script.AddFunction("matval", "e,c", ["if not c then return false end", $"return not {mf}(c)"]);
+        }
+        ctx.Effect.AddPassive(v =>
+        [
+            $"{v}:SetType(EFFECT_TYPE_SINGLE)",
+            $"{v}:SetProperty(EFFECT_FLAG_CANNOT_DISABLE+EFFECT_FLAG_UNCOPYABLE)",
+            $"{v}:SetCode({code})",
+            $"{v}:SetValue({value})",
+        ]);
+    }
+}
+
+/// <summary>"If you control no other "Gravekeeper's" monsters, destroy this card": a lasting rule with IF blocks for when.</summary>
+public sealed class SelfDestroyPassive : PassiveBlock
+{
+    public const string BlockId = "passive.self_destroy";
+    public override string Id => BlockId;
+    public override string Group => "This card";
+    public override string Name => "Destroy this card (when its IF blocks hold)";
+    public override string Sentence => "Destroy this card";
+    public override string Help => "Add IF blocks for when, like \"you control no other Dragon monsters\". It isn't an effect that activates.";
+
+    public override void Compile(BlockContext ctx)
+    {
+        if (ctx.Effect.Conditions.Count == 0) ctx.Effect.Warn("\"Destroy this card\" with no IF blocks destroys it as soon as it is on the field.");
+        var range = RangeOf(ctx);
+        ctx.Effect.AddPassive(v =>
+        [
+            $"{v}:SetType(EFFECT_TYPE_SINGLE)",
+            $"{v}:SetProperty(EFFECT_FLAG_SINGLE_RANGE)",
+            $"{v}:SetRange({range})",
+            $"{v}:SetCode(EFFECT_SELF_DESTROY)",
+        ]);
+    }
+}
+
+/// <summary>"You can Normal Summon 1 Fiend monster in addition to your Normal Summon/Set": a lasting rule while this card is face-up.</summary>
+public sealed class ExtraSummonPassive : PassiveBlock
+{
+    public const string BlockId = "passive.extra_summon";
+    public override string Id => BlockId;
+    public override string Group => "Turn";
+    public override string Name => "You can Normal Summon an extra monster (while face-up)";
+    public override string Sentence => "You can Normal Summon 1 {cards} in addition to your Normal Summon/Set";
+    public override IReadOnlyList<ParamSpec> Params { get; } =
+    [
+        ParamSpec.Cards("cards", "Which monsters", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Hand, CardType = FilterCardType.Monster }, Zone.Hand),
+    ];
+
+    public override string Describe(BlockArgs args) =>
+        $"you can Normal Summon 1 {Text.FilterText.Describe(args.Cards("cards"), args.Pack, withLocation: false)} in addition to your Normal Summon/Set";
+
+    public override void Compile(BlockContext ctx)
+    {
+        var filter = ctx.Args.Cards("cards").Clone();
+        filter.Zones = Zone.Hand;
+        var f = ctx.Script.Filter(filter);
+        var target = ctx.Script.AddFunction("exstg", "e,c", [$"return {f.Function}(c,e,e:GetHandlerPlayer())"]);
+        var range = RangeOf(ctx);
+        ctx.Effect.AddPassive(v =>
+        [
+            $"{v}:SetType(EFFECT_TYPE_FIELD)",
+            $"{v}:SetCode(EFFECT_EXTRA_SUMMON_COUNT)",
+            $"{v}:SetRange({range})",
+            $"{v}:SetTargetRange(LOCATION_HAND+LOCATION_MZONE,0)",
+            $"{v}:SetTarget({target})",
         ]);
     }
 }

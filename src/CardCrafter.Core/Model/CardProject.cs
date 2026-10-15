@@ -56,6 +56,11 @@ public sealed class CardProject
     /// Generated scripts use their effect labels instead.
     /// </summary>
     public List<string> ScriptStrings { get; set; } = [];
+    /// <summary>
+    /// str1..str16 typed over the generated ones, like DataEditorX's string section. An empty entry keeps the
+    /// generated string (the effect's own text).
+    /// </summary>
+    public List<string> StringOverrides { get; set; } = [];
 
     /// <summary>Path to the card's artwork image, relative to the pack file or absolute.</summary>
     public string? ArtworkPath { get; set; }

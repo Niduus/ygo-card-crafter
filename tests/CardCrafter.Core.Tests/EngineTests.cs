@@ -478,7 +478,8 @@ public class EngineTests
         var discardSelf = inst.Values.GetValueOrDefault("how") == "discard" || blockId == "cost.reveal_self";
         var card = new CardProject
         {
-            Card = new CardData { Id = 100000400, Name = "Payer", Level = 4, Atk = 1000 },
+            // Only Extra Deck monsters can return to the Extra Deck.
+            Card = new CardData { Id = 100000400, Name = "Payer", Level = 4, Atk = 1000, Frame = inst.Values.GetValueOrDefault("how") == "extra" ? MonsterFrame.Fusion : MonsterFrame.Effect },
             Effects =
             [
                 new EffectEvent

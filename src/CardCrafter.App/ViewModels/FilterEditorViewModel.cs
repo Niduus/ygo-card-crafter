@@ -120,6 +120,66 @@ public sealed partial class FilterEditorViewModel : ObservableObject
         set { if (value is null || Equals(_f.Race, value.Value)) return; _f.Race = value.Value; Changed(); }
     }
 
+    public IReadOnlyList<Option<FilterPosition>> PositionOptions => Lists.Positions;
+    public Option<FilterPosition> Position
+    {
+        get => Options.Find(Lists.Positions, _f.Position);
+        set { if (value is null || Equals(_f.Position, value.Value)) return; _f.Position = value.Value; Changed(); }
+    }
+
+    public IReadOnlyList<Option<SpellTrapKind>> SpellTrapKindOptions => Lists.SpellTrapKinds;
+    public Option<SpellTrapKind> SpellTrapKind
+    {
+        get => Options.Find(Lists.SpellTrapKinds, _f.SpellTrapKind);
+        set { if (value is null || Equals(_f.SpellTrapKind, value.Value)) return; _f.SpellTrapKind = value.Value; Changed(); }
+    }
+
+    public IReadOnlyList<Option<FilterSummoned>> SummonedOptions => Lists.Summoned;
+    public Option<FilterSummoned> Summoned
+    {
+        get => Options.Find(Lists.Summoned, _f.Summoned);
+        set { if (value is null || Equals(_f.Summoned, value.Value)) return; _f.Summoned = value.Value; Changed(); }
+    }
+
+    public decimal? DefMin { get => _f.DefMin; set { if (_f.DefMin == (int?)value) return; _f.DefMin = (int?)value; Changed(); } }
+    public decimal? DefMax { get => _f.DefMax; set { if (_f.DefMax == (int?)value) return; _f.DefMax = (int?)value; Changed(); } }
+    public bool NotRevealed { get => _f.NotRevealed; set { if (_f.NotRevealed == value) return; _f.NotRevealed = value; Changed(); } }
+    public bool MentionsOrIs { get => _f.MentionsOrIs; set { if (_f.MentionsOrIs == value) return; _f.MentionsOrIs = value; Changed(); } }
+
+    private string? _typedAlt, _typedMentions;
+
+    /// <summary>"or also named ...": a second name the card may have instead.</summary>
+    public string AltCode
+    {
+        get => _typedAlt ?? (_f.AltCodes.Length == 0 ? "" : NameOf(_f.AltCodes[0]));
+        set
+        {
+            var code = ParseCard(value);
+            _typedAlt = code < 0 ? value : null;
+            if (code < 0) return;
+            var next = code == 0 ? _f.AltCodes.Skip(1).ToArray() : [code, .. _f.AltCodes.Skip(1)];
+            if (next.SequenceEqual(_f.AltCodes)) return;
+            _f.AltCodes = next;
+            Changed();
+        }
+    }
+
+    /// <summary>"a card that mentions ...".</summary>
+    public string MentionsCode
+    {
+        get => _typedMentions ?? (_f.MentionsCode == 0 ? "" : NameOf(_f.MentionsCode));
+        set
+        {
+            var code = ParseCard(value);
+            _typedMentions = code < 0 ? value : null;
+            if (code < 0 || code == _f.MentionsCode) return;
+            _f.MentionsCode = code;
+            Changed();
+        }
+    }
+
+    private string NameOf(long code) => CardNames.Find(code, _pack()) is { } n ? Entry(n, code) : code.ToString(CultureInfo.InvariantCulture);
+
     public IReadOnlyList<Option<MonsterKind>> MonsterKindOptions => Lists.MonsterKinds;
     public Option<MonsterKind> MonsterKind
     {

@@ -50,6 +50,7 @@ All of them must be true for the effect to be used.
 | The Battle Phase is still ahead<br><sub>Only activates before the Battle Phase, when there will be one. Card text doesn't say this, so it adds no words.</sub> | You can still enter the Battle Phase this turn |  |
 | Your LP compared to your opponent's | You have {cmp} LP than your opponent | **Compare**: less, more |
 | A certain card is on the field (or somewhere)<br><sub>Pick the card by name in the card picker. For example: if "Dark Magician" is on the field, while you control "Blue-Eyes White Dragon", or while "Umi" is in a Field Zone. Combine it with a WHEN like "(Quick Effect) at any time" to Special Summon or activate only while that card is there.</sub> | {card} {is} {where} | **Which card**: card picker; **Is or is not**: is, is not; **Where**: on the field, you control it, your opponent controls it, in a Field Zone (the face-up Field Spell), in a Monster Zone, in your GY, in either GY, banished (by either player), in your hand |
+| This card battled this turn | This card battled this turn |  |
 | Your opponent activated something this turn | Your opponent has activated {what} this turn | **What**: a monster effect in the hand or GY, a monster effect, a Spell/Trap Card, a card or effect |
 | This card is in a certain zone | This card is in {zone} | **Zone**: the center Main Monster Zone, a Main Monster Zone, an Extra Monster Zone, a Main Monster Zone other than the center one |
 
@@ -59,9 +60,10 @@ Paid before the effect resolves. Lasting effects have no cost.
 
 | Block | Reads as | Options |
 |---|---|---|
+| Reveal cards in your hand | Reveal {count} {cards} in your hand | **How many**: 1–5; **Which cards**: card picker |
 | Discard cards | Discard {count} {cards} | **How many**: 1–10; **Which cards**: card picker |
 | Pay Life Points | Pay {amount} LP | **Amount**: 1–99999 |
-| Tribute, banish, send or discard this card | {how} this card | **How**: Tribute, Banish, Send to the GY, Discard |
+| Tribute, banish, send or discard this card | {how} this card | **How**: Tribute, Banish, Send to the GY, Discard, Shuffle into the Deck:, Return to the Extra Deck:, Return to the hand: |
 | Tribute monsters | Tribute {count} {cards} {from} | **How many**: 1–5; **Which monsters**: card picker; **From**: you control, from your hand or field |
 | Banish, send or return cards (cost) | {how} {count} {cards} | **How**: Banish, Send to the GY:, Shuffle into the Deck:, Place on the bottom of the Deck:, Return to the hand:, Return to the Extra Deck:; **How many**: 1–10; **Exactly / up to**: exactly, up to; **Which cards**: card picker |
 | Detach Xyz Materials | Detach {count} material(s) from this card | **How many**: 1–10 |
@@ -132,9 +134,12 @@ Used with the "While this card is face-up" trigger. They apply all the time inst
 | Once per turn, it is not destroyed | Once per turn, if {cards} would be destroyed {by}, it is not destroyed | **Which monsters**: card picker; **By**: by battle, by card effect, by battle or card effect, by an opponent's card effect |
 | You can Normal Summon this card without Tributing<br><sub>For Level 5 or higher monsters. Add IF blocks for when it is allowed, like "your opponent controls a monster" and "you control no monsters".</sub> | You can Normal Summon this card without Tributing |  |
 | This card's name becomes another card's name<br><sub>Pick the card by name. Effects that look for that name count this card too.</sub> | This card's name becomes {card} while {where} | **Which card's name**: card picker; **While**: on the field, on the field or in the GY, in the GY, in the hand or on the field, in the Field Zone |
+| This card cannot be used as Fusion/Synchro/Xyz/Link Material<br><sub>Leave the exception as plain monsters for none.</sub> | This card cannot be used as {kind} Material, except for {cards} | **Material for**: Synchro, Xyz, Link, Fusion; **Except for the Summon of (plain monsters for none)**: card picker |
+| Destroy this card (when its IF blocks hold)<br><sub>Add IF blocks for when, like "you control no other Dragon monsters". It isn't an effect that activates.</sub> | Destroy this card |  |
+| You can Normal Summon an extra monster (while face-up) | You can Normal Summon 1 {cards} in addition to your Normal Summon/Set | **Which monsters**: card picker |
 | Monsters gain or lose ATK/DEF<br><sub>For example: Dragon monsters you control gain 500 ATK.</sub> | {cards} {dir} {amount} {stat} | **Which monsters**: card picker; **Gain/lose**: gain, lose; **Amount**: 1–99999; **Stat**: ATK, DEF, ATK/DEF |
 | This card gains or loses ATK/DEF | This card {dir} {amount} {stat} | **Gains/loses**: gains, loses; **Amount**: 1–99999; **Stat**: ATK, DEF, ATK/DEF |
-| This card can't be destroyed | This card cannot be destroyed {by} | **By**: by battle, by card effects, by battle or card effects, by your opponent's card effects |
+| This card can't be destroyed | This card cannot be destroyed {by} | **By**: by battle, by card effects, by battle or card effects, by your opponent's card effects, by Spell/Trap effects, by monster effects |
 | Your opponent can't target this card | Your opponent cannot target this card with card effects |  |
 | Battle ability (direct attack, piercing, extra attack) | This card {ability} | **Ability**: can attack directly, inflicts piercing battle damage, can make a second attack during each Battle Phase |
 | Monsters can't be destroyed<br><sub>For example: monsters this card points to cannot be destroyed by battle.</sub> | {cards} cannot be destroyed {by} | **Which monsters**: card picker; **By**: by battle, by card effects, by battle or card effects, by your opponent's card effects |

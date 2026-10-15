@@ -61,7 +61,10 @@ public sealed class SelfCost : CostBlock
             new("tribute", "Tribute"),
             new("banish", "Banish"),
             new("grave", "Send to the GY"),
-            new("discard", "Discard")),
+            new("discard", "Discard"),
+            new("deck", "Shuffle into the Deck:"),
+            new("extra", "Return to the Extra Deck:"),
+            new("hand", "Return to the hand:")),
     ];
 
     /// <summary>"banish this card from your GY", "send this card from your hand to the GY", from the WHEN block's zone.</summary>
@@ -72,6 +75,9 @@ public sealed class SelfCost : CostBlock
         {
             "grave" => from is null || args.TriggerZone == "graveyard" ? "send this card to the GY" : $"send this card {from} to the GY",
             "banish" => from is null ? "banish this card" : $"banish this card {from}",
+            "deck" => "shuffle this card into the Deck",
+            "extra" => "return this card to the Extra Deck",
+            "hand" => "return this card to the hand",
             _ => $"{args.Describe("how").ToLowerInvariant()} this card",
         };
     }
@@ -83,8 +89,13 @@ public sealed class SelfCost : CostBlock
             "banish" => ("e:GetHandler():IsAbleToRemoveAsCost()", "Duel.Remove(e:GetHandler(),POS_FACEUP,REASON_COST)"),
             "grave" => ("e:GetHandler():IsAbleToGraveAsCost()", "Duel.SendtoGrave(e:GetHandler(),REASON_COST)"),
             "discard" => ("e:GetHandler():IsDiscardable()", "Duel.SendtoGrave(e:GetHandler(),REASON_COST+REASON_DISCARD)"),
+            "deck" => ("e:GetHandler():IsAbleToDeckAsCost()", "Duel.SendtoDeck(e:GetHandler(),nil,SEQ_DECKSHUFFLE,REASON_COST)"),
+            "extra" => ("e:GetHandler():IsAbleToExtraAsCost()", "Duel.SendtoDeck(e:GetHandler(),nil,SEQ_DECKTOP,REASON_COST)"),
+            "hand" => ("e:GetHandler():IsAbleToHandAsCost()", "Duel.SendtoHand(e:GetHandler(),nil,REASON_COST)"),
             _ => ("e:GetHandler():IsReleasable()", "Duel.Release(e:GetHandler(),REASON_COST)"),
         };
+        if (ctx.Args.Choice("how") == "extra" && !ctx.Card.IsExtraDeck)
+            ctx.Effect.Warn("Only Fusion, Synchro, Xyz and Link Monsters can return to the Extra Deck, so this cost can never be paid.");
         ctx.Effect.CostChecks.Add(check);
         ctx.Effect.CostLines.Add(line);
     }

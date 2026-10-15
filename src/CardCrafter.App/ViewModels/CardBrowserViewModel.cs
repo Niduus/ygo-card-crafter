@@ -78,8 +78,18 @@ public sealed partial class CardBrowserViewModel : ObservableObject
     partial void OnSearchWhereChanged(Option<SearchIn>? value) => _ = RunSearchAsync();
     partial void OnKindChanged(Option<CardKind?>? value) => _ = RunSearchAsync();
     partial void OnQueryChanged(string value) => _ = RunSearchAsync(debounce: true);
+    /// <summary>The selected card's passcode, Type, Attribute and archetype codes, each copyable.</summary>
+    public IReadOnlyList<CodeRowViewModel> Codes => Selected is { } s ? CodeRowViewModel.Rows(CardCodes.Of(s.Data)) : [];
+
+    [RelayCommand]
+    private async Task CopyAllCodes()
+    {
+        if (CodeRowViewModel.Copier is { } copy && Codes.Count > 0) await copy(CodeRowViewModel.AllText(Codes));
+    }
+
     partial void OnSelectedChanged(LibraryCard? value)
     {
+        OnPropertyChanged(nameof(Codes));
         OnPropertyChanged(nameof(HasSelection));
         LoadScript();
     }

@@ -79,6 +79,53 @@ public sealed partial class CardViewModel : ObservableObject
         _ => $"{Options.Find(Lists.TrapKinds, C.TrapKind).Label} Trap",
     };
 
+    /// <summary>The card's passcode, Type, Attribute and archetype codes, each copyable.</summary>
+    [ObservableProperty] private IReadOnlyList<CodeRowViewModel> _codes = [];
+
+    [RelayCommand]
+    private async Task CopyAllCodes()
+    {
+        if (CodeRowViewModel.Copier is { } copy && Codes.Count > 0) await copy(CodeRowViewModel.AllText(Codes));
+    }
+
+    /// <summary>The database's str1..str16 as the game will get them, editable like DataEditorX's string section.</summary>
+    public ObservableCollection<StringRowViewModel> Strings { get; } = [];
+
+    private void RefreshStrings(CompileResult result, CardPack pack)
+    {
+        List<(string Use, string Generated, string Text)> rows;
+        if (Project.UseCustomLua)
+        {
+            // A hand-written script: the strings are the card's own, as many as it uses (at least one).
+            var used = System.Text.RegularExpressions.Regex.Matches(Project.CustomLua, @"aux\.Stringid\(\s*(?:id|\d+)\s*,\s*(\d+)\s*\)")
+                .Select(m => int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture) + 1).DefaultIfEmpty(0).Max();
+            var count = Math.Clamp(Math.Max(Math.Max(used, Project.ScriptStrings.Count), 1), 1, 16);
+            rows = Enumerable.Range(0, count).Select(i => ("Used by the script", "", i < Project.ScriptStrings.Count ? Project.ScriptStrings[i] : "")).ToList();
+        }
+        else
+        {
+            rows = ScriptCompiler.StringSlots(Project, pack).Select(s => (s.Use, s.Generated, s.Text)).ToList();
+        }
+        while (Strings.Count > rows.Count) Strings.RemoveAt(Strings.Count - 1);
+        for (int i = 0; i < rows.Count; i++)
+        {
+            if (i < Strings.Count) Strings[i].Update(rows[i].Use, rows[i].Generated, rows[i].Text);
+            else Strings.Add(new StringRowViewModel(i, rows[i].Use, rows[i].Generated, rows[i].Text, StringTyped));
+        }
+        OnPropertyChanged(nameof(StringsHeader));
+    }
+
+    public string StringsHeader => $"Strings (str1–str16): {Strings.Count} used";
+
+    private void StringTyped(int index, string text)
+    {
+        var list = Project.UseCustomLua ? Project.ScriptStrings : Project.StringOverrides;
+        while (list.Count <= index) list.Add("");
+        list[index] = text;
+        while (list.Count > 0 && list[^1].Length == 0) list.RemoveAt(list.Count - 1);
+        Changed();
+    }
+
     /// <summary>Called by every editor control when the user changes something.</summary>
     public void Changed()
     {
@@ -100,6 +147,8 @@ public sealed partial class CardViewModel : ObservableObject
             var passcode = PasscodeProblems(pack);
             all.AddRange(passcode);
             PasscodeWarning = string.Join("\n", passcode.Select(d => d.Message));
+            Codes = CodeRowViewModel.Rows(Core.Text.CardCodes.Of(Project.Card, pack));
+            RefreshStrings(result, pack);
             Diagnostics.Clear();
             foreach (var d in all.OrderByDescending(d => d.Severity))
                 Diagnostics.Add(new DiagnosticItem(d.Severity, d.ToString().Replace("[Error] ", "").Replace("[Warning] ", "").Replace("[Info] ", "")));

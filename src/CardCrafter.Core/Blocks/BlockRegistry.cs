@@ -46,6 +46,11 @@ public static class BlockRegistry
         new NotDestroyedOncePassive(),
         new NoTributeSummonPassive(),
         new NameBecomesPassive(),
+        new RevealCost(),
+        new MaterialBanPassive(),
+        new SelfDestroyPassive(),
+        new ExtraSummonPassive(),
+        new BattledThisTurnCondition(),
         new OpponentActivatedCondition(),
         new ZoneCondition(),
         // COST

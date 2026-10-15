@@ -112,3 +112,21 @@ public class SweepRound5Tests
         Assert.Contains("If this card is Special Summoned by its own effect: Draw 1 card.", EffectTextGenerator.Generate(p));
     }
 }
+
+public class CardCodesTests
+{
+    [Fact]
+    public void Codes_ListPasscodeTypeAttributeAndArchetypes()
+    {
+        var card = new CardData { Id = 46986414, Name = "Dark Magician", Level = 7, Race = CardRace.Spellcaster, Attribute = CardAttribute.Dark, Frame = MonsterFrame.Normal, Archetypes = [0x10a2, 0x13a] };
+        var pack = new CardPack { Archetypes = { new Archetype { Code = 0x10a2, Name = "Dark Magician" } } };
+        var codes = CardCodes.Of(card, pack);
+        Assert.Contains(codes, c => c is { Label: "Passcode", Value: "46986414" });
+        Assert.Contains(codes, c => c is { Label: "Type", Value: "0x2", Note: "Spellcaster" });
+        Assert.Contains(codes, c => c is { Label: "Attribute", Value: "0x20", Note: "DARK" });
+        Assert.Contains(codes, c => c is { Label: "Archetype", Value: "0x10a2", Note: "Dark Magician" });
+        Assert.Contains(codes, c => c is { Label: "Archetype", Value: "0x13a", Note: "" });
+        Assert.Contains(codes, c => c.Label == "Setcode (all)" && c.Value == "0x13a10a2");
+        Assert.Contains(codes, c => c is { Label: "Card type", Value: "0x11" });
+    }
+}

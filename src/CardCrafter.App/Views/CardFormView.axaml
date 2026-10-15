@@ -75,6 +75,46 @@
           </StackPanel>
         </Grid>
 
+        <Expander Header="Codes: passcode, Type, Attribute, archetypes" HorizontalAlignment="Stretch" Margin="0,6,0,0"
+                  ToolTip.Tip="The numbers this card is stored with, as databases and scripts use them">
+          <StackPanel Spacing="2">
+            <ItemsControl ItemsSource="{Binding Codes}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="vm:CodeRowViewModel">
+                  <Grid ColumnDefinitions="110,Auto,*,Auto" Margin="0,1">
+                    <TextBlock Text="{Binding Label}" Opacity="0.7" VerticalAlignment="Center" FontSize="12" />
+                    <SelectableTextBlock Grid.Column="1" Text="{Binding Value}" FontFamily="Cascadia Mono, Consolas, Menlo, monospace" VerticalAlignment="Center" Margin="0,0,10,0" />
+                    <TextBlock Grid.Column="2" Text="{Binding Note}" IsVisible="{Binding HasNote}" Opacity="0.7" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                    <Button Grid.Column="3" Content="{Binding CopyLabel}" Command="{Binding CopyCommand}" Padding="8,2" FontSize="12" ToolTip.Tip="Copy this code" />
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <Button Content="Copy all codes" Command="{Binding CopyAllCodesCommand}" HorizontalAlignment="Left" Padding="8,2" FontSize="12" Margin="0,2,0,0" />
+          </StackPanel>
+        </Expander>
+
+        <Expander Header="{Binding StringsHeader}" HorizontalAlignment="Stretch" Margin="0,6,0,0"
+                  ToolTip.Tip="The database's str1–str16, as DataEditorX shows them: the text the game shows for each effect when it lists effects to activate and when it asks a &quot;you can&quot; question. Each starts as the effect's own text; type to change it.">
+          <StackPanel Spacing="4">
+            <TextBlock TextWrapping="Wrap" Opacity="0.7" FontSize="12"
+                       Text="When your card's effect is the only one that can be activated, the game's engine asks &quot;activate [card] from [Hand]?&quot; without any effect text, for official cards too. These strings show up wherever the game does use the effect's description: the list of effects to activate, &quot;you can&quot; questions and option choices." />
+            <ItemsControl ItemsSource="{Binding Strings}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="vm:StringRowViewModel">
+                  <Grid ColumnDefinitions="44,*,Auto" RowDefinitions="Auto,Auto" Margin="0,2">
+                    <TextBlock Text="{Binding Label}" FontFamily="Cascadia Mono, Consolas, Menlo, monospace" VerticalAlignment="Top" Margin="0,6,0,0" ToolTip.Tip="{Binding Lua}" />
+                    <TextBox Grid.Column="1" Text="{Binding Text}" TextWrapping="Wrap" AcceptsReturn="False" Watermark="{Binding Generated}" />
+                    <Button Grid.Column="2" Content="Reset" Command="{Binding ResetCommand}" IsVisible="{Binding IsOverridden}" Padding="8,2" FontSize="12" Margin="6,0,0,0" VerticalAlignment="Top"
+                            ToolTip.Tip="Go back to the effect's own text" />
+                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Use}" Opacity="0.6" FontSize="11" />
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </Expander>
+
         <Border IsVisible="{Binding HasPasscodeWarning}" Background="#3B2F12" CornerRadius="6" Padding="10,6" Margin="0,8,0,0">
           <TextBlock Text="{Binding PasscodeWarning}" TextWrapping="Wrap" Foreground="#FCD34D" />
         </Border>

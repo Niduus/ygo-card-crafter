@@ -59,6 +59,23 @@
             <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}">
               <Run Text="Passcode " /><Run Text="{Binding Selected.Id, FallbackValue=''}" /><Run Text="  ·  " /><Run Text="{Binding Selected.Source, FallbackValue=''}" />
             </TextBlock>
+            <Expander Header="Codes: passcode, Type, Attribute, archetypes" HorizontalAlignment="Stretch" IsExpanded="True">
+              <StackPanel Spacing="2">
+                <ItemsControl ItemsSource="{Binding Codes}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="vm:CodeRowViewModel">
+                      <Grid ColumnDefinitions="110,Auto,*,Auto" Margin="0,1">
+                        <TextBlock Text="{Binding Label}" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" FontSize="12" />
+                        <SelectableTextBlock Grid.Column="1" Text="{Binding Value}" FontFamily="Cascadia Mono, Consolas, Menlo, monospace" VerticalAlignment="Center" Margin="0,0,10,0" />
+                        <TextBlock Grid.Column="2" Text="{Binding Note}" IsVisible="{Binding HasNote}" Foreground="{StaticResource MutedBrush}" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                        <Button Grid.Column="3" Content="{Binding CopyLabel}" Command="{Binding CopyCommand}" Padding="8,2" FontSize="12" ToolTip.Tip="Copy this code" />
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Button Content="Copy all codes" Command="{Binding CopyAllCodesCommand}" HorizontalAlignment="Left" Padding="8,2" FontSize="12" Margin="0,2,0,0" />
+              </StackPanel>
+            </Expander>
             <Border Background="#14151A" CornerRadius="6" Padding="12,10" Margin="0,4,0,0" BorderBrush="#2A2C36" BorderThickness="1">
               <SelectableTextBlock Text="{Binding Selected.Text, FallbackValue=''}" TextWrapping="Wrap" />
             </Border>

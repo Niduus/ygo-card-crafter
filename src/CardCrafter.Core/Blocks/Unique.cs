@@ -927,3 +927,46 @@ public sealed class FusionSummonAction : ActionBlock
         ], r, ctx.Link);
     }
 }
+
+/// <summary>"Reveal 1 EARTH monster in your hand": a cost that shows cards from the hand to the opponent.</summary>
+public sealed class RevealCost : CostBlock
+{
+    public const string BlockId = "cost.reveal";
+    public override string Id => BlockId;
+    public override string Group => "Cards";
+    public override string Name => "Reveal cards in your hand";
+    public override string Sentence => "Reveal {count} {cards} in your hand";
+    public override IReadOnlyList<ParamSpec> Params { get; } =
+    [
+        ParamSpec.Int("count", "How many", 1, 1, 5),
+        ParamSpec.Cards("cards", "Which cards", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Hand, CardType = FilterCardType.Monster }, Zone.Hand),
+    ];
+
+    private static CardFilter Hand(BlockArgs args)
+    {
+        var f = args.Cards("cards").Clone();
+        f.Owner = CardOwner.You;
+        f.Zones = Zone.Hand;
+        f.NotRevealed = true;
+        return f;
+    }
+
+    public override string Describe(BlockArgs args)
+    {
+        var f = Hand(args);
+        var n = args.Int("count");
+        return $"reveal {n} {FilterText.Describe(f, args.Pack, plural: n != 1, withLocation: false, ownName: args.CardName)} in your hand";
+    }
+
+    public override void Compile(BlockContext ctx)
+    {
+        var f = ctx.Script.Filter(Hand(ctx.Args));
+        var n = ctx.Args.Int("count");
+        var g = ctx.Effect.NewLocal("rg");
+        ctx.Effect.CostChecks.Add($"Duel.IsExistingMatchingCard({f.Function},tp,LOCATION_HAND,0,{n},{f.Exclude},e,tp)");
+        ctx.Effect.CostLines.Add("Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_CONFIRM)");
+        ctx.Effect.CostLines.Add($"local {g}=Duel.SelectMatchingCard(tp,{f.Function},tp,LOCATION_HAND,0,{n},{n},{f.Exclude},e,tp)");
+        ctx.Effect.CostLines.Add($"Duel.ConfirmCards(1-tp,{g})");
+        ctx.Effect.CostLines.Add("Duel.ShuffleHand(tp)");
+    }
+}

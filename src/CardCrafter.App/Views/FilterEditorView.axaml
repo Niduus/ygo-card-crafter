@@ -3,7 +3,8 @@
              xmlns:vm="using:CardCrafter.App.ViewModels"
              x:Class="CardCrafter.App.Views.FilterEditorView"
              x:DataType="vm:FilterEditorViewModel"
-             Width="380">
+             Width="396">
+  <ScrollViewer MaxHeight="640" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,12,0">
   <StackPanel Spacing="2">
     <TextBlock Text="Which cards?" FontWeight="SemiBold" />
     <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" Foreground="#C7D7FE" Margin="0,0,0,6" />
@@ -78,12 +79,46 @@
                          ToolTip.Tip="Type part of a card's name and pick it, or type its passcode. Names come from this pack and from YGO Omega's card databases." />
       </StackPanel>
     </Grid>
+    <Grid ColumnDefinitions="*,8,*" RowDefinitions="Auto,Auto,Auto" Margin="0,4,0,0" IsVisible="{Binding !MaterialMode}">
+      <StackPanel Grid.Row="0" Grid.Column="0">
+        <TextBlock Classes="label" Text="Battle position" />
+        <ComboBox ItemsSource="{Binding PositionOptions}" SelectedItem="{Binding Position}" HorizontalAlignment="Stretch" />
+      </StackPanel>
+      <StackPanel Grid.Row="0" Grid.Column="2">
+        <TextBlock Classes="label" Text="Spell/Trap kind" />
+        <ComboBox ItemsSource="{Binding SpellTrapKindOptions}" SelectedItem="{Binding SpellTrapKind}" HorizontalAlignment="Stretch" />
+      </StackPanel>
+      <StackPanel Grid.Row="1" Grid.Column="0">
+        <TextBlock Classes="label" Text="How it was Summoned" />
+        <ComboBox ItemsSource="{Binding SummonedOptions}" SelectedItem="{Binding Summoned}" HorizontalAlignment="Stretch" />
+      </StackPanel>
+      <StackPanel Grid.Row="1" Grid.Column="2">
+        <TextBlock Classes="label" Text="DEF from / to" />
+        <StackPanel Orientation="Horizontal" Spacing="4">
+          <NumericUpDown Value="{Binding DefMin}" Minimum="0" Maximum="99999" Increment="100" FormatString="0" Width="84" ShowButtonSpinner="False" Watermark="any" />
+          <NumericUpDown Value="{Binding DefMax}" Minimum="0" Maximum="99999" Increment="100" FormatString="0" Width="84" ShowButtonSpinner="False" Watermark="any" />
+        </StackPanel>
+      </StackPanel>
+      <StackPanel Grid.Row="2" Grid.Column="0">
+        <TextBlock Classes="label" Text="Or also named" />
+        <AutoCompleteBox Text="{Binding AltCode}" ItemsSource="{Binding CardNameChoices}" Watermark="another name" FilterMode="Contains" MinimumPrefixLength="2" MaxDropDownHeight="260" HorizontalAlignment="Stretch"
+                         ToolTip.Tip="&quot;Dark Magician&quot; or &quot;Dark Magician Girl&quot;: a second card it may be instead of the one above" />
+      </StackPanel>
+      <StackPanel Grid.Row="2" Grid.Column="2">
+        <TextBlock Classes="label" Text="Mentions this card" />
+        <AutoCompleteBox Text="{Binding MentionsCode}" ItemsSource="{Binding CardNameChoices}" Watermark="any" FilterMode="Contains" MinimumPrefixLength="2" MaxDropDownHeight="260" HorizontalAlignment="Stretch"
+                         ToolTip.Tip="A card whose text mentions this card, like &quot;a Spell that mentions &quot;Dark Magician&quot;&quot;" />
+        <CheckBox Content="or is that card" IsChecked="{Binding MentionsOrIs}" />
+      </StackPanel>
+    </Grid>
     <Grid ColumnDefinitions="Auto,8,*" Margin="0,6,0,0">
       <CheckBox Content="except this card's name" IsChecked="{Binding ExceptOwnName}" VerticalAlignment="Center"
                 ToolTip.Tip="Not a card with this card's name, e.g. &quot;1 Warrior monster from your Deck, except &quot;Card Name&quot;&quot;" />
       <TextBox Grid.Column="2" Text="{Binding ExceptCode}" Watermark="except (passcode)" />
     </Grid>
     <CheckBox Content="Face-up only" IsChecked="{Binding FaceUpOnly}" IsVisible="{Binding !MaterialMode}" Margin="0,6,0,0" />
+    <CheckBox Content="Not revealed already (cards in the hand)" IsChecked="{Binding NotRevealed}" IsVisible="{Binding !MaterialMode}"
+              ToolTip.Tip="For &quot;reveal 1 card in your hand&quot;: a card that isn't revealed already" />
     <CheckBox Content="Face-down only" IsChecked="{Binding FaceDownOnly}" IsVisible="{Binding !MaterialMode}"
               ToolTip.Tip="Only face-down cards, like &quot;face-down cards in your Spell &amp; Trap Zone&quot;" />
     <CheckBox Content="Not this card itself (&quot;other&quot;)" IsChecked="{Binding ExcludeThisCard}" IsVisible="{Binding !MaterialMode}" />
@@ -98,4 +133,5 @@
               ToolTip.Tip="Elfnote-style: the monster in the middle of the five Main Monster Zones" />
     </StackPanel>
   </StackPanel>
+  </ScrollViewer>
 </UserControl>

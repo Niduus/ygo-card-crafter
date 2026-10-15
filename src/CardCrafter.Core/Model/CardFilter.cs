@@ -18,6 +18,15 @@ public enum Zone
 
 public enum FilterCardType { Any, Monster, Spell, Trap, SpellTrap }
 
+/// <summary>A battle position a monster must be in.</summary>
+public enum FilterPosition { Any, Attack, Defense, FaceUpAttack, FaceUpDefense, FaceDownDefense }
+
+/// <summary>What kind of Spell or Trap: "Continuous Spell", "Equip Spell", "Field Spell"...</summary>
+public enum SpellTrapKind { Any, Normal, Continuous, QuickPlay, Field, Equip, Ritual, Counter }
+
+/// <summary>How a monster on the field was Summoned: "Special Summoned monster", "monster Special Summoned from the Extra Deck".</summary>
+public enum FilterSummoned { Any, Special, FromExtra, Tribute, ThisTurn }
+
 /// <summary>What kind of monster: Effect, Tuner, Fusion and so on. "Non-" kinds are the ones without it.</summary>
 public enum MonsterKind
 {
@@ -50,6 +59,19 @@ public sealed class CardFilter
     public int? LevelMax { get; set; }
     public int? AtkMin { get; set; }
     public int? AtkMax { get; set; }
+    public int? DefMin { get; set; }
+    public int? DefMax { get; set; }
+    /// <summary>More names it may have instead of <see cref="CardCode"/>: ""Dark Magician" or "Dark Magician Girl"".</summary>
+    public long[] AltCodes { get; set; } = [];
+    /// <summary>A card it mentions in its text (passcode), 0 for none: "a card that mentions "Dark Magician"".</summary>
+    public long MentionsCode { get; set; }
+    /// <summary>With <see cref="MentionsCode"/>: that card itself also counts ("X", or a card that mentions it).</summary>
+    public bool MentionsOrIs { get; set; }
+    public FilterPosition Position { get; set; }
+    public SpellTrapKind SpellTrapKind { get; set; }
+    public FilterSummoned Summoned { get; set; }
+    /// <summary>Only cards in the hand that aren't revealed already: "reveal 1 card in your hand".</summary>
+    public bool NotRevealed { get; set; }
     public bool FaceUpOnly { get; set; }
     /// <summary>Only face-down cards: "Face-down cards in your Spell & Trap Zone".</summary>
     public bool FaceDownOnly { get; set; }
@@ -65,7 +87,12 @@ public sealed class CardFilter
     /// <summary>Only the monster in the center Main Monster Zone (Elfnote).</summary>
     public bool CenterZone { get; set; }
 
-    public CardFilter Clone() => (CardFilter)MemberwiseClone();
+    public CardFilter Clone()
+    {
+        var copy = (CardFilter)MemberwiseClone();
+        copy.AltCodes = [.. AltCodes];
+        return copy;
+    }
 
     public static CardFilter OpponentField(FilterCardType type = FilterCardType.Any) =>
         new() { Owner = CardOwner.Opponent, Zones = Zone.Field, CardType = type };

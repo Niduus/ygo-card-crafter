@@ -12,6 +12,13 @@ public sealed class CompileResult
     public bool HasErrors => Diagnostics.Any(d => d.Severity == Severity.Error);
 }
 
+/// <summary>One of the database's str1..str16: what uses it, the text it gets, and the generated text it replaces.</summary>
+public sealed record StringSlot(string Use, string Generated)
+{
+    public string Text { get; init; } = Generated;
+    public bool Overridden { get; init; }
+}
+
 /// <summary>Turns a card project's event sheet into a complete card script.</summary>
 public static class ScriptCompiler
 {
@@ -21,7 +28,7 @@ public static class ScriptCompiler
         var card = project.Card;
         var strings = project.UseCustomLua && project.ScriptStrings.Count > 0
             ? project.ScriptStrings.Take(16).ToList()
-            : EffectStrings(project, pack);
+            : StringSlots(project, pack).Select(s => s.Text).ToList();
 
         CheckCard(project, script.Diagnostics);
 
@@ -271,17 +278,23 @@ public static class ScriptCompiler
     }
 
     /// <summary>
-    /// The database's str1..str16: what the game shows when it asks whether to activate an effect. Each is the
-    /// effect's own card text, so the prompt says the whole effect; an effect with no text gets its name.
+    /// The database's str1..str16: the effect descriptions the game shows in its activation lists and "you can"
+    /// prompts. Each is the effect's own card text, so the prompt says the whole effect; an effect with no text gets
+    /// its name. Then the options of "Activate 1 of these effects", in the order the compiler numbers them. Strings
+    /// the user typed over (<see cref="CardProject.StringOverrides"/>) replace the generated ones.
     /// </summary>
-    private static List<string> EffectStrings(CardProject project, CardPack? pack)
+    public static List<StringSlot> StringSlots(CardProject project, CardPack? pack = null)
     {
-        var strings = project.Effects.Take(16).Select(e => Text.EffectTextGenerator.Describe(e, project.Card, pack) is { Length: > 0 } t ? t : e.Label).ToList();
-        // Then the options of "Activate 1 of these effects", in the order the compiler numbers them.
-        foreach (var e in project.Effects)
-            foreach (var option in Text.EffectTextGenerator.OptionTexts(e, project.Card, pack))
-                if (strings.Count < 16) strings.Add(option);
-        return strings;
+        var slots = project.Effects.Take(16).Select((e, i) =>
+            new StringSlot($"Effect {i + 1}", Text.EffectTextGenerator.Describe(e, project.Card, pack) is { Length: > 0 } t ? t : e.Label)).ToList();
+        for (int i = 0; i < project.Effects.Count; i++)
+        {
+            var options = Text.EffectTextGenerator.OptionTexts(project.Effects[i], project.Card, pack);
+            for (int o = 0; o < options.Count && slots.Count < 16; o++) slots.Add(new StringSlot($"Effect {i + 1}, option {o + 1}", options[o]));
+        }
+        for (int i = 0; i < slots.Count && i < project.StringOverrides.Count; i++)
+            if (project.StringOverrides[i] is { Length: > 0 } typed) slots[i] = slots[i] with { Text = typed, Overridden = true };
+        return slots;
     }
 
     /// <summary>Continuous, Field and Equip cards need a plain "activate this card" effect to be placed on the field.</summary>

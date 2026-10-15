@@ -25,8 +25,12 @@ public static class FilterText
         if (f.ThisCard) return "this card";
         var words = new List<string>();
         if (f.ExcludeThisCard) words.Add("other");
-        if (f.FaceDownOnly) words.Add("face-down");
-        else if (f.FaceUpOnly) words.Add("face-up");
+        if (f.FaceDownOnly || f.Position == FilterPosition.FaceDownDefense) words.Add(f.Position == FilterPosition.FaceDownDefense ? "face-down Defense Position" : "face-down");
+        else if (f.FaceUpOnly || f.Position is FilterPosition.FaceUpAttack or FilterPosition.FaceUpDefense) words.Add("face-up");
+        if (f.Position is FilterPosition.Attack or FilterPosition.FaceUpAttack) words.Add("Attack Position");
+        else if (f.Position is FilterPosition.Defense or FilterPosition.FaceUpDefense) words.Add("Defense Position");
+        if (f.Summoned == FilterSummoned.Special) words.Add("Special Summoned");
+        else if (f.Summoned == FilterSummoned.Tribute) words.Add("Tribute Summoned");
         // "non-Tuner WIND monsters": a "non-" kind comes first, before the Level and Attribute.
         if (f.CardCode == 0 && KindNoun(f.MonsterKind) is { Non: true } non) words.Add(non.Noun);
         if (f.LevelMin is { } lo && f.LevelMax is { } hi)
@@ -42,14 +46,23 @@ public static class FilterText
         string noun;
         if (f.CardCode != 0)
         {
-            var name = CardNames.Find(f.CardCode, pack);
-            noun = name is null ? $"card with passcode {f.CardCode}" : $"\"{name}\"";
+            string Named(long code) => CardNames.Find(code, pack) is { } n ? $"\"{n}\"" : $"{(plural ? "cards" : "card")} with passcode {code}";
+            var names = new[] { f.CardCode }.Concat(f.AltCodes).Select(Named).ToList();
+            noun = names.Count switch { 1 => names[0], 2 => $"{names[0]} or {names[1]}", _ => string.Join(", ", names.Take(names.Count - 1)) + ", or " + names[^1] };
             words.Clear();
             if (f.ExcludeThisCard) words.Add("other");
         }
         else
         {
-            noun = KindNoun(f.MonsterKind) is { Non: false } kind ? kind.Noun : f.CardType switch
+            // "Continuous Spell", "Equip Spell", "Field Spell", "Counter Trap".
+            var stKind = f.SpellTrapKind switch
+            {
+                SpellTrapKind.Normal => "Normal", SpellTrapKind.Continuous => "Continuous", SpellTrapKind.QuickPlay => "Quick-Play",
+                SpellTrapKind.Field => "Field", SpellTrapKind.Equip => "Equip", SpellTrapKind.Ritual => "Ritual", SpellTrapKind.Counter => "Counter", _ => null,
+            };
+            noun = stKind is not null && f.CardType is FilterCardType.Spell or FilterCardType.Trap or FilterCardType.SpellTrap or FilterCardType.Any
+                ? $"{stKind} {(f.CardType == FilterCardType.Trap || f.SpellTrapKind == SpellTrapKind.Counter ? "Trap" : f.CardType == FilterCardType.Spell || f.SpellTrapKind is SpellTrapKind.QuickPlay or SpellTrapKind.Field or SpellTrapKind.Equip or SpellTrapKind.Ritual ? "Spell" : "Spell/Trap")}"
+                : KindNoun(f.MonsterKind) is { Non: false } kind ? kind.Noun : f.CardType switch
             {
                 FilterCardType.Monster => "monster",
                 FilterCardType.Spell => "Spell",
@@ -65,9 +78,25 @@ public static class FilterText
         }
         words.Add(noun);
 
-        if (f.AtkMin is { } amin && f.AtkMax is { } amax) words.Add($"with {amin} to {amax} ATK");
+        if (f.AtkMin is { } amin && f.AtkMax is { } amax) words.Add(amin == amax ? $"with {amin} ATK" : $"with {amin} to {amax} ATK");
         else if (f.AtkMax is { } amx) words.Add($"with {amx} or less ATK");
         else if (f.AtkMin is { } amn) words.Add($"with {amn} or more ATK");
+        // "with 0 ATK and 0 DEF".
+        var withAtk = words.Count > 0 && words[^1].StartsWith("with ", StringComparison.Ordinal) && words[^1].EndsWith(" ATK", StringComparison.Ordinal);
+        string? def = f.DefMin is { } dmn2 && f.DefMax is { } dmx2 ? (dmn2 == dmx2 ? $"{dmn2} DEF" : $"{dmn2} to {dmx2} DEF")
+            : f.DefMax is { } dmx ? $"{dmx} or less DEF" : f.DefMin is { } dmn ? $"{dmn} or more DEF" : null;
+        if (def is not null)
+        {
+            if (withAtk) words[^1] += " and " + def;
+            else words.Add("with " + def);
+        }
+        if (f.Summoned == FilterSummoned.FromExtra) words.Add("Special Summoned from the Extra Deck");
+        else if (f.Summoned == FilterSummoned.ThisTurn) words.Add("Summoned this turn");
+        if (f.MentionsCode != 0)
+        {
+            var mentioned = CardNames.Find(f.MentionsCode, pack) is { } mn ? $"\"{mn}\"" : $"passcode {f.MentionsCode}";
+            words.Add(f.MentionsOrIs ? $"that is {mentioned} or mentions it" : $"that mentions {mentioned}");
+        }
 
         if (withLocation)
         {

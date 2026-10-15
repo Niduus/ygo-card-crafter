@@ -86,7 +86,38 @@ public static class FilterCompiler
         }
         if (KindType(f.MonsterKind) is { } kind)
             parts.Add(kind.Not ? $"not {card}:{isType}({kind.Type})" : $"{card}:{isType}({kind.Type})");
-        if (f.CardCode != 0) parts.Add($"{card}:{isCode}({Lua.Num(f.CardCode)})");
+        if (f.CardCode != 0)
+            parts.Add($"{card}:{isCode}({string.Join(",", new[] { f.CardCode }.Concat(f.AltCodes).Select(Lua.Num))})");
+        if (f.MentionsCode != 0)
+            parts.Add(f.MentionsOrIs ? $"aux.IsCodeOrListed({card},{Lua.Num(f.MentionsCode)})" : $"aux.IsCodeListed({card},{Lua.Num(f.MentionsCode)})");
+        switch (f.SpellTrapKind)
+        {
+            case SpellTrapKind.Normal: parts.Add($"{card}:GetType()&(TYPE_CONTINUOUS+TYPE_QUICKPLAY+TYPE_FIELD+TYPE_EQUIP+TYPE_RITUAL+TYPE_COUNTER+TYPE_MONSTER)==0"); break;
+            case SpellTrapKind.Continuous: parts.Add($"{card}:IsType(TYPE_CONTINUOUS)"); break;
+            case SpellTrapKind.QuickPlay: parts.Add($"{card}:IsType(TYPE_QUICKPLAY)"); break;
+            case SpellTrapKind.Field: parts.Add($"{card}:IsType(TYPE_FIELD)"); break;
+            case SpellTrapKind.Equip: parts.Add($"{card}:IsType(TYPE_EQUIP)"); break;
+            case SpellTrapKind.Ritual: parts.Add($"{card}:IsType(TYPE_RITUAL) and {card}:IsType(TYPE_SPELL)"); break;
+            case SpellTrapKind.Counter: parts.Add($"{card}:IsType(TYPE_COUNTER)"); break;
+        }
+        switch (f.Position)
+        {
+            case FilterPosition.Attack: parts.Add($"{card}:IsAttackPos()"); break;
+            case FilterPosition.Defense: parts.Add($"{card}:IsDefensePos()"); break;
+            case FilterPosition.FaceUpAttack: parts.Add($"{card}:IsPosition(POS_FACEUP_ATTACK)"); break;
+            case FilterPosition.FaceUpDefense: parts.Add($"{card}:IsPosition(POS_FACEUP_DEFENSE)"); break;
+            case FilterPosition.FaceDownDefense: parts.Add($"{card}:IsPosition(POS_FACEDOWN_DEFENSE)"); break;
+        }
+        switch (f.Summoned)
+        {
+            case FilterSummoned.Special: parts.Add($"{card}:IsSummonType(SUMMON_TYPE_SPECIAL)"); break;
+            case FilterSummoned.FromExtra: parts.Add($"{card}:IsSummonLocation(LOCATION_EXTRA)"); break;
+            case FilterSummoned.Tribute: parts.Add($"{card}:IsSummonType(SUMMON_TYPE_ADVANCE)"); break;
+            case FilterSummoned.ThisTurn: parts.Add($"{card}:IsStatus(STATUS_SUMMON_TURN+STATUS_FLIP_SUMMON_TURN+STATUS_SPSUMMON_TURN)"); break;
+        }
+        if (f.NotRevealed) parts.Add($"not {card}:IsPublic()");
+        if (f.DefMin is { } dmin) parts.Add($"{card}:IsDefenseAbove({dmin})");
+        if (f.DefMax is { } dmax) parts.Add($"{card}:IsDefenseBelow({dmax})");
         if (f.ExceptOwnName) parts.Add($"not {card}:{isCode}(id)");
         if (f.ExceptCode != 0) parts.Add($"not {card}:{isCode}({Lua.Num(f.ExceptCode)})");
         if (f.Archetype != 0 && f.Archetype2 != 0) parts.Add($"({card}:{isSet}({Lua.Hex(f.Archetype)}) or {card}:{isSet}({Lua.Hex(f.Archetype2)}))");

@@ -250,7 +250,8 @@ public sealed class EquippedPassive : PassiveBlock
 
     public override void Compile(BlockContext ctx)
     {
-        if (!(ctx.Card.Kind == CardKind.Spell && ctx.Card.SpellKind == SpellKind.Equip))
+        // Equip Spells, and Union monsters or Traps that equip themselves by an effect.
+        if (ctx.Card.Kind == CardKind.Spell && ctx.Card.SpellKind != SpellKind.Equip)
             ctx.Effect.Error("\"The equipped monster ...\" needs an Equip Spell: set the Spell kind to Equip on the Card tab.");
         var n = ctx.Args.Int("amount");
         var codes = ctx.Args.Choice("rule") switch
