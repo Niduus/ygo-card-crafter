@@ -92,6 +92,8 @@ public sealed class CardPack
     public List<Archetype> Archetypes { get; set; } = [];
     public List<CustomType> CustomTypes { get; set; } = [];
     public List<CardProject> Cards { get; set; } = [];
+    /// <summary>Banlists made with this pack, for any cards: official ones or this pack's.</summary>
+    public List<PackBanlist> Banlists { get; set; } = [];
 
     /// <summary>The display name of a Type, including this pack's custom Types.</summary>
     public string TypeName(CardRace race) =>

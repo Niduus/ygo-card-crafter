@@ -21,6 +21,8 @@ public sealed class CdbSchema
     public string? DatasSql { get; init; }
     public string? TextsSql { get; init; }
     public string? BandatasSql { get; init; }
+    public string? BanlistsSql { get; init; }
+    public List<CdbColumn> BanlistColumns { get; init; } = [];
     public List<Banlist> Banlists { get; init; } = [];
     /// <summary>How archetypes are written in a text "setid" column: separator and whether hex, learned from the data.</summary>
     public string SetidSeparator { get; init; } = ",";
@@ -83,7 +85,8 @@ public sealed class CdbSchema
         var bandatas = Columns(conn, "bandatas");
 
         var banlists = new List<Banlist>();
-        if (Columns(conn, "banlists") is { Count: > 0 } bl && bl.Any(c => c.Name == "id") && bl.Any(c => c.Name == "name"))
+        var banlistColumns = Columns(conn, "banlists");
+        if (banlistColumns is { Count: > 0 } bl && bl.Any(c => c.Name == "id") && bl.Any(c => c.Name == "name"))
         {
             using var cmd = conn.CreateCommand();
             cmd.CommandText = "SELECT id, name FROM banlists ORDER BY id";
@@ -126,6 +129,7 @@ public sealed class CdbSchema
         {
             Datas = datas, Texts = texts, Bandatas = bandatas,
             DatasSql = TableSql(conn, "datas"), TextsSql = TableSql(conn, "texts"), BandatasSql = bandatas.Count > 0 ? TableSql(conn, "bandatas") : null,
+            BanlistsSql = banlistColumns.Count > 0 ? TableSql(conn, "banlists") : null, BanlistColumns = banlistColumns,
             Banlists = banlists, SetidSeparator = sep, SetidHex = hex, OtValues = ots, Setcode = setcode, AllTables = all,
         };
     }

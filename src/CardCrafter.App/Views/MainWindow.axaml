@@ -27,7 +27,8 @@
               <Setter Property="Margin" Value="0,0,6,4" />
             </Style>
           </WrapPanel.Styles>
-          <Image Source="avares://YGOCardCrafter/Assets/icon.png" Width="26" Height="26" Margin="0,0,12,4" />
+          <Image Source="avares://YGOCardCrafter/Assets/icon.png" Width="26" Height="26" Margin="0,0,12,4"
+                 ToolTip.Tip="YGO Card Crafter, created by Niduus (github.com/Niduus/ygo-card-crafter)" />
           <Button Content="New" Command="{Binding NewPackCommand}" ToolTip.Tip="New pack (Ctrl+N)" />
           <Button Content="Open…" Command="{Binding OpenPackCommand}" ToolTip.Tip="Open a pack (.ycc) or a card database (.db, .cdb) (Ctrl+O)" />
           <Button Content="Open from Omega ▾" IsEnabled="{Binding HasOmegaDatabases}"
@@ -72,6 +73,8 @@
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Top">
           <TextBlock Text="{Binding OmegaStatus}" VerticalAlignment="Center" FontSize="12"
                      Foreground="{StaticResource MutedBrush}" MaxWidth="320" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding OmegaStatus}" />
+          <Button Name="AuthorButton" Content="by Niduus" Command="{Binding OpenRepositoryCommand}" FontSize="11" Padding="8,2"
+                  ToolTip.Tip="Created by Niduus. Opens the main repository: github.com/Niduus/ygo-card-crafter" />
           <Button Content="{Binding VersionText}" Command="{Binding CheckForUpdatesCommand}" FontSize="11" Padding="8,2"
                   ToolTip.Tip="Check GitHub for a newer version" />
         </StackPanel>

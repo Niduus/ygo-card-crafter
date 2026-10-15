@@ -7,6 +7,11 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Version>0.6.0</Version>
     <Authors>Niduus</Authors>
+    <Company>Niduus</Company>
     <Product>YGO Card Crafter</Product>
+    <AssemblyTitle>YGO Card Crafter by Niduus</AssemblyTitle>
+    <Description>YGO Card Crafter, created by Niduus. https://github.com/Niduus/ygo-card-crafter</Description>
+    <Copyright>© Niduus</Copyright>
+    <RepositoryUrl>https://github.com/Niduus/ygo-card-crafter</RepositoryUrl>
   </PropertyGroup>
 </Project>

@@ -73,6 +73,112 @@ public static class CdbFile
         tx.Commit();
     }
 
+    /// <summary>YGO Omega's banlist tables, for databases that don't have them yet.</summary>
+    private const string DefaultBanlistsSql = """
+        CREATE TABLE IF NOT EXISTS banlists(id INTEGER NOT NULL UNIQUE, name TEXT NOT NULL, flags INTEGER, PRIMARY KEY(id));
+        CREATE TABLE IF NOT EXISTS bandatas(cardid INTEGER NOT NULL, banlistid INTEGER NOT NULL, limits INTEGER NOT NULL, PRIMARY KEY(cardid, banlistid));
+        """;
+
+    /// <summary>
+    /// Writes banlists into the database's banlists tables (creating them in YGO Omega's layout when it has none).
+    /// Each list replaces any list with the same id; its cards can be official ones or the database's own.
+    /// </summary>
+    public static void WriteBanlists(string path, IEnumerable<Model.PackBanlist> banlists, CdbSchema? schema = null)
+    {
+        var lists = banlists.ToList();
+        if (lists.Count == 0) return;
+        using var conn = Open(path, SqliteOpenMode.ReadWriteCreate);
+        if (schema is { BanlistsSql: { } bsql, BandatasSql: { } dsql, HasBanlists: true })
+        {
+            Exec(conn, IfNotExists(bsql));
+            Exec(conn, IfNotExists(dsql));
+        }
+        else Exec(conn, DefaultBanlistsSql);
+        var read = CdbSchema.Read(path)!;
+        var card = read.BandataCardColumn ?? "cardid";
+        using var tx = conn.BeginTransaction();
+        var listCols = new List<string> { "id", "name" };
+        if (read.BanlistColumns.Any(c => c.Name == "flags")) listCols.Add("flags");
+        using var insList = Insert(conn, tx, "banlists", listCols);
+        var extra = read.Bandatas.Where(c => c.Name is not ("banlistid" or "limits") && c.Name != card && c.NotNull && c.Default is null
+                                             && !(c.Name == "id" && c.Type.Contains("int"))).ToList();
+        using var insData = Insert(conn, tx, "bandatas", new[] { card, "banlistid", "limits" }.Concat(extra.Select(c => c.Name)));
+        using var del = conn.CreateCommand();
+        del.Transaction = tx;
+        del.CommandText = "DELETE FROM bandatas WHERE banlistid = $id";
+        del.Parameters.Add("$id", SqliteType.Integer);
+        foreach (var list in lists)
+        {
+            insList.Parameters["$id"].Value = list.Id;
+            insList.Parameters["$name"].Value = list.Name;
+            if (listCols.Contains("flags")) insList.Parameters["$flags"].Value = list.Flags;
+            insList.ExecuteNonQuery();
+            del.Parameters["$id"].Value = list.Id;
+            del.ExecuteNonQuery();
+            foreach (var entry in list.Entries.Where(e => e.Limit is >= 0 and <= 3).GroupBy(e => e.Code).Select(g => g.Last()))
+            {
+                insData.Parameters["$" + card].Value = entry.Code;
+                insData.Parameters["$banlistid"].Value = list.Id;
+                insData.Parameters["$limits"].Value = (long)entry.Limit;
+                foreach (var c in extra) insData.Parameters["$" + c.Name].Value = c.Type.Contains("text") ? "" : 0L;
+                insData.ExecuteNonQuery();
+            }
+        }
+        tx.Commit();
+    }
+
+    /// <summary>Every banlist in a database with its cards, e.g. YGO Omega's TCG and OCG lists. Names come from the database's texts.</summary>
+    public static List<Model.PackBanlist> ReadBanlists(string path)
+    {
+        var schema = CdbSchema.Read(path);
+        var result = new List<Model.PackBanlist>();
+        if (schema is null || schema.Banlists.Count == 0) return result;
+        using var conn = Open(path, SqliteOpenMode.ReadOnly);
+        var byId = new Dictionary<long, Model.PackBanlist>();
+        using (var cmd = conn.CreateCommand())
+        {
+            var flags = schema.BanlistColumns.Any(c => c.Name == "flags") ? "flags" : "0";
+            cmd.CommandText = $"SELECT id, name, {flags} FROM banlists ORDER BY id";
+            using var rd = cmd.ExecuteReader();
+            while (rd.Read())
+            {
+                var list = new Model.PackBanlist { Id = Long(rd, 0), Name = Str(rd, 1), Flags = Long(rd, 2) };
+                byId[list.Id] = list;
+                result.Add(list);
+            }
+        }
+        if (!schema.HasBanlists) return result;
+        using (var cmd = conn.CreateCommand())
+        {
+            var hasTexts = schema.Texts.Count > 0;
+            cmd.CommandText = $"SELECT b.\"{schema.BandataCardColumn}\", b.banlistid, b.limits{(hasTexts ? ", t.name" : ", NULL")} FROM bandatas b"
+                              + (hasTexts ? $" LEFT JOIN texts t ON t.id = b.\"{schema.BandataCardColumn}\"" : "");
+            try
+            {
+                using var rd = cmd.ExecuteReader();
+                while (rd.Read())
+                    if (byId.TryGetValue(Long(rd, 1), out var list))
+                        list.Entries.Add(new Model.BanlistEntry { Code = Long(rd, 0), Limit = (int)Long(rd, 2), Name = Str(rd, 3) });
+            }
+            catch (SqliteException) { /* an unusual layout leaves the lists without cards */ }
+        }
+        foreach (var list in result) list.Entries.Sort((a, b) => a.Limit != b.Limit ? a.Limit.CompareTo(b.Limit) : string.CompareOrdinal(a.Name, b.Name));
+        return result;
+    }
+
+    /// <summary>The banlists in ygopro's lflist.conf format: "!Name", then "passcode limit --name" lines.</summary>
+    public static string LflistConf(IEnumerable<Model.PackBanlist> banlists)
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var list in banlists)
+        {
+            sb.Append('!').AppendLine(list.Name);
+            foreach (var e in list.Entries.Where(e => e.Limit is >= 0 and <= 2))
+                sb.AppendLine(System.FormattableString.Invariant($"{e.Code} {e.Limit} --{e.Name}"));
+        }
+        return sb.ToString();
+    }
+
     /// <summary>In <see cref="CdbRow.Limits"/>, this key means "on every banlist the game has".</summary>
     public const long AllBanlists = -1;
 

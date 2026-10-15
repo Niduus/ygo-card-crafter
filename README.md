@@ -1,5 +1,7 @@
 # YGO Card Crafter
 
+Created by [Niduus](https://github.com/Niduus). Main repository: [github.com/Niduus/ygo-card-crafter](https://github.com/Niduus/ygo-card-crafter).
+
 **DISCLAIMER: This is vibe coded. Problems will occur and nothing is coded by my hands. I got bored and decided to make something that maybe helpful if released to the wild.**
 
 Make custom Yu-Gi-Oh! cards **and their scripts** for YGO Omega without writing Lua.

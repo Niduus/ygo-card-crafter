@@ -86,7 +86,7 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _isDirty;
     [ObservableProperty] private string _status = "Ready.";
 
-    public string Title => $"{(IsDirty ? "• " : "")}{_pack.Name} — YGO Card Crafter";
+    public string Title => $"{(IsDirty ? "• " : "")}{_pack.Name} — YGO Card Crafter by Niduus";
     partial void OnIsDirtyChanged(bool value) => OnPropertyChanged(nameof(Title));
     public bool HasSelection => SelectedCard is not null;
     partial void OnSelectedCardChanged(CardViewModel? value) => OnPropertyChanged(nameof(HasSelection));
@@ -602,6 +602,12 @@ public sealed partial class MainViewModel : ObservableObject
         ? $"YGO Card Crafter {r.Version} is available (you have {UpdateChecker.CurrentVersion})."
         : "";
     public string VersionText => $"v{UpdateChecker.CurrentVersion}";
+
+    /// <summary>The main repository. Card Crafter was created by Niduus.</summary>
+    public const string RepositoryUrl = "https://github.com/Niduus/ygo-card-crafter";
+
+    [RelayCommand]
+    private void OpenRepository() => _dialogs.OpenUrl(RepositoryUrl);
     partial void OnAvailableUpdateChanged(ReleaseInfo? value)
     {
         OnPropertyChanged(nameof(ShowUpdateBanner));

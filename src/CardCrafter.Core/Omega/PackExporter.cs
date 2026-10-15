@@ -101,6 +101,11 @@ public static class PackExporter
             }
         }
         CdbFile.WriteFresh(result.DatabasePath, rows, schema);
+        if (pack.Banlists.Count > 0)
+        {
+            CdbFile.WriteBanlists(result.DatabasePath, pack.Banlists, schema);
+            File.WriteAllText(Path.Combine(outputFolder, "lflist.conf"), CdbFile.LflistConf(pack.Banlists));
+        }
         return result;
     }
 
