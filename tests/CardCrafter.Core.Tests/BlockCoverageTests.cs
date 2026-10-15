@@ -151,3 +151,41 @@ public class ZoneWordingTests
         Assert.Equal("Draw 2 cards.", row.Desc);
     }
 }
+
+public class OncePerTurnWordingTests
+{
+    private static EffectEvent Effect(OncePerTurn limit, int group = 0) => new()
+    {
+        When = BlockRegistry.Find("when.ignition")!.CreateInstance(),
+        Do = [BlockRegistry.Find("do.draw")!.CreateInstance()],
+        Limit = limit,
+        SharedLimitGroup = group,
+    };
+
+    private static CardProject Card(params EffectEvent[] effects) => new()
+    {
+        Card = new CardData { Id = 100006001, Name = "New Monster", Frame = MonsterFrame.Effect, Level = 4 },
+        Effects = [.. effects],
+    };
+
+    [Fact]
+    public void TwoHardLimits_SayEachEffectOnce()
+    {
+        var text = CardCrafter.Core.Text.EffectTextGenerator.Generate(Card(Effect(OncePerTurn.Hard), Effect(OncePerTurn.Hard)));
+        Assert.Equal("You can draw 1 card. You can draw 1 card. You can only use each effect of \"New Monster\" once per turn.", text);
+    }
+
+    [Fact]
+    public void ASharedLimit_SaysOneOfTheseEffects()
+    {
+        var text = CardCrafter.Core.Text.EffectTextGenerator.Generate(Card(Effect(OncePerTurn.Hard, 1), Effect(OncePerTurn.Hard, 1)));
+        Assert.EndsWith("You can only use 1 of these effects of \"New Monster\" per turn, and only once that turn.", text);
+    }
+
+    [Fact]
+    public void OneHardLimit_KeepsThisEffect()
+    {
+        var text = CardCrafter.Core.Text.EffectTextGenerator.Generate(Card(Effect(OncePerTurn.Hard), Effect(OncePerTurn.Soft)));
+        Assert.Equal("You can draw 1 card. You can only use this effect of \"New Monster\" once per turn. Once per turn: You can draw 1 card.", text);
+    }
+}

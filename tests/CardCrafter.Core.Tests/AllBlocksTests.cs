@@ -53,13 +53,25 @@ public class AllBlocksTests
     {
         var def = BlockRegistry.Find(blockId)!;
         var project = ProjectFor(def, inst);
-        var result = ScriptCompiler.Compile(project);
+        var result = ScriptCompiler.Compile(project, Pack(project));
 
         var errors = result.Diagnostics.Where(d => d.Severity == Severity.Error).ToList();
         Assert.True(errors.Count == 0, $"{blockId} [{variant}]: {string.Join("; ", errors)}\n{result.Lua}");
         var checks = ScriptChecker.Check(result.Lua);
         Assert.True(checks.Count == 0, $"{blockId} [{variant}]: {string.Join("; ", checks)}\n{result.Lua}");
     }
+
+    private const long TokenId = 100000099;
+
+    /// <summary>The pack the card is compiled in, with a Token card for "Special Summon Tokens".</summary>
+    private static CardPack Pack(CardProject project) => new()
+    {
+        Cards =
+        [
+            project,
+            new CardProject { Card = new CardData { Id = TokenId, Name = "Sheep Token", Frame = MonsterFrame.Token, Level = 1, Race = CardRace.Beast, Attribute = CardAttribute.Earth } },
+        ],
+    };
 
     /// <summary>Wraps a single block in the smallest effect that makes sense for it.</summary>
     /// <summary>Blocks about Link Arrows need a Link monster to sit on.</summary>
@@ -76,6 +88,23 @@ public class AllBlocksTests
             project.Procedure.Kind = SummonProcedureKind.Link;
         }
         if (def.Id == "do.negate") project.Effects[0].When = new BlockInstance("when.quick").With("timing", "chain_any");
+        switch (def.Id)
+        {
+            case "do.negate_summon":
+                project.Effects[0].When = new BlockInstance("when.quick").With("timing", "would_summon");
+                break;
+            case "do.attach":
+                project.Card.Frame = MonsterFrame.Xyz;
+                project.Procedure.Kind = SummonProcedureKind.Xyz;
+                break;
+            case "passive.equipped":
+                project.Card.Kind = CardKind.Spell;
+                project.Card.SpellKind = SpellKind.Equip;
+                break;
+            case "do.tokens":
+                inst.Values["token"] = TokenId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                break;
+        }
         // A card Special Summons itself from where it is, never from the field.
         if (def.Id == "do.special_summon_self") project.Effects[0].When = new BlockInstance("when.ignition").With("zone", "hand");
         return project;

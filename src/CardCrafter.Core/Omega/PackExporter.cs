@@ -55,9 +55,10 @@ public static class PackExporter
             var compiled = ScriptCompiler.Compile(card, pack);
             var export = new CardExport { Card = card, Compile = compiled };
             result.Cards.Add(export);
-            // A card whose text was never written gets its suggested text, so it never shows up blank in the game.
+            // A card built from blocks whose text was never written gets its suggested text, so it never shows up
+            // blank in the game. Cards on a hand-written or imported script keep their text exactly as it is.
             var data = card.Card;
-            if (string.IsNullOrWhiteSpace(data.Text) && Text.EffectTextGenerator.Generate(card, pack) is { Length: > 0 } suggested)
+            if (!card.UseCustomLua && string.IsNullOrWhiteSpace(data.Text) && Text.EffectTextGenerator.Generate(card, pack) is { Length: > 0 } suggested)
             {
                 data = PackSerializer.Clone(data);
                 data.Text = suggested;

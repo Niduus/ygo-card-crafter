@@ -3,7 +3,7 @@ namespace CardCrafter.Core.Model;
 public enum CardKind { Monster, Spell, Trap }
 
 /// <summary>The frame of a monster card. Decides its card-type bits and which deck it lives in.</summary>
-public enum MonsterFrame { Normal, Effect, Ritual, Fusion, Synchro, Xyz, Link }
+public enum MonsterFrame { Normal, Effect, Ritual, Fusion, Synchro, Xyz, Link, Token }
 
 public enum SpellKind { Normal, QuickPlay, Continuous, Equip, Field, Ritual }
 

@@ -41,7 +41,11 @@ public static class ScriptCompiler
             built.Add(effect);
         }
 
-        if (NeedsActivationEffect(card, built))
+        if (NeedsActivationEffect(card, built) && card.Kind == CardKind.Spell && card.SpellKind == SpellKind.Equip)
+        {
+            init.AddRange(EquipActivation(project, script));
+        }
+        else if (NeedsActivationEffect(card, built))
         {
             init.Add("--Activate");
             init.Add("local e0=Effect.CreateEffect(c)");
@@ -141,6 +145,60 @@ public static class ScriptCompiler
         _ => "DO",
     };
 
+    /// <summary>
+    /// An Equip Spell's activation: target a face-up monster and equip this card to it, plus the equip limit that
+    /// keeps it on monsters <see cref="CardProject.EquipFilter"/> allows.
+    /// </summary>
+    private static IEnumerable<string> EquipActivation(CardProject project, ScriptBuilder script)
+    {
+        var f = project.EquipFilter;
+        var self = f.Owner == CardOwner.Opponent ? "0" : "LOCATION_MZONE";
+        var opp = f.Owner == CardOwner.You ? "0" : "LOCATION_MZONE";
+        var conds = FilterCompiler.Conditions(new CardFilter
+        {
+            CardType = FilterCardType.Monster, MonsterKind = f.MonsterKind, Race = f.Race, Attribute = f.Attribute, Archetype = f.Archetype,
+            CardCode = f.CardCode, LevelMin = f.LevelMin, LevelMax = f.LevelMax, AtkMin = f.AtkMin, AtkMax = f.AtkMax,
+        });
+        conds.Remove("c:IsType(TYPE_MONSTER)");
+        var test = conds.Count == 0 ? "true" : string.Join(" and ", conds);
+        var limit = conds.Count == 0 ? "1" : script.AddFunction("eqlimit", "e,c", [$"return {test}"]);
+        var filter = script.AddFunction("eqfilter", "c", [$"return c:IsFaceup() and {test}"]);
+        var tg = script.AddFunction("eqtg", "e,tp,eg,ep,ev,re,r,rp,chk,chkc",
+        [
+            $"if chkc then return chkc:IsLocation(LOCATION_MZONE) and {filter}(chkc) end",
+            $"if chk==0 then return Duel.IsExistingTarget({filter},tp,{self},{opp},1,nil) end",
+            "Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_EQUIP)",
+            $"Duel.SelectTarget(tp,{filter},tp,{self},{opp},1,1,nil)",
+            "Duel.SetOperationInfo(0,CATEGORY_EQUIP,e:GetHandler(),1,0,0)",
+        ]);
+        var op = script.AddFunction("eqop", "e,tp,eg,ep,ev,re,r,rp",
+        [
+            "local c=e:GetHandler()",
+            "local tc=Duel.GetFirstTarget()",
+            "if c:IsRelateToEffect(e) and tc:IsRelateToEffect(e) and tc:IsFaceup() then",
+            "	Duel.Equip(tp,c,tc)",
+            "end",
+        ]);
+        return
+        [
+            "--Activate: equip to a monster",
+            "local e0=Effect.CreateEffect(c)",
+            "e0:SetCategory(CATEGORY_EQUIP)",
+            "e0:SetType(EFFECT_TYPE_ACTIVATE)",
+            "e0:SetCode(EVENT_FREE_CHAIN)",
+            "e0:SetProperty(EFFECT_FLAG_CARD_TARGET+EFFECT_FLAG_CONTINUOUS_TARGET)",
+            $"e0:SetTarget({tg})",
+            $"e0:SetOperation({op})",
+            "c:RegisterEffect(e0)",
+            "local el=Effect.CreateEffect(c)",
+            "el:SetType(EFFECT_TYPE_SINGLE)",
+            "el:SetCode(EFFECT_EQUIP_LIMIT)",
+            "el:SetProperty(EFFECT_FLAG_CANNOT_DISABLE)",
+            $"el:SetValue({limit})",
+            "c:RegisterEffect(el)",
+        ];
+    }
+
     /// <summary>Continuous, Field and Equip cards need a plain "activate this card" effect to be placed on the field.</summary>
     private static bool NeedsActivationEffect(CardData card, List<EffectBuilder> effects)
     {
@@ -197,7 +255,7 @@ public static class ScriptCompiler
             d.Add(new(Severity.Error, "A card can have at most 16 effects (the database has 16 text slots)."));
         if (card.Archetypes.Count > 4)
             d.Add(new(Severity.Error, "A card can belong to at most 4 archetypes."));
-        if (card.IsMonster && card.Frame == MonsterFrame.Normal && project.Effects.Count > 0)
+        if (card.IsMonster && card.Frame is MonsterFrame.Normal or MonsterFrame.Token && project.Effects.Count > 0)
             d.Add(new(Severity.Warning, "Normal monsters have no effects. Change the frame to Effect so the game runs them."));
         if (card.IsLink && card.LinkMarkers == LinkMarker.None)
             d.Add(new(Severity.Error, "Link monsters need at least one Link Arrow."));

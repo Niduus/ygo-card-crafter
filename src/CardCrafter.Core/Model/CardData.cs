@@ -62,7 +62,7 @@ public sealed class CardData
     public bool IsXyz => IsMonster && Frame == MonsterFrame.Xyz;
     public bool IsPendulum => IsMonster && Abilities.HasFlag(MonsterAbility.Pendulum);
     public bool IsExtraDeck => IsMonster && Frame is MonsterFrame.Fusion or MonsterFrame.Synchro or MonsterFrame.Xyz or MonsterFrame.Link;
-    public bool IsEffectMonster => IsMonster && Frame != MonsterFrame.Normal;
+    public bool IsEffectMonster => IsMonster && Frame is not (MonsterFrame.Normal or MonsterFrame.Token);
 
     /// <summary>How the monster may be Summoned. Stored as the "Special Summon" type bit plus <see cref="OnlyByOwnProcedure"/>.</summary>
     [System.Text.Json.Serialization.JsonIgnore]

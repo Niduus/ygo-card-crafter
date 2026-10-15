@@ -82,6 +82,7 @@ public static class CdbEncoder
         long t = Monster | card.Frame switch
         {
             MonsterFrame.Normal => Normal,
+            MonsterFrame.Token => Normal | Token,
             MonsterFrame.Effect => Effect,
             MonsterFrame.Ritual => Ritual | Effect,
             MonsterFrame.Fusion => Fusion | Effect,
@@ -184,6 +185,7 @@ public static class CdbEncoder
             : (t & Synchro) != 0 ? MonsterFrame.Synchro
             : (t & Fusion) != 0 ? MonsterFrame.Fusion
             : (t & Ritual) != 0 ? MonsterFrame.Ritual
+            : (t & Token) != 0 && (t & Effect) == 0 ? MonsterFrame.Token
             : (t & Normal) != 0 ? MonsterFrame.Normal
             : MonsterFrame.Effect;
         var a = MonsterAbility.None;

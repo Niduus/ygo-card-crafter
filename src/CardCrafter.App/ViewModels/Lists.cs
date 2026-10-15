@@ -19,7 +19,7 @@ public static class Lists
 
     public static readonly IReadOnlyList<Option<MonsterFrame>> Frames = Options.Of(
         (MonsterFrame.Normal, "Normal"), (MonsterFrame.Effect, "Effect"), (MonsterFrame.Ritual, "Ritual"),
-        (MonsterFrame.Fusion, "Fusion"), (MonsterFrame.Synchro, "Synchro"), (MonsterFrame.Xyz, "Xyz"), (MonsterFrame.Link, "Link"));
+        (MonsterFrame.Fusion, "Fusion"), (MonsterFrame.Synchro, "Synchro"), (MonsterFrame.Xyz, "Xyz"), (MonsterFrame.Link, "Link"), (MonsterFrame.Token, "Token"));
 
     public static readonly IReadOnlyList<Option<SpellKind>> SpellKinds = Options.Of(
         (SpellKind.Normal, "Normal"), (SpellKind.QuickPlay, "Quick-Play"), (SpellKind.Continuous, "Continuous"),

@@ -51,6 +51,7 @@ public static class TypeBits
     public const long Union = 0x400;
     public const long Gemini = 0x800;
     public const long Tuner = 0x1000;
+    public const long Token = 0x4000;
     public const long Synchro = 0x2000;
     public const long QuickPlay = 0x10000;
     public const long Continuous = 0x20000;

@@ -26,7 +26,7 @@ public static class CardFaceText
         if (a.HasFlag(MonsterAbility.Toon)) parts.Add("Toon");
         if (a.HasFlag(MonsterAbility.Union)) parts.Add("Union");
         if (a.HasFlag(MonsterAbility.Tuner)) parts.Add("Tuner");
-        if (card.Frame == MonsterFrame.Normal) { if (parts.Count > 1) parts.Add("Normal"); }
+        if (card.Frame is MonsterFrame.Normal or MonsterFrame.Token) { if (parts.Count > 1) parts.Add("Normal"); }
         else parts.Add("Effect");
         return "[" + string.Join("/", parts) + "]";
     }

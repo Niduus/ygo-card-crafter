@@ -94,7 +94,9 @@ public sealed class SummonedTrigger : SelfTriggerBlock
             new("special", "Special"),
             new("normal_or_special", "Normal or Special"),
             new("flip", "Flip"),
-            new("any", "Normal, Flip or Special")),
+            new("any", "Normal, Flip or Special"),
+            new("link", "Link"), new("synchro", "Synchro"), new("xyz", "Xyz"),
+            new("fusion", "Fusion"), new("ritual", "Ritual"), new("pendulum", "Pendulum")),
         OptionalParam,
     ];
 
@@ -107,6 +109,10 @@ public sealed class SummonedTrigger : SelfTriggerBlock
             case "special": Setup(ctx, "EVENT_SPSUMMON_SUCCESS"); break;
             case "flip": Setup(ctx, "EVENT_FLIP_SUMMON_SUCCESS"); break;
             case "normal_or_special": Setup(ctx, "EVENT_SUMMON_SUCCESS", "EVENT_SPSUMMON_SUCCESS"); break;
+            case "link" or "synchro" or "xyz" or "fusion" or "ritual" or "pendulum":
+                Setup(ctx, "EVENT_SPSUMMON_SUCCESS");
+                ctx.Effect.Conditions.Add(SummonedByCondition.Check(ctx.Args.Choice("how")));
+                break;
             default: Setup(ctx, "EVENT_SUMMON_SUCCESS", "EVENT_FLIP_SUMMON_SUCCESS", "EVENT_SPSUMMON_SUCCESS"); break;
         }
     }
@@ -177,6 +183,60 @@ public sealed class DestroyedTrigger : SelfTriggerBlock
             default:
                 Setup(ctx, "EVENT_DESTROYED");
                 break;
+        }
+    }
+}
+
+/// <summary>The other things that happen to this card: banished, leaves the field, Tributed, battles, is attacked...</summary>
+public sealed class ThisCardEventTrigger : SelfTriggerBlock
+{
+    public override string Id => "when.this_card";
+    public override string Name => "Something happens to this card";
+    public override string Sentence => "{event}";
+    public override IReadOnlyList<ParamSpec> Params { get; } =
+    [
+        ParamSpec.Choice("event", "What happens",
+            new("banished", "If this card is banished"),
+            new("leaves_field", "If this card leaves the field"),
+            new("tributed", "If this card is Tributed"),
+            new("to_hand", "If this card is returned from the field to the hand"),
+            new("targeted", "If this card is targeted by a card effect"),
+            new("battle_damage", "If this card inflicts battle damage to your opponent"),
+            new("declares_attack", "When this card declares an attack"),
+            new("attacked", "When this card is targeted for an attack"),
+            new("battle_start", "At the start of the Damage Step, if this card battles"),
+            new("battled", "After damage calculation, if this card battled"),
+            new("damage_step_end", "At the end of the Damage Step, if this card battled")),
+        OptionalParam,
+    ];
+
+    public override void Compile(BlockContext ctx)
+    {
+        var ev = ctx.Args.Choice("event");
+        if (ev is "battle_damage" or "declares_attack" or "attacked" or "battle_start" or "battled" or "damage_step_end")
+            Zones.RequireMonster(ctx, Name);
+        var code = ev switch
+        {
+            "banished" => "EVENT_REMOVE",
+            "leaves_field" => "EVENT_LEAVE_FIELD",
+            "tributed" => "EVENT_RELEASE",
+            "to_hand" => "EVENT_TO_HAND",
+            "targeted" => "EVENT_BECOME_TARGET",
+            "battle_damage" => "EVENT_BATTLE_DAMAGE",
+            "declares_attack" => "EVENT_ATTACK_ANNOUNCE",
+            "attacked" => "EVENT_BE_BATTLE_TARGET",
+            "battle_start" => "EVENT_BATTLE_START",
+            "battled" => "EVENT_BATTLED",
+            _ => "EVENT_DAMAGE_STEP_END",
+        };
+        Setup(ctx, code);
+        // "When ..." effects activate right away; only "If ..." ones can't miss their timing.
+        if (ev is "declares_attack" or "attacked" or "battle_start" or "battled" or "damage_step_end") ctx.Effect.Properties.Remove("EFFECT_FLAG_DELAY");
+        switch (ev)
+        {
+            case "battle_damage": ctx.Effect.Conditions.Add("ep~=tp"); break;
+            case "to_hand": ctx.Effect.Conditions.Add("e:GetHandler():IsPreviousLocation(LOCATION_ONFIELD)"); break;
+            case "battled" or "damage_step_end": ctx.Effect.Conditions.Add("e:GetHandler():IsRelateToBattle()"); break;
         }
     }
 }
@@ -304,14 +364,22 @@ internal static class Timing
         new("chain_spell", "when your opponent activates a Spell Card"),
         new("chain_trap", "when your opponent activates a Trap Card"),
         new("chain_either", "when a card or effect is activated"),
+        new("would_summon", "when your opponent would Normal or Special Summon a monster(s)"),
+        new("would_special", "when your opponent would Special Summon a monster(s)"),
+        new("damage_calc", "during damage calculation, if your monster battles"),
+        new("battle_phase", "during the Battle Phase"),
+        new("end_phase", "during the End Phase"),
     ];
+
+    /// <summary>True when the effect responds to a Summon about to happen, so "negate the Summon" can be used.</summary>
+    public static bool IsWouldSummonTiming(string? code) => code is "EVENT_SUMMON" or "EVENT_SPSUMMON" or "EVENT_FLIP_SUMMON";
 
     /// <summary>True when the effect responds to an activation, so "negate" blocks can be used.</summary>
     public static bool IsChainTiming(string? code) => code == "EVENT_CHAINING";
 
     /// <summary>True when the timing is something the opponent does, so "during their turn" reads naturally after it.</summary>
     public static bool IsOpponents(string timing) => timing is "attack" or "attack_direct" or "summon" or "summon_normal" or "summon_special"
-        or "summon_flip" or "chain_any" or "chain_monster" or "chain_spelltrap" or "chain_spell" or "chain_trap";
+        or "summon_flip" or "would_summon" or "would_special" or "chain_any" or "chain_monster" or "chain_spelltrap" or "chain_spell" or "chain_trap";
 
     public static void Apply(BlockContext ctx, string timing)
     {
@@ -374,6 +442,30 @@ internal static class Timing
             case "chain_either":
                 e.Code = "EVENT_CHAINING";
                 break;
+            case "would_summon":
+                e.Code = "EVENT_SUMMON";
+                e.ExtraCodes.Add("EVENT_FLIP_SUMMON");
+                e.ExtraCodes.Add("EVENT_SPSUMMON");
+                e.Conditions.Add("Duel.GetCurrentChain()==0 and eg:IsExists(Card.IsSummonPlayer,1,nil,1-tp)");
+                break;
+            case "would_special":
+                e.Code = "EVENT_SPSUMMON";
+                e.Conditions.Add("Duel.GetCurrentChain()==0 and eg:IsExists(Card.IsSummonPlayer,1,nil,1-tp)");
+                break;
+            case "damage_calc":
+                e.Code = "EVENT_PRE_DAMAGE_CALCULATE";
+                e.Conditions.Add("Duel.GetBattleMonster(tp)~=nil");
+                break;
+            case "battle_phase":
+                e.Code = "EVENT_FREE_CHAIN";
+                e.HintTiming = "TIMING_BATTLE_START+TIMING_BATTLE_END";
+                e.Conditions.Add("Duel.GetCurrentPhase()>=PHASE_BATTLE_START and Duel.GetCurrentPhase()<=PHASE_BATTLE");
+                break;
+            case "end_phase":
+                e.Code = "EVENT_FREE_CHAIN";
+                e.HintTiming = "TIMING_END_PHASE";
+                e.Conditions.Add("Duel.GetCurrentPhase()==PHASE_END");
+                break;
             case "any_summon":
                 // Normal, Flip or Special Summons by either player, this card included.
                 e.Code = "EVENT_SUMMON_SUCCESS";
@@ -403,6 +495,11 @@ internal static class Timing
         "chain_spell" => "When your opponent activates a Spell Card",
         "chain_trap" => "When your opponent activates a Trap Card",
         "chain_either" => "When a card or effect is activated",
+        "would_summon" => "When your opponent would Normal or Special Summon a monster(s)",
+        "would_special" => "When your opponent would Special Summon a monster(s)",
+        "damage_calc" => "During damage calculation, if your monster battles",
+        "battle_phase" => "During the Battle Phase",
+        "end_phase" => "During the End Phase",
         _ => "",
     };
 }
@@ -486,7 +583,12 @@ public sealed class EventTrigger : BlockDefinition
             new("opp_draw", "your opponent draws a card(s)"),
             new("you_damage", "you take damage"),
             new("you_battle_damage", "you take battle damage"),
-            new("opp_battle_damage", "your opponent takes battle damage")),
+            new("opp_battle_damage", "your opponent takes battle damage"),
+            new("opp_attack", "an opponent's monster declares an attack"),
+            new("your_attacked", "a monster you control is targeted for an attack"),
+            new("your_leaves", "a monster(s) you control leaves the field"),
+            new("banished_any", "a card(s) is banished"),
+            new("opp_activates", "your opponent activates a card or effect")),
         ParamSpec.Choice("zone", "This card is", Zones.RangeChoices),
         ParamSpec.Flag("optional", "optional (\"You can\")", true),
     ];
@@ -536,6 +638,17 @@ public sealed class EventTrigger : BlockDefinition
             case "you_damage": e.Code = "EVENT_DAMAGE"; e.Conditions.Add("ep==tp"); break;
             case "you_battle_damage": e.Code = "EVENT_BATTLE_DAMAGE"; e.Conditions.Add("ep==tp"); break;
             case "opp_battle_damage": e.Code = "EVENT_BATTLE_DAMAGE"; e.Conditions.Add("ep==1-tp"); break;
+            case "opp_attack": e.Code = "EVENT_ATTACK_ANNOUNCE"; e.Conditions.Add("Duel.GetAttacker():IsControler(1-tp)"); break;
+            case "your_attacked":
+                e.Code = "EVENT_BE_BATTLE_TARGET";
+                e.Conditions.Add("Duel.GetAttackTarget()~=nil and Duel.GetAttackTarget():IsControler(tp)");
+                break;
+            case "your_leaves":
+                e.Code = "EVENT_LEAVE_FIELD";
+                e.Conditions.Add($"eg:IsExists({Filter("lvfilter", "c:IsPreviousControler(tp) and c:IsPreviousLocation(LOCATION_MZONE)")},1,nil,tp)");
+                break;
+            case "banished_any": e.Code = "EVENT_REMOVE"; break;
+            case "opp_activates": e.Code = "EVENT_CHAINING"; e.Conditions.Add("rp==1-tp"); break;
             default:
                 e.Code = "EVENT_SUMMON_SUCCESS"; e.ExtraCodes.Add("EVENT_SPSUMMON_SUCCESS");
                 e.Conditions.Add("eg:IsExists(Card.IsSummonPlayer,1,nil,1-tp)");
@@ -554,12 +667,19 @@ public sealed class PhaseTrigger : BlockDefinition
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Choice("whose", "Whose", new("your", "your"), new("opponent", "your opponent's"), new("each", "each")),
-        ParamSpec.Choice("phase", "Phase", new("standby", "Standby Phase"), new("end", "End Phase")),
+        ParamSpec.Choice("phase", "Phase", new("standby", "Standby Phase"), new("end", "End Phase"),
+            new("battle_start", "Battle Phase", "start of the Battle Phase"), new("battle_end", "Battle Phase", "end of the Battle Phase"),
+            new("draw", "Draw Phase")),
         ParamSpec.Choice("zone", "From", Zones.RangeChoices),
         ParamSpec.Flag("optional", "optional (\"You can\")", true),
     ];
 
-    public override string Describe(BlockArgs args) => $"During {args.Describe("whose")} {args.Describe("phase")}";
+    public override string Describe(BlockArgs args) => args.Choice("phase") switch
+    {
+        "battle_start" => $"At the start of {args.Describe("whose")} Battle Phase",
+        "battle_end" => $"At the end of {args.Describe("whose")} Battle Phase",
+        _ => $"During {args.Describe("whose")} {args.Describe("phase")}",
+    };
 
     public override void Compile(BlockContext ctx)
     {
@@ -567,7 +687,14 @@ public sealed class PhaseTrigger : BlockDefinition
         ctx.Effect.Types.Add("EFFECT_TYPE_FIELD");
         ctx.Effect.Types.Add(optional ? "EFFECT_TYPE_TRIGGER_O" : "EFFECT_TYPE_TRIGGER_F");
         ctx.Effect.IsMandatory = !optional;
-        ctx.Effect.Code = ctx.Args.Choice("phase") == "end" ? "EVENT_PHASE+PHASE_END" : "EVENT_PHASE+PHASE_STANDBY";
+        ctx.Effect.Code = ctx.Args.Choice("phase") switch
+        {
+            "end" => "EVENT_PHASE+PHASE_END",
+            "battle_start" => "EVENT_PHASE+PHASE_BATTLE_START",
+            "battle_end" => "EVENT_PHASE+PHASE_BATTLE",
+            "draw" => "EVENT_PHASE+PHASE_DRAW",
+            _ => "EVENT_PHASE+PHASE_STANDBY",
+        };
         ctx.Effect.Range = Zones.Resolve(ctx.Args.Choice("zone"), ctx.Card);
         switch (ctx.Args.Choice("whose"))
         {

@@ -45,6 +45,9 @@ public sealed class CardProject
     public SummonProcedure Procedure { get; set; } = new();
     public List<EffectEvent> Effects { get; set; } = [];
 
+    /// <summary>Equip Spells: the monsters this card can be equipped to (whose, and what they must be).</summary>
+    public CardFilter EquipFilter { get; set; } = new() { Owner = CardOwner.Either, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster };
+
     /// <summary>When true the hand-written <see cref="CustomLua"/> is used instead of the generated script.</summary>
     public bool UseCustomLua { get; set; }
     public string CustomLua { get; set; } = "";

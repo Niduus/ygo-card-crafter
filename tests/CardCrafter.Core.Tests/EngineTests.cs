@@ -418,9 +418,10 @@ public class EngineTests
             .AssertPasses();
     }
 
-    // Negation needs an opponent's activation to respond to, so it has its own duel below.
+    // Negation needs an opponent's activation to respond to, so it has its own duel below; negating a Summon
+    // and Tokens have theirs in ScanBlockEngineTests.
     public static IEnumerable<object[]> DoBlocks() =>
-        BlockRegistry.OfKind(BlockKind.Action).Where(b => b.Id != "do.negate").Select(b => new object[] { b.Id, false })
+        BlockRegistry.OfKind(BlockKind.Action).Where(b => b.Id is not ("do.negate" or "do.negate_summon" or "do.tokens")).Select(b => new object[] { b.Id, false })
             .Concat(BlockRegistry.OfKind(BlockKind.Action).Where(b => b.Param("target") is not null).Select(b => new object[] { b.Id, true }));
 
     /// <summary>Every DO block, with its default settings, activated from a monster on a well-stocked board.</summary>
@@ -443,8 +444,12 @@ public class EngineTests
             Card = new CardData { Id = 100000300, Name = "Tester", Level = 4, Atk = 1000, Def = 1000 },
             Effects = [new EffectEvent { When = new BlockInstance("when.ignition").With("zone", fromHand ? "hand" : "monster_zone"), Do = [inst] }],
         };
+        // Attaching material needs an Xyz Monster to attach to.
+        if (blockId == "do.attach") { card.Card.Frame = MonsterFrame.Xyz; card.Procedure.Kind = SummonProcedureKind.Xyz; }
         new EngineScenario(card)
             .Card(card.Card.Id, 0, fromHand ? "hand" : "mzone")
+            // A monster to Normal Summon, and cards in the opponent's hand to discard.
+            .Card(Warrior, 0, "hand", 1).Card(Fiend, 1, "hand", 2)
             .Card(Warrior, 0, "deck", 6).Card(Trap, 0, "deck", 2).Card(Warrior, 0, "grave", 2).Card(Trap, 0, "grave", 1).Card(Spell, 0, "hand", 1)
             .Card(Fiend, 1, "mzone", 1).Card(EffectFiller, 1, "mzone", 1).Card(Warrior, 1, "deck", 3).Card(Warrior, 1, "grave", 2)
             .Activate(card.Card.Id)
@@ -506,6 +511,18 @@ public class EngineTests
             Card = new CardData { Id = 100000500, Name = "Aura", Level = 4, Atk = 1000, Def = 1000 },
             Effects = [new EffectEvent { When = new BlockInstance("when.while_face_up"), Do = [inst] }],
         };
+        if (blockId == "passive.equipped")
+        {
+            // An Equip Spell, activated from the hand onto a Warrior.
+            card.Card = new CardData { Id = 100000500, Name = "Aura", Kind = CardKind.Spell, SpellKind = SpellKind.Equip };
+            var equip = new EngineScenario(card).Card(card.Card.Id, 0, "hand").Card(Warrior, 0, "mzone").Card(Warrior, 0, "deck", 3)
+                .Activate(card.Card.Id).ExpectActivations(1)
+                .Check("Duel.GetFieldCard(0,LOCATION_MZONE,0):GetEquipCount()==1");
+            if (inst.Values["rule"] == "gain_atk") equip.Check("Duel.GetFieldCard(0,LOCATION_MZONE,0):GetAttack()==2000");
+            if (inst.Values["rule"] == "lose_atk") equip.Check("Duel.GetFieldCard(0,LOCATION_MZONE,0):GetAttack()==1000");
+            equip.AssertPasses();
+            return;
+        }
         var scenario = new EngineScenario(card).Card(card.Card.Id, 0, "mzone").Card(Warrior, 0, "mzone").Card(Warrior, 0, "deck", 3);
         if (blockId == "passive.boost_cards" && inst.Values["stat"] != "def")
             scenario.Check(inst.Values["dir"] == "gain" ? "Duel.GetFieldCard(0,LOCATION_MZONE,1):GetAttack()==2000" : "Duel.GetFieldCard(0,LOCATION_MZONE,1):GetAttack()==1000");

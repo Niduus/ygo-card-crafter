@@ -34,7 +34,7 @@ public abstract class CardGroupAction : ActionBlock
 
     public override (string Target, string Action)? DescribeTargeting(BlockArgs args)
     {
-        if (!args.Bool("target")) return null;
+        if (Param("target") is null || !args.Bool("target")) return null;
         var n = args.Int("count");
         var target = $"target {n} {args.Describe("cards")}";
         return (target, TargetedAction(args, n == 1 ? "it" : "them", n == 1));
@@ -68,7 +68,7 @@ public abstract class CardGroupAction : ActionBlock
         }
         var f = ctx.Script.Filter(filter, AbleCheck(ctx));
         var n = ctx.Args.Int("count");
-        var targeting = ctx.Args.Bool("target");
+        var targeting = Param("target") is not null && ctx.Args.Bool("target");
         var e = ctx.Effect;
         if (Category.Length > 0) e.AddCategory(Category);
         foreach (var c in ExtraCategories(filter)) e.AddCategory(c);

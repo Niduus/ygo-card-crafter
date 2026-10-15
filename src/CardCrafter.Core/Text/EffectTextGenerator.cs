@@ -15,8 +15,13 @@ public static partial class EffectTextGenerator
     {
         // Printed cards keep the materials on their own line; everything else is one paragraph.
         var paragraph = new List<string>();
+        if (EquipText(project, pack) is { Length: > 0 } equip) paragraph.Add(equip);
         if (RuleText(project) is { Length: > 0 } rule) paragraph.Add(rule);
-        paragraph.AddRange(project.Effects.Select(e => Describe(e, project.Card, pack)).Where(s => s.Length > 0));
+        var combined = CombinedLimit(project);
+        paragraph.AddRange(project.Effects
+            .Select(e => Describe(e, project.Card, pack, limitSentence: combined is null || !UsesCombinedLimit(e)))
+            .Where(s => s.Length > 0));
+        if (combined is not null) paragraph.Add(combined);
         var text = string.Join(" ", paragraph);
         return MaterialText.Describe(project, pack) is { Length: > 0 } materials
             ? (text.Length == 0 ? materials : materials + "\n" + text)
@@ -37,7 +42,47 @@ public static partial class EffectTextGenerator
         return hasProcedure ? "" : "Cannot be Normal Summoned/Set.";
     }
 
-    public static string Describe(EffectEvent effect, CardData card, CardPack? pack = null)
+    /// <summary>"Equip only to a Warrior monster." for Equip Spells that can't be equipped to every monster.</summary>
+    private static string EquipText(CardProject project, CardPack? pack)
+    {
+        var card = project.Card;
+        if (card.Kind != CardKind.Spell || card.SpellKind != SpellKind.Equip) return "";
+        var f = project.EquipFilter;
+        bool restricted = f.MonsterKind != MonsterKind.Any || f.Race != CardRace.None || f.Attribute != CardAttribute.None || f.Archetype != 0
+                          || f.CardCode != 0 || f.LevelMin is not null || f.LevelMax is not null || f.AtkMin is not null || f.AtkMax is not null;
+        var where = f.Owner switch { CardOwner.You => " you control", CardOwner.Opponent => " your opponent controls", _ => "" };
+        if (!restricted && where.Length == 0) return "";
+        var copy = f.Clone();
+        copy.CardType = FilterCardType.Monster;
+        var noun = FilterText.Describe(copy, pack, withLocation: false);
+        var article = noun.Length > 0 && "AEIOUaeiou".Contains(noun[0]) ? "an" : "a";
+        return $"Equip only to {article} {noun}{where}.";
+    }
+
+    /// <summary>Hard once-per-turn effects that are used, not activated as a Spell/Trap Card or a Summon procedure.</summary>
+    private static bool UsesCombinedLimit(EffectEvent e) =>
+        e.Limit == OncePerTurn.Hard && e.When is { } w && BlockRegistry.Find(w.BlockId) is { } t
+        && t is not (ActivateTrigger or SummonProcedureTrigger or WhileFaceUpTrigger);
+
+    /// <summary>
+    /// Printed cards with several hard once-per-turn effects say it once, at the end: "You can only use each effect of
+    /// "X" once per turn." or, when they share one limit, "You can only use 1 of these effects of "X" per turn, and
+    /// only once that turn." Null when each effect keeps its own sentence.
+    /// </summary>
+    private static string? CombinedLimit(CardProject project)
+    {
+        var hard = project.Effects.Select((e, i) => (e, i)).Where(x => UsesCombinedLimit(x.e)).ToList();
+        if (hard.Count < 2) return null;
+        var groups = hard.Select(x => x.e.SharedLimitGroup > 0 ? x.e.SharedLimitGroup : -(x.i + 1)).ToList();
+        var name = project.Card.Name;
+        if (groups.Distinct().Count() == groups.Count) return $"You can only use each effect of \"{name}\" once per turn.";
+        if (groups.Distinct().Count() == 1) return $"You can only use 1 of these effects of \"{name}\" per turn, and only once that turn.";
+        return null;
+    }
+
+    public static string Describe(EffectEvent effect, CardData card, CardPack? pack = null) => Describe(effect, card, pack, limitSentence: true);
+
+    private static string Describe(EffectEvent effect, CardData card, CardPack? pack, bool limitSentence)
     {
         if (effect.When is null || BlockRegistry.Find(effect.When.BlockId) is not { } trigger) return "";
         if (trigger is SummonProcedureTrigger) return DescribeProcedure(effect, card, pack);
@@ -67,7 +112,7 @@ public static partial class EffectTextGenerator
         }
         text = text.TrimEnd() + ".";
 
-        if (effect.Limit == OncePerTurn.Hard && !passive)
+        if (effect.Limit == OncePerTurn.Hard && !passive && limitSentence)
             text += activation
                 ? $" You can only activate 1 \"{card.Name}\" per turn."
                 : $" You can only use this effect of \"{card.Name}\" once per turn.";

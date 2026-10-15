@@ -320,7 +320,7 @@ public sealed class CardFace : Control
             }
             bottom = RuleY - 5;
         }
-        var normal = c.IsMonster && c.Frame == MonsterFrame.Normal;
+        var normal = c.IsMonster && c.Frame is MonsterFrame.Normal or MonsterFrame.Token;
         DrawFitted(ctx, _text, normal ? CardFonts.Flavor : CardFonts.Body, new Rect(inner.X, top, inner.Width, bottom - top), BodySize, ink);
     }
 

@@ -10,8 +10,10 @@ public class TextTests
     {
         var p = Samples.DragonCommander();
         var lines = p.Effects.Select(e => EffectTextGenerator.Describe(e, p.Card, Samples.Pack(p))).ToList();
-        // On the card the effects run together in one paragraph.
-        Assert.Equal(string.Join(" ", lines), EffectTextGenerator.Generate(p, Samples.Pack(p)));
+        // On the card the effects run together in one paragraph, and its two once-per-turn effects share one sentence.
+        var card = EffectTextGenerator.Generate(p, Samples.Pack(p));
+        Assert.EndsWith("Dragon monsters you control gain 300 ATK. You can only use each effect of \"Dragon Commander\" once per turn.", card);
+        Assert.DoesNotContain("this effect", card);
         Assert.Equal(
             "If this card is Normal or Special Summoned: You can add 1 Level 4 or lower Dragon monster from your Deck to your hand. " +
             "You can only use this effect of \"Dragon Commander\" once per turn.", lines[0]);
