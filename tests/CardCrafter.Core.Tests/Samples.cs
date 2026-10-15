@@ -33,7 +33,8 @@ public static class Samples
             new EffectEvent
             {
                 Label = "Search a Dragon",
-                When = new BlockInstance("when.summoned").With("how", "normal_or_special").With("optional", true),
+                When = new BlockInstance("when.summoned").With("how", "normal").With("optional", true),
+                AlsoWhen = [new BlockInstance("when.summoned").With("how", "special").With("optional", true)],
                 Do =
                 [
                     new BlockInstance("do.add_to_hand").With("count", 1)

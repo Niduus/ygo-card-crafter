@@ -77,6 +77,8 @@ public static partial class ScriptTranslator
                 result.Pieces.Add(new TranslatedPiece { Piece = piece, Reason = ex.Message });
             }
         }
+        // One WHEN block per event, as the editor offers them.
+        foreach (var e in result.Pieces.SelectMany(p => p.Effects)) TriggerSplit.Normalize(e);
         return result;
     }
 
@@ -205,56 +207,11 @@ public static partial class ScriptTranslator
         if (parts.Select(p => System.Text.Json.JsonSerializer.Serialize(p.Effect!.When)).Distinct().Count() != parts.Count) return null;
         var combined = PackSerializer.Clone(first);
         var whens = parts.Select(p => p.Effect!.When!).ToList();
-        // Things that happen to this card: one WHEN with each of them ticked.
-        if (EventsBlock(whens) is { } events) combined.When = events;
-        else combined.AlsoWhen.AddRange(whens.Skip(1));
+        combined.AlsoWhen.AddRange(whens.Skip(1));
         // Only triggers that can share one effect (same kind, used from the same place).
         var check = PackSerializer.Clone(card);
         check.Id = 100000000;
         return ScriptCompiler.Compile(new CardProject { Card = check, Effects = [combined] }).HasErrors ? null : combined;
-    }
-
-    /// <summary>
-    /// "If this card is sent to the GY or banished": self triggers as one "any of these happen" block with each event
-    /// ticked, or null when one of them isn't such an event.
-    /// </summary>
-    private static BlockInstance? EventsBlock(List<BlockInstance> whens)
-    {
-        var keys = new List<string>();
-        foreach (var w in whens)
-        {
-            string[]? k = (w.BlockId, w.Values.GetValueOrDefault("how") ?? w.Values.GetValueOrDefault("from") ?? w.Values.GetValueOrDefault("by") ?? w.Values.GetValueOrDefault("event")) switch
-            {
-                ("when.summoned", "normal") => ["normal"],
-                ("when.summoned", "special") => ["special"],
-                ("when.summoned", "flip") => ["flip_summon"],
-                ("when.summoned", "normal_or_special") => ["normal", "special"],
-                ("when.summoned", "any") => ["normal", "flip_summon", "special"],
-                ("when.summoned", "normal_special_tributed") => ["normal", "special", "tributed"],
-                ("when.summoned", "link" or "synchro" or "xyz" or "fusion" or "ritual" or "pendulum") => [w.Values["how"]],
-                ("when.sent_to_gy", "any" or null) => ["sent_gy"],
-                ("when.sent_to_gy", "field") => ["sent_gy_field"],
-                ("when.sent_to_gy", "hand") => ["sent_gy_hand"],
-                ("when.sent_to_gy", "deck") => ["sent_gy_deck"],
-                ("when.destroyed", "any" or null) => ["destroyed"],
-                ("when.destroyed", "battle") => ["destroyed_battle"],
-                ("when.destroyed", "effect") => ["destroyed_effect"],
-                ("when.destroyed", "opponent") => ["destroyed_opponent"],
-                ("when.this_card", "banished" or "leaves_field" or "tributed" or "discarded" or "flipped" or "targeted" or "battle_damage") => [w.Values["event"]],
-                ("when.this_card", "to_hand") => ["returned_hand"],
-                ("when.this_card", "added_to_hand") => ["added_hand"],
-                ("when.destroys_by_battle", "any" or null) => ["destroys_battle"],
-                _ => null,
-            };
-            if (k is null) return null;
-            keys.AddRange(k);
-        }
-        var optional = whens.Select(w => w.Values.GetValueOrDefault("optional") ?? "true").Distinct().ToList();
-        if (optional.Count != 1 || keys.Distinct().Count() != keys.Count) return null;
-        var block = Block(ThisCardEventsTrigger.BlockId);
-        foreach (var e in ThisCardEventsTrigger.All) block.Values[e.Key] = keys.Contains(e.Key) ? "true" : "false";
-        block.Values["optional"] = optional[0];
-        return block;
     }
 
     /// <summary>How copies of one effect combine into one block: the codes they use, the first being the main one.</summary>
@@ -404,8 +361,6 @@ public static partial class ScriptTranslator
             damageStep = true;
         }
         var (when, usedCondition) = Trigger(type, code, range, condition, alsoSpecial, fns, merge.AlsoTributed);
-        // Mitsurugi: one WHEN with "Normal", "Special" and "Tributed" ticked, so other events can be ticked too.
-        if (merge.AlsoTributed && EventsBlock([when]) is { } events) when = events;
         if (merge.AlsoFlip)
         {
             if (when.BlockId != "when.summoned") throw No("it registers more than one effect");

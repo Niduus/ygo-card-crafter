@@ -119,9 +119,13 @@ public class BlockCoverageTests
                 Effects = [new EffectEvent { When = Block("when.event", ("event", ev.Value), ("zone", "hand")), Do = [Block("do.special_summon_self")] }],
             });
         foreach (var c in cards) Assert.False(ScriptCompiler.Compile(c).HasErrors, c.Card.Name);
-        var s = new EngineScenario([.. cards]);
-        foreach (var c in cards) s.Card(c.Card.Id, 0, "hand");
-        s.Card(Warrior, 0, "deck", 5).Card(Fiend, 1, "hand").Card(Warrior, 1, "deck", 5).Summon(Fiend).Turns(2).AssertPasses();
+        // A few dozen cards per duel: the test harness has a fixed-size hand.
+        foreach (var batch in cards.Chunk(25))
+        {
+            var s = new EngineScenario([.. batch]);
+            foreach (var c in batch) s.Card(c.Card.Id, 0, "hand");
+            s.Card(Warrior, 0, "deck", 5).Card(Fiend, 1, "hand").Card(Warrior, 1, "deck", 5).Summon(Fiend).Turns(2).AssertPasses();
+        }
     }
 }
 

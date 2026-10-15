@@ -15,6 +15,8 @@ public sealed partial class EffectViewModel : ObservableObject
     public EffectViewModel(EffectEvent model, CardViewModel owner, Func<CardPack> pack, Action changed)
     {
         Model = model;
+        // Older combined WHEN choices show as one WHEN per event with "Or when".
+        TriggerSplit.Normalize(model);
         Owner = owner;
         _pack = pack;
         _changed = changed;
@@ -40,16 +42,37 @@ public sealed partial class EffectViewModel : ObservableObject
     public bool CanAddAlsoWhen => Model.When is not null && !IsPassive && !IsProcedure;
 
     /// <summary>Triggers offered by "Or when ...": the ones that start an activated effect.</summary>
-    public IEnumerable<BlockDefinition> AlsoWhenChoices => BlockRegistry.OfKind(BlockKind.Trigger)
+    public IEnumerable<BlockDefinition> AlsoWhenChoices => BlockRegistry.Offered(BlockKind.Trigger)
         .Where(d => d.Id is not ("when.while_face_up" or SummonProcedureTrigger.BlockId));
 
     public void AddAlsoWhen(BlockDefinition def)
     {
         if (!CanAddAlsoWhen) return;
-        Model.AlsoWhen.Add(def.CreateInstance());
+        Model.AlsoWhen.Add(NextWhen(def, Model.When!, Model.AlsoWhen));
         Rebuild();
         _changed();
     }
+    /// <summary>
+    /// A new "or when" block that starts like the effect's first WHEN (optional or not, where this card is, which
+    /// cards) on the next event not used yet: after "Normal Summoned" comes "Special Summoned".
+    /// </summary>
+    public static BlockInstance NextWhen(BlockDefinition def, BlockInstance first, IReadOnlyList<BlockInstance> others)
+    {
+        var inst = def.CreateInstance();
+        foreach (var key in new[] { "optional", "zone" })
+            if (def.Param(key) is not null && first.Values.TryGetValue(key, out var value)) inst.Values[key] = value;
+        if (def.Id != first.BlockId) return inst;
+        foreach (var (key, value) in first.Values) inst.Values[key] = value;
+        foreach (var (key, filter) in first.Filters) inst.Filters[key] = filter.Clone();
+        // The block's main choice moves on to one the effect doesn't use yet.
+        if (def.Params.FirstOrDefault(p => p.Type == ParamType.Choice && p.Key is not ("optional" or "zone")) is { } main)
+        {
+            var used = new[] { first }.Concat(others).Where(b => b.BlockId == def.Id).Select(b => b.Values.GetValueOrDefault(main.Key)).ToHashSet();
+            if (main.Choices.FirstOrDefault(c => !used.Contains(c.Value)) is { } next) inst.Values[main.Key] = next.Value;
+        }
+        return inst;
+    }
+
     public bool IsPassive => Model.When?.BlockId == "when.while_face_up";
     /// <summary>A Special Summon procedure: the Summon is what it does, so it has no DO blocks.</summary>
     public bool IsProcedure => Model.When?.BlockId == SummonProcedureTrigger.BlockId;
@@ -89,8 +112,8 @@ public sealed partial class EffectViewModel : ObservableObject
     /// <summary>Blocks offered by each "+" menu. Lasting effects only offer lasting DO blocks.</summary>
     public IEnumerable<BlockDefinition> Available(BlockKind kind) => kind switch
     {
-        BlockKind.Action => BlockRegistry.OfKind(IsPassive ? BlockKind.Passive : BlockKind.Action),
-        _ => BlockRegistry.OfKind(kind),
+        BlockKind.Action => BlockRegistry.Offered(IsPassive ? BlockKind.Passive : BlockKind.Action),
+        _ => BlockRegistry.Offered(kind),
     };
 
     public void SetTrigger(BlockDefinition def)
@@ -114,7 +137,7 @@ public sealed partial class EffectViewModel : ObservableObject
     /// IF blocks offered among the DO blocks: the DO blocks after them happen only if they hold
     /// ("..., then if you control a Synchro Monster, destroy that card").
     /// </summary>
-    public IEnumerable<BlockDefinition> AvailableGates => IsPassive ? [] : BlockRegistry.OfKind(BlockKind.Condition);
+    public IEnumerable<BlockDefinition> AvailableGates => IsPassive ? [] : BlockRegistry.Offered(BlockKind.Condition);
 
     public void AddGate(BlockDefinition def)
     {

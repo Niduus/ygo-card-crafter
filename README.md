@@ -42,7 +42,7 @@ your pack open. The version button in the top-right corner checks on demand. Upd
 
 | Column | Meaning | Examples |
 |---|---|---|
-| **WHEN** | What starts the effect. **This card: any of these happen** ticks any mix of events; **+ Or when...** adds any other trigger. | You activate it in the Main Phase · Quick Effect · If this card is Summoned · Activate this Spell/Trap · While this card is face-up |
+| **WHEN** | What starts the effect, one event per block; **+ Or when...** adds more. | You activate it in the Main Phase · Quick Effect · If this card is Summoned · Activate this Spell/Trap · While this card is face-up |
 | **IF** | What must be true. | You control 2 or more Dragon monsters · It is your opponent's turn · Your LP are 2000 or less |
 | **COST** | What you pay to activate. | Discard 1 card · Pay 1000 LP · Banish this card |
 | **DO** | What happens, in order. | Draw 2 cards · Add 1 monster from your Deck to your hand · Target 1 card; destroy it |
@@ -133,16 +133,34 @@ option has its own blocks, targets and checks, the player picks one that can be 
 - "If this card battles a monster, neither can be destroyed by that battle", "ignoring its Summoning conditions",
   Main Phase 1 / Main Phase 2 (plain "Main Phase" means either) and Spell/Trap as a card type in every picker.
 
-**Any mix of things that happen to this card.** The WHEN block **This card: any of these happen (tick several)** has a
-tick box for every event that starts a self trigger: Normal, Tribute, Flip and Special Summons (and Ritual, Fusion,
-Synchro, Xyz, Link and Pendulum Summons, or Special Summoned from the hand or GY), Tributed, sent to the GY (from
-anywhere, the field, the hand or the Deck), destroyed (any way, by battle, by a card effect or by an opponent's card),
-banished, returned from the field to the hand, added to the hand except by drawing, shuffled into the Deck, discarded,
-flipped face-up, targeted by a card effect, used as material, leaves the field, inflicts battle damage, and destroys
-a monster by battle. The text joins them like a card: "If this card is Normal or Special Summoned, or if this card is
-Tributed", "If this card is sent to the GY or banished", "If this card is destroyed by battle or card effect". It is
-one effect, so its once per turn covers every event, and each event keeps its own check. Translated cards whose
-copies differ only in their event become this block.
+**One event per WHEN, combined with "+ Or when...".** Every WHEN dropdown holds single events: "If this card is
+Normal Summoned", "Special Summoned", "Tributed", "When your opponent Special Summons a monster(s)". To start one
+effect on several, add **+ Or when...**: the new WHEN starts like the first (optional or not, where this card is) on
+the next event you haven't used. The card text joins them like a real card:
+- "If this card is Normal or Special Summoned, or if this card is Tributed" (Mitsurugi)
+- "If this card is sent to the GY or banished", "If this card is destroyed by battle or card effect"
+- "If this card is Special Summoned from the hand or GY", "If your opponent Normal or Special Summons a monster(s)"
+- "When your opponent Normal or Special Summons a monster(s) (Quick Effect)"
+- "If this card is Normal Summoned, or if your opponent Special Summons a monster(s)"
+
+Any triggers can be combined, and the effect keeps one once per turn. Triggers of the same kind share one effect,
+registered once per event; when they check different things, the effect checks which event started it. Other triggers
+become clones of the effect with their own type, zone and checks, as official scripts do. Fields that don't apply are
+hidden, like "from the GY" on a Normal Summon. Packs from older versions, and their combined choices ("Normal or
+Special", the old tick-several block), open already split into single WHENs.
+
+**More events.** Things that can happen to this card: Special Summoned from the hand, Deck, GY, banishment or Extra
+Deck; banished face-down; leaves the field because of an opponent's card (effect); drawn; returned to the Deck or Extra
+Deck; placed face-up in the Extra Deck; detached from an Xyz Monster; its battle position is changed; control of it
+changes; equipped with an Equip Card; targeted by an opponent's card effect; you take battle damage from its battle;
+declares a direct attack; sent to the GY by a card effect, by an opponent's card (effect), by battle or as a cost;
+destroyed while face-down or in the Pendulum Zone; used as Ritual Material. In the duel: you or your opponent Flip
+Summons; your opponent Sets a monster or Spell/Trap; monsters destroyed by battle on either side; cards discarded;
+cards returned to the hand; you search or draw; your opponent takes damage or gains LP; you take effect damage; a
+monster you control declares an attack; your opponent's monsters leave the field; control or battle position changes;
+your cards are targeted; your opponent activates a Spell/Trap Card or effect, a Spell Card or a Trap Card; you
+activate a card or effect. Matching cards can also be Flip Summoned, banished, Tributed, returned to the hand, destroyed
+by a card effect or leave the field. Quick Effects can be "During the Main Phase" or "During the Standby Phase".
 
 **Colour-coded card browser.** Every effect of a browsed card says what became of it, in colour, and quotes the
 sentence of the card's text it stands for:
@@ -199,6 +217,10 @@ Girl""), cards that mention a card, and cards in the hand that aren't revealed y
 
 **Codes.** The Card tab and the card browser list the card's passcode, card type, Type, Attribute and every archetype
 code (with its name), each with a **Copy** button, plus **Copy all codes**.
+
+**Older script sets.** Some YGO Omega versions ship an older set of engine scripts. When a card's script uses a newer
+constant or helper (like `SUMMON_VALUE_SELF` for "Summoned by its own effect", or `aux.SelectFromOptions` for
+"Activate 1 of these effects"), the script defines it if the game doesn't have it.
 
 **Strings (str1–str16).** Like DataEditorX's string section, the Card tab's **Strings** section shows what the database
 gets for each `aux.Stringid`: each effect's own text, then the options of "Activate 1 of these effects". Type over any

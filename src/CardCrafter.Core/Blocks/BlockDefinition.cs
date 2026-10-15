@@ -46,6 +46,15 @@ public sealed class ParamSpec
     /// <summary>For card filters: the block says where the card is, so the picker only asks what the card is.</summary>
     public bool WhereFromBlock { get; init; }
 
+    /// <summary>When set, the editor shows this blank only while it applies, like "from the GY" for Special Summons only.</summary>
+    public Func<BlockInstance, bool>? ShownWhen { get; private set; }
+
+    public ParamSpec ShowIf(Func<BlockInstance, bool> shown)
+    {
+        ShownWhen = shown;
+        return this;
+    }
+
     public static ParamSpec Int(string key, string label, int def, int min = 0, int max = 999999) =>
         new() { Key = key, Label = label, Type = ParamType.Integer, Default = def.ToString(CultureInfo.InvariantCulture), Min = min, Max = max };
 
@@ -81,6 +90,15 @@ public abstract class BlockDefinition
     /// <summary>Card-text wording for this block with its values filled in.</summary>
     public virtual string Describe(BlockArgs args) => FillSentence(Sentence, args);
 
+    /// <summary>
+    /// For WHEN blocks: how the trigger reads when several of them start one effect, so "Normal Summoned" and
+    /// "Special Summoned" read as "If this card is Normal or Special Summoned". Null when it doesn't combine.
+    /// </summary>
+    public virtual EventPhrase? Phrase(BlockArgs args) => null;
+
+    /// <summary>Kept so older packs load, but no longer offered in the menus (another block does its job).</summary>
+    public virtual bool Hidden => false;
+
     /// <summary>A sentence that goes after the effect's text, e.g. a restriction a cost puts on the turn. Usually empty.</summary>
     public virtual string Afterword(BlockArgs args) => "";
 
@@ -115,6 +133,14 @@ public abstract class BlockDefinition
         return sb.ToString().TrimEnd() + args.ExceptText();
     }
 }
+
+/// <summary>
+/// One trigger's wording for combining: <paramref name="Template"/> holds "{0}" where the triggers that share it put
+/// their <paramref name="Label"/>, joined with "or": "this card is {0} Summoned" + "Normal", "Special".
+/// </summary>
+/// <param name="Lead">"If" or "When".</param>
+/// <param name="Alone">The wording when no other trigger shares the template ("a monster", not "a monster(s)").</param>
+public sealed record EventPhrase(string Lead, string Template, string Label = "", string? Alone = null);
 
 public readonly record struct SentenceSegment(string Text, string? Key);
 

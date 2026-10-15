@@ -30,7 +30,7 @@
                              Increment="{Binding Increment}" FormatString="0" Width="{Binding Width}" ShowButtonSpinner="False" ToolTip.Tip="{Binding Label}" />
             </DataTemplate>
             <DataTemplate DataType="vm:ChoiceSegmentViewModel">
-              <ComboBox Classes="inline" ItemsSource="{Binding Choices}" SelectedItem="{Binding Selected}" ToolTip.Tip="{Binding Label}">
+              <ComboBox Classes="inline" ItemsSource="{Binding Choices}" SelectedItem="{Binding Selected}" ToolTip.Tip="{Binding Label}" IsVisible="{Binding IsShown}">
                 <ComboBox.ItemTemplate>
                   <DataTemplate DataType="blocks:ChoiceOption">
                     <TextBlock Text="{Binding Display}" />

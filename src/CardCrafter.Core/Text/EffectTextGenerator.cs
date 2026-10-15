@@ -91,6 +91,11 @@ public static partial class EffectTextGenerator
     private static string Describe(EffectEvent effect, CardData card, CardPack? pack, bool limitSentence)
     {
         _cardName = card.Name;
+        if (TriggerSplit.NeedsSplit(effect))
+        {
+            effect = PackSerializer.Clone(effect);
+            TriggerSplit.Normalize(effect);
+        }
         if (effect.When is null || BlockRegistry.Find(effect.When.BlockId) is not { } trigger) return "";
         if (trigger is SummonProcedureTrigger) return DescribeProcedure(effect, card, pack);
 
@@ -239,10 +244,11 @@ public static partial class EffectTextGenerator
     /// <summary>The part before the colon: trigger wording plus IF conditions.</summary>
     private static string Head(BlockDefinition trigger, EffectEvent effect, CardPack? pack, bool passive)
     {
-        var when = Text(effect.When!, pack);
         // "If this card is Normal or Special Summoned, or if this card is Tributed".
-        foreach (var also in effect.AlsoWhen.Select(b => Text(b, pack)).Where(t => t.Length > 0))
-            when = when.Length == 0 ? also : $"{when}, or {SentenceCase.Lower(also)}";
+        var when = effect.AlsoWhen.Count > 0 && Combined(effect, pack) is { } combined ? combined : Text(effect.When!, pack);
+        if (effect.AlsoWhen.Count > 0 && Combined(effect, pack) is null)
+            foreach (var also in effect.AlsoWhen.Select(b => Text(b, pack)).Where(t => t.Length > 0))
+                when = when.Length == 0 ? also : $"{when}, or {SentenceCase.Lower(also)}";
         var conditions = effect.If.Select(b => Text(b, pack)).Where(t => t.Length > 0).ToList();
         var cond = string.Join(" and ", conditions);
 
@@ -334,6 +340,47 @@ public static partial class EffectTextGenerator
         var def = BlockRegistry.Find(b.BlockId);
         return def is null ? "" : SentenceCase.Lower(Clean(def.Describe(new BlockArgs(def, b, pack) { Effect = effect, CardName = _cardName })));
     }
+
+    /// <summary>
+    /// The WHEN blocks of an effect read together: events that share wording share it ("this card is Normal or Special
+    /// Summoned"), the rest follow with ", or if" ("..., or if this card is Tributed"). Null when one doesn't combine.
+    /// </summary>
+    private static string? Combined(EffectEvent effect, CardPack? pack)
+    {
+        var groups = new List<(string Lead, string Template, List<string> Labels, string? Alone)>();
+        foreach (var b in new[] { effect.When! }.Concat(effect.AlsoWhen))
+        {
+            if (BlockRegistry.Find(b.BlockId) is not { } def) return null;
+            if (def.Phrase(new BlockArgs(def, b, pack) { Effect = effect, CardName = _cardName }) is not { } phrase) return null;
+            var at = groups.FindIndex(g => g.Lead == phrase.Lead && g.Template == phrase.Template);
+            if (at < 0) groups.Add((phrase.Lead, phrase.Template, [phrase.Label], phrase.Alone));
+            else if (!groups[at].Labels.Contains(phrase.Label)) groups[at].Labels.Add(phrase.Label);
+        }
+        var clauses = groups.Select(g =>
+        {
+            var labels = g.Labels.ToList();
+            // "destroyed by battle or card effect".
+            var battle = labels.IndexOf("destroyed by battle");
+            if (battle >= 0 && labels.Remove("destroyed by a card effect")) labels[labels.IndexOf("destroyed by battle")] = "destroyed by battle or card effect";
+            if (labels.Count == 1 && g.Alone is { } alone) return (g.Lead, Text: alone);
+            // "from the hand or GY": "the" once.
+            if (labels.Count > 1 && labels[0].StartsWith("the ", StringComparison.Ordinal))
+                labels = [labels[0], .. labels.Skip(1).Select(l => l.StartsWith("the ", StringComparison.Ordinal) ? l[4..] : l)];
+            return (g.Lead, Text: g.Template.Replace("{0}", OrList(labels), StringComparison.Ordinal));
+        }).ToList();
+        var sentence = clauses[0].Lead + " " + clauses[0].Text
+            + string.Concat(clauses.Skip(1).Select(c => $", or {c.Lead.ToLowerInvariant()} {c.Text}"));
+        return SentenceCase.Lower(Clean(sentence));
+    }
+
+    /// <summary>"A or B", "A, B, or C".</summary>
+    private static string OrList(IReadOnlyList<string> items) => items.Count switch
+    {
+        0 => "",
+        1 => items[0],
+        2 => $"{items[0]} or {items[1]}",
+        _ => string.Join(", ", items.Take(items.Count - 1)) + ", or " + items[^1],
+    };
 
     /// <summary>Collapses the double spaces left by empty blanks.</summary>
     private static string Clean(string s) => Spaces().Replace(s, " ").Replace(" ,", ",").Trim();

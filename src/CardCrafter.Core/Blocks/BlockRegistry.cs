@@ -134,4 +134,7 @@ public static class BlockRegistry
     public static BlockDefinition? Find(string id) => ById.GetValueOrDefault(id);
 
     public static IEnumerable<BlockDefinition> OfKind(BlockKind kind) => All.Where(b => b.Kind == kind);
+
+    /// <summary>The blocks the menus offer: <see cref="OfKind"/> without the ones kept only so older packs load.</summary>
+    public static IEnumerable<BlockDefinition> Offered(BlockKind kind) => OfKind(kind).Where(b => !b.Hidden);
 }

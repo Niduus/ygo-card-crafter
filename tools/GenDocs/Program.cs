@@ -20,7 +20,7 @@ foreach (var (kind, title, intro) in new[]
 {
     sb.AppendLine($"## {title}").AppendLine().AppendLine(intro).AppendLine();
     sb.AppendLine("| Block | Reads as | Options |").AppendLine("|---|---|---|");
-    foreach (var b in BlockRegistry.OfKind(kind))
+    foreach (var b in BlockRegistry.Offered(kind))
     {
         var opts = string.Join("; ", b.Params.Select(p => p.Type switch
         {

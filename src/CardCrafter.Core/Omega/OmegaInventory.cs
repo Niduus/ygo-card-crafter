@@ -230,7 +230,15 @@ public sealed partial class OmegaInventory
         sb.AppendLine($"Can write here without admin: {(RootWritable ? "yes" : "no")}");
         sb.AppendLine();
         sb.AppendLine($"Card databases ({CardDatabases.Count}):");
-        foreach (var d in CardDatabases) sb.AppendLine($"  {Rel(d.Path)}  [{d.Cards} cards, {d.Bytes / 1024} KB]");
+        foreach (var d in CardDatabases)
+        {
+            sb.AppendLine($"  {Rel(d.Path)}  [{d.Cards} cards, {d.Bytes / 1024} KB]");
+            // Where the game's prompts ("you can ...", effect lists) take their text from.
+            var strings = CdbFile.StringsSummary(d.Path);
+            sb.AppendLine(strings is { } st
+                ? $"    effect strings (str1): {st.WithStrings} of {st.Total} cards{(st.Example is { } ex ? $", e.g. {(ex.Length > 120 ? ex[..120] + "..." : ex)}" : "")}"
+                : "    effect strings: no str1..str16 columns");
+        }
         if (OtherSqliteFiles.Count > 0)
         {
             sb.AppendLine($"Other SQLite files ({OtherSqliteFiles.Count}):");

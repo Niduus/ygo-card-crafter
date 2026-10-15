@@ -40,6 +40,10 @@ public sealed class ChoiceSegmentViewModel(ParamSpec spec, BlockInstance inst, A
     public string Label => spec.Label;
     public IReadOnlyList<ChoiceOption> Choices => spec.Choices;
 
+    /// <summary>False while the blank doesn't apply, like "from the GY" on a Normal Summon.</summary>
+    public bool IsShown => spec.ShownWhen?.Invoke(inst) ?? true;
+    public void RefreshShown() => OnPropertyChanged(nameof(IsShown));
+
     public ChoiceOption? Selected
     {
         get => spec.Choices.FirstOrDefault(c => c.Value == inst.Values.GetValueOrDefault(spec.Key, spec.Default)) ?? spec.Choices[0];

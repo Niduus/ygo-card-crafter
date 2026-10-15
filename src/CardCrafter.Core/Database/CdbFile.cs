@@ -497,6 +497,32 @@ public static class CdbFile
         }
     }
 
+    /// <summary>
+    /// For the scan report: how many cards have effect strings (texts.str1), and one example, so it shows whether a
+    /// database keeps its prompts there. Null when it has no str1 column.
+    /// </summary>
+    public static (int WithStrings, int Total, string? Example)? StringsSummary(string path)
+    {
+        try
+        {
+            using var conn = Open(path, SqliteOpenMode.ReadOnly);
+            if (!Columns(conn, "texts").Contains("str1", StringComparer.OrdinalIgnoreCase)) return null;
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT count(*) FROM texts";
+            var total = Convert.ToInt32(cmd.ExecuteScalar());
+            cmd.CommandText = "SELECT count(*) FROM texts WHERE str1 IS NOT NULL AND trim(str1)<>''";
+            var with = Convert.ToInt32(cmd.ExecuteScalar());
+            cmd.CommandText = "SELECT name, str1 FROM texts WHERE str1 IS NOT NULL AND trim(str1)<>'' ORDER BY id LIMIT 1";
+            using var rd = cmd.ExecuteReader();
+            string? example = rd.Read() ? $"{(rd.IsDBNull(0) ? "" : rd.GetValue(0))}: \"{rd.GetValue(1)}\"" : null;
+            return (with, total, example);
+        }
+        catch (Exception ex) when (ex is SqliteException or InvalidCastException or FormatException or IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
     public static bool LooksLikeSqlite(string path)
     {
         try

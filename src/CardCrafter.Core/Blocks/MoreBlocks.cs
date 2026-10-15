@@ -106,17 +106,19 @@ public sealed class DetachCost : CostBlock
 
 public sealed class UsedAsMaterialTrigger : SelfTriggerBlock
 {
-    public override string Id => "when.used_as_material";
+    public const string BlockId = "when.used_as_material";
+    public override string Id => BlockId;
     public override string Name => "This card is used as material";
     public override string Sentence => "If this card is used as material for a {kind} Summon";
-    public override string Help => "Fusion, Synchro and Link Materials go to the GY, so they can activate. Xyz Materials go under the Xyz monster and can't.";
+    public override string Help => "Fusion, Synchro, Link and Ritual materials go to the GY, so they can activate. Xyz Materials go under the Xyz monster and can't. " +
+                                   "For \"a Fusion or Synchro Summon\", add the other with \"+ Or when...\".";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Choice("kind", "Summon",
-            new("any", "Fusion, Synchro or Link"),
             new("fusion", "Fusion"),
             new("synchro", "Synchro"),
-            new("link", "Link")),
+            new("link", "Link"),
+            new("ritual", "Ritual")),
         ParamSpec.Flag("gy", "only if sent to the GY", false),
         OptionalParam,
     ];
@@ -125,6 +127,9 @@ public sealed class UsedAsMaterialTrigger : SelfTriggerBlock
         ? $"If this card is sent to the GY as material for a {args.Describe("kind")} Summon"
         : $"If this card is used as material for a {args.Describe("kind")} Summon";
 
+    public override EventPhrase? Phrase(BlockArgs args) =>
+        new("If", args.Bool("gy") ? "this card is sent to the GY as material for a {0} Summon" : "this card is used as material for a {0} Summon", args.Describe("kind"));
+
     public override void Compile(BlockContext ctx)
     {
         Zones.RequireMonster(ctx, Name);
@@ -132,10 +137,10 @@ public sealed class UsedAsMaterialTrigger : SelfTriggerBlock
         if (ctx.Args.Bool("gy")) ctx.Effect.Conditions.Add("e:GetHandler():IsLocation(LOCATION_GRAVE)");
         var reason = ctx.Args.Choice("kind") switch
         {
-            "fusion" => "REASON_FUSION",
             "synchro" => "REASON_SYNCHRO",
             "link" => "REASON_LINK",
-            _ => "REASON_FUSION+REASON_SYNCHRO+REASON_LINK",
+            "ritual" => "REASON_RITUAL",
+            _ => "REASON_FUSION",
         };
         ctx.Effect.Conditions.Add($"e:GetHandler():IsReason({reason})");
     }

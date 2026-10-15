@@ -29,6 +29,22 @@ public sealed class BranchTarget
 }
 
 /// <summary>
+/// An "or when" trigger that can't share the effect object (another kind of trigger, used from another place, or
+/// "When" next to "If"): a clone of the effect with its own type, event, zone, properties and checks.
+/// </summary>
+public sealed class TriggerVariant
+{
+    public required List<string> Types { get; init; }
+    public required string Code { get; init; }
+    public List<string> ExtraCodes { get; init; } = [];
+    public string? Range { get; init; }
+    public List<string> Properties { get; init; } = [];
+    public string? HintTiming { get; init; }
+    /// <summary>What this trigger itself checks; the IF blocks' checks are added to it.</summary>
+    public List<string> Conditions { get; init; } = [];
+}
+
+/// <summary>
 /// Accumulates everything the blocks of one effect contribute, then writes the effect object
 /// and its condition, cost, target and operation functions.
 /// </summary>
@@ -49,6 +65,14 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
     public List<string> Types { get; } = [];
     public string? Code { get; set; }
     public List<string> ExtraCodes { get; } = [];
+    /// <summary>"Or when" triggers written as clones with their own settings.</summary>
+    public List<TriggerVariant> Variants { get; } = [];
+    /// <summary>How many of <see cref="Conditions"/> come first from the WHEN blocks (the rest are shared by every trigger).</summary>
+    public int TriggerConditionCount { get; set; }
+    /// <summary>The properties the first WHEN block set, which its variants replace with their own.</summary>
+    public List<string> TriggerProperties { get; } = [];
+    /// <summary>True when the effect is registered more than once (several events), so a soft once per turn must be shared.</summary>
+    public bool HasClones => ExtraCodes.Count > 0 || Variants.Count > 0;
     public string? Range { get; set; }
     public string? HintTiming { get; set; }
     public bool IsMandatory { get; set; }
@@ -233,6 +257,28 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
             lines.Add($"local {clone}={Var}:Clone()");
             lines.Add($"{clone}:SetCode({code})");
             lines.Add($"c:RegisterEffect({clone})");
+        }
+        foreach (var v in Variants)
+        {
+            var clone = $"{Var}{suffix++}";
+            lines.Add($"local {clone}={Var}:Clone()");
+            if (!v.Types.ToHashSet().SetEquals(Types)) lines.Add($"{clone}:SetType({Lua.Join(v.Types)})");
+            lines.Add($"{clone}:SetCode({v.Code})");
+            var props = Properties.Except(TriggerProperties).Union(v.Properties).ToList();
+            if (!props.ToHashSet().SetEquals(Properties)) lines.Add($"{clone}:SetProperty({(props.Count == 0 ? "0" : Lua.Join(props))})");
+            if (v.Range is not null && v.Range != Range) lines.Add($"{clone}:SetRange({v.Range})");
+            if (v.HintTiming is not null && v.HintTiming != HintTiming) lines.Add($"{clone}:SetHintTiming(0,{v.HintTiming})");
+            var conds = v.Conditions.Concat(Conditions.Skip(TriggerConditionCount)).ToList();
+            if (!conds.SequenceEqual(Conditions))
+                lines.Add($"{clone}:SetCondition({(conds.Count == 0 ? "aux.TRUE" : Script.AddFunction(p + "con", "e,tp,eg,ep,ev,re,r,rp", ReturnAll(conds)))})");
+            lines.Add($"c:RegisterEffect({clone})");
+            foreach (var code in v.ExtraCodes)
+            {
+                var more = $"{Var}{suffix++}";
+                lines.Add($"local {more}={clone}:Clone()");
+                lines.Add($"{more}:SetCode({code})");
+                lines.Add($"c:RegisterEffect({more})");
+            }
         }
         return lines;
     }

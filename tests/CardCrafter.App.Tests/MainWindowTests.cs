@@ -157,8 +157,8 @@ public class MainWindowTests
         Shot(window, "2-effects-tab");
 
         // The sheet shows one block row per placed block.
-        // Starter effect: WHEN + IF + 2 DO. Template effect: WHEN + DO.
-        Assert.Equal(6, window.GetVisualDescendants().OfType<BlockView>().Count());
+        // Starter effect: WHEN (Normal Summoned) + or WHEN (Special Summoned) + IF + 2 DO. Template effect: WHEN + DO.
+        Assert.Equal(7, window.GetVisualDescendants().OfType<BlockView>().Count());
 
         // Changing a blank recompiles the script immediately.
         var damage = card.Effects[0].Actions.Last();

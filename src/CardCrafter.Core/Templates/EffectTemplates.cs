@@ -101,7 +101,7 @@ public static class EffectTemplates
             Description = "When your opponent summons a monster: banish 1 monster they control.",
             Create = () => new EffectEvent
             {
-                Label = "Trap hole", When = B("when.activate").With("timing", "summon"),
+                Label = "Trap hole", When = B("when.activate").With("timing", "summon_normal"), AlsoWhen = [B("when.activate").With("timing", "summon_special")],
                 Do = [B("do.banish").With("cards", Narrow(CardFilter.OpponentField(FilterCardType.Monster)))],
             },
         },
@@ -111,7 +111,7 @@ public static class EffectTemplates
             Description = "If this card is Normal or Special Summoned: add 1 monster from your Deck to your hand.",
             Create = () => new EffectEvent
             {
-                Label = "Search", When = B("when.summoned").With("how", "normal_or_special"), Limit = OncePerTurn.Hard,
+                Label = "Search", When = B("when.summoned").With("how", "normal"), AlsoWhen = [B("when.summoned").With("how", "special")], Limit = OncePerTurn.Hard,
                 Do = [B("do.add_to_hand").With("cards", new CardFilter { Zones = Zone.Deck, CardType = FilterCardType.Monster })],
             },
         },
@@ -332,7 +332,7 @@ public static class EffectTemplates
             Description = "When your opponent summons a monster: destroy 1 monster with 1000 or more ATK they control.",
             Create = () => new EffectEvent
             {
-                Label = "Trap hole", When = B("when.activate").With("timing", "summon"),
+                Label = "Trap hole", When = B("when.activate").With("timing", "summon_normal"), AlsoWhen = [B("when.activate").With("timing", "summon_special")],
                 Do = [B("do.destroy").With("cards", new CardFilter { Owner = CardOwner.Opponent, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster, FaceUpOnly = true, AtkMin = 1000 })],
             },
         },
@@ -394,7 +394,7 @@ public static class EffectTemplates
             Description = "If this card is Summoned: send 1 monster from your Deck to the GY.",
             Create = () => new EffectEvent
             {
-                Label = "Send", When = B("when.summoned").With("how", "normal_or_special"), Limit = OncePerTurn.Hard,
+                Label = "Send", When = B("when.summoned").With("how", "normal"), AlsoWhen = [B("when.summoned").With("how", "special")], Limit = OncePerTurn.Hard,
                 Do = [B("do.send_to_gy").With("cards", new CardFilter { Zones = Zone.Deck, CardType = FilterCardType.Monster })],
             },
         },
@@ -586,7 +586,7 @@ public static class EffectTemplates
             Description = "When your opponent would Normal or Special Summon a monster(s) (Quick Effect): you can negate the Summon, and if you do, you can Special Summon this card from your hand.",
             Create = () => new EffectEvent
             {
-                Label = "Negate Summon", When = B("when.quick").With("timing", "would_summon").With("zone", "hand"), Limit = OncePerTurn.Hard,
+                Label = "Negate Summon", When = B("when.quick").With("timing", "would_normal").With("zone", "hand"), AlsoWhen = [B("when.quick").With("timing", "would_special").With("zone", "hand")], Limit = OncePerTurn.Hard,
                 Do = [B("do.negate_summon").With("and", "nothing"), B("do.special_summon_self").Linked(ActionLink.IfYouDo).MayDo()],
             },
         },

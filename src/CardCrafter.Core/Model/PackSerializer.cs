@@ -27,6 +27,8 @@ public static class PackSerializer
         // Version 1 put every card in the OCG/TCG pool (ot 3), where YGO Omega doesn't list custom cards.
         if (pack.FormatVersion < 2 && pack.Ot == (int)CardPool.OcgTcg) pack.Ot = (int)CardPool.Custom;
         pack.FormatVersion = CardPack.CurrentFormat;
+        // Older combined WHEN choices ("Normal or Special Summoned") become one WHEN per event with "Or when".
+        foreach (var card in pack.Cards) Blocks.TriggerSplit.Normalize(card);
         return pack;
     }
 

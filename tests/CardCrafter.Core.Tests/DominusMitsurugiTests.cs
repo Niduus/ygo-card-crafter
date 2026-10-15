@@ -93,8 +93,9 @@ public class DominusMitsurugiTests
         var result = Translate(18176525, card);
         Assert.True(result.Complete, string.Join("\n", ScriptTranslator.Untranslated(result)));
         var search = result.Pieces.SelectMany(p => p.Effects).First();
-        Assert.Equal(ThisCardEventsTrigger.BlockId, search.When!.BlockId);
-        Assert.Equal(["normal", "special", "tributed"], ThisCardEventsTrigger.All.Where(e => search.When.Values.GetValueOrDefault(e.Key) == "true").Select(e => e.Key));
+        // One WHEN per event: Normal Summoned, or Special Summoned, or Tributed.
+        Assert.Equal(["when.summoned:normal", "when.summoned:special", "when.this_card:tributed"],
+            new[] { search.When! }.Concat(search.AlsoWhen).Select(w => $"{w.BlockId}:{w.Values.GetValueOrDefault("how") ?? w.Values["event"]}"));
         var text = EffectTextGenerator.Describe(search, card);
         Assert.StartsWith("If this card is Normal or Special Summoned, or if this card is Tributed: You can add 1", text);
         var lua = ScriptCompiler.Compile(new CardProject { Card = card, Effects = [search] }).Lua;

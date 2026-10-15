@@ -20,6 +20,7 @@ public sealed partial class BlockViewModel : ObservableObject
         void Changed()
         {
             foreach (var c in Segments.OfType<CardsSegmentViewModel>()) c.Refresh();
+            foreach (var c in Segments.OfType<ChoiceSegmentViewModel>()) c.RefreshShown();
             changed();
         }
         var mode = definition.Param("mode");

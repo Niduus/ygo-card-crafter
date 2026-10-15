@@ -24,6 +24,12 @@ public static class ScriptCompiler
 {
     public static CompileResult Compile(CardProject project, CardPack? pack = null)
     {
+        // Older combined WHEN choices compile as one WHEN per event, without changing the card being edited.
+        if (project.Effects.Any(TriggerSplit.NeedsSplit))
+        {
+            project = PackSerializer.Clone(project);
+            TriggerSplit.Normalize(project);
+        }
         var script = new ScriptBuilder(project, pack);
         var card = project.Card;
         var strings = project.UseCustomLua && project.ScriptStrings.Count > 0
@@ -78,6 +84,11 @@ public static class ScriptCompiler
             $"local s,id=c{Lua.Num(card.Id)},{Lua.Num(card.Id)}",
             "function s.initial_effect(c)",
         };
+        // Older script sets (like some YGO Omega versions) lack a few newer constants and helpers; each one the script
+        // uses is defined here if the game doesn't have it. Without SUMMON_VALUE_SELF, for example, "Special Summon
+        // this card" fails after its effect is already used.
+        var body = string.Join("\n", init.Concat(script.Functions));
+        lines.InsertRange(3, Compat.Where(f => body.Contains(f.Uses, StringComparison.Ordinal)).SelectMany(f => f.Lines));
         lines.AddRange(init.Select(l => "\t" + l));
         lines.Add("end");
         lines.AddRange(script.Functions);
@@ -90,6 +101,28 @@ public static class ScriptCompiler
         };
     }
 
+    /// <summary>Newer constants and helpers, and how to define them for script sets that don't have them.</summary>
+    private static readonly (string Uses, string[] Lines)[] Compat =
+    [
+        ("SUMMON_VALUE_SELF", ["if not SUMMON_VALUE_SELF then SUMMON_VALUE_SELF=0x1 end"]),
+        ("aux.SelectFromOptions", [
+            "if not aux.SelectFromOptions then",
+            "\tfunction aux.SelectFromOptions(tp,...)",
+            "\t\tlocal ops,vals={},{}",
+            "\t\tfor i,o in ipairs({...}) do if o[1] then table.insert(ops,o[2]) table.insert(vals,o[3] or i) end end",
+            "\t\tif #ops==0 then return nil end",
+            "\t\treturn vals[Duel.SelectOption(tp,table.unpack(ops))+1]",
+            "\tend",
+            "end",
+        ]),
+        ("aux.IsCodeOrListed", ["if not aux.IsCodeOrListed then function aux.IsCodeOrListed(c,code) return c:IsCode(code) or aux.IsCodeListed(c,code) end end"]),
+        ("aux.DimensionalFissureTarget", [
+            "if not aux.DimensionalFissureTarget then",
+            "\tfunction aux.DimensionalFissureTarget(e,c) return bit.band(c:GetOriginalType(),TYPE_MONSTER)>0 and not c:IsLocation(LOCATION_OVERLAY) and not c:IsType(TYPE_SPELL+TYPE_TRAP) end",
+            "end",
+        ]),
+    ];
+
     private static void CompileEffect(EffectBuilder effect, CardPack? pack)
     {
         var src = effect.Source;
@@ -99,7 +132,7 @@ public static class ScriptCompiler
             return;
         }
         if (!Run(effect, src.When, BlockKind.Trigger, pack)) return;
-        foreach (var also in src.AlsoWhen) AddAlsoWhen(effect, also, pack);
+        if (src.AlsoWhen.Count > 0) AddAlsoWhens(effect, src.AlsoWhen, pack);
 
         foreach (var b in src.If) Run(effect, b, BlockKind.Condition, pack);
 
@@ -170,26 +203,71 @@ public static class ScriptCompiler
     }
 
     /// <summary>
-    /// "Or when ...": the other trigger is the same kind of effect on another event, so the effect is cloned with that
-    /// event's code. Triggers that differ in more than the event (where the card is, what they check) can't share an effect.
+    /// "Or when ...": more triggers that start the same effect, sharing its once per turn. Triggers of the same kind
+    /// used from the same place share the effect object, one registration per event; when they check different
+    /// things, the effect asks which event started it (e:GetCode()). Any other trigger becomes a clone of the effect
+    /// with its own type, zone and checks, like official scripts that clone an effect for another timing.
     /// </summary>
-    private static void AddAlsoWhen(EffectBuilder effect, BlockInstance also, CardPack? pack)
+    private static void AddAlsoWhens(EffectBuilder effect, IEnumerable<BlockInstance> alsos, CardPack? pack)
     {
-        var scratch = new EffectBuilder(new ScriptBuilder(new CardProject { Card = effect.Card }, pack), effect.Source, effect.Index);
-        if (!Run(scratch, also, BlockKind.Trigger, pack)) { foreach (var d in scratch.Script.Diagnostics) effect.Script.Diagnostics.Add(d); return; }
-        foreach (var d in scratch.Script.Diagnostics) effect.Script.Diagnostics.Add(d);
-        var name = BlockRegistry.Find(also.BlockId)?.Name ?? also.BlockId;
-        if (scratch.IsPassive || scratch.IsSummonProcedure || effect.IsPassive || effect.IsSummonProcedure || scratch.Code is null
-            || !scratch.Types.ToHashSet().SetEquals(effect.Types) || scratch.Range != effect.Range
-            || !scratch.Conditions.SequenceEqual(effect.Conditions) || scratch.IsMandatory != effect.IsMandatory)
+        if (effect.IsPassive || effect.IsSummonProcedure || effect.Code is null)
         {
-            effect.Error($"\"Or when\": \"{name}\" can't start the same effect as the first WHEN (it is used from another place, " +
-                         "checks something else, or is a different kind of effect). Make it a separate effect with the same DO blocks.");
+            effect.Error("\"Or when\" only works with WHEN blocks that activate an effect. Lasting effects and Summon procedures have one WHEN.");
             return;
         }
-        foreach (var code in new[] { scratch.Code }.Concat(scratch.ExtraCodes))
-            if (code != effect.Code && !effect.ExtraCodes.Contains(code)) effect.ExtraCodes.Add(code);
-        foreach (var prop in scratch.Properties) effect.AddProperty(prop);
+        var main = effect.Conditions.ToList();
+        effect.Conditions.Clear();
+        effect.TriggerProperties.AddRange(effect.Properties);
+        var shared = new List<(string Code, List<string> Conds)>();
+        foreach (var code in new[] { effect.Code }.Concat(effect.ExtraCodes)) shared.Add((code, main));
+
+        foreach (var also in alsos)
+        {
+            // Compiled into the card's own script, so the helper functions it writes (filters) are part of it.
+            var scratch = new EffectBuilder(effect.Script, effect.Source, effect.Index);
+            if (!Run(scratch, also, BlockKind.Trigger, pack)) continue;
+            var name = BlockRegistry.Find(also.BlockId)?.Name ?? also.BlockId;
+            if (scratch.IsPassive || scratch.IsSummonProcedure || scratch.Code is null)
+            {
+                effect.Error($"\"Or when\": \"{name}\" isn't a trigger that activates an effect, so it can't start this one. Make it a separate effect.");
+                continue;
+            }
+            if (scratch.IsMandatory != effect.IsMandatory)
+            {
+                effect.Error($"\"Or when\": \"{name}\" is {(scratch.IsMandatory ? "mandatory" : "optional (\"You can\")")} but the first WHEN isn't. Tick or untick \"optional\" so they match.");
+                continue;
+            }
+            var codes = new[] { scratch.Code }.Concat(scratch.ExtraCodes).ToList();
+            bool sameObject = scratch.Types.ToHashSet().SetEquals(effect.Types) && scratch.Range == effect.Range
+                              && scratch.Properties.ToHashSet().SetEquals(effect.TriggerProperties) && scratch.HintTiming == effect.HintTiming;
+            if (sameObject)
+                foreach (var code in codes) shared.Add((code, scratch.Conditions.ToList()));
+            else
+                effect.Variants.Add(new TriggerVariant
+                {
+                    Types = scratch.Types.ToList(), Code = codes[0], ExtraCodes = codes.Skip(1).Distinct().ToList(), Range = scratch.Range,
+                    Properties = scratch.Properties.ToList(), HintTiming = scratch.HintTiming, Conditions = scratch.Conditions.ToList(),
+                });
+        }
+
+        // The events the effect object itself is registered for.
+        var byCode = shared.GroupBy(s => s.Code).ToList();
+        effect.ExtraCodes.Clear();
+        effect.ExtraCodes.AddRange(byCode.Select(g => g.Key).Where(c => c != effect.Code));
+        static string All(List<string> conds) => conds.Count == 1 ? conds[0] : string.Join(" and ", conds.Select(c => $"({c})"));
+        var lists = shared.Select(s => s.Conds).ToList();
+        if (lists.All(l => l.SequenceEqual(lists[0])))
+            effect.Conditions.AddRange(lists[0]);
+        else
+        {
+            string Group(IGrouping<string, (string Code, List<string> Conds)> g) =>
+                g.Any(x => x.Conds.Count == 0) ? $"e:GetCode()=={g.Key}"
+                : $"(e:GetCode()=={g.Key} and ({string.Join(" or ", g.Select(x => All(x.Conds)).Distinct())}))";
+            effect.Conditions.Add(byCode.Count == 1 && byCode[0].All(x => x.Conds.Count > 0)
+                ? string.Join(" or ", byCode[0].Select(x => $"({All(x.Conds)})").Distinct())
+                : "(" + string.Join(" or ", byCode.Select(Group)) + ")");
+        }
+        effect.TriggerConditionCount = effect.Conditions.Count;
     }
 
     private static bool Run(EffectBuilder effect, BlockInstance inst, BlockKind expected, CardPack? pack)
@@ -314,6 +392,7 @@ public static class ScriptCompiler
     {
         var result = new Dictionary<int, string?>();
         var groups = new List<int>();
+        var singleUsed = false;
         foreach (var e in effects)
         {
             string? limit = null;
@@ -322,7 +401,9 @@ public static class ScriptCompiler
                 switch (e.Source.Limit)
                 {
                     case OncePerTurn.Soft:
-                        limit = "1";
+                        // An effect registered for several events counts once for all of them (one per card).
+                        if (e.HasClones && !singleUsed) { limit = "1,EFFECT_COUNT_CODE_SINGLE"; singleUsed = true; }
+                        else limit = "1";
                         break;
                     case OncePerTurn.Chain:
                         limit = "1,EFFECT_COUNT_CODE_CHAIN";
