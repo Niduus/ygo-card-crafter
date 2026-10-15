@@ -79,6 +79,7 @@ public static class BlockRegistry
         new BattleRuleAction(),
         new SelfBattleRuleAction(),
         new SummonRestrictionAction(),
+        new BanishInsteadAction(),
         new ExtraNormalSummonAction(),
         // DO (lasting)
         new BoostCardsPassive(),
@@ -93,6 +94,9 @@ public static class BlockRegistry
         new PlayerRulePassive(),
         new EquippedPassive(),
         new SelfStatsPerCardPassive(),
+        new LockPassive(),
+        new BanishInsteadPassive(),
+        new NegateAllPassive(),
     ];
 
     private static readonly Dictionary<string, BlockDefinition> ById = All.ToDictionary(b => b.Id);

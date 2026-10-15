@@ -260,6 +260,27 @@ public static partial class ScriptTranslator
         if (type.SetEquals(["EFFECT_TYPE_FIELD"]) && code == "EFFECT_SPSUMMON_PROC")
             return new TranslatedPiece { Piece = piece, Effect = Procedure(effect, set, range, fns, card) };
 
+        // Floodgates: locks on players, "banished instead", negating effects on the field.
+        if (IsNegateHelper(type, set, fns)) return new TranslatedPiece { Piece = piece, Ignored = true };
+        if (type.SetEquals(["EFFECT_TYPE_FIELD"]) && range is not null && !set.ContainsKey("Reset"))
+        {
+            BlockInstance? gate = null;
+            if (LockOf(set, fns) is { } lockout)
+                gate = Block("passive.lock").With("who", lockout.Who).With("what", lockout.What).With("cards", lockout.Except);
+            else if (BanishInsteadOf(set, fns) is { } instead)
+                gate = Block("passive.banish_instead").With("what", instead.What).With("whose", instead.Whose);
+            else if (NegateAllOf(type, set, fns) is { } negate)
+                gate = Block("passive.negate_all").With("what", negate);
+            if (gate is not null)
+            {
+                effect.Limit = OncePerTurn.None;
+                effect.When = Block("when.while_face_up").With("zone", Zone(range));
+                effect.Do.Add(gate);
+                if (set.GetValueOrDefault("Condition") is { } gateCondition) effect.If.AddRange(Conditions(gateCondition, fns));
+                return new TranslatedPiece { Piece = piece, Effect = effect };
+            }
+        }
+
         // Lasting effects: no activation at all.
         if (!type.Overlaps(["EFFECT_TYPE_ACTIVATE", "EFFECT_TYPE_IGNITION", "EFFECT_TYPE_QUICK_O", "EFFECT_TYPE_QUICK_F", "EFFECT_TYPE_TRIGGER_O", "EFFECT_TYPE_TRIGGER_F", "EFFECT_TYPE_FLIP"]))
             return new TranslatedPiece { Piece = piece, Effect = Passive(effect, type, code, set, range, props, fns, card, merge) };
@@ -302,6 +323,9 @@ public static partial class ScriptTranslator
         // Gemini and Spirit monsters get these lines from the Card tab's abilities.
         if ((line == "aux.EnableDualAttribute(c)" && card.Abilities.HasFlag(MonsterAbility.Gemini))
             || (line == "aux.EnableSpiritReturn(c,EVENT_SUMMON_SUCCESS,EVENT_FLIP)" && card.Abilities.HasFlag(MonsterAbility.Spirit)))
+            return new TranslatedPiece { Piece = null!, Ignored = true };
+        // The counter behind "the turn you activate this" locks: the lock block writes its own.
+        if (Regex.IsMatch(line, @"^Duel\.AddCustomActivityCounter\((?:id|\d+),ACTIVITY_(?:SPSUMMON|CHAIN|ATTACK),[\w.]+\)$"))
             return new TranslatedPiece { Piece = null!, Ignored = true };
         if (line is "c:EnableReviveLimit()" or "aux.EnablePendulumAttribute(c)" || line.StartsWith("aux.AddCodeList(c,", StringComparison.Ordinal)
             || line.StartsWith("aux.AddSetNameMonsterList(c,", StringComparison.Ordinal) || line.StartsWith("aux.AddMaterialCodeList(c,", StringComparison.Ordinal))
@@ -773,7 +797,23 @@ public static partial class ScriptTranslator
     private static EffectEvent Procedure(EffectEvent effect, Dictionary<string, string> set, string? range, Functions fns, CardData card)
     {
         if (!card.IsMonster || card.IsExtraDeck) throw No("its own Special Summon procedure is for an Extra Deck monster");
-        if (set.ContainsKey("Target") || set.ContainsKey("Value")) throw No("its Summon procedure picks cards in a way the blocks don't");
+        if (set.ContainsKey("Value")) throw No("its Summon procedure picks cards in a way the blocks don't");
+        // Modern procedures pick what they pay in their target step: "local g=Duel.GetMatchingGroup(...)" then
+        // "g:SelectUnselect(...)", kept with e:SetLabelObject for the operation.
+        (CardFilter Filter, int Min, int Max)? picks = null;
+        string? pickFilter = null;
+        if (set.GetValueOrDefault("Target") is { } ptg)
+        {
+            var (_, tbody) = fns.Get(ptg);
+            var text = string.Join(" ", tbody.Select(l => l.Trim()).Where(l => l.Length > 0 && !l.StartsWith("Duel.Hint(", StringComparison.Ordinal)));
+            var pm = Regex.Match(text, @"^local g=Duel\.GetMatchingGroup\(([\w.]+),tp,([\w+]+),0,(?:c|e:GetHandler\(\)|nil)(?:,[\w.,]+)?\) local tc=g:SelectUnselect\(nil,tp,false,true,1,1\) if tc then e:SetLabelObject\(tc\) return true else return false end$");
+            if (!pm.Success) throw No("its Summon procedure picks cards in a way the blocks don't");
+            var pf = Filter(pm.Groups[1].Value, fns);
+            Locate(pf, pm.Groups[2].Value, "0");
+            pf.ExcludeThisCard = true;
+            picks = (pf, 1, 1);
+            pickFilter = pm.Groups[1].Value;
+        }
         var zone = range switch
         {
             "LOCATION_HAND" => "hand",
@@ -790,10 +830,13 @@ public static partial class ScriptTranslator
             foreach (var part in SplitTopLevelAnd(body["return ".Length..]))
             {
                 if (part is "Duel.GetLocationCount(tp,LOCATION_MZONE)>0" or "Duel.GetMZoneCount(tp)>0") continue;
+                // The check that the cards it pays with exist: the cost block checks that itself.
+                if (pickFilter is not null && part.StartsWith($"Duel.IsExistingMatchingCard({pickFilter},", StringComparison.Ordinal)) continue;
                 effect.If.AddRange(ConditionBody("return " + part, fns));
             }
         }
-        if (set.GetValueOrDefault("Operation") is { } op) effect.Cost.AddRange(Costs(op, fns));
+        if (set.GetValueOrDefault("Operation") is { } op) effect.Cost.AddRange(Costs(op, fns, picks));
+        else if (picks is not null) throw No("its Summon procedure picks cards and does nothing with them");
         return effect;
     }
 
@@ -847,6 +890,15 @@ public static partial class ScriptTranslator
         {
             var f = new CardFilter { CardType = FilterCardType.Monster, Zones = Model.Zone.MonsterZone, Owner = m.Groups[1].Value == "0" ? CardOwner.Opponent : CardOwner.You };
             return [m.Groups[3].Value == "==0" ? Block("if.no_cards").With("cards", f) : Block("if.cards_exist").With("count", 1).With("cards", f)];
+        }
+        // "If you have no cards in your GY" and "if there are 3 or more cards in your opponent's GY".
+        if ((m = Regex.Match(body, @"^return Duel\.GetFieldGroupCount\(tp,(LOCATION_GRAVE|LOCATION_REMOVED|0),(LOCATION_GRAVE|LOCATION_REMOVED|0)\)(==0|>0|>=(\d+))$")).Success
+            && (m.Groups[1].Value == "0") != (m.Groups[2].Value == "0"))
+        {
+            var f = new CardFilter { CardType = FilterCardType.Any };
+            Locate(f, m.Groups[1].Value, m.Groups[2].Value);
+            return [m.Groups[3].Value == "==0" ? Block("if.no_cards").With("cards", f)
+                : Block("if.cards_exist").With("count", m.Groups[4].Success ? Int(m.Groups[4].Value) : 1).With("cards", f)];
         }
         if ((m = Regex.Match(body, @"^return Duel\.GetFieldGroupCount\((tp|1-tp),LOCATION_HAND,0\)(==|<=|>=)(\d+)$")).Success)
             return [Block("if.hand_count").With("who", m.Groups[1].Value == "tp" ? "you" : "opponent")
@@ -917,7 +969,7 @@ public static partial class ScriptTranslator
 
     private static readonly Regex ChkReturn = new(@"^if chk==0 then return .* end$");
 
-    private static List<BlockInstance> Costs(string reference, Functions fns)
+    private static List<BlockInstance> Costs(string reference, Functions fns, (CardFilter Filter, int Min, int Max)? preset = null)
     {
         if (reference == "aux.bfgcost") return [Block("cost.this_card").With("how", "banish")];
         var (_, rawBody) = fns.Get(reference);
@@ -925,9 +977,16 @@ public static partial class ScriptTranslator
         var blocks = new List<BlockInstance>();
         bool inCheck = false;
         (string Var, CardFilter Filter, int Min, int Max)? picked = null;
+        // "the turn you activate this": the check asks that nothing was Special Summoned (or activated) yet this turn.
+        var wholeTurn = rawBody.Any(l => l.Contains("Duel.GetCustomActivityCount(", StringComparison.Ordinal));
         foreach (var raw in body)
         {
-            var line = raw.Trim();
+            // A Summon procedure pays "to Special Summon": the same as a cost.
+            var line = raw.Trim().Replace("REASON_SPSUMMON", "REASON_COST", StringComparison.Ordinal);
+            Match pm;
+            if (preset is { } pre && (pm = Regex.Match(line, @"^local (\w+)=e:GetLabelObject\(\)$")).Success) { picked = (pm.Groups[1].Value, pre.Filter, pre.Min, pre.Max); continue; }
+            if (preset is not null && (line == "end" || line.StartsWith("Duel.ConfirmCards(", StringComparison.Ordinal)
+                || Regex.IsMatch(line, @"^if \w+:IsLocation\(LOCATION_\w+\) then$"))) continue;
             // The "can it be paid" check, on one line or several.
             if (line.StartsWith("if chk==0 then return", StringComparison.Ordinal)) { inCheck = !line.EndsWith(" end", StringComparison.Ordinal); continue; }
             if (inCheck) { if (line.EndsWith(" end", StringComparison.Ordinal) || line == "end") inCheck = false; continue; }
@@ -936,9 +995,10 @@ public static partial class ScriptTranslator
             if (line.StartsWith("@TEMP ", StringComparison.Ordinal))
             {
                 var temp = temps[Int(line[6..])];
-                if (temp.Parts is [{ Holder: "player" } only] && Restriction(only.Set, fns) is { } r)
+                if (temp.Parts is [{ Holder: "player" } only] && UntilEndOfTurn(only.Set) && LockOf(only.Set, fns) is { Who: "you" } r
+                    && Locks.TurnWhat.Any(w => w.Value == r.What))
                 {
-                    blocks.Add(Block("cost.summon_restriction").With("from", r.Extra ? "extra" : "anywhere").With("cards", r.Except));
+                    blocks.Add(Block("cost.summon_restriction").With("what", r.What).With("when", wholeTurn ? "whole_turn" : "rest").With("cards", r.Except));
                     continue;
                 }
                 throw No("its cost puts an effect on the turn the blocks don't have");
@@ -1109,6 +1169,168 @@ public static partial class ScriptTranslator
     private static bool UntilEndOfTurn(Dictionary<string, string> set) => (set.GetValueOrDefault("Reset") ?? "").Contains("PHASE_END", StringComparison.Ordinal);
 
     /// <summary>"you cannot Special Summon monsters (from the Extra Deck), except ..." from an EFFECT_CANNOT_SPECIAL_SUMMON's target.</summary>
+    /// <summary>
+    /// A lock on players: "neither player can Special Summon monsters, except WIND monsters", "you cannot activate monster
+    /// effects", "neither player can add cards from their Deck to their hand except by drawing them". Null when the
+    /// effect isn't a lock; throws when it is one the blocks can't say.
+    /// </summary>
+    private static (string Who, string What, CardFilter Except)? LockOf(Dictionary<string, string> set, Functions fns)
+    {
+        var code = set.GetValueOrDefault("Code");
+        if (code is not ("EFFECT_CANNOT_SPECIAL_SUMMON" or "EFFECT_CANNOT_ACTIVATE" or "EFFECT_CANNOT_TO_HAND" or "EFFECT_CANNOT_ATTACK_ANNOUNCE")) return null;
+        var range = (set.GetValueOrDefault("TargetRange") ?? "").Replace(" ", "");
+        var except = new CardFilter { CardType = FilterCardType.Monster };
+        string Who(string r) => r switch
+        {
+            "1,1" or "LOCATION_MZONE,LOCATION_MZONE" => "both",
+            "1,0" or "LOCATION_MZONE,0" => "you",
+            "0,1" or "0,LOCATION_MZONE" => "opponent",
+            _ => throw No($"its lock affects players in a way the blocks can't ({r})"),
+        };
+        // "not X" parts become the exception ("except WIND monsters"); a card's own checks use c.
+        void Except(string terms, string card)
+        {
+            foreach (var t in SplitTopLevelAnd(terms)) Term(t.Trim().Replace(card + ":", "c:", StringComparison.Ordinal), except);
+            except.CardType = FilterCardType.Monster;
+            except.Zones = Model.Zone.None;
+        }
+        string? TargetBody() => set.GetValueOrDefault("Target") is { } t
+            ? t.StartsWith("aux.TargetBoolFunction(", StringComparison.Ordinal) ? t : Body(t, fns)
+            : null;
+        switch (code)
+        {
+            case "EFFECT_CANNOT_SPECIAL_SUMMON":
+            {
+                var who = Who(range);
+                var body = TargetBody();
+                if (body is null) return (who, "special", except);
+                if (body == "aux.TargetBoolFunction(Card.IsLocation,LOCATION_EXTRA)") return (who, "special_extra", except);
+                if (!body.StartsWith("return ", StringComparison.Ordinal)) throw No($"its lock picks monsters in a way the blocks can't ({Short(body)})");
+                var parts = SplitTopLevelAnd(body[7..]).Select(x => x.Trim()).ToList();
+                var extra = parts.Remove("c:IsLocation(LOCATION_EXTRA)");
+                foreach (var part in parts)
+                {
+                    Match m;
+                    if ((m = Regex.Match(part, @"^not \((.*)\)$")).Success && Balanced(m.Groups[1].Value)) Except(m.Groups[1].Value, "c");
+                    else if ((m = Regex.Match(part, @"^not (c:\w+\([^()]*\))$")).Success) Except(m.Groups[1].Value, "c");
+                    else if ((m = Regex.Match(part, @"^c:Get(Attribute|Race)\(\)~=(\w+)$")).Success) Except($"c:Is{m.Groups[1].Value}({m.Groups[2].Value})", "c");
+                    else throw No($"its lock picks monsters in a way the blocks can't ({Short(part)})");
+                }
+                return (who, extra ? "special_extra" : "special", except);
+            }
+            case "EFFECT_CANNOT_TO_HAND":
+            {
+                var body = TargetBody();
+                if (body is not ("aux.TargetBoolFunction(Card.IsLocation,LOCATION_DECK)" or "return c:IsLocation(LOCATION_DECK)"))
+                    throw No("its lock on adding cards to the hand is unusual");
+                return (Who(range), "search", except);
+            }
+            case "EFFECT_CANNOT_ATTACK_ANNOUNCE":
+            {
+                var body = TargetBody();
+                if (body is not null)
+                {
+                    var m = Regex.Match(body, @"^return not (.+)$");
+                    if (!m.Success) throw No($"its attack lock picks monsters in a way the blocks can't ({Short(body)})");
+                    Except(m.Groups[1].Value.Trim('(', ')'), "c");
+                }
+                return (Who(range), "attack", except);
+            }
+            default:
+            {
+                var who = Who(range);
+                var value = set.GetValueOrDefault("Value") ?? throw No("its lock on activations has no value");
+                if (value is "1" or "aux.TRUE") return (who, "activate_any", except);
+                var body = Body(value, fns)
+                    .Replace("local rc=re:GetHandler() ", "").Replace("rc:", "re:GetHandler():")
+                    .Replace("local loc=re:GetActivateLocation() ", "").Replace("loc==", "re:GetActivateLocation()==");
+                if (!body.StartsWith("return ", StringComparison.Ordinal)) throw No($"its lock on activations is unusual ({Short(body)})");
+                string? type = null;
+                bool onField = false, hand = false, gy = false, mzone = false;
+                foreach (var part in SplitTopLevelAnd(body[7..]).Select(x => x.Trim()))
+                {
+                    Match m;
+                    if ((m = Regex.Match(part, @"^re:IsActiveType\((TYPE_MONSTER|TYPE_SPELL|TYPE_TRAP|TYPE_SPELL\+TYPE_TRAP)\)$")).Success) type = m.Groups[1].Value;
+                    else if (part is "(re:GetHandler():IsOnField() or re:IsHasType(EFFECT_TYPE_ACTIVATE))" or "re:IsHasType(EFFECT_TYPE_ACTIVATE)") onField = true;
+                    else if (part is "re:GetHandler():IsLocation(LOCATION_HAND)" or "re:GetActivateLocation()==LOCATION_HAND") hand = true;
+                    else if (part is "re:GetActivateLocation()==LOCATION_MZONE" or "re:GetHandler():IsLocation(LOCATION_MZONE)") mzone = true;
+                    else if (part is "(re:GetActivateLocation()==LOCATION_GRAVE or re:GetActivateLocation()==LOCATION_REMOVED)") gy = true;
+                    else if ((m = Regex.Match(part, @"^not re:GetHandler\(\):(\w+\([^()]*\))$")).Success) Except("c:" + m.Groups[1].Value, "c");
+                    else throw No($"its lock on activations is unusual ({Short(part)})");
+                }
+                var what = (type, hand, mzone, gy, onField) switch
+                {
+                    ("TYPE_MONSTER", false, false, false, false) => "activate_monster",
+                    ("TYPE_MONSTER", true, false, false, false) => "activate_monster_hand",
+                    ("TYPE_MONSTER", false, true, false, false) => "activate_monster_field",
+                    ("TYPE_MONSTER", false, false, true, false) => "activate_monster_gy",
+                    ("TYPE_SPELL", false, false, false, _) => "activate_spell",
+                    ("TYPE_TRAP", false, false, false, _) => "activate_trap",
+                    ("TYPE_SPELL+TYPE_TRAP", false, false, false, _) => "activate_spelltrap",
+                    _ => throw No($"its lock on activations is unusual ({Short(body)})"),
+                };
+                return (who, what, except);
+            }
+        }
+    }
+
+    /// <summary>"Any card sent to the GY is banished instead": who and what it covers, or null for another effect.</summary>
+    private static (string What, string Whose)? BanishInsteadOf(Dictionary<string, string> set, Functions fns)
+    {
+        if (set.GetValueOrDefault("Code") != "EFFECT_TO_GRAVE_REDIRECT") return null;
+        if (set.GetValueOrDefault("Value") != "LOCATION_REMOVED") throw No("it sends cards somewhere else instead of the GY");
+        var whose = (set.GetValueOrDefault("TargetRange") ?? "").Replace(" ", "") switch
+        {
+            "LOCATION_DECK,LOCATION_DECK" or "0xff,0xff" => "either",
+            "0,LOCATION_DECK" or "0,0xff" => "opponent",
+            "LOCATION_DECK,0" or "0xff,0" => "you",
+            var r => throw No($"its \"banished instead\" covers cards the blocks can't ({r})"),
+        };
+        var what = "card";
+        if (set.GetValueOrDefault("Target") is { } target)
+        {
+            if (target == "aux.DimensionalFissureTarget") what = "monster";
+            else
+            {
+                var body = Body(target, fns);
+                if (body is "return c:GetOwner()~=e:GetHandlerPlayer()" or "return c:GetOwner()==1-e:GetHandlerPlayer()") { if (whose == "either") whose = "opponent"; }
+                else if (body == "return c:GetOwner()==e:GetHandlerPlayer()") { if (whose == "either") whose = "you"; }
+                else throw No($"its \"banished instead\" picks cards in a way the blocks can't ({Short(body)})");
+            }
+        }
+        return (what, whose);
+    }
+
+    /// <summary>Negating Spell/Trap/monster effects on the field (Imperial Order, Royal Decree, Skill Drain), or null.</summary>
+    private static string? NegateAllOf(HashSet<string> type, Dictionary<string, string> set, Functions fns)
+    {
+        if (!type.SetEquals(["EFFECT_TYPE_FIELD"]) || set.GetValueOrDefault("Code") != "EFFECT_DISABLE") return null;
+        var range = (set.GetValueOrDefault("TargetRange") ?? "").Replace(" ", "");
+        var body = set.GetValueOrDefault("Target") is { } t ? Body(t, fns) : null;
+        return (range, body) switch
+        {
+            ("LOCATION_MZONE,LOCATION_MZONE", null or "return c:IsType(TYPE_EFFECT) or c:GetOriginalType()&TYPE_EFFECT~=0" or "return c:IsType(TYPE_EFFECT) or bit.band(c:GetOriginalType(),TYPE_EFFECT)==TYPE_EFFECT") => "monster",
+            ("LOCATION_SZONE,LOCATION_SZONE", "return c:IsType(TYPE_SPELL)") => "spell",
+            ("LOCATION_SZONE,LOCATION_SZONE", "return c~=e:GetHandler() and c:IsType(TYPE_SPELL)") => "other_spell",
+            ("LOCATION_SZONE,LOCATION_SZONE", "return c:IsType(TYPE_TRAP)") => "trap",
+            ("LOCATION_SZONE,LOCATION_SZONE", "return c~=e:GetHandler() and c:IsType(TYPE_TRAP)") => "other_trap",
+            _ => null,
+        };
+    }
+
+    /// <summary>
+    /// The parts of a Spell/Trap negation the "negate all" block writes itself: negating them as they resolve, and
+    /// Trap Monsters.
+    /// </summary>
+    private static bool IsNegateHelper(HashSet<string> type, Dictionary<string, string> set, Functions fns)
+    {
+        if (type.SetEquals(["EFFECT_TYPE_FIELD"]) && set.GetValueOrDefault("Code") == "EFFECT_DISABLE_TRAPMONSTER") return true;
+        if (!type.SetEquals(["EFFECT_TYPE_FIELD", "EFFECT_TYPE_CONTINUOUS"]) || set.GetValueOrDefault("Code") != "EVENT_CHAIN_SOLVING"
+            || set.GetValueOrDefault("Operation") is not { } op || set.ContainsKey("Condition")) return false;
+        var body = Body(op, fns);
+        return Regex.IsMatch(body, @"^local tl=Duel\.GetChainInfo\(ev,CHAININFO_TRIGGERING_LOCATION\) if (?:bit\.band\(tl,LOCATION_SZONE\)~=0|tl==LOCATION_SZONE|tl&LOCATION_SZONE~=0) and re:IsActiveType\(TYPE_(?:SPELL|TRAP)\)(?: and re:GetHandler\(\)~=e:GetHandler\(\))? then Duel\.NegateEffect\(ev\) end$");
+    }
+
     private static (bool Extra, CardFilter Except)? Restriction(Dictionary<string, string> set, Functions fns)
     {
         if (set.GetValueOrDefault("Code") != "EFFECT_CANNOT_SPECIAL_SUMMON" || set.GetValueOrDefault("TargetRange")?.Replace(" ", "") != "1,0"
@@ -1138,8 +1360,17 @@ public static partial class ScriptTranslator
 
         if (holder == "player")
         {
-            if (parts.Count == 1 && Restriction(first, fns) is { } r)
-                return Block("do.summon_restriction").With("from", r.Extra ? "extra" : "anywhere").With("cards", r.Except);
+            var reset = (first.GetValueOrDefault("Reset") ?? "").Replace(" ", "");
+            var lasts = reset switch
+            {
+                "RESET_PHASE+PHASE_END" => "turn",
+                "RESET_PHASE+PHASE_END,2" => "next",
+                _ => throw No($"it puts an effect on a player for a time the blocks don't have ({Short(reset)})"),
+            };
+            if (parts.Count == 1 && LockOf(first, fns) is { } l)
+                return Block("do.summon_restriction").With("duration", lasts).With("who", l.Who).With("what", l.What).With("cards", l.Except);
+            if (parts.Count == 1 && BanishInsteadOf(first, fns) is { } bi)
+                return Block("do.banish_instead").With("duration", lasts).With("what", bi.What).With("whose", bi.Whose);
             throw No($"it puts an effect on a player the blocks don't have ({codes[0]})");
         }
         if (holder == "c")
@@ -1257,6 +1488,9 @@ public static partial class ScriptTranslator
                 continue;
             }
             if (line is "local p=Duel.GetChainInfo(0,CHAININFO_TARGET_PLAYER)" or "local d=Duel.GetChainInfo(0,CHAININFO_TARGET_PARAM)") continue;
+            // "Only once this turn": a flag the target step checks so the effect can't stack (Dimension Shifter).
+            if ((m = Regex.Match(line, @"^Duel\.RegisterFlagEffect\(tp,(id|\d+),RESET_PHASE\+PHASE_END,0,1\)$")).Success
+                && (m.Groups[1].Value == "id" || Int64(m.Groups[1].Value) == _sourceId)) continue;
             if (line == "Duel.BreakEffect()") { link = ActionLink.Then; continue; }
             if ((m = Regex.Match(line, @"^if (.+?)(?:~=0|>0) then$")).Success)
             {
@@ -1563,8 +1797,14 @@ public static partial class ScriptTranslator
             or "Card.IsDestructable" or "Card.IsDiscardable" or "Card.IsAbleToHandAsCost" or "Card.IsAbleToGraveAsCost")
             return f;
         if (reference == "Card.IsFaceup") { f.FaceUpOnly = true; return f; }
-        var (_, body) = fns.Get(reference);
+        var (pars, body) = fns.Get(reference);
         var text = string.Join(" ", body.Select(l => l.Trim()));
+        // "(c:IsAbleToDeckAsCost() or c:IsAbleToExtraAsCost())": whether it can be moved, which the blocks check.
+        text = Regex.Replace(text, @"\(c:IsAbleTo\w+\(\) or c:IsAbleTo\w+\(\)\)( and )?", "");
+        // A check passed in as a parameter ("f(c)" with f=Card.IsAbleToGraveAsCost) and room to Summon.
+        foreach (var par in pars.Skip(1)) text = Regex.Replace(text, $@"(?: and )?\b{Regex.Escape(par)}\(c\)", "");
+        text = Regex.Replace(text, @"(?: and )?Duel\.GetMZoneCount\(tp,c\)>0", "").Replace("return  and ", "return ").Replace("return and ", "return ");
+        if (text.Trim() == "return") return f;
         var m = Regex.Match(text, @"^return (.+)$");
         if (!m.Success || text.Contains(" or ", StringComparison.Ordinal)) throw No($"it picks cards in a way the blocks can't ({Short(Regex.Replace(text, @"c\d+\.|s\.", "s."))})");
         foreach (var term in m.Groups[1].Value.Split(" and ")) Term(term.Trim(), f);
@@ -1611,6 +1851,15 @@ public static partial class ScriptTranslator
         }
         if ((m = Regex.Match(term, @"^c:IsLevelBelow\((\d+)\)$")).Success) { f.LevelMax = Int(m.Groups[1].Value); f.CardType = FilterCardType.Monster; return; }
         if ((m = Regex.Match(term, @"^c:IsLevelAbove\((\d+)\)$")).Success) { f.LevelMin = Int(m.Groups[1].Value); f.CardType = FilterCardType.Monster; return; }
+        if ((m = Regex.Match(term, @"^c:IsRank(Above|Below)?\((\d+)\)$")).Success)
+        {
+            var rank = Int(m.Groups[2].Value);
+            if (m.Groups[1].Value != "Below") f.LevelMin = rank;
+            if (m.Groups[1].Value != "Above") f.LevelMax = rank;
+            f.MonsterKind = MonsterKind.Xyz;
+            f.CardType = FilterCardType.Monster;
+            return;
+        }
         if ((m = Regex.Match(term, @"^c:IsLevel\((\d+)\)$")).Success) { f.LevelMin = f.LevelMax = Int(m.Groups[1].Value); f.CardType = FilterCardType.Monster; return; }
         if ((m = Regex.Match(term, @"^c:IsAttackBelow\((\d+)\)$")).Success) { f.AtkMax = Int(m.Groups[1].Value); f.CardType = FilterCardType.Monster; return; }
         if ((m = Regex.Match(term, @"^c:IsAttackAbove\((\d+)\)$")).Success) { f.AtkMin = Int(m.Groups[1].Value); f.CardType = FilterCardType.Monster; return; }

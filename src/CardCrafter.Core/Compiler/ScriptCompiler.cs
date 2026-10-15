@@ -54,6 +54,7 @@ public static class ScriptCompiler
             init.Add("c:RegisterEffect(e0)");
         }
 
+        init.InsertRange(0, script.InitialLines);
         var limits = CountLimits(card, built);
         foreach (var effect in built)
             init.AddRange(effect.Build(limits[effect.Index]));

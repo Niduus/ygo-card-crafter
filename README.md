@@ -89,6 +89,20 @@ your GY", Ritual/Fusion/Synchro/Xyz/Pendulum/Link Summons, and more activation t
 activated", "when your opponent activates a monster effect"). The Card tab also has "You can only control 1 X" and
 "You can only Special Summon X once per turn".
 
+**Floodgates and lock-outs.** Lasting effects can lock players: "Neither player can Special Summon monsters, except WIND
+monsters" (Vanity's Emptiness, Barrier Statue), "You cannot Special Summon from the Extra Deck, except Rank 4 Xyz
+Monsters" (Palm Ryzeal), "Neither player can activate monster effects" (Majesty's Fiend), effects of monsters in the
+hand or GY (Mind Drain, Soul Drain), "Spell Cards, and their effects on the field, cannot be activated" (Spell
+Canceller, Jinzo) and no adding cards from the Deck except by drawing (Mistake). **Any card sent to the GY is banished
+instead** covers Macro Cosmos, Dimensional Fissure (monsters only), Kashtira Arise-Heart and Masked HERO Dark Law
+(your opponent's GY), and a DO version lasts until the end of the next turn (Dimension Shifter). **Negate all** Spell,
+Trap or monster effects on the field works like Imperial Order, Royal Decree and Skill Drain. The COST lock says "You
+cannot Special Summon from the Extra Deck **the turn you activate this effect**, except Xyz Monsters" (checked against
+what you already did this turn) or "for the rest of this turn after it is activated"; on a Special Summon procedure it
+reads "If Summoned this way, ..." like the Ryzeal monsters. Locks can also stop activations or attacks ("you cannot
+declare attacks, except with Rank 4 Xyz Monsters"), and a DO lock can be put on your opponent. The templates include
+each of these cards.
+
 **Card text.** The suggested text reads like a printed card: the effects run together in one paragraph, a card with
 several once-per-turn effects ends with "You can only use each effect of "X" once per turn.", and the picked zones
 change the wording ("3 monsters your opponent controls"). A card saved with no text of its own gets its suggested text.
@@ -198,7 +212,7 @@ the browser says **Becomes blocks** with the effect's wording, and **Add as bloc
 WHEN/IF/COST/DO blocks you can change. When every effect of a card has exact blocks, **Use as a new card** makes the
 copy with blocks (the original script is kept on the Script tab). Effects without exact blocks say why and stay script,
 so a translation never changes what a card does. A card on a hand-written script can try the same from the Effects
-tab with **Turn the script into blocks**. Of the 13,571 official scripts, 717 become blocks completely and 11,119 of
+tab with **Turn the script into blocks**. Of the 13,571 official scripts, 785 become blocks completely and 11,522 of
 their 35,901 effects do, including Synchro, Xyz, Link and Fusion material lines. When Omega's
 folders have no script for a card, the official one can be fetched from
 [ygopro-scripts](https://github.com/Fluorohydride/ygopro-scripts). **Browse a database file…** searches any `.db`/`.cdb`.

@@ -16,6 +16,29 @@ public sealed class ScriptBuilder(CardProject project, CardPack? pack)
 
     public IReadOnlyList<string> Functions => _functions;
 
+    private readonly List<string> _initial = [];
+    private readonly Dictionary<string, string> _counters = [];
+
+    /// <summary>Lines that go first in initial_effect, once each, such as an activity counter.</summary>
+    public IReadOnlyList<string> InitialLines => _initial;
+
+    public void AddInitialLine(string line)
+    {
+        if (!_initial.Contains(line)) _initial.Add(line);
+    }
+
+    /// <summary>
+    /// Counts what each player did this turn (Special Summons, activations, attacks) for "the turn you activate this"
+    /// locks. One counter per activity: two locks on the same activity must count the same cards.
+    /// </summary>
+    public bool AddActivityCounter(string activity, string filter)
+    {
+        if (_counters.TryGetValue(activity, out var existing)) return existing == filter;
+        _counters[activity] = filter;
+        AddInitialLine($"Duel.AddCustomActivityCounter(id,{activity},{filter})");
+        return true;
+    }
+
     /// <summary>
     /// Adds "function s.name(args) ... end" and returns "s.name".
     /// Identical functions are shared, so two blocks with the same filter reuse one function.

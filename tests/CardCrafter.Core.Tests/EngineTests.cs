@@ -634,6 +634,19 @@ public class EngineTemplateTests
             case "Direct attacker": s.Card(id, 0, "mzone").ExpectActivations(0).Check("Duel.GetFieldCard(0,LOCATION_MZONE,0):IsHasEffect(EFFECT_DIRECT_ATTACK)~=nil"); break;
             case "Untargetable": s.Card(id, 0, "mzone").ExpectActivations(0).Check("Duel.GetFieldCard(0,LOCATION_MZONE,0):IsHasEffect(EFFECT_CANNOT_BE_EFFECT_TARGET)~=nil"); break;
             case "FLIP: destroy": s.Card(id, 0, "mzone").ExpectActivations(0); break;
+            // Floodgates and locks: lasting effects on the field, played for real in LockEngineTests.
+            case "Banish instead of the GY" or "No Special Summons" or "No searching" or "Negate monster effects":
+                s.Card(id, 0, "szone").ExpectActivations(1).Check($"Duel.IsExistingMatchingCard(Card.IsFaceup,0,LOCATION_SZONE,0,1,nil)"); break;
+            case "Monsters banished instead": s.Card(id, 0, "hand").ExpectActivations(1).Check($"Duel.IsExistingMatchingCard(Card.IsCode,0,LOCATION_SZONE,0,1,nil,{id})"); break;
+            case "Spells can't be activated" or "Traps can't be activated" or "No monster effects": s.Card(id, 0, "mzone").ExpectActivations(0); break;
+            // The GY isn't empty here, so it can't be used.
+            case "Banish instead, from the hand": s.Card(id, 0, "hand").ExpectActivations(0); break;
+            case "Summon itself, lock the Extra Deck":
+                s.Card(id, 0, "hand").Card(Spell, 0, "hand").SpSummon(id).ExpectActivations(0)
+                    .Check($"Duel.IsExistingMatchingCard(Card.IsCode,0,LOCATION_MZONE,0,1,nil,{id})")
+                    .Check("Duel.IsExistingMatchingCard(Card.IsCode,0,LOCATION_GRAVE,0,1,nil,1003)");
+                break;
+            case "Search, the turn you activate it": s.Card(id, 0, "hand").Summon(id).ExpectActivations(1).Check("Duel.GetFieldGroupCount(0,LOCATION_HAND,0)==1"); break;
             default: s.Card(id, 0, "hand").ExpectActivations(1); break;
         }
         s.AssertPasses();

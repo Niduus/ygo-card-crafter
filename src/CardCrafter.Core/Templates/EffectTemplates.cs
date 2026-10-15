@@ -474,6 +474,111 @@ public static class EffectTemplates
                 Do = [B("do.mill").With("count", 3), B("do.change_self_stats").With("amount", 1500).Linked(ActionLink.IfYouDo)],
             },
         },
+        // Floodgates and lock-outs
+        new()
+        {
+            Name = "Banish instead of the GY", LikeCard = "Macro Cosmos", For = CardKind.Trap, Group = "Floodgates & locks",
+            Description = "A Continuous Trap: while it is face-up, any card sent to the GY is banished instead.",
+            Create = () => new EffectEvent { Label = "Banished instead", When = B("when.while_face_up"), Do = [B("passive.banish_instead")] },
+        },
+        new()
+        {
+            Name = "Monsters banished instead", LikeCard = "Dimensional Fissure", For = CardKind.Spell, Group = "Floodgates & locks",
+            Description = "A Continuous Spell: any monster sent to the GY is banished instead.",
+            Create = () => new EffectEvent { Label = "Banished instead", When = B("when.while_face_up"), Do = [B("passive.banish_instead").With("what", "monster")] },
+        },
+        new()
+        {
+            Name = "Banish instead, from the hand", LikeCard = "Dimension Shifter", For = CardKind.Monster, Group = "Floodgates & locks",
+            Description = "If you have no cards in your GY (Quick Effect): send this card from your hand to the GY; until the end of the next turn, any card sent to the GY is banished instead.",
+            Create = () => new EffectEvent
+            {
+                Label = "Shift", When = B("when.quick").With("zone", "hand"),
+                If = [B("if.no_cards").With("cards", new CardFilter { Owner = CardOwner.You, Zones = Zone.Graveyard, CardType = FilterCardType.Any })],
+                Cost = [B("cost.this_card").With("how", "grave")],
+                Do = [B("do.banish_instead").With("duration", "next")],
+            },
+        },
+        new()
+        {
+            Name = "Spells can't be activated", LikeCard = "Spell Canceller", For = CardKind.Monster, Group = "Floodgates & locks",
+            Description = "Spell Cards, and their effects on the field, cannot be activated. Negate all Spell effects on the field.",
+            Create = () => new EffectEvent
+            {
+                Label = "Spell lock", When = B("when.while_face_up"),
+                Do = [B("passive.lock").With("what", "activate_spell").With("cards", new CardFilter { CardType = FilterCardType.Monster }), B("passive.negate_all").With("what", "spell")],
+            },
+        },
+        new()
+        {
+            Name = "Traps can't be activated", LikeCard = "Jinzo", For = CardKind.Monster, Group = "Floodgates & locks",
+            Description = "Trap Cards, and their effects on the field, cannot be activated. Negate all Trap effects on the field.",
+            Create = () => new EffectEvent
+            {
+                Label = "Trap lock", When = B("when.while_face_up"),
+                Do = [B("passive.lock").With("what", "activate_trap").With("cards", new CardFilter { CardType = FilterCardType.Monster }), B("passive.negate_all").With("what", "trap")],
+            },
+        },
+        new()
+        {
+            Name = "No Special Summons", LikeCard = "Vanity's Emptiness", For = CardKind.Trap, Group = "Floodgates & locks",
+            Description = "A Continuous Trap: neither player can Special Summon monsters. Pick an exception, like WIND monsters, for a Barrier Statue.",
+            Create = () => new EffectEvent
+            {
+                Label = "Summon lock", When = B("when.while_face_up"),
+                Do = [B("passive.lock").With("what", "special").With("cards", new CardFilter { CardType = FilterCardType.Monster })],
+            },
+        },
+        new()
+        {
+            Name = "No monster effects", LikeCard = "Majesty's Fiend", For = CardKind.Monster, Group = "Floodgates & locks",
+            Description = "Neither player can activate monster effects.",
+            Create = () => new EffectEvent
+            {
+                Label = "Effect lock", When = B("when.while_face_up"),
+                Do = [B("passive.lock").With("what", "activate_monster").With("cards", new CardFilter { CardType = FilterCardType.Monster })],
+            },
+        },
+        new()
+        {
+            Name = "No searching", LikeCard = "Mistake / Thunder King Rai-Oh", For = CardKind.Trap, Group = "Floodgates & locks",
+            Description = "A Continuous Trap: neither player can add cards from their Deck to their hand except by drawing them.",
+            Create = () => new EffectEvent { Label = "Search lock", When = B("when.while_face_up"), Do = [B("passive.lock").With("what", "search")] },
+        },
+        new()
+        {
+            Name = "Negate monster effects", LikeCard = "Skill Drain", For = CardKind.Trap, Group = "Floodgates & locks",
+            Description = "A Continuous Trap: negate the effects of all face-up monsters on the field.",
+            Create = () => new EffectEvent { Label = "Drain", When = B("when.while_face_up"), Do = [B("passive.negate_all").With("what", "monster")] },
+        },
+        new()
+        {
+            Name = "Summon itself, lock the Extra Deck", LikeCard = "Ice Ryzeal", For = CardKind.Monster, Group = "Floodgates & locks",
+            Description = "Special Summon this card from your hand by sending 1 card from your hand or field to the GY. If Summoned this way, you cannot Special Summon from the Extra Deck for the rest of this turn, except Rank 4 Xyz Monsters.",
+            Create = () => new EffectEvent
+            {
+                Label = "Summon", When = B("when.summon_procedure").With("zone", "hand"), Limit = OncePerTurn.Hard,
+                Cost =
+                [
+                    B("cost.move_cards").With("how", "grave").With("count", 1)
+                        .With("cards", new CardFilter { Owner = CardOwner.You, Zones = Zone.Hand | Zone.Field, CardType = FilterCardType.Any, ExcludeThisCard = true }),
+                    B("cost.summon_restriction").With("what", "special_extra").With("when", "rest")
+                        .With("cards", new CardFilter { CardType = FilterCardType.Monster, MonsterKind = MonsterKind.Xyz, LevelMin = 4, LevelMax = 4 }),
+                ],
+            },
+        },
+        new()
+        {
+            Name = "Search, the turn you activate it", LikeCard = "modern searchers", For = CardKind.Monster, Group = "Floodgates & locks",
+            Description = "If this card is Normal Summoned: add 1 monster from your Deck to your hand. You cannot Special Summon from the Extra Deck the turn you activate this effect, except Xyz Monsters.",
+            Create = () => new EffectEvent
+            {
+                Label = "Search", When = B("when.summoned").With("how", "normal"), Limit = OncePerTurn.Hard,
+                Cost = [B("cost.summon_restriction").With("what", "special_extra").With("when", "whole_turn")
+                    .With("cards", new CardFilter { CardType = FilterCardType.Monster, MonsterKind = MonsterKind.Xyz })],
+                Do = [B("do.add_to_hand").With("cards", new CardFilter { Zones = Zone.Deck, CardType = FilterCardType.Monster })],
+            },
+        },
     ];
 
     private static CardFilter Narrow(CardFilter f)

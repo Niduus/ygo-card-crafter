@@ -106,7 +106,8 @@ public static partial class EffectTextGenerator
         if (effect.Limit == OncePerTurn.Soft && !passive)
             head = head.Length == 0 ? "Once per turn" : "Once per turn, " + SentenceCase.Lower(head);
 
-        var (targetClause, actions) = Actions(effect.Do, pack, effect);
+        // Lasting effects with nothing before them read as separate sentences, like "Neither player can ... Negate all ...".
+        var (targetClause, actions) = Actions(effect.Do, pack, effect, sentences: passive && head.Length == 0);
         string text;
         if (passive)
         {
@@ -157,6 +158,11 @@ public static partial class EffectTextGenerator
             if (cond.Length > 0) text += (by.Length > 0 ? ", " : " ") + Clause(cond, "while");
             text += card.SummonRule == SummonRule.ProcedureOnly ? ", and cannot be Special Summoned by other ways." : ".";
         }
+
+        // "If Summoned this way, you cannot Special Summon from the Extra Deck for the rest of this turn, except ..."
+        foreach (var b in effect.Cost)
+            if (BlockRegistry.Find(b.BlockId) is { } bd && bd.Afterword(new BlockArgs(bd, b, pack) { Effect = effect, CardName = card.Name }) is { Length: > 0 } after)
+                text += " " + after;
 
         if (effect.Limit == OncePerTurn.Hard)
             text += $" You can only Special Summon \"{card.Name}\" once per turn this way.";
@@ -211,10 +217,11 @@ public static partial class EffectTextGenerator
     private static string Clause(string cond, string joiner) =>
         cond.StartsWith("during ", StringComparison.Ordinal) ? cond : $"{joiner} {cond}";
 
-    private static (string? Target, string Text) Actions(List<BlockInstance> blocks, CardPack? pack, EffectEvent effect)
+    private static (string? Target, string Text) Actions(List<BlockInstance> blocks, CardPack? pack, EffectEvent effect, bool sentences = false)
     {
         string? target = null;
         var sb = new System.Text.StringBuilder();
+        BlockDefinition? previous = null;
         foreach (var b in blocks)
         {
             if (BlockRegistry.Find(b.BlockId) is not { } def) continue;
@@ -227,6 +234,15 @@ public static partial class EffectTextGenerator
             }
             else t = Text(b, pack, effect);
             if (t.Length == 0) continue;
+            // A floodgate is its own sentence: "Spell Cards ... cannot be activated. Negate all Spell effects on the field."
+            var gate = def is LockPassive or NegateAllPassive or BanishInsteadPassive;
+            var wasGate = previous is LockPassive or NegateAllPassive or BanishInsteadPassive;
+            previous = def;
+            if (sb.Length > 0 && sentences && (gate || wasGate))
+            {
+                sb.Append(". ").Append(SentenceCase.Upper(t));
+                continue;
+            }
             if (sb.Length > 0)
             {
                 sb.Append(b.Link switch

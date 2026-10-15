@@ -18,6 +18,8 @@ public static class FilterText
     }
 
     /// <param name="withExcept">False when the caller puts ", except ..." at the end of its own sentence, as cards print it.</param>
+    private static string Lv(CardFilter f) => f.MonsterKind == MonsterKind.Xyz ? "Rank" : "Level";
+
     public static string Describe(CardFilter f, CardPack? pack, bool plural = false, string preposition = "from", bool withLocation = true, string? ownName = null, bool withExcept = true)
     {
         if (f.ThisCard) return "this card";
@@ -27,9 +29,9 @@ public static class FilterText
         // "non-Tuner WIND monsters": a "non-" kind comes first, before the Level and Attribute.
         if (f.CardCode == 0 && KindNoun(f.MonsterKind) is { Non: true } non) words.Add(non.Noun);
         if (f.LevelMin is { } lo && f.LevelMax is { } hi)
-            words.Add(lo == hi ? $"Level {lo}" : $"Level {lo} to {hi}");
-        else if (f.LevelMax is { } max) words.Add($"Level {max} or lower");
-        else if (f.LevelMin is { } min) words.Add($"Level {min} or higher");
+            words.Add(lo == hi ? $"{Lv(f)} {lo}" : $"{Lv(f)} {lo} to {hi}");
+        else if (f.LevelMax is { } max) words.Add($"{Lv(f)} {max} or lower");
+        else if (f.LevelMin is { } min) words.Add($"{Lv(f)} {min} or higher");
         if (f.Attribute != CardAttribute.None) words.Add(EnumNames.Display(f.Attribute));
         if (f.Race != CardRace.None) words.Add(pack?.TypeName(f.Race) ?? EnumNames.Display(f.Race));
         if (f.Archetype != 0) words.Add($"\"{pack?.ArchetypeName(f.Archetype) ?? $"0x{f.Archetype:x}"}\"");

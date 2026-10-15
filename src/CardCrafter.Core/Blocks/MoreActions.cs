@@ -624,39 +624,28 @@ public sealed class SummonRestrictionAction : ActionBlock
 {
     public override string Id => "do.summon_restriction";
     public override string Group => "Turn";
-    public override string Name => "You can't Special Summon this turn, except...";
-    public override string Sentence => "For the rest of this turn, you cannot Special Summon monsters {from}, except {cards}";
-    public override string Help => "The common modern restriction, e.g. \"you cannot Special Summon monsters from the Extra Deck, except Link Monsters\". It starts when the effect resolves and lasts until the end of the turn.";
+    public override string Name => "Lock: a player can't Special Summon / activate / attack this turn";
+    public override string Sentence => "{duration}, {who} cannot {what}, except {cards}";
+    public override string Help => "The common modern restriction, e.g. \"for the rest of this turn, you cannot Special Summon monsters from the Extra Deck, except Link Monsters\", " +
+                                   "or \"your opponent cannot activate cards or effects\". It starts when the effect resolves. Leave \"except\" as plain monsters for no exception.";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
-        ParamSpec.Choice("from", "From", new("anywhere", "", "from anywhere"), new("extra", "from the Extra Deck")),
-        ParamSpec.Cards("cards", "Except", () => new CardFilter { CardType = FilterCardType.Monster, Attribute = CardAttribute.Dark }, Zone.MonsterZone),
+        ParamSpec.Choice("duration", "For", new("turn", "For the rest of this turn"), new("next", "Until the end of the next turn")),
+        ParamSpec.Choice("who", "Who", new("you", "you"), new("opponent", "your opponent"), new("both", "neither player")),
+        ParamSpec.Choice("what", "Cannot", Locks.What),
+        ParamSpec.Cards("cards", "Except (plain monsters for none)", () => new CardFilter { CardType = FilterCardType.Monster, Attribute = CardAttribute.Dark }, Zone.MonsterZone),
     ];
 
-    public override string Describe(BlockArgs args)
-    {
-        var from = args.Describe("from");
-        var except = FilterText.Describe(args.Cards("cards"), args.Pack, plural: true, withLocation: false);
-        return $"for the rest of this turn, you cannot Special Summon monsters{(from.Length > 0 ? " " + from : "")}, except {except}";
-    }
+    public override string Describe(BlockArgs args) =>
+        $"{(args.Choice("duration") == "next" ? "until the end of the next turn" : "for the rest of this turn")}, {Locks.Sentence(args.Choice("who"), Locks.WhatOf(args), args.Cards("cards"), args)}";
 
     public override void Compile(BlockContext ctx)
     {
-        var f = ctx.Script.MaterialFilter(ctx.Args.Cards("cards"), "sslimitfilter");
-        var extra = ctx.Args.Choice("from") == "extra";
-        var test = (extra ? "c:IsLocation(LOCATION_EXTRA) and " : "") + (f == "nil" ? "false" : $"not {f}(c)");
-        var target = ctx.Script.AddFunction("sslimit", "e,c,sump,sumtype,sumpos,targetp,se", [$"return {test}"]);
-        ctx.Effect.AddStep(
-        [
-            "local sl=Effect.CreateEffect(e:GetHandler())",
-            "sl:SetType(EFFECT_TYPE_FIELD)",
-            "sl:SetProperty(EFFECT_FLAG_PLAYER_TARGET)",
-            "sl:SetCode(EFFECT_CANNOT_SPECIAL_SUMMON)",
-            "sl:SetTargetRange(1,0)",
-            $"sl:SetTarget({target})",
-            "sl:SetReset(RESET_PHASE+PHASE_END)",
-            "Duel.RegisterEffect(sl,tp)",
-        ], null, ctx.Link);
+        var lines = new List<string> { "local sl=Effect.CreateEffect(e:GetHandler())" };
+        lines.AddRange(Locks.Lines(ctx, "sl", ctx.Args.Choice("who"), Locks.WhatOf(ctx.Args), ctx.Args.Cards("cards"), null));
+        lines.Add(ctx.Args.Choice("duration") == "next" ? "sl:SetReset(RESET_PHASE+PHASE_END,2)" : "sl:SetReset(RESET_PHASE+PHASE_END)");
+        lines.Add("Duel.RegisterEffect(sl,tp)");
+        ctx.Effect.AddStep(lines, null, ctx.Link);
     }
 }
 

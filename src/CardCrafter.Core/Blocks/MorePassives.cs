@@ -425,40 +425,44 @@ public sealed class SummonRestrictionCost : CostBlock
 {
     public override string Id => "cost.summon_restriction";
     public override string Group => "Turn";
-    public override string Name => "You can't Special Summon this turn, except... (on activation)";
-    public override string Sentence => "You cannot Special Summon monsters {from} the turn you activate this, except {cards}";
-    public override string Help => "Starts when the effect is activated, so it still applies if the effect is negated. The card text puts it after the effect.";
+    public override string Name => "Lock: you can't Special Summon / activate / attack this turn, except...";
+    public override string Sentence => "You cannot {what} {when}, except {cards}";
+    public override string Help => "Ryzeal-style locks: \"You cannot Special Summon from the Extra Deck the turn you activate this effect, except Xyz Monsters\". " +
+                                   "\"The turn you activate this\" also stops the effect if you already did it this turn; \"after activating\" only locks what comes after. " +
+                                   "On a Special Summon procedure it reads \"If Summoned this way...\". The card text puts it after the effect.";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
-        ParamSpec.Choice("from", "From", new("anywhere", "", "from anywhere"), new("extra", "from the Extra Deck")),
-        ParamSpec.Cards("cards", "Except", () => new CardFilter { CardType = FilterCardType.Monster, Attribute = CardAttribute.Dark }, Zone.MonsterZone),
+        ParamSpec.Choice("what", "Cannot", Locks.TurnWhat),
+        ParamSpec.Choice("when", "When", new("rest", "for the rest of the turn after activating"), new("whole_turn", "the turn you activate this")),
+        ParamSpec.Cards("cards", "Except (plain monsters for none)", () => new CardFilter { CardType = FilterCardType.Monster, Attribute = CardAttribute.Dark }, Zone.MonsterZone),
     ];
 
     public override string Describe(BlockArgs args) => "";
 
     public override string Afterword(BlockArgs args)
     {
-        var from = args.Describe("from");
-        var except = Text.FilterText.Describe(args.Cards("cards"), args.Pack, plural: true, withLocation: false, ownName: args.CardName);
-        return $"For the rest of this turn after this effect is activated, you cannot Special Summon monsters{(from.Length > 0 ? " " + from : "")}, except {except}.";
+        var what = Locks.WhatOf(args);
+        var (head, except) = Locks.Split(what, args.Cards("cards"), args);
+        var procedure = args.Effect?.When?.BlockId == SummonProcedureTrigger.BlockId;
+        var thing = args.Effect?.When?.BlockId == "when.activate" ? "card" : "effect";
+        if (args.Choice("when") == "whole_turn")
+            return procedure
+                ? $"{Text.SentenceCase.Upper(head)} the turn you Special Summon this card this way{except}."
+                : $"{Text.SentenceCase.Upper(head)} the turn you activate this {thing}{except}.";
+        return procedure
+            ? $"If Summoned this way, {head} for the rest of this turn{except}."
+            : $"For the rest of this turn after this {thing} is activated, {head}{except}.";
     }
 
     public override void Compile(BlockContext ctx)
     {
-        var f = ctx.Script.MaterialFilter(ctx.Args.Cards("cards"), "sslimitfilter");
-        var extra = ctx.Args.Choice("from") == "extra";
-        var test = (extra ? "c:IsLocation(LOCATION_EXTRA) and " : "") + (f == "nil" ? "false" : $"not {f}(c)");
-        var target = ctx.Script.AddFunction("sslimit", "e,c,sump,sumtype,sumpos,targetp,se", [$"return {test}"]);
-        ctx.Effect.CostLines.AddRange(
-        [
-            "local sl=Effect.CreateEffect(e:GetHandler())",
-            "sl:SetType(EFFECT_TYPE_FIELD)",
-            "sl:SetProperty(EFFECT_FLAG_PLAYER_TARGET+EFFECT_FLAG_OATH)",
-            "sl:SetCode(EFFECT_CANNOT_SPECIAL_SUMMON)",
-            "sl:SetTargetRange(1,0)",
-            $"sl:SetTarget({target})",
-            "sl:SetReset(RESET_PHASE+PHASE_END)",
-            "Duel.RegisterEffect(sl,tp)",
-        ]);
+        var what = Locks.WhatOf(ctx.Args);
+        var except = ctx.Args.Cards("cards");
+        if (ctx.Args.Choice("when") == "whole_turn" && Locks.TurnCheck(ctx, what, except) is { } check)
+            ctx.Effect.CostChecks.Add(check);
+        ctx.Effect.CostLines.Add("local sl=Effect.CreateEffect(e:GetHandler())");
+        ctx.Effect.CostLines.AddRange(Locks.Lines(ctx, "sl", "you", what, except, null, "EFFECT_FLAG_OATH"));
+        ctx.Effect.CostLines.Add("sl:SetReset(RESET_PHASE+PHASE_END)");
+        ctx.Effect.CostLines.Add("Duel.RegisterEffect(sl,tp)");
     }
 }

@@ -91,8 +91,14 @@ public static class FilterCompiler
         if (f.Archetype != 0) parts.Add($"{card}:{isSet}({Lua.Hex(f.Archetype)})");
         if (f.Race != CardRace.None) parts.Add($"{card}:{isRace}({EnumNames.LuaConstant(f.Race)})");
         if (f.Attribute != CardAttribute.None) parts.Add($"{card}:{isAttr}({EnumNames.LuaConstant(f.Attribute)})");
-        if (f.LevelMin is { } lmin) parts.Add($"{card}:IsLevelAbove({lmin})");
-        if (f.LevelMax is { } lmax) parts.Add($"{card}:IsLevelBelow({lmax})");
+        // Xyz Monsters have a Rank, not a Level.
+        var lv = f.MonsterKind == MonsterKind.Xyz ? "Rank" : "Level";
+        if (f.LevelMin is { } lmin && f.LevelMax == lmin) parts.Add($"{card}:Is{lv}({lmin})");
+        else
+        {
+            if (f.LevelMin is { } lmin2) parts.Add($"{card}:Is{lv}Above({lmin2})");
+            if (f.LevelMax is { } lmax) parts.Add($"{card}:Is{lv}Below({lmax})");
+        }
         if (f.AtkMin is { } amin) parts.Add($"{card}:IsAttackAbove({amin})");
         if (f.AtkMax is { } amax) parts.Add($"{card}:IsAttackBelow({amax})");
         if (f.PointedToByThisCard) parts.Add($"e:GetHandler():GetLinkedGroup():IsContains({card})");

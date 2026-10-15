@@ -17,9 +17,17 @@ public class TemplateTests
             CardKind.Spell => new CardData
             {
                 Id = 100000600, Name = t.LikeCard, Kind = CardKind.Spell,
-                SpellKind = t.Name switch { "Type boost field" => SpellKind.Field, "Standby heal" => SpellKind.Continuous, "Destroy a Spell/Trap" => SpellKind.QuickPlay, _ => SpellKind.Normal },
+                SpellKind = t.Name switch
+                {
+                    "Type boost field" => SpellKind.Field, "Standby heal" or "Monsters banished instead" => SpellKind.Continuous,
+                    "Destroy a Spell/Trap" => SpellKind.QuickPlay, _ => SpellKind.Normal,
+                },
             },
-            CardKind.Trap => new CardData { Id = 100000601, Name = t.LikeCard, Kind = CardKind.Trap },
+            CardKind.Trap => new CardData
+            {
+                Id = 100000601, Name = t.LikeCard, Kind = CardKind.Trap,
+                TrapKind = t.Group == "Floodgates & locks" ? TrapKind.Continuous : TrapKind.Normal,
+            },
             _ => t.Name switch
             {
                 "Banish from GY to summon" => new CardData { Id = 100000605, Name = t.LikeCard, Level = 6, SummonRule = SummonRule.SpecialSummonOnly },
