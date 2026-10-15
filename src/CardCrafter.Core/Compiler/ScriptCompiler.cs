@@ -55,6 +55,11 @@ public static class ScriptCompiler
         }
 
         init.InsertRange(0, script.InitialLines);
+        // Each option of "Activate 1 of these effects" gets a description string after the effects' own.
+        var nextString = Math.Min(16, project.Effects.Count);
+        foreach (var effect in built)
+            foreach (var branch in effect.Branches.Values)
+                branch.StringIndex = nextString < 16 ? nextString++ : Math.Min(effect.Index, 16) - 1;
         var limits = CountLimits(card, built);
         foreach (var effect in built)
             init.AddRange(effect.Build(limits[effect.Index]));
@@ -107,7 +112,48 @@ public static class ScriptCompiler
             effect.Warn("Mandatory effects usually have no cost. If the cost can't be paid the effect still has to activate.");
 
         var doKind = effect.IsPassive ? BlockKind.Passive : BlockKind.Action;
-        foreach (var b in src.Do) Run(effect, b, doKind, pack);
+        if (effect.IsPassive)
+        {
+            foreach (var b in src.Do) Run(effect, b, doKind, pack);
+        }
+        else
+        {
+            // "Activate 1 of these effects": each "●" link starts another option.
+            var branch = src.Do.Skip(1).Any(b => b.Link == ActionLink.Option) ? 1 : 0;
+            for (int i = 0; i < src.Do.Count; i++)
+            {
+                var b = src.Do[i];
+                if (i > 0 && b.Link == ActionLink.Option) branch++;
+                effect.CurrentBranch = branch;
+                effect.CurrentOptional = b.Optional;
+                var (checks, lines, cats) = (effect.TargetChecks.Count, effect.TargetLines.Count, effect.Categories.Count);
+                // An IF block among the DO blocks gates the steps after it: "then if you control ..., destroy ...".
+                if (BlockRegistry.Find(b.BlockId) is { Kind: BlockKind.Condition })
+                {
+                    if (b.Optional) effect.Warn("An IF block among the DO blocks can't be optional; \"you can\" was ignored.");
+                    var before = effect.Conditions.Count;
+                    if (Run(effect, b, BlockKind.Condition, pack))
+                    {
+                        var gate = effect.Conditions.Skip(before).ToList();
+                        effect.Conditions.RemoveRange(before, gate.Count);
+                        effect.AddGate(gate.Count == 0 ? "true" : string.Join(" and ", gate), b.Link);
+                    }
+                }
+                else Run(effect, b, doKind, pack);
+                if (branch > 0)
+                {
+                    // What this block checks and sets up at activation belongs to its option.
+                    var target = effect.BranchOf(branch);
+                    target.Checks.AddRange(effect.TargetChecks.Skip(checks));
+                    effect.TargetChecks.RemoveRange(checks, effect.TargetChecks.Count - checks);
+                    target.Lines.AddRange(effect.TargetLines.Skip(lines));
+                    effect.TargetLines.RemoveRange(lines, effect.TargetLines.Count - lines);
+                    foreach (var c in effect.Categories.Skip(cats)) if (!target.Categories.Contains(c)) target.Categories.Add(c);
+                }
+            }
+            effect.CurrentBranch = 0;
+            effect.CurrentOptional = false;
+        }
 
         if (src.Do.Count == 0)
             effect.Error("Add at least one DO block: what the effect does.");
@@ -204,8 +250,15 @@ public static class ScriptCompiler
     /// The database's str1..str16: what the game shows when it asks whether to activate an effect. Each is the
     /// effect's own card text, so the prompt says the whole effect; an effect with no text gets its name.
     /// </summary>
-    private static List<string> EffectStrings(CardProject project, CardPack? pack) =>
-        project.Effects.Take(16).Select(e => Text.EffectTextGenerator.Describe(e, project.Card, pack) is { Length: > 0 } t ? t : e.Label).ToList();
+    private static List<string> EffectStrings(CardProject project, CardPack? pack)
+    {
+        var strings = project.Effects.Take(16).Select(e => Text.EffectTextGenerator.Describe(e, project.Card, pack) is { Length: > 0 } t ? t : e.Label).ToList();
+        // Then the options of "Activate 1 of these effects", in the order the compiler numbers them.
+        foreach (var e in project.Effects)
+            foreach (var option in Text.EffectTextGenerator.OptionTexts(e, project.Card, pack))
+                if (strings.Count < 16) strings.Add(option);
+        return strings;
+    }
 
     /// <summary>Continuous, Field and Equip cards need a plain "activate this card" effect to be placed on the field.</summary>
     private static bool NeedsActivationEffect(CardData card, List<EffectBuilder> effects)

@@ -1527,9 +1527,40 @@ public static partial class ScriptTranslator
         var groups = new Dictionary<string, (CardFilter Filter, int Count)>();
         var link = ActionLink.And;
         bool targetCard = false, self = false;
+        // "..., then you can ...": the next action is optional; the checks before the question must be about the cards it picks.
+        var optional = false;
+        var optionalChecks = new HashSet<string>();
+        string Bare(string f) => Regex.Replace(f, @"^aux\.NecroValleyFilter\((.+)\)$", "$1");
+        BlockInstance Add(BlockInstance block)
+        {
+            if (optionalChecks.Count > 0) throw No("its optional step has a condition the blocks can't say");
+            block.Optional = optional;
+            optional = false;
+            return block;
+        }
         foreach (var raw in body)
         {
             var line = raw.Trim();
+            Match ym;
+            if ((ym = Regex.Match(line, @"^if (.*?)Duel\.SelectYesNo\(tp,aux\.Stringid\((?:id|\d+),\d+\)\) then$")).Success)
+            {
+                foreach (var part in SplitTopLevelAnd(Regex.Replace(ym.Groups[1].Value, @"\s+and\s*$", "")).Select(p => p.Trim()).Where(p => p.Length > 0))
+                {
+                    Match cm;
+                    // "if Duel.Destroy(g,REASON_EFFECT)~=0 and Duel.SelectYesNo(...)": the action, then the question.
+                    if ((cm = Regex.Match(part, @"^(Duel\.\w+\(.*\))(?:~=0|>0)$")).Success)
+                    {
+                        blocks.Add(Add(Action(cm.Groups[1].Value, groups, target, targetCard, card, ref self).Linked(link)));
+                        link = ActionLink.IfYouDo;
+                        continue;
+                    }
+                    if (Regex.IsMatch(part, @"^(?:#\w+>0|\w+:GetCount\(\)>0|Duel\.GetLocationCount\(tp,LOCATION_(?:MZONE|SZONE)\)>0|(?:c|tc|e:GetHandler\(\)):IsRelateToEffect\(e\)|(?:c|tc):IsCanBeSpecialSummoned\(e,0,tp,false,false\)|aux\.NecroValleyFilter\(\)\((?:c|tc)\))$")) continue;
+                    if ((cm = Regex.Match(part, @"^Duel\.IsExistingMatchingCard\(([\w.()]+),tp,")).Success) { optionalChecks.Add(Bare(cm.Groups[1].Value)); continue; }
+                    throw No($"its optional step has a condition the blocks can't say ({Short(part)})");
+                }
+                optional = true;
+                continue;
+            }
             if (line.Length == 0 || line == "local c=e:GetHandler()" || line.StartsWith("Duel.Hint(", StringComparison.Ordinal)
                 || line.StartsWith("Duel.HintSelection(", StringComparison.Ordinal) || line.StartsWith("Duel.ConfirmCards(", StringComparison.Ordinal)
                 || line.StartsWith("Duel.ShuffleHand(", StringComparison.Ordinal) || line.StartsWith("Duel.ShuffleDeck(", StringComparison.Ordinal)
@@ -1547,7 +1578,7 @@ public static partial class ScriptTranslator
             if (line == "local tc=Duel.GetFirstTarget()" && target.Filter is not null) { targetCard = true; continue; }
             if (line.StartsWith("@TEMP ", StringComparison.Ordinal))
             {
-                blocks.Add(TempAction(temps[Int(line[6..])], target, targetCard, fns).Linked(link));
+                blocks.Add(Add(TempAction(temps[Int(line[6..])], target, targetCard, fns).Linked(link)));
                 link = ActionLink.And;
                 continue;
             }
@@ -1559,6 +1590,13 @@ public static partial class ScriptTranslator
                 Locate(f, m.Groups[3].Value, m.Groups[4].Value);
                 f.ExcludeThisCard = m.Groups[6].Value != "nil";
                 groups[m.Groups[1].Value] = (f, Int(m.Groups[5].Value));
+                optionalChecks.Remove(Bare(m.Groups[2].Value));
+                continue;
+            }
+            // "local sg=g:Select(tp,1,1,nil)": some of a group of matching cards.
+            if ((m = Regex.Match(line, @"^local (\w+)=(\w+):Select\(tp,(\d+),\3,nil\)$")).Success && groups.TryGetValue(m.Groups[2].Value, out var pool))
+            {
+                groups[m.Groups[1].Value] = (pool.Filter, Int(m.Groups[3].Value));
                 continue;
             }
             // "local tc=g:GetFirst()" after picking 1 card: the same card under another name.
@@ -1573,6 +1611,7 @@ public static partial class ScriptTranslator
                 Locate(f, m.Groups[3].Value, m.Groups[4].Value);
                 f.ExcludeThisCard = m.Groups[5].Value != "nil";
                 groups[m.Groups[1].Value] = (f, 0);
+                optionalChecks.Remove(Bare(m.Groups[2].Value));
                 continue;
             }
             if (line is "local p=Duel.GetChainInfo(0,CHAININFO_TARGET_PLAYER)" or "local d=Duel.GetChainInfo(0,CHAININFO_TARGET_PARAM)") continue;
@@ -1584,11 +1623,11 @@ public static partial class ScriptTranslator
             {
                 // "if Duel.Draw(...)>0 then": the next action happens only if this one did.
                 var inner = Regex.Replace(m.Groups[1].Value, @"^(?:(?:c|tc|e:GetHandler\(\)):IsRelateToEffect\(e\) and )+", "");
-                blocks.Add(Action(inner, groups, target, targetCard, card, ref self).Linked(link));
+                blocks.Add(Add(Action(inner, groups, target, targetCard, card, ref self).Linked(link)));
                 link = ActionLink.IfYouDo;
                 continue;
             }
-            blocks.Add(Action(line, groups, target, targetCard, card, ref self).Linked(link));
+            blocks.Add(Add(Action(line, groups, target, targetCard, card, ref self).Linked(link)));
             link = ActionLink.And;
         }
         return blocks;

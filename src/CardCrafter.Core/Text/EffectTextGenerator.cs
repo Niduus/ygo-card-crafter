@@ -113,11 +113,22 @@ public static partial class EffectTextGenerator
         {
             text = head.Length == 0 ? SentenceCase.Upper(actions) : $"{SentenceCase.Upper(head)}, {actions}";
         }
+        else if (SplitOptions(effect.Do) is { Count: > 1 } options)
+        {
+            // "You can discard this card, then activate 1 of these effects; ● Draw 2 cards. ● Destroy 1 card."
+            var costs = string.Join(" and ", effect.Cost.Select(b => Text(b, pack, effect)).Where(t => t.Length > 0));
+            var body = costs.Length == 0 ? "activate 1 of these effects" : $"{costs}, then activate 1 of these effects";
+            body = optional ? "You can " + body : SentenceCase.Upper(body);
+            text = head.Length == 0 ? body : $"{SentenceCase.Upper(head)}: {body}";
+            text += "; " + string.Join(" ", options.Select(o => "● " + OptionText(o, pack, effect))).TrimEnd('.');
+        }
         else
         {
             var costs = string.Join(" and ", effect.Cost.Select(b => Text(b, pack, effect)).Where(t => t.Length > 0));
             var before = targetClause is null ? costs : costs.Length == 0 ? targetClause : $"{costs}, then {targetClause}";
             var body = before.Length == 0 ? actions : $"{before}; {actions}";
+            // "You can" once, even when the first action is itself optional.
+            if (optional && body.StartsWith("you can ", StringComparison.Ordinal)) body = body["you can ".Length..];
             body = optional ? "You can " + body : SentenceCase.Upper(body);
             text = head.Length == 0 ? body : $"{SentenceCase.Upper(head)}: {body}";
         }
@@ -137,6 +148,34 @@ public static partial class EffectTextGenerator
                 ? $" You can only activate 1 \"{card.Name}\" per Duel."
                 : $" You can only use this effect of \"{card.Name}\" once per Duel.";
         return text;
+    }
+
+    /// <summary>The DO blocks split into the options of "Activate 1 of these effects" (one list when there are none).</summary>
+    private static List<List<BlockInstance>> SplitOptions(List<BlockInstance> blocks)
+    {
+        var options = new List<List<BlockInstance>> { new() };
+        foreach (var (b, i) in blocks.Select((b, i) => (b, i)))
+        {
+            if (i > 0 && b.Link == ActionLink.Option) options.Add([]);
+            options[^1].Add(b);
+        }
+        return options;
+    }
+
+    /// <summary>One option's text: "Target 1 monster your opponent controls; destroy it."</summary>
+    private static string OptionText(List<BlockInstance> blocks, CardPack? pack, EffectEvent effect)
+    {
+        var (target, actions) = Actions(blocks, pack, effect);
+        return SentenceCase.Upper(target is null ? actions : $"{target}; {actions}") + ".";
+    }
+
+    /// <summary>The text of each option of "Activate 1 of these effects", for the choice the player is shown; empty when there are none.</summary>
+    public static IReadOnlyList<string> OptionTexts(EffectEvent effect, CardData card, CardPack? pack = null)
+    {
+        _cardName = card.Name;
+        if (effect.When?.BlockId == "when.while_face_up") return [];
+        var options = SplitOptions(effect.Do);
+        return options.Count > 1 ? options.Select(o => OptionText(o, pack, effect)).ToList() : [];
     }
 
     /// <summary>
@@ -245,6 +284,10 @@ public static partial class EffectTextGenerator
             }
             else t = Text(b, pack, effect);
             if (t.Length == 0) continue;
+            // An IF block among the DO blocks: "then if you control a Synchro Monster, ...".
+            if (def is ConditionBlock && !t.StartsWith("if ", StringComparison.Ordinal)) t = "if " + t;
+            // "you can Special Summon this card".
+            if (b.Optional && def is ActionBlock && !t.StartsWith("you can ", StringComparison.Ordinal)) t = "you can " + t;
             // A floodgate is its own sentence: "Spell Cards ... cannot be activated. Negate all Spell effects on the field."
             var gate = def is LockPassive or NegateAllPassive or BanishInsteadPassive;
             var wasGate = previous is LockPassive or NegateAllPassive or BanishInsteadPassive;
@@ -253,10 +296,10 @@ public static partial class EffectTextGenerator
             if (sb.Length > 0 && previousOnlyIf)
             {
                 sb.Append(", ").Append(t);
-                previousOnlyIf = def is OnlyIfAction;
+                previousOnlyIf = def is OnlyIfAction or ConditionBlock;
                 continue;
             }
-            previousOnlyIf = def is OnlyIfAction;
+            previousOnlyIf = def is OnlyIfAction or ConditionBlock;
             if (sb.Length > 0 && sentences && (gate || wasGate))
             {
                 sb.Append(". ").Append(SentenceCase.Upper(t));
@@ -269,6 +312,7 @@ public static partial class EffectTextGenerator
                     ActionLink.IfYouDo => ", and if you do, ",
                     ActionLink.Then => ", then ",
                     ActionLink.AlsoAfterThat => ". Also, after that, ",
+                    ActionLink.IfYouDont => ", and if you don't, ",
                     _ => ", and ",
                 });
             }

@@ -83,6 +83,21 @@ public sealed partial class BlockViewModel : ObservableObject
         }
     }
 
+    /// <summary>"You can ...": only DO blocks of activated effects can be skipped.</summary>
+    public bool ShowOptional => Definition.Kind == BlockKind.Action && !Owner.IsPassive;
+
+    public bool Optional
+    {
+        get => Instance.Optional;
+        set
+        {
+            if (Instance.Optional == value) return;
+            Instance.Optional = value;
+            OnPropertyChanged();
+            _changed();
+        }
+    }
+
     [RelayCommand] private void Remove() => Owner.RemoveBlock(this);
     [RelayCommand] private void MoveUp() => Owner.MoveBlock(this, -1);
     [RelayCommand] private void MoveDown() => Owner.MoveBlock(this, +1);

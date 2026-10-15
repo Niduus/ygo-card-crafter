@@ -51,6 +51,8 @@
           </ItemsControl.DataTemplates>
         </ItemsControl>
         <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+          <CheckBox Content="you can" IsChecked="{Binding Optional}" IsVisible="{Binding ShowOptional}" Margin="6,0"
+                    ToolTip.Tip="Optional: the player chooses whether this happens when the effect resolves (&quot;..., and if you do, you can Special Summon this card&quot;)" />
           <Button Classes="icon" Opacity="0.6" Content="↑" Command="{Binding MoveUpCommand}" IsVisible="{Binding !IsTrigger}" ToolTip.Tip="Move up" />
           <Button Classes="icon" Opacity="0.6" Content="↓" Command="{Binding MoveDownCommand}" IsVisible="{Binding !IsTrigger}" ToolTip.Tip="Move down" />
           <Button Classes="icon" Opacity="0.6" Content="✕" Command="{Binding RemoveCommand}" ToolTip.Tip="Remove this block" />

@@ -654,6 +654,9 @@ public class EngineTemplateTests
                     .Check($"Duel.IsExistingMatchingCard(Card.IsCode,0,LOCATION_MZONE,0,1,nil,{id})")
                     .Check("Duel.IsExistingMatchingCard(Card.IsCode,0,LOCATION_GRAVE,0,1,nil,1003)");
                 break;
+            // Played for real in BranchingEngineTests.
+            case "Negate a Summon, then Summon this card": s.Card(id, 0, "hand").ExpectActivations(0); break;
+            case "Activate 1 of these effects": s.Card(id, 0, "mzone").ExpectActivations(1).Check("Duel.GetFieldGroupCount(0,LOCATION_HAND,0)==2"); break;
             // Archetype mechanics: played for real in UniqueEngineTests.
             case "Tribute this card instead" or "Opponent discards, or it's negated": s.Card(id, 0, "mzone").ExpectActivations(0); break;
             case "Ritual Summon":

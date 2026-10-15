@@ -28,6 +28,24 @@ public partial class EffectSheetView : UserControl
             }
             menu.Items.Add(header);
         }
+        // DO menus also offer IF blocks, which make the DO blocks after them conditional.
+        if (kind == BlockKind.Action && effect.AvailableGates.Any())
+        {
+            var gates = new MenuItem { Header = "Continue only if... (IF)" };
+            ToolTip.SetTip(gates, "The DO blocks after this one happen only if it holds, like \"then if you control a Synchro Monster, destroy that card\".");
+            foreach (var group in effect.AvailableGates.GroupBy(b => b.Group))
+            {
+                var header = new MenuItem { Header = group.Key };
+                foreach (var def in group)
+                {
+                    var item = new MenuItem { Header = def.Name };
+                    item.Click += (_, _) => effect.AddGate(def);
+                    header.Items.Add(item);
+                }
+                gates.Items.Add(header);
+            }
+            menu.Items.Add(gates);
+        }
         menu.ShowAt(button);
     }
 

@@ -9,6 +9,23 @@ public sealed class OperationStep
     /// <summary>Lua variable holding how many cards/points the step affected, for "if you do" links.</summary>
     public string? Result { get; init; }
     public ActionLink Link { get; init; }
+    /// <summary>"You can ...": the player is asked before it happens.</summary>
+    public bool Optional { get; init; }
+    /// <summary>Which option of "Activate 1 of these effects" it belongs to; 0 when the effect has no options.</summary>
+    public int Branch { get; init; }
+    /// <summary>For an IF block among the DO blocks: the condition the following steps need ("then if you control ...").</summary>
+    public string? Gate { get; init; }
+}
+
+/// <summary>What one option of "Activate 1 of these effects" checks and does at activation.</summary>
+public sealed class BranchTarget
+{
+    public List<string> Checks { get; } = [];
+    public List<string> Lines { get; } = [];
+    public List<string> Categories { get; } = [];
+    public string? Chkc { get; set; }
+    /// <summary>Index of its aux.Stringid description.</summary>
+    public int StringIndex { get; set; }
 }
 
 /// <summary>
@@ -52,6 +69,14 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
     public List<string> TargetLines { get; } = [];
     public string? Chkc { get; private set; }
 
+    /// <summary>The option of "Activate 1 of these effects" the block being compiled belongs to (0 for none).</summary>
+    public int CurrentBranch { get; set; }
+    /// <summary>Whether the DO block being compiled is optional ("you can ...").</summary>
+    public bool CurrentOptional { get; set; }
+    /// <summary>Per option: its activation checks, targeting and categories.</summary>
+    public SortedDictionary<int, BranchTarget> Branches { get; } = [];
+    public BranchTarget BranchOf(int branch) => Branches.TryGetValue(branch, out var b) ? b : Branches[branch] = new BranchTarget();
+
     public void AddCategory(string c) { if (!Categories.Contains(c)) Categories.Add(c); }
     public void AddProperty(string p) { if (!Properties.Contains(p)) Properties.Add(p); }
 
@@ -63,6 +88,15 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
     /// <summary>Registers the effect's single targeting check. Effects can target with one block only.</summary>
     public void SetChkc(string check)
     {
+        if (CurrentBranch > 0)
+        {
+            // Each option can target on its own.
+            var branch = BranchOf(CurrentBranch);
+            if (branch.Chkc is not null) { Error("Only one block per option can target. Turn off \"target\" on the other blocks."); return; }
+            branch.Chkc = check;
+            AddProperty("EFFECT_FLAG_CARD_TARGET");
+            return;
+        }
         if (Chkc is not null)
         {
             Error("Only one block per effect can target. Turn off \"target\" on the other blocks.");
@@ -73,7 +107,11 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
     }
 
     public void AddStep(IEnumerable<string> lines, string? result, ActionLink link) =>
-        _steps.Add(new OperationStep { Lines = lines.ToList(), Result = result, Link = link });
+        _steps.Add(new OperationStep { Lines = lines.ToList(), Result = result, Link = link, Optional = CurrentOptional, Branch = CurrentBranch });
+
+    /// <summary>An IF block among the DO blocks: the steps after it in its option happen only if the condition holds.</summary>
+    public void AddGate(string condition, ActionLink link) =>
+        _steps.Add(new OperationStep { Lines = [], Link = link, Branch = CurrentBranch, Gate = condition });
 
     /// <summary>Adds a lasting effect. The callback writes the effect given its variable name.</summary>
     public void AddPassive(Func<string, IEnumerable<string>> write, bool limited = false) => _passives.Add((write, limited));
@@ -155,7 +193,12 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
             var fn = Script.AddFunction(p + "cost", "e,tp,eg,ep,ev,re,r,rp,chk", body);
             lines.Add($"{Var}:SetCost({fn})");
         }
-        if (TargetChecks.Count > 0 || TargetLines.Count > 0 || Chkc is not null)
+        if (Branches.Count > 0)
+        {
+            var fn = Script.AddFunction(p + "tg", "e,tp,eg,ep,ev,re,r,rp,chk" + (Branches.Values.Any(b => b.Chkc is not null) ? ",chkc" : ""), BuildBranchedTarget());
+            lines.Add($"{Var}:SetTarget({fn})");
+        }
+        else if (TargetChecks.Count > 0 || TargetLines.Count > 0 || Chkc is not null)
         {
             var body = new List<string>();
             if (Chkc is not null) body.Add($"if chkc then return {Chkc} end");
@@ -184,6 +227,46 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
         return lines;
     }
 
+    /// <summary>
+    /// "Activate 1 of these effects": the player picks an option that can be used, kept as the effect's second label;
+    /// that option's targeting and categories apply.
+    /// </summary>
+    private List<string> BuildBranchedTarget()
+    {
+        var body = new List<string>();
+        if (Branches.Values.Any(b => b.Chkc is not null))
+        {
+            body.Add("if chkc then");
+            body.Add("\tlocal _,op=e:GetLabel()");
+            foreach (var (n, b) in Branches.Where(x => x.Value.Chkc is not null)) body.Add($"\tif op=={n} then return {b.Chkc} end");
+            body.Add("\treturn false");
+            body.Add("end");
+        }
+        foreach (var (n, b) in Branches) body.Add($"local b{n}={AllOrTrue(b.Checks)}");
+        var any = "(" + string.Join(" or ", Branches.Keys.Select(n => $"b{n}")) + ")";
+        var checks = new List<string>(TargetChecks) { any };
+        body.Add($"if chk==0 then return {(IsMandatory ? "true" : AllOrTrue(checks))} end");
+        body.AddRange(TargetLines);
+        var options = string.Join(",", Branches.Select(x => $"{{b{x.Key},aux.Stringid(id,{x.Value.StringIndex}),{x.Key}}}"));
+        body.Add($"local op=aux.SelectFromOptions(tp,{options})");
+        body.Add("e:SetLabel(e:GetLabel(),op)");
+        var shared = Categories.Where(c => !Branches.Values.Any(b => b.Categories.Contains(c))).ToList();
+        var untargeted = Properties.Where(x => x != "EFFECT_FLAG_CARD_TARGET").ToList();
+        var first = true;
+        foreach (var (n, b) in Branches)
+        {
+            body.Add($"{(first ? "if" : "elseif")} op=={n} then");
+            first = false;
+            var cats = shared.Concat(b.Categories).Distinct().ToList();
+            body.Add($"\te:SetCategory({(cats.Count == 0 ? "0" : Lua.Join(cats))})");
+            var props = b.Chkc is not null ? Properties : untargeted;
+            body.Add($"\te:SetProperty({(props.Count == 0 ? "0" : Lua.Join(props))})");
+            body.AddRange(b.Lines.Select(l => "\t" + l));
+        }
+        body.Add("end");
+        return body;
+    }
+
     private List<string> BuildPassives(string? countLimit)
     {
         var lines = new List<string> { $"--{Lua.Comment(Source.Label)}" };
@@ -208,37 +291,96 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
         return lines;
     }
 
-    /// <summary>Chains the DO steps, nesting the ones that depend on the step before.</summary>
+    /// <summary>Chains the DO steps, nesting the ones that depend on the step before; one chain per option.</summary>
     private List<string> BuildOperation()
     {
         var body = new List<string> { "local c=e:GetHandler()" };
-        var indent = "";
-        int opened = 0;
-        string? previous = null;
-        foreach (var step in _steps)
+        var branches = _steps.Select(s => s.Branch).Distinct().OrderBy(b => b).ToList();
+        if (branches.Count == 1 && branches[0] == 0)
         {
-            if (previous is not null)
+            body.AddRange(Chain(_steps, ""));
+            return body;
+        }
+        body.Add("local _,op=e:GetLabel()");
+        var first = true;
+        foreach (var b in branches)
+        {
+            body.Add($"{(first ? "if" : "elseif")} op=={b} then");
+            first = false;
+            body.AddRange(Chain(_steps.Where(s => s.Branch == b).ToList(), "\t"));
+        }
+        body.Add("end");
+        return body;
+    }
+
+    private List<string> Chain(IReadOnlyList<OperationStep> steps, string baseIndent)
+    {
+        var body = new List<string>();
+        var indent = baseIndent;
+        int opened = 0, n = 0;
+        string? previous = null;
+        var started = false;
+        void Open(string cond)
+        {
+            body.Add($"{indent}if {cond} then");
+            indent += "\t";
+            opened++;
+        }
+        foreach (var step in steps)
+        {
+            n++;
+            // The first step of each option links to nothing.
+            var link = started && step.Link != ActionLink.Option ? step.Link : ActionLink.And;
+            started = true;
+            if (step.Gate is not null)
             {
-                switch (step.Link)
+                switch (link)
                 {
-                    case ActionLink.IfYouDo:
-                        body.Add($"{indent}if {previous}>0 then");
-                        indent += "\t";
-                        opened++;
-                        break;
+                    case ActionLink.IfYouDo: Open(previous is null ? $"({step.Gate})" : $"{previous}>0 and ({step.Gate})"); break;
+                    case ActionLink.IfYouDont: Open(previous is null ? "false" : $"{previous}==0 and ({step.Gate})"); break;
                     case ActionLink.Then:
-                        body.Add($"{indent}if {previous}>0 then");
-                        indent += "\t";
-                        opened++;
+                        Open(previous is null ? $"({step.Gate})" : $"{previous}>0 and ({step.Gate})");
                         body.Add($"{indent}Duel.BreakEffect()");
                         break;
                     case ActionLink.AlsoAfterThat:
                         body.Add($"{indent}Duel.BreakEffect()");
+                        Open($"({step.Gate})");
                         break;
+                    default: Open($"({step.Gate})"); break;
                 }
+                continue;
             }
-            body.AddRange(step.Lines.Select(l => indent + l));
-            previous = step.Result ?? previous;
+            switch (link)
+            {
+                case ActionLink.IfYouDo:
+                    if (previous is not null) Open($"{previous}>0");
+                    break;
+                case ActionLink.IfYouDont:
+                    Open(previous is null ? "false" : $"{previous}==0");
+                    break;
+                case ActionLink.Then:
+                    if (previous is not null) Open($"{previous}>0");
+                    body.Add($"{indent}Duel.BreakEffect()");
+                    break;
+                case ActionLink.AlsoAfterThat:
+                    body.Add($"{indent}Duel.BreakEffect()");
+                    break;
+            }
+            var result = step.Result;
+            if (step.Optional)
+            {
+                // "You can ...": ask, and count a declined step as not done.
+                result ??= $"ok{Index}_{n}";
+                body.Add($"{indent}local {result}=0");
+                body.Add($"{indent}if Duel.SelectYesNo(tp,aux.Stringid(id,{Math.Min(Index, 16) - 1})) then");
+                var inner = step.Result is null
+                    ? step.Lines.Append($"{result}=1")
+                    : step.Lines.Select(l => l.StartsWith($"local {result}=", StringComparison.Ordinal) ? l["local ".Length..] : l);
+                body.AddRange(inner.Select(l => indent + "\t" + l));
+                body.Add($"{indent}end");
+            }
+            else body.AddRange(step.Lines.Select(l => indent + l));
+            previous = result;
         }
         for (; opened > 0; opened--)
         {

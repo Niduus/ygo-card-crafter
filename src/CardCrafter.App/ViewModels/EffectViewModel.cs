@@ -95,6 +95,19 @@ public sealed partial class EffectViewModel : ObservableObject
         _changed();
     }
 
+    /// <summary>
+    /// IF blocks offered among the DO blocks: the DO blocks after them happen only if they hold
+    /// ("..., then if you control a Synchro Monster, destroy that card").
+    /// </summary>
+    public IEnumerable<BlockDefinition> AvailableGates => IsPassive ? [] : BlockRegistry.OfKind(BlockKind.Condition);
+
+    public void AddGate(BlockDefinition def)
+    {
+        Model.Do.Add(def.CreateInstance());
+        Rebuild();
+        _changed();
+    }
+
     public void AddBlock(BlockDefinition def)
     {
         var inst = def.CreateInstance();
@@ -129,7 +142,7 @@ public sealed partial class EffectViewModel : ObservableObject
         _changed();
     }
 
-    private List<BlockInstance>? ListFor(BlockViewModel block) => block.Definition.Kind switch
+    private List<BlockInstance>? ListFor(BlockViewModel block) => Model.Do.Contains(block.Instance) ? Model.Do : block.Definition.Kind switch
     {
         BlockKind.Condition => Model.If,
         BlockKind.Cost => Model.Cost,

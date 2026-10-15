@@ -579,6 +579,31 @@ public static class EffectTemplates
                 Do = [B("do.add_to_hand").With("cards", new CardFilter { Zones = Zone.Deck, CardType = FilterCardType.Monster })],
             },
         },
+        // Branching
+        new()
+        {
+            Name = "Negate a Summon, then Summon this card", LikeCard = "hand-trap Summon negators", For = CardKind.Monster, Group = "Hand traps",
+            Description = "When your opponent would Normal or Special Summon a monster(s) (Quick Effect): you can negate the Summon, and if you do, you can Special Summon this card from your hand.",
+            Create = () => new EffectEvent
+            {
+                Label = "Negate Summon", When = B("when.quick").With("timing", "would_summon").With("zone", "hand"), Limit = OncePerTurn.Hard,
+                Do = [B("do.negate_summon").With("and", "nothing"), B("do.special_summon_self").Linked(ActionLink.IfYouDo).MayDo()],
+            },
+        },
+        new()
+        {
+            Name = "Activate 1 of these effects", LikeCard = "Mitsurugi Magatama / Faceless Mage", For = CardKind.Monster, Group = "Monsters",
+            Description = "Activate 1 of these effects; ● Target 1 monster your opponent controls; destroy it. ● Draw 2 cards. Add more options with the \"● or instead\" link.",
+            Create = () => new EffectEvent
+            {
+                Label = "Options", When = B("when.ignition").With("zone", "monster_zone"), Limit = OncePerTurn.Hard,
+                Do =
+                [
+                    B("do.destroy").With("target", true).With("cards", new CardFilter { Owner = CardOwner.Opponent, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster }),
+                    B("do.draw").With("count", 2).Linked(ActionLink.Option),
+                ],
+            },
+        },
         // Archetype mechanics
         new()
         {

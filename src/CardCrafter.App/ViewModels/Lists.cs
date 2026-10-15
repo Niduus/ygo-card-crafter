@@ -61,7 +61,9 @@ public static class Lists
         (ActionLink.And, "and"),
         (ActionLink.IfYouDo, "and if you do"),
         (ActionLink.Then, "then"),
-        (ActionLink.AlsoAfterThat, "also, after that"));
+        (ActionLink.AlsoAfterThat, "also, after that"),
+        (ActionLink.IfYouDont, "and if you don't"),
+        (ActionLink.Option, "● or instead (another option)"));
 
     public static readonly IReadOnlyList<Option<CardOwner>> Owners = Options.Of(
         (CardOwner.You, "Yours"), (CardOwner.Opponent, "Your opponent's"), (CardOwner.Either, "Either player's"));

@@ -22,6 +22,13 @@ public enum ActionLink
     Then,
     /// <summary>"Also, after that, ..." — afterwards, whether or not the previous action happened.</summary>
     AlsoAfterThat,
+    /// <summary>"..., and if you don't, ..." — only if the previous action did not happen (or was declined).</summary>
+    IfYouDont,
+    /// <summary>
+    /// "● ..." — starts another option of "Activate 1 of these effects": the player picks one option that can be used,
+    /// and only that option's blocks happen.
+    /// </summary>
+    Option,
 }
 
 /// <summary>One placed block: which block it is and the values the user filled in.</summary>
@@ -32,6 +39,8 @@ public sealed class BlockInstance
     public Dictionary<string, CardFilter> Filters { get; set; } = [];
     /// <summary>Only meaningful for actions after the first.</summary>
     public ActionLink Link { get; set; } = ActionLink.And;
+    /// <summary>A DO block the player may skip: "you can Special Summon this card". They are asked as it resolves.</summary>
+    public bool Optional { get; set; }
 
     public BlockInstance() { }
     public BlockInstance(string blockId) => BlockId = blockId;
@@ -51,6 +60,13 @@ public sealed class BlockInstance
     public BlockInstance Linked(ActionLink link)
     {
         Link = link;
+        return this;
+    }
+
+    /// <summary>Makes this DO block optional ("you can ...").</summary>
+    public BlockInstance MayDo(bool optional = true)
+    {
+        Optional = optional;
         return this;
     }
 }

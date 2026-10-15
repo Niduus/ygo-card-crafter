@@ -103,6 +103,14 @@ reads "If Summoned this way, ..." like the Ryzeal monsters. Locks can also stop 
 declare attacks, except with Rank 4 Xyz Monsters"), and a DO lock can be put on your opponent. The templates include
 each of these cards.
 
+**Branching inside an effect.** DO blocks connect with "and", "and if you do", "then", "also, after that" or
+"and if you don't", and any DO block can be ticked **you can**, so the player decides as it resolves: "You can negate the
+Summon, and if you do, you can Special Summon this card from your hand." The DO menu also offers every IF block under
+**Continue only if...**: the DO blocks after it happen only if it holds ("draw 1 card, then if you control 2 or more
+monsters, gain 1000 LP"). The **● or instead** link starts another option of **Activate 1 of these effects**: each
+option has its own blocks, targets and checks, the player picks one that can be used, and the card text lists them as
+● bullets.
+
 **Archetype mechanics.** Blocks for what makes newer archetypes unusual:
 - *Mitsurugi:* Tributing as an effect ("then Tribute 1 monster you control", "make your opponent Tribute 1 monster they
   control (their choice)"), Tributing from your hand or field as a cost, "If another Reptile monster(s) you control
@@ -234,7 +242,7 @@ the browser says **Becomes blocks** with the effect's wording, and **Add as bloc
 WHEN/IF/COST/DO blocks you can change. When every effect of a card has exact blocks, **Use as a new card** makes the
 copy with blocks (the original script is kept on the Script tab). Effects without exact blocks say why and stay script,
 so a translation never changes what a card does. A card on a hand-written script can try the same from the Effects
-tab with **Turn the script into blocks**. Of the 13,571 official scripts, 812 become blocks completely and 11,693 of
+tab with **Turn the script into blocks**. Of the 13,571 official scripts, 818 become blocks completely and 11,737 of
 their 35,901 effects do, including Synchro, Xyz, Link and Fusion material lines. When Omega's
 folders have no script for a card, the official one can be fetched from
 [ygopro-scripts](https://github.com/Fluorohydride/ygopro-scripts). **Browse a database file…** searches any `.db`/`.cdb`.
