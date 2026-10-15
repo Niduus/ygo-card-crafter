@@ -13,7 +13,24 @@ public sealed record KnownArchetype(int Code, string Name, int Cards, IReadOnlyL
 /// <summary>A monster Type bit used in Omega's databases that isn't one of the standard Types.</summary>
 public sealed record UnknownType(long Value, int Cards, IReadOnlyList<string> Examples)
 {
-    public string Label => $"0x{Value:x} — {Cards} cards, e.g. {string.Join(", ", Examples)}";
+    /// <summary>
+    /// The Rush Duel Types use these values in the ygopro-family engines (EDOPro's constant list).
+    /// Shown as a likely name; the example cards let the user confirm it.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<long, string> LikelyNames = new Dictionary<long, string>
+    {
+        [0x4000000] = "Cyborg",
+        [0x8000000] = "Magical Knight",
+        [0x10000000] = "High Dragon",
+        [0x20000000] = "Omega Psychic",
+        [0x40000000] = "Celestial Warrior",
+        [0x80000000] = "Galaxy",
+    };
+
+    public string? LikelyName => LikelyNames.GetValueOrDefault(Value);
+    public string Title => LikelyName is { } n ? $"{n}? (0x{Value:x})" : $"Type 0x{Value:x}";
+    public string Detail => $"{Cards} cards, e.g. {string.Join(", ", Examples)}";
+    public string Label => $"{Title} — {Detail}";
     public override string ToString() => Label;
 }
 

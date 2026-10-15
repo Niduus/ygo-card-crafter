@@ -369,8 +369,8 @@ public sealed partial class MainViewModel : ObservableObject
     private void UseFoundType(UnknownType? found)
     {
         if (found is null) return;
-        AddType(new CustomType { Value = found.Value, Name = $"Type 0x{found.Value:x}" });
-        Status = $"Added Omega's Type 0x{found.Value:x}. Rename it to match the game (cards using it include {string.Join(", ", found.Examples)}).";
+        AddType(new CustomType { Value = found.Value, Name = found.LikelyName ?? $"Type 0x{found.Value:x}" });
+        Status = $"Added Omega's Type 0x{found.Value:x} as \"{found.LikelyName ?? "Type"}\". Check the name against cards that use it: {string.Join(", ", found.Examples)}.";
     }
 
     private void AddType(CustomType t)
