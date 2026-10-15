@@ -16,6 +16,22 @@ public partial class MainWindow : Window
         };
     }
 
+    private CardBrowserWindow? _browser;
+
+    /// <summary>Opens the card browser, or brings it to the front if it is already open.</summary>
+    private void OnBrowseCards(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (DataContext is not MainViewModel vm) return;
+        if (_browser is { IsVisible: true })
+        {
+            _browser.Activate();
+            return;
+        }
+        _browser = new CardBrowserWindow { DataContext = vm.CreateCardBrowser() };
+        _browser.Closed += (_, _) => _browser = null;
+        _browser.Show(this);
+    }
+
     protected override async void OnClosing(WindowClosingEventArgs e)
     {
         base.OnClosing(e);

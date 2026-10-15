@@ -142,7 +142,7 @@ public class CardLibraryTests
     {
         var target = ScriptCompiler.Compile(Samples.DragonCommander()).Lua;
         int scripts = 0, pieces = 0;
-        foreach (var file in Directory.EnumerateFiles(EngineScenario.EngineScripts!, "c*.lua").OrderBy(f => f).Take(400))
+        foreach (var file in Directory.EnumerateFiles(EngineScenario.EngineScripts!, "c*.lua").OrderBy(f => f).Take(Environment.GetEnvironmentVariable("CARDCRAFTER_ALL_SCRIPTS") is null ? 400 : int.MaxValue))
         {
             if (!long.TryParse(Path.GetFileNameWithoutExtension(file)[1..], out var id)) continue;
             var lua = File.ReadAllText(file);

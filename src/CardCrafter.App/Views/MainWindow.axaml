@@ -60,6 +60,8 @@
             </Button.Flyout>
           </Button>
           <Border Width="1" Height="24" Background="#2A2C36" />
+          <Button Content="Browse cards…" Click="OnBrowseCards"
+                  ToolTip.Tip="Search every card in YGO Omega by name or text, and use whole cards or single effects in yours" />
           <Button Content="Import cards…" Command="{Binding ImportCdbCommand}" ToolTip.Tip="Add the cards of another database (.db, .cdb) to this pack" />
           <Button Content="Export" Command="{Binding ExportCommand}" ToolTip.Tip="Write the .cdb, scripts and pics to a folder" />
           <Button Content="Install into Omega" Command="{Binding InstallCommand}" IsEnabled="{Binding CanInstall}" Classes="accent"

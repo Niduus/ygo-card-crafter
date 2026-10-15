@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Globalization;
 using CardCrafter.App.Services;
+using CardCrafter.Core.Compiler;
 using CardCrafter.Core.Database;
 using CardCrafter.Core.Model;
 using CardCrafter.Core.Omega;
@@ -771,6 +772,119 @@ public sealed partial class MainViewModel : ObservableObject
         }
         Status = $"Saved {saved} card images at {ImageWidth} px wide to {folder}.";
         _dialogs.OpenFolder(folder);
+    }
+
+    // ---------------------------------------------------------------- card browser
+
+    private Task<CardLibrary>? _library;
+    private OmegaInventory? _libraryInventory;
+
+    public CardBrowserViewModel CreateCardBrowser() => new(this);
+
+    /// <summary>Every card in Omega's databases, read once per Omega folder (in the background).</summary>
+    public Task<CardLibrary> GetLibraryAsync()
+    {
+        if (_library is null || !ReferenceEquals(_libraryInventory, Inventory))
+        {
+            var inventory = _libraryInventory = Inventory;
+            _library = inventory is null
+                ? Task.FromResult(CardLibrary.Empty)
+                : Task.Run(() => CardLibrary.Load(inventory.CardDatabases.OrderByDescending(d => d.Cards).Select(d => d.Path), inventory.Root));
+        }
+        return _library;
+    }
+
+    public Task<string?> PickDatabaseToBrowseAsync() => _dialogs.OpenFileAsync("Browse the cards in a database", "Card database", "db", "cdb");
+
+    /// <summary>Where card scripts are looked for: Omega's script folders, then the folders next to the opened database.</summary>
+    public IEnumerable<string> ScriptFolders
+    {
+        get
+        {
+            if (Inventory?.BestScriptFolder is { } best) yield return best;
+            if (Inventory is not null) foreach (var f in Inventory.ScriptFolders) yield return f.Path;
+            if (DatabasePath is { } db) yield return DatabasePack.ScriptFolderFor(db, Inventory);
+        }
+    }
+
+    /// <summary>The official script from github.com/Fluorohydride/ygopro-scripts, or null.</summary>
+    public async Task<string?> DownloadOfficialScriptAsync(long id)
+    {
+        try
+        {
+            using var http = UpdateChecker.CreateClient();
+            var url = $"https://raw.githubusercontent.com/Fluorohydride/ygopro-scripts/master/c{id}.lua";
+            using var response = await http.GetAsync(url);
+            if (!response.IsSuccessStatusCode) return null;
+            var lua = await response.Content.ReadAsStringAsync();
+            return lua.Contains("initial_effect", StringComparison.Ordinal) ? lua : null;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Copies a card from the game into the pack with a new passcode: its stats and text, its art if Omega has it,
+    /// and its script (moved to the new passcode) as a hand-written script.
+    /// </summary>
+    public void AddCardFromLibrary(LibraryCard source, string? script)
+    {
+        var data = CdbEncoder.Decode(source.Row);
+        var newId = NewPasscode();
+        data.Id = newId;
+        data.Alias = 0;
+        data.Ot = null;
+        data.Limitation = Limitation.Unlimited;
+        data.BanlistLimits.Clear();
+        data.OcgDate = data.TcgDate = null;
+        data.DatabaseScript = null;
+        var project = new CardProject { Card = data, ScriptStrings = source.Row.Strings.ToList() };
+        while (project.ScriptStrings.Count > 0 && project.ScriptStrings[^1].Length == 0) project.ScriptStrings.RemoveAt(project.ScriptStrings.Count - 1);
+        if (script is not null)
+        {
+            project.UseCustomLua = true;
+            project.CustomLua = LuaPieces.Retarget(script, source.Id, newId);
+        }
+        if (Inventory?.BestImageFolder is { } arts)
+            foreach (var ext in new[] { ".jpg", ".png" })
+                if (File.Exists(Path.Combine(arts, source.Id + ext))) { project.ArtworkPath = Path.Combine(arts, source.Id + ext); break; }
+        _pack.Cards.Add(project);
+        var vm = NewCardViewModel(project);
+        Cards.Add(vm);
+        SelectedCard = vm;
+        MarkDirty();
+        Status = script is null
+            ? $"Added a copy of \"{source.Name}\" with passcode {newId}. It had no script, so build its effects on the Effects tab."
+            : $"Added a copy of \"{source.Name}\" with passcode {newId}. Its script is on the Script tab; change anything you like.";
+    }
+
+    /// <summary>Adds one effect from another card's script to the selected card.</summary>
+    public void AddScriptPieceToSelected(ScriptPiece piece)
+    {
+        if (SelectedCard is not { } card)
+        {
+            Status = "Select a card in your pack first.";
+            return;
+        }
+        try
+        {
+            card.AddScriptPiece(piece);
+            Status = $"Added \"{piece.Title}\" from {piece.SourceId} to \"{card.Name}\". The card now uses its hand-written script (Script tab).";
+        }
+        catch (InvalidOperationException ex)
+        {
+            Status = $"Couldn't add it: {ex.Message}";
+        }
+    }
+
+    /// <summary>Appends a card's text to the selected card's text.</summary>
+    public void AddTextToSelected(string text)
+    {
+        if (SelectedCard is not { } card) return;
+        card.Text = string.IsNullOrWhiteSpace(card.Text) ? text : card.Text.TrimEnd() + "\n" + text;
+        Status = $"Copied the text into \"{card.Name}\".";
     }
 
     // ---------------------------------------------------------------- card textures

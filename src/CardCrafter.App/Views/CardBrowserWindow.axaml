@@ -1,0 +1,95 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:CardCrafter.App.ViewModels"
+        xmlns:omega="using:CardCrafter.Core.Omega"
+        xmlns:compiler="using:CardCrafter.Core.Compiler"
+        x:Class="CardCrafter.App.Views.CardBrowserWindow"
+        x:DataType="vm:CardBrowserViewModel"
+        Title="Card browser — YGO Card Crafter"
+        Icon="avares://YGOCardCrafter/Assets/icon.ico"
+        Width="1180" Height="780" MinWidth="820" MinHeight="520"
+        WindowStartupLocation="CenterOwner">
+  <DockPanel Margin="14">
+    <!-- search -->
+    <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="0,0,0,10">
+      <Grid ColumnDefinitions="*,8,170,8,130,8,Auto">
+        <TextBox x:Name="SearchBox" Text="{Binding Query}" Watermark="Search names and card text, e.g. negate  or  &quot;from your GY&quot;" />
+        <ComboBox Grid.Column="2" ItemsSource="{Binding SearchInOptions}" SelectedItem="{Binding SearchWhere}" HorizontalAlignment="Stretch" />
+        <ComboBox Grid.Column="4" ItemsSource="{Binding KindOptions}" SelectedItem="{Binding Kind}" HorizontalAlignment="Stretch" />
+        <Button Grid.Column="6" Content="Browse a database file…" Command="{Binding BrowseDatabaseCommand}"
+                ToolTip.Tip="Search the cards in any .db or .cdb instead of YGO Omega's" />
+      </Grid>
+      <TextBlock Text="{Binding ResultSummary}" FontSize="12" Foreground="{StaticResource MutedBrush}"
+                 ToolTip.Tip="Every word must appear; put a phrase in quotes to match it exactly." />
+    </StackPanel>
+
+    <Grid ColumnDefinitions="380,14,*">
+      <!-- results -->
+      <Border BorderBrush="#2A2C36" BorderThickness="1" CornerRadius="6">
+        <ListBox ItemsSource="{Binding Results}" SelectedItem="{Binding Selected}" Background="Transparent">
+          <ListBox.ItemTemplate>
+            <DataTemplate DataType="omega:LibraryCard">
+              <StackPanel Margin="2,3">
+                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis">
+                  <Run Text="{Binding TypeLine}" /><Run Text="  " /><Run Text="{Binding Stats}" />
+                </TextBlock>
+              </StackPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </Border>
+      <ProgressBar Grid.Column="0" IsIndeterminate="True" IsVisible="{Binding IsLoading}" VerticalAlignment="Top" Margin="1" />
+
+      <!-- the selected card -->
+      <ScrollViewer Grid.Column="2">
+        <StackPanel Spacing="8" Margin="0,0,10,0">
+          <TextBlock Text="Pick a card on the left." IsVisible="{Binding !HasSelection}" Foreground="{StaticResource MutedBrush}" />
+          <StackPanel Spacing="4" IsVisible="{Binding HasSelection}">
+            <TextBlock Text="{Binding Selected.Name, FallbackValue=''}" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap" />
+            <TextBlock FontSize="13" TextWrapping="Wrap">
+              <Run Text="{Binding Selected.TypeLine, FallbackValue=''}" FontWeight="SemiBold" /><Run Text="   " /><Run Text="{Binding Selected.Stats, FallbackValue=''}" />
+            </TextBlock>
+            <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}">
+              <Run Text="Passcode " /><Run Text="{Binding Selected.Id, FallbackValue=''}" /><Run Text="  ·  " /><Run Text="{Binding Selected.Source, FallbackValue=''}" />
+            </TextBlock>
+            <Border Background="#14151A" CornerRadius="6" Padding="12,10" Margin="0,4,0,0" BorderBrush="#2A2C36" BorderThickness="1">
+              <SelectableTextBlock Text="{Binding Selected.Text, FallbackValue=''}" TextWrapping="Wrap" />
+            </Border>
+            <WrapPanel Margin="0,4,0,0">
+              <Button Content="Use as a new card" Command="{Binding UseAsNewCardCommand}" Classes="accent" Margin="0,0,8,6"
+                      ToolTip.Tip="Copy this card into your pack with a new passcode: stats, text, art and script" />
+              <Button Content="Copy its text into the selected card" Command="{Binding CopyTextCommand}" IsEnabled="{Binding HasCurrentCard}" Margin="0,0,8,6" />
+            </WrapPanel>
+
+            <TextBlock Text="Script" FontSize="16" FontWeight="SemiBold" Margin="0,10,0,0" />
+            <TextBlock Text="{Binding ScriptStatus}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" />
+            <Button Content="Get the official script from ygopro-scripts (GitHub)" Command="{Binding FetchScriptCommand}"
+                    IsVisible="{Binding CanFetchScript}" HorizontalAlignment="Left" />
+            <TextBlock IsVisible="{Binding HasScript}" TextWrapping="Wrap" FontSize="12">
+              <Run Text="Each part is one effect with the functions it needs. " /><Run Text="Add to " /><Run Text="{Binding CurrentCardName}" FontWeight="SemiBold" /><Run Text=" puts it into that card's script, renamed so nothing clashes." />
+            </TextBlock>
+            <ItemsControl ItemsSource="{Binding Pieces}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="compiler:ScriptPiece">
+                  <Border Background="#1A1B22" CornerRadius="6" Padding="10,8" Margin="0,0,0,8" BorderBrush="#2A2C36" BorderThickness="1">
+                    <StackPanel Spacing="6">
+                      <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" />
+                        <Button Grid.Column="1" Content="Add to the selected card"
+                                Command="{Binding $parent[Window].((vm:CardBrowserViewModel)DataContext).AddPieceCommand}" CommandParameter="{Binding}" />
+                      </Grid>
+                      <Expander Header="Show the code" HorizontalAlignment="Stretch">
+                        <SelectableTextBlock Text="{Binding Preview}" FontFamily="Cascadia Mono, Consolas, Menlo, monospace" FontSize="12" TextWrapping="NoWrap" />
+                      </Expander>
+                    </StackPanel>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </StackPanel>
+      </ScrollViewer>
+    </Grid>
+  </DockPanel>
+</Window>

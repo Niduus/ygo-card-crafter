@@ -534,4 +534,14 @@ public sealed partial class CardViewModel : ObservableObject
 
     [RelayCommand]
     private void BackToBlocks() => UseCustomLua = false;
+
+    /// <summary>
+    /// Adds one effect taken from another card's script. The card switches to its hand-written script first
+    /// (keeping everything its blocks made), then the effect and the functions it needs are added to it.
+    /// </summary>
+    public void AddScriptPiece(ScriptPiece piece)
+    {
+        if (!UseCustomLua) EjectToLua();
+        CustomLua = LuaPieces.Insert(CustomLua, piece);
+    }
 }

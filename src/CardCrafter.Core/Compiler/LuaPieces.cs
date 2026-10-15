@@ -135,6 +135,15 @@ public static partial class LuaPieces
         return $"Effect {number}";
     }
 
+    /// <summary>Opening minus closing brackets on a line, outside strings and comments.</summary>
+    private static int Brackets(string line)
+    {
+        var code = Regex.Replace(line, "\"(?:\\\\.|[^\"\\\\])*\"|'(?:\\\\.|[^'\\\\])*'", "\"\"");
+        var comment = code.IndexOf("--", StringComparison.Ordinal);
+        if (comment >= 0) code = code[..comment];
+        return code.Count(ch => ch is '{' or '(') - code.Count(ch => ch is '}' or ')');
+    }
+
     /// <summary>How a line changes Lua block nesting: if/function/do/repeat open a block, end/until close one.</summary>
     private static int BlockDelta(string line)
     {
@@ -150,8 +159,13 @@ public static partial class LuaPieces
     private static int TopLevelEnd(string[] lines, int start)
     {
         if (start < 0) return -1;
-        for (int i = start + 1; i < lines.Length; i++)
-            if (Regex.IsMatch(lines[i], @"^end\b")) return i;
+        // Count blocks rather than trusting indentation: some scripts put inner "end"s at the start of the line.
+        int depth = 0;
+        for (int i = start; i < lines.Length; i++)
+        {
+            depth += BlockDelta(lines[i]);
+            if (depth <= 0 && i > start || depth <= 0 && i == start && Regex.IsMatch(lines[i], @"\bend\s*$")) return i;
+        }
         return -1;
     }
 
@@ -175,7 +189,14 @@ public static partial class LuaPieces
             }
             // Values such as s.listed_names={...} or c123.spchecks=aux.CreateChecks(...).
             var value = Regex.Match(lines[i], $@"^{p}\.(\w+)\s*=");
-            if (value.Success) defs[value.Groups[1].Value] = (i, lines[i]);
+            if (value.Success)
+            {
+                // A table or call can run over several lines: take lines until its brackets close.
+                int last = i, balance = Brackets(lines[i]);
+                while (balance > 0 && last + 1 < lines.Length) balance += Brackets(lines[++last]);
+                defs[value.Groups[1].Value] = (i, string.Join("\n", lines[i..(last + 1)]));
+                i = last;
+            }
         }
         return defs;
     }
