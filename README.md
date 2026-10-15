@@ -88,24 +88,44 @@ from your GY", "Tribute 1 monster"). It doesn't start a chain, so it has no DO b
 "You can only Special Summon *X* once per turn this way." Monsters that can be Normal Summoned can have one too.
 The templates **Free summon from hand**, **Banish from GY to summon** and **Tribute to summon** are ready-made ones.
 
+**Card pool and limitation (YGO Omega).** Omega's deck editor lists cards by **Card Pool** and **Limitation**, and a card
+without them doesn't come up in its searches. New packs put their cards in the **Custom** card pool (the left panel
+sets it for the pack, the Card tab for one card); OCG or TCG cards also get a release date, which Omega needs to list
+them. **Limitation** (Unlimited, Semi-Limited, Limited, Forbidden) is written onto every banlist in Omega; Unlimited
+cards are on none, like official ones. Custom databases are written in the same layout as Omega's own card database,
+which the Omega tab's report shows. Packs made with older versions move from OCG/TCG to Custom when opened.
+
 **Passcodes.** Every card needs a unique passcode. Click **Generate** and Card Crafter picks one that no card in your
 pack or anywhere in Omega uses. Each generated passcode starts its own block of 10,000 numbers, so once-per-turn
 limits never collide between cards. If a passcode is ever taken later, for example by a new official card, the card
 shows a warning the next time Card Crafter scans Omega, and installing is refused until it is changed.
 
-**Card face.** The Card tab shows a live preview drawn like a real card: frame colour, name, Attribute, Level, Rank or
-Link Arrows, Pendulum scales, type line, card text and ATK/DEF. **Choose art…** sets the illustration inside the frame.
+**Card face.** The Card tab shows a live preview laid out like a printed card: name, Attribute, Level/Rank stars or
+Link Arrows, Pendulum scales, the set number under the art, "[Type/Effect]", card text, ATK/DEF, the passcode with its
+edition, and the copyright line (left panel; it defaults to "©year author"). **Choose art…** sets the illustration.
 YGO Omega draws the frame itself, so only the art is exported, as `.jpg`.
 
-**Card frame images.** Card Crafter doesn't include card frame artwork itself. Click **Frames… → Download OmegaCustom
-card textures** under the preview to use the frames from [zeak6464/OmegaCustom](https://github.com/zeak6464/OmegaCustom);
-they are downloaded once into `%AppData%\YGO Card Crafter\Frames\OmegaCustom` and the text, stars and art are placed to match each
-frame. If your Omega folder already has those textures, they are used automatically.
-Or click **Frames… → Use frame images from a folder…** and pick a folder of full-card templates you have.
-Name them `normal`, `effect`, `ritual`, `fusion`, `synchro`, `xyz`, `link`, `token`, `spell`, `trap`, and
-`pendulum-normal`, `pendulum-effect` and so on (`.png` or `.jpg`). Optional extras replace single parts:
-`attribute-dark` … `attribute-divine`, `attribute-spell`, `attribute-trap`, `level`, `rank`. Templates should use
-the standard card proportions (59 × 86); the name, stars, art, text and ATK/DEF are drawn on top in the standard places.
+**Card textures.** Card Crafter includes no card artwork. The preview is assembled from card textures you provide:
+**Textures… → Use card textures from a .zip…** (unpacked into `%AppData%\YGO Card Crafter\Textures`) or **from a folder…**.
+It looks for YGO Omega's texture names, with or without an export number (`EffectFrame #2375.png` works):
+
+| Part | Files |
+|---|---|
+| Frames (813 × 1185) | `NormalFrame`, `EffectFrame`, `RitualFrame`, `FusionFrame`, `SynchroFrame`, `XYZFrame`, `LinkFrame`, `TokenFrame`, `SpellCardFrame`, `TrapCardFrame` |
+| Pendulum frames | `PendulumNormalFullFrame`, `PendulumEffectFullFrame`, `PendulumFusionFullFrame`, `PendulumSynchroFullFrame`, `PendulumXYZFullFrame`, `PendulumBottom` |
+| Card edge | `DefaultBorder` |
+| Attributes | `Dark`, `Light`, `Earth`, `Water`, `Fire`, `Wind`, `Divine`, `Spell`, `Trap` |
+| Stars | `Level`, `Rank` |
+| Spell/Trap icons | `QuickPlay`, `Continuous`, `Equipment`, `Field`, `Ritual`, `Counter` |
+| Link Arrows | `TopOn`/`TopOff`, `BottomOn`/`BottomOff`, `LeftOn`/`LeftOff`, `RightOn`/`RightOff`, `TopLeftOn`/`TopLeftOff`, `TopRightOn`/`TopRightOff`, `BottomLeftOn`/`BottomLeftOff`, `BottomRightOn`/`BottomRightOff` |
+
+When a frame comes in a standard and a full-art version, the standard one is used. Everything is placed at positions
+measured from those textures. Without textures the preview is a plain placeholder.
+
+**Card fonts.** Printed cards use Matrix Small Caps (names), ITC Stone Serif Small Caps Bold (type line, ATK/DEF),
+Matrix Book (card text) and Stone Serif Italic (Normal monster text). These are commercial fonts, so they aren't
+included: Card Crafter uses them when they are installed on your PC or are in the texture zip/folder (`.ttf`, `.otf`),
+and otherwise the bundled free look-alikes Spectral SC and Crimson Text. The line under **Textures…** says which are used.
 
 **Card images.** **Save image…** under the preview saves the card as you see it, as PNG, JPG or WebP, at a standard size
 (from 177 pixels wide for ygopro pics up to 1626, print sizes at 300 and 600 DPI, or any width you type). **Save every card in the pack…** does them all at once.
@@ -118,8 +138,19 @@ in the game, with names guessed from their cards, so your cards can join an exis
 code nothing in Omega uses. **Custom Types** adds monster Types beyond the standard ones; Types Omega already uses are
 listed there to add with one click.
 
-**Templates.** **+ From a template…** inserts effects modelled on well-known cards: Pot of Greed, Monster Reborn,
-Mystical Space Typhoon, Elemental HERO Stratos, Cyber Dragon, and more. They are normal blocks you can change.
+**Templates.** **+ From a template…** inserts one of 46 effects modelled on well-known cards: Pot of Greed, Upstart Goblin,
+Reinforcement of the Army, Foolish Burial, Monster Reborn, Mystical Space Typhoon, Raigeki Break, Trap Hole, Compulsory
+Evacuation Device, Sangan, Mystic Tomato, Exiled Force, Card Trooper, Man-Eater Bug, Cyber Dragon, Chaos Sorcerer,
+Ash Blossom, Effect Veiler and more. They are normal blocks you can change, and every one is played in a real duel by
+the tests.
+
+**Card browser.** **Browse cards…** searches every card in YGO Omega (its own database and the custom ones) by name
+and by card text: every word must appear, "quoted phrases" match exactly, so `negate` lists every card whose text says
+negate. Pick a card to see its text and its script split into its effects, each with the functions it needs:
+**Use as a new card** copies the whole card (stats, text, art, script) into your pack with a new passcode, and
+**Add to the selected card** puts one effect into the card you're making, renamed so nothing clashes. When Omega's
+folders have no script for a card, the official one can be fetched from
+[ygopro-scripts](https://github.com/Fluorohydride/ygopro-scripts). **Browse a database file…** searches any `.db`/`.cdb`.
 
 **Anything the blocks can't do yet.** On the Script tab, **Edit by hand…** copies the generated script into an
 editor so you can finish it in Lua. Card Crafter still checks it for syntax errors and misspelled engine functions.
@@ -266,5 +297,8 @@ Card scripting follows the conventions of the ygopro community. The engine-name 
 [ygopro-core](https://github.com/Fluorohydride/ygopro-core) (MIT) and
 [ygopro-scripts](https://github.com/Fluorohydride/ygopro-scripts) (GPL-2.0), which are also used, unmodified,
 by the test suite. Neither is bundled with the app.
+
+The bundled fonts are Spectral SC, Crimson Text and a nine-character subset of Noto Serif JP, all under the SIL Open
+Font License (`src/CardCrafter.App/Assets/Fonts/LICENSES.txt`). No card textures or card fonts are included.
 
 Yu-Gi-Oh! is a trademark of Konami. YGO Card Crafter is a fan project and is not affiliated with Konami or YGO Omega.

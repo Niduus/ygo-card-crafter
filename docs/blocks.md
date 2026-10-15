@@ -119,3 +119,27 @@ Ready-made effects modelled on well-known cards. They are inserted as normal blo
 | Link support | Link Arrow boosters | Monster | A Link monster: monsters this card points to gain 500 ATK and can't be destroyed by battle. |
 | Detach to destroy | Rank 4 Xyz removal | Monster | An Xyz monster: detach 1 material, then target 1 card your opponent controls; destroy it. |
 | Standby heal | Solemn Wishes | Spell | During your Standby Phase: gain 500 LP. Put it on a Continuous Spell. |
+| Heal 1000 | Dian Keto the Cure Master | Spell | Gain 1000 LP. |
+| Draw 1, opponent gains LP | Upstart Goblin | Spell | Draw 1 card, then your opponent gains 1000 LP. |
+| Search a Warrior | Reinforcement of the Army | Spell | Add 1 Level 4 or lower Warrior monster from your Deck to your hand. |
+| Search a Spell | Terraforming-style searchers | Spell | Add 1 Spell from your Deck to your hand. |
+| Send to GY from Deck | Foolish Burial | Spell | Send 1 monster from your Deck to the GY. |
+| Weaken a monster | Forbidden Lance (ATK part) | Spell | Target 1 face-up monster your opponent controls; it loses 800 ATK until the end of this turn. Best on a Quick-Play Spell. |
+| Destroy an opponent's card | single-target removal | Spell | Target 1 card your opponent controls; destroy it. |
+| Mill 3 | Deck-to-GY engines | Spell | Send the top 3 cards of your Deck to the GY. |
+| Destroy a summoned monster | Trap Hole | Trap | When your opponent summons a monster: destroy 1 monster with 1000 or more ATK they control. |
+| Bounce a monster | Compulsory Evacuation Device | Trap | Target 1 monster on the field; return it to the hand. |
+| Revive from your GY | Call of the Haunted (simplified) | Trap | Target 1 monster in your GY; Special Summon it in Attack Position. |
+| Discard to destroy | Raigeki Break | Trap | Discard 1 card, then target 1 card on the field; destroy it. |
+| Punish an attack | attack-burn Traps | Trap | When an opponent's monster declares an attack: inflict 1000 damage to your opponent. |
+| Search when sent to the GY | Sangan | Monster | If this card is sent from the field to the GY: add 1 monster with 1500 or less ATK from your Deck to your hand. |
+| Send to GY on summon | Armageddon Knight | Monster | If this card is Summoned: send 1 monster from your Deck to the GY. |
+| Recruiter | Mystic Tomato | Monster | If this card is destroyed by battle: Special Summon 1 monster with 1500 or less ATK from your Deck. |
+| Tribute to destroy | Exiled Force | Monster | Tribute this card, then target 1 monster on the field; destroy it. |
+| Pay LP for ATK | LP-for-power monsters | Monster | Pay 1000 LP; this card gains 1000 ATK until the end of this turn. |
+| Burn after battle | battle-burn monsters | Monster | If this card destroys an opponent's monster by battle: inflict 500 damage to your opponent. |
+| Piercing damage | Spear Dragon | Monster | If this card attacks a Defense Position monster, it inflicts piercing battle damage. |
+| Direct attacker | Jinzo #7 | Monster | This card can attack directly. |
+| Untargetable | untargetable bosses | Monster | Your opponent cannot target this card with card effects. |
+| FLIP: destroy | Man-Eater Bug | Monster | FLIP: Target 1 monster on the field; destroy it. Tick the Flip ability on the Card tab. |
+| Mill for ATK | Card Trooper | Monster | Once per turn: send the top 3 cards of your Deck to the GY, and if you do, this card gains 1500 ATK until the end of this turn. |

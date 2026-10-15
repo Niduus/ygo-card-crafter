@@ -581,6 +581,40 @@ public class EngineTemplateTests
             case "Revive a monster": s.Card(id, 0, "hand").ExpectActivations(1).Check("Duel.GetFieldGroupCount(0,LOCATION_MZONE,0)==1"); break;
             case "Recycle and draw": s.Card(id, 0, "hand").ExpectActivations(1).Check("Duel.GetFieldGroupCount(0,LOCATION_HAND,0)==2"); break;
             case "Burn 800": s.Card(id, 0, "hand").ExpectActivations(1).Check("Duel.GetLP(1)==7200"); break;
+            // Spells
+            case "Heal 1000": s.Card(id, 0, "hand").ExpectActivations(1).Check("Duel.GetLP(0)==9000"); break;
+            case "Draw 1, opponent gains LP": s.Card(id, 0, "hand").ExpectActivations(1).Check("Duel.GetFieldGroupCount(0,LOCATION_HAND,0)==1").Check("Duel.GetLP(1)==9000"); break;
+            case "Search a Warrior": s.Card(id, 0, "hand").ExpectActivations(1).Check("Duel.IsExistingMatchingCard(Card.IsCode,0,LOCATION_HAND,0,1,nil,1001)"); break;
+            case "Search a Spell": s.Card(id, 0, "hand").ExpectActivations(1).Check("Duel.IsExistingMatchingCard(Card.IsCode,0,LOCATION_HAND,0,1,nil,1003)"); break;
+            case "Send to GY from Deck": s.Card(id, 0, "hand").ExpectActivations(1).Check("Duel.GetMatchingGroupCount(Card.IsCode,0,LOCATION_GRAVE,0,nil,1001)==1"); break;
+            case "Weaken a monster":
+                // "Until the end of this turn" has worn off when checks run, so check it resolved.
+                s.Card(id, 0, "hand").Card(Fiend, 1, "mzone").ExpectActivations(1).Check($"Duel.IsExistingMatchingCard(Card.IsCode,0,LOCATION_GRAVE,0,1,nil,{id})"); break;
+            case "Destroy an opponent's card": s.Card(id, 0, "hand").Card(Fiend, 1, "mzone").ExpectActivations(1).Check("Duel.GetFieldGroupCount(1,LOCATION_MZONE,0)==0"); break;
+            case "Mill 3": s.Card(id, 0, "hand").ExpectActivations(1).Check("Duel.GetFieldGroupCount(0,LOCATION_GRAVE,0)==10"); break;
+            // Traps: Set at the start, so they can be activated
+            case "Revive from your GY": s.Card(id, 0, "szone").ExpectActivations(1).Check("Duel.GetFieldGroupCount(0,LOCATION_MZONE,0)==1"); break;
+            case "Bounce a monster": s.Card(id, 0, "szone").Card(Fiend, 1, "mzone").ExpectActivations(1).Check("Duel.GetFieldGroupCount(1,LOCATION_MZONE,0)==0"); break;
+            case "Discard to destroy":
+                s.Card(id, 0, "szone").Card(Spell, 0, "hand").Card(Fiend, 1, "mzone").ExpectActivations(1).Check("Duel.GetFieldGroupCount(1,LOCATION_MZONE,0)==0"); break;
+            case "Punish an attack":
+            case "Destroy a summoned monster":
+                // They wait for the opponent's attack or summon; check they load and stay ready.
+                s.Card(id, 0, "szone").Card(Fiend, 1, "hand", 2).ExpectActivations(0); break;
+            // Monsters
+            case "Search when sent to the GY":
+            case "Recruiter":
+            case "Burn after battle":
+                // Triggered by battle or being sent from the field, which the harness can't set up; check they load.
+                s.Card(id, 0, "mzone").ExpectActivations(0); break;
+            case "Send to GY on summon": s.Card(id, 0, "hand").Summon(id).ExpectActivations(1).Check("Duel.GetMatchingGroupCount(Card.IsCode,0,LOCATION_GRAVE,0,nil,1001)==1"); break;
+            case "Tribute to destroy": s.Card(id, 0, "mzone").Card(Fiend, 1, "mzone").ExpectActivations(1).Check("Duel.GetFieldGroupCount(1,LOCATION_MZONE,0)==0"); break;
+            case "Pay LP for ATK": s.Card(id, 0, "mzone").ExpectActivations(1).Check("Duel.GetLP(0)==7000"); break;
+            case "Mill for ATK": s.Card(id, 0, "mzone").ExpectActivations(1).Check("Duel.GetFieldGroupCount(0,LOCATION_GRAVE,0)==9"); break;
+            case "Piercing damage": s.Card(id, 0, "mzone").ExpectActivations(0).Check("Duel.GetFieldCard(0,LOCATION_MZONE,0):IsHasEffect(EFFECT_PIERCE)~=nil"); break;
+            case "Direct attacker": s.Card(id, 0, "mzone").ExpectActivations(0).Check("Duel.GetFieldCard(0,LOCATION_MZONE,0):IsHasEffect(EFFECT_DIRECT_ATTACK)~=nil"); break;
+            case "Untargetable": s.Card(id, 0, "mzone").ExpectActivations(0).Check("Duel.GetFieldCard(0,LOCATION_MZONE,0):IsHasEffect(EFFECT_CANNOT_BE_EFFECT_TARGET)~=nil"); break;
+            case "FLIP: destroy": s.Card(id, 0, "mzone").ExpectActivations(0); break;
             default: s.Card(id, 0, "hand").ExpectActivations(1); break;
         }
         s.AssertPasses();
