@@ -1,0 +1,188 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CardCrafter.App.ViewModels"
+             xmlns:omega="using:CardCrafter.Core.Omega"
+             x:Class="CardCrafter.App.Views.ListsView"
+             x:DataType="vm:MainViewModel">
+  <Grid ColumnDefinitions="*,24,1.35*" Margin="0,4,0,0">
+    <!-- Archetypes and custom Types -->
+    <ScrollViewer Grid.Column="0" HorizontalScrollBarVisibility="Disabled">
+      <StackPanel Margin="0,0,8,12">
+        <StackPanel Spacing="4">
+          <TextBlock Classes="h2" Text="Archetypes" />
+          <StackPanel Spacing="4">
+            <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource MutedBrush}"
+                       Text="An archetype is a name shared by a group of cards. Each needs a code from 0x1 to 0xffff that other packs don't use." />
+            <ItemsControl ItemsSource="{Binding Archetypes}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="vm:ArchetypeViewModel">
+                  <Grid ColumnDefinitions="*,8,110,8,Auto" RowDefinitions="Auto,Auto" Margin="0,2">
+                    <TextBlock Grid.Row="1" Grid.ColumnSpan="5" Text="{Binding Warning}" IsVisible="{Binding HasWarning}"
+                               TextWrapping="Wrap" FontSize="11" Foreground="#FCD34D" Margin="0,2,0,0" />
+                    <TextBox Grid.Column="0" Text="{Binding Name}" />
+                    <TextBox Grid.Column="2" Text="{Binding Code}" FontFamily="{StaticResource CodeFont}" />
+                    <Button Grid.Column="4" Classes="icon" Content="✕"
+                            Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).RemoveArchetypeCommand}"
+                            CommandParameter="{Binding}" />
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <StackPanel Spacing="8" Orientation="Horizontal">
+              <Button Content="+ New archetype" Command="{Binding AddArchetypeCommand}" HorizontalAlignment="Left"
+                      ToolTip.Tip="A new archetype with a code nothing in Omega uses" />
+              <Button Content="Use one from Omega…" IsEnabled="{Binding HasCatalog}" HorizontalAlignment="Left"
+                      ToolTip.Tip="Make your cards part of an archetype that already exists in the game">
+                <Button.Flyout>
+                  <Flyout Placement="RightEdgeAlignedBottom">
+                    <StackPanel Width="340" Spacing="6">
+                      <TextBox Text="{Binding ArchetypeSearch}" Watermark="Search, e.g. HERO or Blue-Eyes" />
+                      <ListBox ItemsSource="{Binding KnownArchetypes}" Height="320">
+                        <ListBox.ItemTemplate>
+                          <DataTemplate DataType="omega:KnownArchetype">
+                            <Button Background="Transparent" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                    Command="{Binding $parent[ListBox].((vm:MainViewModel)DataContext).UseKnownArchetypeCommand}" CommandParameter="{Binding}">
+                              <StackPanel>
+                                <TextBlock Text="{Binding Label}" />
+                                <TextBlock Text="{Binding Examples[0]}" FontSize="11" Foreground="{StaticResource MutedBrush}" />
+                              </StackPanel>
+                            </Button>
+                          </DataTemplate>
+                        </ListBox.ItemTemplate>
+                      </ListBox>
+                    </StackPanel>
+                  </Flyout>
+                </Button.Flyout>
+              </Button>
+            </StackPanel>
+          </StackPanel>
+        </StackPanel>
+        <StackPanel Spacing="4" Margin="0,18,0,0">
+          <TextBlock Classes="h2" Text="Custom Types" />
+          <StackPanel Spacing="4">
+            <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource MutedBrush}"
+                       Text="Monster Types beyond the standard ones. The value must match what YGO Omega uses for that Type." />
+            <ItemsControl ItemsSource="{Binding CustomTypes}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="vm:CustomTypeViewModel">
+                  <Grid ColumnDefinitions="*,8,130,8,Auto" Margin="0,2">
+                    <TextBox Grid.Column="0" Text="{Binding Name}" />
+                    <TextBox Grid.Column="2" Text="{Binding Value}" FontFamily="{StaticResource CodeFont}" />
+                    <Button Grid.Column="4" Classes="icon" Content="✕"
+                            Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).RemoveCustomTypeCommand}"
+                            CommandParameter="{Binding}" />
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <Button Content="+ Add custom Type" Command="{Binding AddCustomTypeCommand}" HorizontalAlignment="Left" />
+            <StackPanel IsVisible="{Binding HasFoundTypes}" Spacing="2">
+              <TextBlock Classes="label" Text="Types found in your Omega (click to add)" TextWrapping="Wrap" />
+              <ItemsControl ItemsSource="{Binding FoundTypes}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate DataType="omega:UnknownType">
+                    <Button Classes="chip" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                            Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).UseFoundTypeCommand}" CommandParameter="{Binding}">
+                      <StackPanel>
+                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding Detail}" FontSize="11" Opacity="0.8" TextWrapping="Wrap" />
+                      </StackPanel>
+                    </Button>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </StackPanel>
+        </StackPanel>
+      </StackPanel>
+    </ScrollViewer>
+
+    <!-- Banlists -->
+    <ScrollViewer Grid.Column="2" HorizontalScrollBarVisibility="Disabled">
+      <StackPanel Spacing="8" Margin="0,0,8,12">
+        <TextBlock Classes="h2" Text="Banlists" />
+        <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{StaticResource MutedBrush}"
+                   Text="Make a format of your own: put any card on it, official or from this pack, as Forbidden, Limited or Semi-Limited. Saving writes it into the database, where YGO Omega lists it with its own banlists, and Export also writes an lflist.conf. A card's Limitation on the Card tab still applies to every one of Omega's lists." />
+
+        <Grid ColumnDefinitions="*,8,Auto,8,Auto">
+          <ComboBox Name="BanlistPicker" ItemsSource="{Binding Banlists}" SelectedItem="{Binding SelectedBanlist}" HorizontalAlignment="Stretch"
+                    PlaceholderText="No banlists yet">
+            <ComboBox.ItemTemplate>
+              <DataTemplate DataType="vm:BanlistViewModel"><TextBlock Text="{Binding Label}" /></DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+          <Button Grid.Column="2" Name="NewBanlistButton" Content="+ New banlist" Command="{Binding NewBanlistCommand}" />
+          <Button Grid.Column="4" Content="Delete" Command="{Binding RemoveBanlistCommand}" IsEnabled="{Binding HasSelectedBanlist}" />
+        </Grid>
+
+        <Border IsVisible="{Binding HasSelectedBanlist}" Background="#1A1B22" CornerRadius="6" Padding="12" BorderBrush="#2A2C36" BorderThickness="1">
+          <StackPanel Spacing="8" DataContext="{Binding SelectedBanlist}" x:DataType="vm:BanlistViewModel">
+            <Grid ColumnDefinitions="*,12,Auto">
+              <StackPanel>
+                <TextBlock Classes="label" Text="Name" />
+                <TextBox Text="{Binding Name}" />
+              </StackPanel>
+              <TextBlock Grid.Column="2" Text="{Binding IdText}" VerticalAlignment="Bottom" Margin="0,0,0,8" FontSize="12" Foreground="{StaticResource MutedBrush}" />
+            </Grid>
+            <TextBlock Text="{Binding Summary}" FontWeight="SemiBold" TextWrapping="Wrap" />
+            <ItemsControl ItemsSource="{Binding Entries}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="vm:BanlistEntryViewModel">
+                  <Grid ColumnDefinitions="*,8,96,8,150,8,Auto" Margin="0,2">
+                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Grid.Column="2" Text="{Binding Code}" VerticalAlignment="Center" FontSize="12" Foreground="{StaticResource MutedBrush}" />
+                    <ComboBox Grid.Column="4" ItemsSource="{Binding LimitOptions}" SelectedItem="{Binding Limit}" HorizontalAlignment="Stretch" />
+                    <Button Grid.Column="6" Classes="icon" Content="✕" Command="{Binding RemoveCommand}" ToolTip.Tip="Take it off this banlist" />
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </Border>
+
+        <TextBlock Classes="label" Text="Add cards" Margin="0,6,0,0" />
+        <Grid ColumnDefinitions="*,8,150">
+          <TextBox Name="BanlistSearchBox" Text="{Binding BanlistSearch}" Watermark="Search Omega's cards and this pack by name, e.g. Pot of Greed" />
+          <ComboBox Grid.Column="2" ItemsSource="{Binding BanlistLimitOptions}" SelectedItem="{Binding BanlistAddLimit}" PlaceholderText="Forbidden" HorizontalAlignment="Stretch" />
+        </Grid>
+        <ItemsControl ItemsSource="{Binding BanlistCandidates}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate DataType="vm:BanlistCandidate">
+              <Grid ColumnDefinitions="*,8,Auto" Margin="0,2">
+                <StackPanel VerticalAlignment="Center">
+                  <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Text="{Binding Detail}" FontSize="11" Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+                <Button Grid.Column="2" Content="Add" VerticalAlignment="Center"
+                        Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).AddToBanlistCommand}" CommandParameter="{Binding}" />
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <TextBlock Classes="h2" Text="Scan existing banlists" Margin="0,12,0,0" />
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Button Name="ScanOmegaBanlistsButton" Content="Scan YGO Omega" Command="{Binding ScanOmegaBanlistsCommand}" />
+          <Button Content="Scan a database file…" Command="{Binding ScanBanlistFileCommand}" />
+        </StackPanel>
+        <TextBlock Text="{Binding BanlistScanStatus}" TextWrapping="Wrap" FontSize="12" Foreground="{StaticResource MutedBrush}" />
+        <ItemsControl ItemsSource="{Binding ScannedBanlists}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate DataType="vm:ScannedBanlist">
+              <Border Background="#1A1B22" CornerRadius="6" Padding="10,8" Margin="0,0,0,6" BorderBrush="#2A2C36" BorderThickness="1">
+                <Grid ColumnDefinitions="*,8,Auto">
+                  <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding Detail}" FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                  </StackPanel>
+                  <Button Grid.Column="2" Content="Copy into pack" VerticalAlignment="Center"
+                          Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).CopyBanlistCommand}" CommandParameter="{Binding}" />
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

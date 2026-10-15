@@ -144,95 +144,8 @@
             </DataTemplate>
           </ListBox.ItemTemplate>
         </ListBox>
-        <!-- Archetypes and Types scroll on their own, so the card list always keeps its space -->
-        <ScrollViewer Grid.Row="2" MaxHeight="460" Margin="0,8,0,0" HorizontalScrollBarVisibility="Disabled">
-          <StackPanel>
-        <Expander Header="Archetypes" Margin="0,0,0,0" HorizontalAlignment="Stretch">
-          <StackPanel Spacing="4">
-            <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource MutedBrush}"
-                       Text="An archetype is a name shared by a group of cards. Each needs a code from 0x1 to 0xffff that other packs don't use." />
-            <ItemsControl ItemsSource="{Binding Archetypes}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate DataType="vm:ArchetypeViewModel">
-                  <Grid ColumnDefinitions="*,4,80,Auto" RowDefinitions="Auto,Auto" Margin="0,2">
-                    <TextBlock Grid.Row="1" Grid.ColumnSpan="4" Text="{Binding Warning}" IsVisible="{Binding HasWarning}"
-                               TextWrapping="Wrap" FontSize="11" Foreground="#FCD34D" Margin="0,2,0,0" />
-                    <TextBox Grid.Column="0" Text="{Binding Name}" />
-                    <TextBox Grid.Column="2" Text="{Binding Code}" FontFamily="{StaticResource CodeFont}" />
-                    <Button Grid.Column="3" Classes="icon" Content="✕"
-                            Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).RemoveArchetypeCommand}"
-                            CommandParameter="{Binding}" />
-                  </Grid>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-            <StackPanel Spacing="4">
-              <Button Content="+ New archetype" Command="{Binding AddArchetypeCommand}" HorizontalAlignment="Stretch"
-                      ToolTip.Tip="A new archetype with a code nothing in Omega uses" />
-              <Button Content="Use one from Omega…" IsEnabled="{Binding HasCatalog}" HorizontalAlignment="Stretch"
-                      ToolTip.Tip="Make your cards part of an archetype that already exists in the game">
-                <Button.Flyout>
-                  <Flyout Placement="RightEdgeAlignedBottom">
-                    <StackPanel Width="340" Spacing="6">
-                      <TextBox Text="{Binding ArchetypeSearch}" Watermark="Search, e.g. HERO or Blue-Eyes" />
-                      <ListBox ItemsSource="{Binding KnownArchetypes}" Height="320">
-                        <ListBox.ItemTemplate>
-                          <DataTemplate DataType="omega:KnownArchetype">
-                            <Button Background="Transparent" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
-                                    Command="{Binding $parent[ListBox].((vm:MainViewModel)DataContext).UseKnownArchetypeCommand}" CommandParameter="{Binding}">
-                              <StackPanel>
-                                <TextBlock Text="{Binding Label}" />
-                                <TextBlock Text="{Binding Examples[0]}" FontSize="11" Foreground="{StaticResource MutedBrush}" />
-                              </StackPanel>
-                            </Button>
-                          </DataTemplate>
-                        </ListBox.ItemTemplate>
-                      </ListBox>
-                    </StackPanel>
-                  </Flyout>
-                </Button.Flyout>
-              </Button>
-            </StackPanel>
-          </StackPanel>
-        </Expander>
-        <Expander Header="Custom Types" Margin="0,6,0,0" HorizontalAlignment="Stretch">
-          <StackPanel Spacing="4">
-            <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource MutedBrush}"
-                       Text="Monster Types beyond the standard ones. The value must match what YGO Omega uses for that Type." />
-            <ItemsControl ItemsSource="{Binding CustomTypes}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate DataType="vm:CustomTypeViewModel">
-                  <Grid ColumnDefinitions="*,4,96,Auto" Margin="0,2">
-                    <TextBox Grid.Column="0" Text="{Binding Name}" />
-                    <TextBox Grid.Column="2" Text="{Binding Value}" FontFamily="{StaticResource CodeFont}" />
-                    <Button Grid.Column="3" Classes="icon" Content="✕"
-                            Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).RemoveCustomTypeCommand}"
-                            CommandParameter="{Binding}" />
-                  </Grid>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-            <Button Content="+ Add custom Type" Command="{Binding AddCustomTypeCommand}" HorizontalAlignment="Stretch" />
-            <StackPanel IsVisible="{Binding HasFoundTypes}" Spacing="2">
-              <TextBlock Classes="label" Text="Types found in your Omega (click to add)" TextWrapping="Wrap" />
-              <ItemsControl ItemsSource="{Binding FoundTypes}">
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate DataType="omega:UnknownType">
-                    <Button Classes="chip" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
-                            Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).UseFoundTypeCommand}" CommandParameter="{Binding}">
-                      <StackPanel>
-                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap" />
-                        <TextBlock Text="{Binding Detail}" FontSize="11" Opacity="0.8" TextWrapping="Wrap" />
-                      </StackPanel>
-                    </Button>
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-            </StackPanel>
-          </StackPanel>
-        </Expander>
-          </StackPanel>
-        </ScrollViewer>
+        <TextBlock Grid.Row="2" Margin="0,8,0,0" TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource MutedBrush}"
+                   Text="Archetypes, custom Types and banlists are on the Lists tab." />
       </Grid>
     </Border>
 
@@ -254,6 +167,9 @@
         <Panel>
           <Panel IsVisible="{Binding HasSelection}"><views:ScriptView DataContext="{Binding SelectedCard}" /></Panel>
         </Panel>
+      </TabItem>
+      <TabItem Header="Lists">
+        <views:ListsView />
       </TabItem>
       <TabItem Header="Omega">
         <views:OmegaView />

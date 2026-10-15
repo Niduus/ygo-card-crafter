@@ -153,6 +153,7 @@ public sealed partial class MainViewModel : ObservableObject
         foreach (var a in pack.Archetypes) Archetypes.Add(new ArchetypeViewModel(a, OnArchetypesChanged));
         CustomTypes.Clear();
         foreach (var t in pack.CustomTypes) CustomTypes.Add(new CustomTypeViewModel(t, OnTypesChanged));
+        LoadBanlists();
         RefreshCatalogLists();
         SelectedCard = Cards.FirstOrDefault();
         IsDirty = false;

@@ -161,7 +161,13 @@ and otherwise the bundled free look-alikes Spectral SC and Crimson Text. The lin
 **If something goes wrong.** Unexpected errors are shown in a message and saved to
 `%AppData%\YGO Card Crafter\crash.log` instead of closing the app. Please attach that file when reporting a problem.
 
-**Archetypes and custom Types.** In the left panel, **Archetypes → Use one from Omega…** lists every archetype already
+**Lists tab: archetypes, Types and banlists.** The **Lists** tab holds the pack's archetypes, custom Types and
+banlists. **+ New banlist** makes a format of your own: search Omega's cards (or this pack's) by name and put each on
+it as Forbidden, Limited or Semi-Limited. **Scan YGO Omega** (or **Scan a database file…**) lists the banlists that
+already exist, with their cards, and **Copy into pack** makes an editable copy. Saving writes the banlists into the
+database's banlist tables, where YGO Omega lists them next to its own, and Export also writes an `lflist.conf`.
+
+**Archetypes and custom Types.** On the Lists tab, **Archetypes → Use one from Omega…** lists every archetype already
 in the game, with names guessed from their cards, so your cards can join an existing archetype. **New archetype** picks a
 code nothing in Omega uses. **Custom Types** adds monster Types beyond the standard ones; Types Omega already uses are
 listed there to add with one click.
