@@ -13,7 +13,7 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace CardCrafter.App.ViewModels;
 
-public sealed partial class CustomTypeViewModel(CustomType model, Action changed) : ObservableObject
+public sealed partial class CustomTypeViewModel(CustomType model, Action changed, Action<long, long>? recoded = null) : ObservableObject
 {
     public CustomType Model { get; } = model;
     public string Name { get => Model.Name; set { if (Model.Name == value) return; Model.Name = value; OnPropertyChanged(); changed(); } }
@@ -23,17 +23,26 @@ public sealed partial class CustomTypeViewModel(CustomType model, Action changed
         set
         {
             var s = value.Trim().ToLowerInvariant().Replace("0x", "");
-            if (long.TryParse(s, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var v) && v > 0 && v != Model.Value)
-            {
-                Model.Value = v;
-                changed();
-            }
-            OnPropertyChanged();
+            if (long.TryParse(s, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var v) && v > 0) SetValue(v);
+            else OnPropertyChanged();
         }
+    }
+
+    /// <summary>Gives the Type a new value, and the cards of this Type and the filters looking for it follow.</summary>
+    public void SetValue(long v)
+    {
+        var old = Model.Value;
+        if (v != old)
+        {
+            Model.Value = v;
+            recoded?.Invoke(old, v);
+            changed();
+        }
+        OnPropertyChanged(nameof(Value));
     }
 }
 
-public sealed partial class ArchetypeViewModel(Archetype model, Action changed) : ObservableObject
+public sealed partial class ArchetypeViewModel(Archetype model, Action changed, Action<int, int>? recoded = null) : ObservableObject
 {
     [ObservableProperty] private string _warning = "";
     public bool HasWarning => Warning.Length > 0;
@@ -46,13 +55,22 @@ public sealed partial class ArchetypeViewModel(Archetype model, Action changed) 
         set
         {
             var s = value.Trim().ToLowerInvariant().Replace("0x", "");
-            if (int.TryParse(s, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var v) && v is > 0 and <= 0xffff && v != Model.Code)
-            {
-                Model.Code = v;
-                changed();
-            }
-            OnPropertyChanged();
+            if (int.TryParse(s, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var v) && v is > 0 and <= 0xffff) SetCode(v);
+            else OnPropertyChanged();
         }
+    }
+
+    /// <summary>Gives the archetype a new code, and the cards in it and the filters looking for it follow.</summary>
+    public void SetCode(int v)
+    {
+        var old = Model.Code;
+        if (v != old)
+        {
+            Model.Code = v;
+            recoded?.Invoke(old, v);
+            changed();
+        }
+        OnPropertyChanged(nameof(Code));
     }
 }
 
@@ -150,9 +168,9 @@ public sealed partial class MainViewModel : ObservableObject
         Cards.Clear();
         foreach (var c in pack.Cards) Cards.Add(NewCardViewModel(c));
         Archetypes.Clear();
-        foreach (var a in pack.Archetypes) Archetypes.Add(new ArchetypeViewModel(a, OnArchetypesChanged));
+        foreach (var a in pack.Archetypes) Archetypes.Add(NewArchetype(a));
         CustomTypes.Clear();
-        foreach (var t in pack.CustomTypes) CustomTypes.Add(new CustomTypeViewModel(t, OnTypesChanged));
+        foreach (var t in pack.CustomTypes) CustomTypes.Add(NewType(t));
         LoadBanlists();
         RefreshCatalogLists();
         SelectedCard = Cards.FirstOrDefault();
@@ -473,12 +491,12 @@ public sealed partial class MainViewModel : ObservableObject
             foreach (var a in opened.Pack.Archetypes.Where(a => _pack.Archetypes.All(x => x.Code != a.Code)))
             {
                 _pack.Archetypes.Add(a);
-                Archetypes.Add(new ArchetypeViewModel(a, OnArchetypesChanged));
+                Archetypes.Add(NewArchetype(a));
             }
             foreach (var t in opened.Pack.CustomTypes.Where(t => _pack.CustomTypes.All(x => x.Value != t.Value)))
             {
                 _pack.CustomTypes.Add(t);
-                CustomTypes.Add(new CustomTypeViewModel(t, OnTypesChanged));
+                CustomTypes.Add(NewType(t));
             }
             MarkDirty();
             Status = $"Imported {added} cards ({opened.Scripts} scripts, {opened.Arts} artworks). Cards already in the pack were skipped.";
@@ -506,8 +524,23 @@ public sealed partial class MainViewModel : ObservableObject
         var code = Catalog.FreeArchetypeCode(_pack.Archetypes.Select(a => a.Code));
         var a = new Archetype { Code = code, Name = "New Archetype" };
         _pack.Archetypes.Add(a);
-        Archetypes.Add(new ArchetypeViewModel(a, OnArchetypesChanged));
+        Archetypes.Add(NewArchetype(a));
         OnArchetypesChanged();
+    }
+
+    private ArchetypeViewModel NewArchetype(Archetype a) =>
+        new(a, OnArchetypesChanged, (from, to) => PackCodes.ChangeArchetype(_pack, from, to));
+
+    /// <summary>A random code nothing in Omega or this pack uses, so packs made by different people rarely clash.</summary>
+    [RelayCommand]
+    private void RandomArchetypeCode(ArchetypeViewModel? vm)
+    {
+        if (vm is null) return;
+        var taken = Catalog.Archetypes.Select(a => a.Code).Concat(_pack.Archetypes.Select(a => a.Code));
+        var code = PackCodes.RandomArchetypeCode(taken);
+        if (code == 0) { Status = "Every archetype code is already in use."; return; }
+        vm.SetCode(code);
+        Status = $"\"{vm.Name}\" now uses the random code 0x{code:x}. Its cards and the effects that look for it were updated.";
     }
 
     [RelayCommand]
@@ -536,7 +569,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
         var a = new Archetype { Code = known.Code, Name = known.Name };
         _pack.Archetypes.Add(a);
-        Archetypes.Add(new ArchetypeViewModel(a, OnArchetypesChanged));
+        Archetypes.Add(NewArchetype(a));
         OnArchetypesChanged();
         Status = $"Added the \"{known.Name}\" archetype (0x{known.Code:x}). Your cards can now belong to it and search for it.";
     }
@@ -554,6 +587,21 @@ public sealed partial class MainViewModel : ObservableObject
         AddType(new CustomType { Value = value, Name = "New Type" });
     }
 
+    private CustomTypeViewModel NewType(CustomType t) =>
+        new(t, OnTypesChanged, (from, to) => PackCodes.ChangeType(_pack, from, to));
+
+    /// <summary>A random Type value that no standard Type, Omega Type or other Type of this pack uses.</summary>
+    [RelayCommand]
+    private void RandomTypeValue(CustomTypeViewModel? vm)
+    {
+        if (vm is null) return;
+        var taken = _pack.CustomTypes.Where(t => t != vm.Model).Select(t => t.Value).Concat(Catalog.UnknownTypes.Select(t => t.Value));
+        var value = PackCodes.RandomTypeValue(taken);
+        if (value == 0) { Status = "Every Type value is already in use."; return; }
+        vm.SetValue(value);
+        Status = $"\"{vm.Name}\" now uses the random value 0x{value:x}. Its cards and the effects that look for it were updated.";
+    }
+
     [RelayCommand]
     private void UseFoundType(UnknownType? found)
     {
@@ -565,7 +613,7 @@ public sealed partial class MainViewModel : ObservableObject
     private void AddType(CustomType t)
     {
         _pack.CustomTypes.Add(t);
-        CustomTypes.Add(new CustomTypeViewModel(t, OnTypesChanged));
+        CustomTypes.Add(NewType(t));
         OnTypesChanged();
     }
 
