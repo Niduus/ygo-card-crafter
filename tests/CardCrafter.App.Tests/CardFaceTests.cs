@@ -28,6 +28,22 @@ public class CardFaceTests
     [AvaloniaFact]
     public void FaceCloseUp() => FaceCloseUpShot("16-card-closeup.png");
 
+    private static void LinkCloseUpShot(string shot)
+    {
+        var vm = Vm(new CardData
+        {
+            Name = "Circuit Vanguard", Frame = MonsterFrame.Link, Attribute = CardAttribute.Dark, Race = CardRace.Warrior, Atk = 1600, Id = 3000001,
+            LinkMarkers = LinkMarker.Left | LinkMarker.Right,
+            Text = "2 Effect Monsters\nIf this card is Link Summoned: You can target 1 card on the field; banish it. You can only use this effect of \"Circuit Vanguard\" once per turn.",
+        });
+        var face = new CardFace { Width = 409 };
+        face.Update(vm.Data, vm.TypeLine, vm.FaceText, null, "©2026 Example");
+        var window = new Window { Width = 409, Height = 596, Content = face, Background = Avalonia.Media.Brushes.Black };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        window.CaptureRenderedFrame()?.Save(Path.Combine(ShotDir, shot));
+    }
+
     private static void FaceCloseUpShot(string shot)
     {
         var art = new Bitmap(Path.Combine(AppContext.BaseDirectory, "sample-art.png"));
@@ -99,6 +115,7 @@ public class CardFaceTests
         try
         {
             RenderAllKinds("7b-card-faces-textures.png");
+            LinkCloseUpShot("16c-link-closeup-textures.png");
             FaceCloseUpShot("16b-card-closeup-textures.png");
         }
         finally

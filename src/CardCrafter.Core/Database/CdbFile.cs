@@ -211,6 +211,8 @@ public static class CdbFile
             }
         }
 
+        FillMissingTexts(conn, rows);
+
         if (schema.HasBanlists)
         {
             var byId = rows.ToDictionary(r => r.Id);
@@ -225,6 +227,44 @@ public static class CdbFile
             catch (SqliteException) { /* an unexpected banlist layout must not stop the cards loading */ }
         }
         return rows;
+    }
+
+    /// <summary>
+    /// YGO Omega keeps card text in one table per language (texts, en_texts, ja_texts, ...). When the main texts
+    /// table has no name for a card, take it from the others, English first.
+    /// </summary>
+    private static void FillMissingTexts(SqliteConnection conn, List<CdbRow> rows)
+    {
+        var missing = rows.Where(r => r.Name.Length == 0).ToDictionary(r => r.Id);
+        if (missing.Count == 0) return;
+        var tables = new List<string>();
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%texts' AND name <> 'texts'";
+            using var rd = cmd.ExecuteReader();
+            while (rd.Read()) tables.Add(rd.GetString(0));
+        }
+        static int Rank(string t) => t.StartsWith("en", StringComparison.OrdinalIgnoreCase) ? 0 : t.StartsWith("us", StringComparison.OrdinalIgnoreCase) ? 1 : 2;
+        foreach (var table in tables.OrderBy(Rank).ThenBy(t => t, StringComparer.OrdinalIgnoreCase))
+        {
+            if (missing.Count == 0) break;
+            try
+            {
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = $"SELECT id, name, desc FROM \"{table}\" WHERE name IS NOT NULL AND name <> ''";
+                using var rd = cmd.ExecuteReader();
+                while (rd.Read())
+                {
+                    if (!missing.Remove(Long(rd, 0), out var row)) continue;
+                    row.Name = Str(rd, 1);
+                    if (row.Desc.Length == 0) row.Desc = Str(rd, 2);
+                }
+            }
+            catch (SqliteException)
+            {
+                // A text table with other columns is skipped.
+            }
+        }
     }
 
     // Databases made by other tools (and the game's own) can hold NULLs, text in number columns,

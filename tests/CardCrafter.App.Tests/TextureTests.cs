@@ -149,4 +149,50 @@ public class TextureTests
         Assert.Equal("effect", CardFace.FrameKey(new CardData()));
         Assert.Equal("pendulum-normal", CardFace.FrameKey(new CardData { Frame = MonsterFrame.Normal, Abilities = MonsterAbility.Pendulum }));
     }
+
+    [AvaloniaFact]
+    public void FindsLooseTexturesInTheOmegaFolder_AndUsesThem()
+    {
+        using var tmp = new TempDirectory();
+        var omega = Path.Combine(tmp.Path, "YGO Omega");
+        var files = Path.Combine(omega, "YGO Omega_Data", "Files");
+        var textures = Directory.CreateDirectory(Path.Combine(files, "Textures", "Card")).FullName;
+        Directory.CreateDirectory(Path.Combine(files, "Scripts"));
+        File.WriteAllText(Path.Combine(omega, "YGO Omega.exe"), "");
+        File.WriteAllText(Path.Combine(files, "Scripts", "c1.lua"), "");
+        Frame(Path.Combine(textures, "EffectFrame #2375.png"), SKColors.Orange);
+        Icon(Path.Combine(textures, "Dark.png"), SKColors.Purple);
+        Icon(Path.Combine(textures, "Level.png"), SKColors.Yellow, 62);
+        // A lone stray file elsewhere isn't a texture folder.
+        Icon(Path.Combine(files, "Fire.png"), SKColors.Red);
+        var inventory = CardCrafter.Core.Omega.OmegaInventory.Scan(omega);
+        Assert.Equal(textures, Assert.Single(inventory.TextureFolders).Path);
+        try
+        {
+            Assert.Equal(3, FrameImages.Load(inventory.TextureFolders.Select(t => t.Path).ToList(), omega));
+            Assert.Equal(omega, FrameImages.Folder);
+        }
+        finally
+        {
+            FrameImages.Load(null);
+        }
+    }
+
+    /// <summary>A private build (tools/build-my-exe) embeds the textures; this runs only in such a build.</summary>
+    [AvaloniaFact]
+    public void BuiltInTexturesUnpackAndLoad()
+    {
+        if (typeof(FrameImages).Assembly.GetManifestResourceInfo("CardTextures.zip") is null) return;
+        using var tmp = new TempDirectory();
+        var folder = FrameImages.ExtractBuiltIn(tmp.Path)!;
+        Assert.Equal(folder, FrameImages.ExtractBuiltIn(tmp.Path)); // unpacked once, then reused
+        try
+        {
+            Assert.True(FrameImages.Load(folder) >= 40);
+        }
+        finally
+        {
+            FrameImages.Load(null);
+        }
+    }
 }

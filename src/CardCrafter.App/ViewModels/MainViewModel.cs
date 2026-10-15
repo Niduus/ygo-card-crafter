@@ -957,9 +957,35 @@ public sealed partial class MainViewModel : ObservableObject
             _settings.FrameFolder = null;
             _settings.Save();
         }
-        if (_settings.FrameFolder is not { } folder) return;
-        var count = Services.FrameImages.Load(folder);
-        FrameStatus = count > 0 ? TextureStatus(folder, count) : "No card textures loaded";
+        if (_settings.FrameFolder is { } folder)
+        {
+            var count = Services.FrameImages.Load(folder);
+            FrameStatus = count > 0 ? TextureStatus(folder, count) : "No card textures loaded";
+        }
+        else
+        {
+            // A private build has textures baked in (tools/build-my-exe).
+            try
+            {
+                if (Services.FrameImages.ExtractBuiltIn(Path.Combine(AppSettings.Folder, "Textures")) is { } builtIn
+                    && Services.FrameImages.Load(builtIn) is var count and > 0)
+                    FrameStatus = $"Textures: built into this copy ({count})";
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+            {
+                CrashLogHook?.Invoke("built-in textures", ex);
+            }
+        }
+        FontStatus = Services.CardFonts.Summary;
+    }
+
+    /// <summary>With no textures chosen or built in, use the card textures YGO Omega keeps as loose files.</summary>
+    private void UseOmegaTexturesIfFound()
+    {
+        if (Services.FrameImages.Count > 0 || Inventory is not { TextureFolders.Count: > 0 } inventory) return;
+        var count = Services.FrameImages.Load(inventory.TextureFolders.Select(t => t.Path).ToList(), inventory.Root);
+        if (count == 0) return;
+        FrameStatus = $"Textures: from YGO Omega ({count})";
         FontStatus = Services.CardFonts.Summary;
     }
 
@@ -1035,6 +1061,7 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
         ScanReport = Inventory.Report();
+        UseOmegaTexturesIfFound();
         await ReloadCatalogAsync(Inventory);
         foreach (var p in Catalog.Problems) ScanReport += $"\nCouldn't read {p}";
         ScanReport += $"\nIn the game: {Catalog.Passcodes.Count} passcodes in use, {Catalog.Archetypes.Count} archetypes, {Catalog.UnknownTypes.Count} non-standard monster Types.\n";

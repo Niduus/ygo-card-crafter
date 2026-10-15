@@ -54,15 +54,19 @@ public static partial class FrameImages
     /// Loads every recognised texture in the folder and its subfolders (null clears), plus any fonts there.
     /// Returns how many textures were found.
     /// </summary>
-    public static int Load(string? folder)
+    public static int Load(string? folder) => Load(folder is null ? [] : [folder], folder);
+
+    /// <summary>Loads textures from several folders at once, e.g. the texture folders found in the Omega install.</summary>
+    public static int Load(IReadOnlyList<string> folders, string? label)
     {
         var old = _images;
         var images = new Dictionary<string, Bitmap>(StringComparer.OrdinalIgnoreCase);
         var missing = new List<string>();
-        if (folder is not null && Directory.Exists(folder))
+        var existing = folders.Where(Directory.Exists).ToList();
+        if (existing.Count > 0)
         {
             // Exported textures can carry a number, e.g. "EffectFrame #2375.png"; group them by their plain name.
-            var byName = Directory.EnumerateFiles(folder, "*.*", SearchOption.AllDirectories)
+            var byName = existing.SelectMany(f => Directory.EnumerateFiles(f, "*.*", SearchOption.AllDirectories)).Distinct(StringComparer.OrdinalIgnoreCase)
                 .Where(f => Extensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
                 .GroupBy(f => Numbered().Replace(Path.GetFileNameWithoutExtension(f), "").Trim(), StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
@@ -76,10 +80,10 @@ public static partial class FrameImages
                 if (Choose(slot, file, candidates) is { } path && TryLoad(path) is { } bitmap) images[slot] = bitmap;
             }
         }
-        CardFonts.Load(images.Count > 0 ? folder : null);
+        CardFonts.Load(images.Count > 0 ? existing : []);
         _images = images;
         Missing = missing;
-        Folder = images.Count > 0 ? folder : null;
+        Folder = images.Count > 0 ? label : null;
         Changed?.Invoke();
         foreach (var b in old.Values) b.Dispose();
         return images.Count;
@@ -155,6 +159,27 @@ public static partial class FrameImages
             Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
             entry.ExtractToFile(dest, overwrite: true);
         }
+        return target;
+    }
+
+    /// <summary>
+    /// Textures built into this copy of the app: a private build made with tools/build-my-exe embeds a zip of them.
+    /// Unpacked once into <paramref name="intoFolder"/>; returns the folder, or null when this copy has none.
+    /// </summary>
+    public static string? ExtractBuiltIn(string intoFolder)
+    {
+        using var stream = typeof(FrameImages).Assembly.GetManifestResourceStream("CardTextures.zip");
+        if (stream is null) return null;
+        var target = Path.Combine(intoFolder, "Built-in");
+        var marker = Path.Combine(target, ".size");
+        if (File.Exists(marker) && File.ReadAllText(marker) == stream.Length.ToString(System.Globalization.CultureInfo.InvariantCulture)) return target;
+        // The zip's file name becomes the folder name, so it is unpacked straight into "Built-in".
+        var temp = Path.Combine(intoFolder, "Built-in.zip");
+        Directory.CreateDirectory(intoFolder);
+        using (var file = File.Create(temp)) stream.CopyTo(file);
+        ExtractZip(temp, intoFolder);
+        File.Delete(temp);
+        File.WriteAllText(marker, stream.Length.ToString(System.Globalization.CultureInfo.InvariantCulture));
         return target;
     }
 

@@ -16,7 +16,8 @@ public sealed class LibraryCard(CdbRow row, string source, string sourcePath)
     public string Source { get; } = source;
     public string SourcePath { get; } = sourcePath;
     public long Id => Row.Id;
-    public string Name => Row.Name;
+    /// <summary>The card's name, or its passcode when the database has no name for it.</summary>
+    public string Name => Row.Name.Length > 0 ? Row.Name : $"(no name) {Row.Id}";
     public string Text => Row.Desc;
 
     private CardData? _data;
@@ -69,7 +70,8 @@ public sealed class CardLibrary
                 library.Cards.Add(new LibraryCard(row, source, db));
             }
         }
-        library.Cards.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+        library.Cards.Sort((a, b) => (a.Row.Name.Length == 0).CompareTo(b.Row.Name.Length == 0) is var c and not 0 ? c
+            : string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
         return library;
     }
 

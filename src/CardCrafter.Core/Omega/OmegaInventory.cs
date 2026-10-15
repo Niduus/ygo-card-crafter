@@ -19,6 +19,26 @@ public sealed partial class OmegaInventory
     public List<FolderCount> ScriptFolders { get; } = [];
     public List<string> EngineLibraries { get; } = [];
     public List<FolderCount> ImageFolders { get; } = [];
+    /// <summary>Folders holding YGO Omega's card textures as loose files (frames, Attribute orbs, stars, Link Arrows).</summary>
+    public List<FolderCount> TextureFolders { get; } = [];
+
+    /// <summary>File names (without extension or export number) of the card textures, as YGO Omega names them.</summary>
+    public static readonly IReadOnlySet<string> CardTextureNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "NormalFrame", "EffectFrame", "RitualFrame", "FusionFrame", "SynchroFrame", "XYZFrame", "LinkFrame", "TokenFrame",
+        "SpellCardFrame", "TrapCardFrame", "PendulumNormalFullFrame", "PendulumEffectFullFrame", "PendulumFusionFullFrame",
+        "PendulumSynchroFullFrame", "PendulumXYZFullFrame", "PendulumBottom", "DefaultBorder", "PendulumScale",
+        "Dark", "Light", "Earth", "Water", "Fire", "Wind", "Divine", "Spell", "Trap", "Level", "Rank",
+        "QuickPlay", "Continuous", "Equipment", "Field", "Ritual", "Counter",
+        "TopOn", "TopOff", "BottomOn", "BottomOff", "LeftOn", "LeftOff", "RightOn", "RightOff",
+        "TopLeftOn", "TopLeftOff", "TopRightOn", "TopRightOff", "BottomLeftOn", "BottomLeftOff", "BottomRightOn", "BottomRightOff",
+    };
+
+    /// <summary>"EffectFrame #2375" and "EffectFrame" are the same texture.</summary>
+    public static string TextureName(string fileName) => NumberSuffix().Replace(Path.GetFileNameWithoutExtension(fileName), "").Trim();
+
+    [GeneratedRegex(@"\s*#\d+$")]
+    private static partial Regex NumberSuffix();
     public Dictionary<string, int> Extensions { get; } = new(StringComparer.OrdinalIgnoreCase);
     public int FilesScanned { get; private set; }
     public bool Truncated { get; private set; }
@@ -144,7 +164,7 @@ public sealed partial class OmegaInventory
             try { files = Directory.GetFiles(dir); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { continue; }
 
-            int scripts = 0, images = 0;
+            int scripts = 0, images = 0, textures = 0, frames = 0;
             foreach (var file in files)
             {
                 if (++inv.FilesScanned > maxFiles) { inv.Truncated = true; return inv; }
@@ -154,6 +174,11 @@ public sealed partial class OmegaInventory
                 if (CardScript().IsMatch(name)) scripts++;
                 else if (CardImage().IsMatch(name)) images++;
                 else if (EngineLibraryNames.Contains(name)) inv.EngineLibraries.Add(file);
+                else if (ext.Equals(".png", StringComparison.OrdinalIgnoreCase) && CardTextureNames.Contains(TextureName(name)))
+                {
+                    textures++;
+                    if (TextureName(name).EndsWith("Frame", StringComparison.OrdinalIgnoreCase)) frames++;
+                }
 
                 if (ext.Equals(".cdb", StringComparison.OrdinalIgnoreCase) || ext.Equals(".db", StringComparison.OrdinalIgnoreCase)
                     || ext.Equals(".sqlite", StringComparison.OrdinalIgnoreCase) || ext.Length == 0)
@@ -166,6 +191,8 @@ public sealed partial class OmegaInventory
             }
             if (scripts > 0) inv.ScriptFolders.Add(new FolderCount(dir, scripts));
             if (images >= 20) inv.ImageFolders.Add(new FolderCount(dir, images));
+            // A frame or two among other card textures; one stray "Fire.png" isn't enough.
+            if (textures >= 3 && (frames > 0 || textures >= 8)) inv.TextureFolders.Add(new FolderCount(dir, textures));
 
             if (depth >= maxDepth) continue;
             try
@@ -233,6 +260,7 @@ public sealed partial class OmegaInventory
             sb.AppendLine($"  databases into {Rel(BestDatabaseFolder!)} as <pack name>{DatabaseExtension}");
             sb.AppendLine($"  scripts into   {Rel(BestScriptFolder!)}");
             if (BestImageFolder is { } img) sb.AppendLine($"  artwork into   {Rel(img)}");
+            foreach (var t in TextureFolders) sb.AppendLine($"  card textures: {Rel(t.Path)} [{t.Count}]");
             sb.AppendLine();
         }
         sb.AppendLine(SupportsLooseFiles

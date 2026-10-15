@@ -177,7 +177,11 @@ public sealed class CardFace : Control
         DrawFooter(ctx, c);
     }
 
-    private static bool WhiteName(CardData c) => c.Kind != CardKind.Monster || c.Frame == MonsterFrame.Xyz;
+    /// <summary>Names printed white for readability on dark frames: Spells, Traps, Xyz and Link monsters.</summary>
+    /// <summary>The Link rating's heavier face: the stats font at its boldest.</summary>
+    private static Typeface LinkRatingFace => new(CardFonts.Stats.FontFamily, FontStyle.Normal, FontWeight.Black);
+
+    private static bool WhiteName(CardData c) => c.Kind != CardKind.Monster || c.Frame is MonsterFrame.Xyz or MonsterFrame.Link;
 
     private void DrawArt(DrawingContext ctx, Rect box)
     {
@@ -299,12 +303,21 @@ public sealed class CardFace : Control
 
             // The rule is printed on the frame; the stats sit under it, right-aligned.
             const double statSize = StatSize;
-            var stats = c.IsLink
-                ? $"ATK/{CardFaceText.Stat(c.Atk)}  LINK-{c.LinkRating}"
-                : $"ATK/{CardFaceText.Stat(c.Atk)}  DEF/{CardFaceText.Stat(c.Def)}";
             var statCap = CapHeight(CardFonts.Stats, statSize);
             var statBaseline = RuleY + (box.Bottom - RuleY) / 2 + statCap / 2;
-            DrawLine(ctx, Text(stats, CardFonts.Stats, statSize, ink), inner.Right - 2, statBaseline, inner.Width, alignRight: true);
+            if (c.IsLink)
+            {
+                // Link cards print "LINK-2" larger and heavier than the ATK, with a gap before it.
+                var link = Text($"LINK-{c.LinkRating}", LinkRatingFace, statSize * 1.18, ink);
+                DrawLine(ctx, link, inner.Right - 2, statBaseline, inner.Width / 2, alignRight: true);
+                var atk = Text($"ATK/{CardFaceText.Stat(c.Atk)}", CardFonts.Stats, statSize, ink);
+                DrawLine(ctx, atk, inner.Right - 2 - link.Width - 30, statBaseline, inner.Width / 2, alignRight: true);
+            }
+            else
+            {
+                var stats = $"ATK/{CardFaceText.Stat(c.Atk)}  DEF/{CardFaceText.Stat(c.Def)}";
+                DrawLine(ctx, Text(stats, CardFonts.Stats, statSize, ink), inner.Right - 2, statBaseline, inner.Width, alignRight: true);
+            }
             bottom = RuleY - 5;
         }
         var normal = c.IsMonster && c.Frame == MonsterFrame.Normal;

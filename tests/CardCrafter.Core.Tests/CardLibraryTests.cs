@@ -40,6 +40,27 @@ public class CardLibraryTests
     }
 
     [Fact]
+    public void NamesComeFromTheLanguageTables_WhenTextsHasNone()
+    {
+        using var tmp = new TempDir();
+        var db = OmegaFormatTests.MakeDb(Path.Combine(tmp.Path, "db"), """
+            CREATE TABLE datas(id integer primary key, ot integer, alias integer, setcode integer, type integer, atk integer,
+                def integer, level integer, race integer, attribute integer, category integer);
+            CREATE TABLE texts(id integer primary key, name text, desc text);
+            CREATE TABLE ja_texts(id integer primary key, name text, desc text);
+            CREATE TABLE en_texts(id integer primary key, name text, desc text);
+            INSERT INTO datas VALUES(55144522, 3, 0, 0, 2, 0, 0, 0, 0, 0, 0);
+            INSERT INTO texts VALUES(55144522, '', '');
+            INSERT INTO ja_texts VALUES(55144522, '強欲な壺', '');
+            INSERT INTO en_texts VALUES(55144522, 'Pot of Greed', 'Draw 2 cards.');
+            """);
+        var row = CdbFile.Read(db).Single();
+        Assert.Equal("Pot of Greed", row.Name);
+        Assert.Equal("Draw 2 cards.", row.Desc);
+        Assert.Equal("Pot of Greed", CardLibrary.Load([db]).Search("draw").Single().Name);
+    }
+
+    [Fact]
     public void SplitsAScriptIntoItsEffects_WithTheFunctionsEachNeeds()
     {
         const string lua = """

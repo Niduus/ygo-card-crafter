@@ -27,9 +27,16 @@
       <!-- results -->
       <Border BorderBrush="#2A2C36" BorderThickness="1" CornerRadius="6">
         <ListBox ItemsSource="{Binding Results}" SelectedItem="{Binding Selected}" Background="Transparent">
+          <ListBox.Styles>
+            <!-- compact rows: two lines of text, no tall empty padding -->
+            <Style Selector="ListBoxItem">
+              <Setter Property="Padding" Value="10,5" />
+              <Setter Property="MinHeight" Value="0" />
+            </Style>
+          </ListBox.Styles>
           <ListBox.ItemTemplate>
             <DataTemplate DataType="omega:LibraryCard">
-              <StackPanel Margin="2,3">
+              <StackPanel Spacing="1">
                 <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                 <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis">
                   <Run Text="{Binding TypeLine}" /><Run Text="  " /><Run Text="{Binding Stats}" />

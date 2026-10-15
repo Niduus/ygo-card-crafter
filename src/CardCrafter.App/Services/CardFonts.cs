@@ -33,15 +33,18 @@ public static class CardFonts
     private static int _generation;
 
     /// <summary>Registers the fonts in <paramref name="folder"/> (and its subfolders), then picks a font for each part of the card.</summary>
-    public static void Load(string? folder)
+    public static void Load(string? folder) => Load(folder is null ? [] : [folder]);
+
+    public static void Load(IReadOnlyList<string> folders)
     {
         var families = new List<(string Name, FontFamily Family)>();
         try
         {
             if (_collection is not null) FontManager.Current.RemoveFontCollection(_collection.Key);
             _collection = null;
-            var files = folder is null || !Directory.Exists(folder) ? [] :
-                Directory.EnumerateFiles(folder, "*.*", SearchOption.AllDirectories).Where(f => Extensions.Contains(Path.GetExtension(f).ToLowerInvariant())).ToList();
+            var files = folders.Where(Directory.Exists)
+                .SelectMany(f => Directory.EnumerateFiles(f, "*.*", SearchOption.AllDirectories))
+                .Where(f => Extensions.Contains(Path.GetExtension(f).ToLowerInvariant())).Distinct().ToList();
             if (files.Count > 0)
             {
                 var key = new Uri($"fonts:cardcrafter{++_generation}", UriKind.Absolute);
