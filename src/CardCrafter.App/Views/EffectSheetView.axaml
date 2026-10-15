@@ -32,9 +32,9 @@
                 <StackPanel>
                   <!-- header -->
                   <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
-                    <TextBlock Grid.Column="0" VerticalAlignment="Center" FontWeight="Bold" Margin="0,0,10,0">
-                      <Run Text="Effect" /><Run Text=" " /><Run Text="{Binding Number}" />
-                    </TextBlock>
+                    <Border Grid.Column="0" Classes="number">
+                      <TextBlock Text="{Binding Number}" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
                     <TextBox Grid.Column="1" Text="{Binding Label}" Watermark="Name this effect (shown when it is activated)" />
                     <ComboBox Grid.Column="2" Margin="8,0,0,0" ItemsSource="{Binding LimitOptions}" SelectedItem="{Binding Limit}"
                               IsVisible="{Binding ShowLimit}" ToolTip.Tip="How often it can be used" />
@@ -51,51 +51,85 @@
                     </StackPanel>
                   </Grid>
 
-                  <!-- the sheet: conditions on the left, actions on the right -->
-                  <Grid ColumnDefinitions="*,16,*" Margin="0,6,0,0">
+                  <!-- the sheet: WHEN and IF on the left, COST and DO on the right -->
+                  <Grid ColumnDefinitions="*,28,*" Margin="0,10,0,0">
                     <StackPanel Grid.Column="0">
-                      <TextBlock Classes="column when" Text="WHEN" />
-                      <ItemsControl ItemsSource="{Binding Trigger}">
-                        <ItemsControl.ItemTemplate>
-                          <DataTemplate DataType="vm:BlockViewModel"><views:BlockView /></DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                      </ItemsControl>
-                      <Button Classes="add" Tag="Trigger" Click="OnAddBlock" Content="Choose what starts it…" IsVisible="{Binding !HasTrigger}" />
-                      <Button Classes="add" Tag="Trigger" Click="OnAddBlock" Content="Change trigger…" IsVisible="{Binding HasTrigger}" />
-
-                      <TextBlock Classes="column if" Text="IF" />
-                      <ItemsControl ItemsSource="{Binding Conditions}">
-                        <ItemsControl.ItemTemplate>
-                          <DataTemplate DataType="vm:BlockViewModel"><views:BlockView /></DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                      </ItemsControl>
-                      <Button Classes="add" Tag="Condition" Click="OnAddBlock" Content="+ Add condition" />
+                      <Border Classes="section when">
+                        <StackPanel>
+                          <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                            <Border Classes="badge when"><StackPanel Orientation="Horizontal"><Path Data="{StaticResource WhenIcon}" /><TextBlock Text="WHEN" /></StackPanel></Border>
+                            <TextBlock Classes="hint" Text="What starts it" />
+                          </StackPanel>
+                          <ItemsControl ItemsSource="{Binding Trigger}">
+                            <ItemsControl.ItemTemplate>
+                              <DataTemplate DataType="vm:BlockViewModel"><views:BlockView /></DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                          </ItemsControl>
+                          <Button Classes="add when" Tag="Trigger" Click="OnAddBlock" Content="+ Choose what starts it" IsVisible="{Binding !HasTrigger}" />
+                          <Button Classes="add when" Tag="Trigger" Click="OnAddBlock" Content="Change trigger" IsVisible="{Binding HasTrigger}" />
+                        </StackPanel>
+                      </Border>
+                      <Border Classes="section if">
+                        <StackPanel>
+                          <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                            <Border Classes="badge if"><StackPanel Orientation="Horizontal"><Path Data="{StaticResource IfIcon}" /><TextBlock Text="IF" /></StackPanel></Border>
+                            <TextBlock Classes="hint" Text="Only when all of these are true" />
+                          </StackPanel>
+                          <ItemsControl ItemsSource="{Binding Conditions}">
+                            <ItemsControl.ItemTemplate>
+                              <DataTemplate DataType="vm:BlockViewModel"><views:BlockView /></DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                          </ItemsControl>
+                          <Button Classes="add if" Tag="Condition" Click="OnAddBlock" Content="+ Add condition" />
+                        </StackPanel>
+                      </Border>
                     </StackPanel>
 
-                    <StackPanel Grid.Column="2">
-                      <StackPanel IsVisible="{Binding ShowCosts}">
-                        <TextBlock Classes="column cost" Text="COST" />
-                        <ItemsControl ItemsSource="{Binding Costs}">
-                          <ItemsControl.ItemTemplate>
-                            <DataTemplate DataType="vm:BlockViewModel"><views:BlockView /></DataTemplate>
-                          </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                        <Button Classes="add" Tag="Cost" Click="OnAddBlock" Content="+ Add cost" />
-                      </StackPanel>
+                    <!-- arrow from conditions to actions -->
+                    <Path Grid.Column="1" Data="M2 12 H18 M12 6 L18 12 L12 18" Stroke="#4A4E5E" StrokeThickness="2.5"
+                          StrokeLineCap="Round" StrokeJoin="Round" Width="20" Height="20" Stretch="Uniform"
+                          HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,14,0,0" />
 
-                      <TextBlock Classes="column do" Text="{Binding DoHeader}" />
-                      <ItemsControl ItemsSource="{Binding Actions}">
-                        <ItemsControl.ItemTemplate>
-                          <DataTemplate DataType="vm:BlockViewModel"><views:BlockView /></DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                      </ItemsControl>
-                      <Button Classes="add" Tag="Action" Click="OnAddBlock" Content="+ Add action" />
+                    <StackPanel Grid.Column="2">
+                      <Border Classes="section cost" IsVisible="{Binding ShowCosts}">
+                        <StackPanel>
+                          <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                            <Border Classes="badge cost"><StackPanel Orientation="Horizontal"><Path Data="{StaticResource CostIcon}" /><TextBlock Text="COST" /></StackPanel></Border>
+                            <TextBlock Classes="hint" Text="Paid to activate it" />
+                          </StackPanel>
+                          <ItemsControl ItemsSource="{Binding Costs}">
+                            <ItemsControl.ItemTemplate>
+                              <DataTemplate DataType="vm:BlockViewModel"><views:BlockView /></DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                          </ItemsControl>
+                          <Button Classes="add cost" Tag="Cost" Click="OnAddBlock" Content="+ Add cost" />
+                        </StackPanel>
+                      </Border>
+                      <Border Classes="section" Classes.do="{Binding !IsPassive}" Classes.always="{Binding IsPassive}">
+                        <StackPanel>
+                          <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                            <Border Classes="badge do" IsVisible="{Binding !IsPassive}"><StackPanel Orientation="Horizontal"><Path Data="{StaticResource DoIcon}" /><TextBlock Text="DO" /></StackPanel></Border>
+                            <Border Classes="badge always" IsVisible="{Binding IsPassive}"><StackPanel Orientation="Horizontal"><Path Data="{StaticResource AlwaysIcon}" /><TextBlock Text="ALWAYS" /></StackPanel></Border>
+                            <TextBlock Classes="hint" Text="What happens, in order" IsVisible="{Binding !IsPassive}" />
+                            <TextBlock Classes="hint" Text="Applies the whole time it's face-up" IsVisible="{Binding IsPassive}" />
+                          </StackPanel>
+                          <ItemsControl ItemsSource="{Binding Actions}">
+                            <ItemsControl.ItemTemplate>
+                              <DataTemplate DataType="vm:BlockViewModel"><views:BlockView /></DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                          </ItemsControl>
+                          <Button Classes="add do" Tag="Action" Click="OnAddBlock" Content="+ Add action" />
+                        </StackPanel>
+                      </Border>
                     </StackPanel>
                   </Grid>
 
                   <!-- what it says on the card, and anything wrong -->
-                  <Border Background="#16171C" CornerRadius="6" Padding="10,6" Margin="0,10,0,0">
-                    <TextBlock Text="{Binding PreviewText}" TextWrapping="Wrap" FontStyle="Italic" Foreground="#D1D5DB" />
+                  <Border Background="#14151A" CornerRadius="8" Padding="12,8" BorderBrush="#3A3D4C" BorderThickness="3,0,0,0">
+                    <StackPanel>
+                      <TextBlock Text="ON THE CARD" FontSize="10" FontWeight="Bold" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,2" />
+                      <TextBlock Text="{Binding PreviewText}" TextWrapping="Wrap" FontStyle="Italic" Foreground="#D1D5DB" />
+                    </StackPanel>
                   </Border>
                   <TextBlock Text="{Binding Problems}" IsVisible="{Binding HasProblems}" Foreground="{StaticResource ErrorBrush}"
                              TextWrapping="Wrap" Margin="0,6,0,0" />

@@ -6,12 +6,15 @@
              x:Class="CardCrafter.App.Views.BlockView"
              x:DataType="vm:BlockViewModel">
   <StackPanel>
-    <ComboBox Classes="inline" IsVisible="{Binding ShowLink}" ItemsSource="{Binding LinkOptions}" SelectedItem="{Binding Link}"
-              FontSize="12" Margin="16,2,0,0" ToolTip.Tip="How this action connects to the one above it" />
+    <!-- connector to the action above: a short line with the link word in a pill -->
+    <Grid IsVisible="{Binding ShowLink}" ColumnDefinitions="22,Auto,*" Height="30">
+      <Rectangle Grid.Column="0" Width="2" Fill="#4D22C55E" HorizontalAlignment="Center" />
+      <ComboBox Grid.Column="1" Classes="link" ItemsSource="{Binding LinkOptions}" SelectedItem="{Binding Link}"
+                ToolTip.Tip="How this action connects to the one above it" />
+    </Grid>
     <Border x:Name="Row" Classes="block" ToolTip.Tip="{Binding Help}">
       <Grid ColumnDefinitions="Auto,*,Auto">
-        <TextBlock Grid.Column="0" Text="{Binding KindLabel}" FontSize="10" FontWeight="Bold" Opacity="0.6"
-                   VerticalAlignment="Center" Margin="0,0,6,0" MinWidth="34" />
+        <Path Grid.Column="0" Classes="kind" ToolTip.Tip="{Binding KindLabel}" />
         <ItemsControl Grid.Column="1" ItemsSource="{Binding Segments}">
           <ItemsControl.ItemsPanel>
             <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
@@ -48,9 +51,9 @@
           </ItemsControl.DataTemplates>
         </ItemsControl>
         <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-          <Button Classes="icon" Content="↑" Command="{Binding MoveUpCommand}" IsVisible="{Binding !IsTrigger}" ToolTip.Tip="Move up" />
-          <Button Classes="icon" Content="↓" Command="{Binding MoveDownCommand}" IsVisible="{Binding !IsTrigger}" ToolTip.Tip="Move down" />
-          <Button Classes="icon" Content="✕" Command="{Binding RemoveCommand}" ToolTip.Tip="Remove this block" />
+          <Button Classes="icon" Opacity="0.6" Content="↑" Command="{Binding MoveUpCommand}" IsVisible="{Binding !IsTrigger}" ToolTip.Tip="Move up" />
+          <Button Classes="icon" Opacity="0.6" Content="↓" Command="{Binding MoveDownCommand}" IsVisible="{Binding !IsTrigger}" ToolTip.Tip="Move down" />
+          <Button Classes="icon" Opacity="0.6" Content="✕" Command="{Binding RemoveCommand}" ToolTip.Tip="Remove this block" />
         </StackPanel>
       </Grid>
     </Border>

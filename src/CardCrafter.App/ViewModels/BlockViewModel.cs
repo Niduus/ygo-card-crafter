@@ -20,7 +20,9 @@ public sealed partial class BlockViewModel : ObservableObject
         {
             if (seg.Key is null)
             {
-                if (seg.Text.Trim().Length > 0) Segments.Add(new TextSegmentViewModel(seg.Text.Trim()));
+                // Punctuation like a lone "," reads fine in card text but looks stray between controls.
+                var text = seg.Text.Trim().Trim(',').Trim();
+                if (text.Length > 0) Segments.Add(new TextSegmentViewModel(text));
                 continue;
             }
             var spec = definition.Param(seg.Key);
