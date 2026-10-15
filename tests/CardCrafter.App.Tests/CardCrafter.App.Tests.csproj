@@ -15,7 +15,8 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="sample-art.png" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="frames\*.png" CopyToOutputDirectory="PreserveNewest" />
+    <!-- A subset of Crimson Text (OFL), renamed, standing in for a card font in the texture folder. -->
+    <None Include="TestMatrixBook.ttf" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />

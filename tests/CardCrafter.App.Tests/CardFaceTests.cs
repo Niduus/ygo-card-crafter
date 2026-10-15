@@ -26,7 +26,9 @@ public class CardFaceTests
 
     /// <summary>One card at the size YGO Omega shows it, to compare against the game side by side.</summary>
     [AvaloniaFact]
-    public void FaceCloseUp()
+    public void FaceCloseUp() => FaceCloseUpShot("16-card-closeup.png");
+
+    private static void FaceCloseUpShot(string shot)
     {
         var art = new Bitmap(Path.Combine(AppContext.BaseDirectory, "sample-art.png"));
         var pack = new CardPack { Author = "Studio Example" };
@@ -45,7 +47,7 @@ public class CardFaceTests
         window.Show();
         Dispatcher.UIThread.RunJobs();
         Directory.CreateDirectory(ShotDir);
-        window.CaptureRenderedFrame()?.Save(Path.Combine(ShotDir, "16-card-closeup.png"));
+        window.CaptureRenderedFrame()?.Save(Path.Combine(ShotDir, shot));
     }
 
     [AvaloniaFact]
@@ -84,18 +86,20 @@ public class CardFaceTests
     }
 
     /// <summary>
-    /// Renders every card kind over the OmegaCustom textures. Runs only when CARDCRAFTER_OMEGACUSTOM points to a
-    /// checkout's Textures/Interface folder; the textures themselves are never committed here.
+    /// Renders every card kind from real card textures. Runs only when CARDCRAFTER_TEXTURES points to a folder of
+    /// them; card textures are game artwork and are never committed to this repository.
     /// </summary>
     [AvaloniaFact]
-    public void FacesRenderOverOmegaCustomTextures()
+    public void FacesRenderFromCardTextures()
     {
-        var folder = Environment.GetEnvironmentVariable("CARDCRAFTER_OMEGACUSTOM");
+        var folder = Environment.GetEnvironmentVariable("CARDCRAFTER_TEXTURES");
         if (folder is null || !Directory.Exists(folder)) return;
-        Assert.True(CardCrafter.App.Services.FrameImages.Load(folder) >= 20);
+        Assert.True(CardCrafter.App.Services.FrameImages.Load(folder) >= 40);
+        Assert.True(CardCrafter.App.Services.FrameImages.Missing.All(m => m == "Field"), string.Join(", ", CardCrafter.App.Services.FrameImages.Missing));
         try
         {
-            RenderAllKinds("7b-card-faces-omegacustom.png");
+            RenderAllKinds("7b-card-faces-textures.png");
+            FaceCloseUpShot("16b-card-closeup-textures.png");
         }
         finally
         {
@@ -172,28 +176,4 @@ public sealed class TempDirectory : IDisposable
 {
     public string Path { get; } = Directory.CreateTempSubdirectory("cc-app-").FullName;
     public void Dispose() { try { Directory.Delete(Path, true); } catch (IOException) { } }
-}
-
-public class OmegaCustomDownloadTests
-{
-    /// <summary>Talks to GitHub, so it only runs when CARDCRAFTER_NETWORK_TESTS is set.</summary>
-    [AvaloniaFact]
-    public async Task DownloadsAndLoadsOmegaCustomTextures()
-    {
-        if (Environment.GetEnvironmentVariable("CARDCRAFTER_NETWORK_TESTS") is null) return;
-        using var tmp = new TempDirectory();
-        using var http = CardCrafter.Core.Updates.UpdateChecker.CreateClient();
-        var saved = await CardCrafter.App.Services.FrameImages.DownloadOmegaCustomAsync(http, tmp.Path);
-        Assert.True(saved >= 25, $"saved {saved}");
-        try
-        {
-            Assert.True(CardCrafter.App.Services.FrameImages.Load(tmp.Path) >= 25);
-            Assert.NotNull(CardCrafter.App.Services.FrameImages.Geometry("effect")?.Art);
-            Assert.NotNull(CardCrafter.App.Services.FrameImages.Geometry("spell")?.Text);
-        }
-        finally
-        {
-            CardCrafter.App.Services.FrameImages.Load(null);
-        }
-    }
 }

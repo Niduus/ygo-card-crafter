@@ -1,142 +1,163 @@
+using System.IO.Compression;
+using System.Text.RegularExpressions;
 using Avalonia.Media.Imaging;
+using SkiaSharp;
 
 namespace CardCrafter.App.Services;
 
 /// <summary>
-/// Optional card-frame artwork for the preview: full-card templates drawn over the art, with the card's
-/// name, stars, text and stats drawn on top. Card Crafter ships none. They come from a folder the user picks,
-/// the textures of the community OmegaCustom pack (found in the Omega folder or downloaded on request),
-/// or the built-in drawing when there are none.
+/// The card textures the preview is assembled from: YGO Omega's card frames, Attribute orbs, Level and Rank stars,
+/// Link Arrows, Spell/Trap icons and border, in the user's own zip or folder. Card Crafter ships none and draws
+/// no frames of its own: without textures the preview shows a plain placeholder.
 /// </summary>
-public static class FrameImages
+public static partial class FrameImages
 {
-    /// <summary>Card Crafter's names for each slot, and the OmegaCustom texture file names that fill them.</summary>
-    public static readonly IReadOnlyDictionary<string, string> OmegaCustomNames = new Dictionary<string, string>
+    /// <summary>Card Crafter's name for each texture, and the texture file it comes from (as YGO Omega names them).</summary>
+    public static readonly IReadOnlyDictionary<string, string> Files = new Dictionary<string, string>
     {
         ["normal"] = "NormalFrame", ["effect"] = "EffectFrame", ["ritual"] = "RitualFrame", ["fusion"] = "FusionFrame",
         ["synchro"] = "SynchroFrame", ["xyz"] = "XYZFrame", ["link"] = "LinkFrame", ["token"] = "TokenFrame",
         ["spell"] = "SpellCardFrame", ["trap"] = "TrapCardFrame",
         ["pendulum-normal"] = "PendulumNormalFullFrame", ["pendulum-effect"] = "PendulumEffectFullFrame",
         ["pendulum-fusion"] = "PendulumFusionFullFrame", ["pendulum-synchro"] = "PendulumSynchroFullFrame",
-        ["pendulum-xyz"] = "PendulumXYZFullFrame",
+        ["pendulum-xyz"] = "PendulumXYZFullFrame", ["pendulum-ritual"] = "PendulumRitualFullFrame", ["pendulum-bottom"] = "PendulumBottom",
+        ["border"] = "DefaultBorder",
         ["attribute-dark"] = "Dark", ["attribute-light"] = "Light", ["attribute-earth"] = "Earth", ["attribute-water"] = "Water",
         ["attribute-fire"] = "Fire", ["attribute-wind"] = "Wind", ["attribute-divine"] = "Divine",
-        ["attribute-spell"] = "Spell", ["attribute-trap"] = "Trap", ["level"] = "Level", ["rank"] = "Rank",
+        ["attribute-spell"] = "Spell", ["attribute-trap"] = "Trap",
+        ["level"] = "Level", ["rank"] = "Rank",
+        ["icon-quickplay"] = "QuickPlay", ["icon-continuous"] = "Continuous", ["icon-equip"] = "Equipment",
+        ["icon-field"] = "Field", ["icon-ritual"] = "Ritual", ["icon-counter"] = "Counter",
+        ["link-top-on"] = "TopOn", ["link-top-off"] = "TopOff", ["link-bottom-on"] = "BottomOn", ["link-bottom-off"] = "BottomOff",
+        ["link-left-on"] = "LeftOn", ["link-left-off"] = "LeftOff", ["link-right-on"] = "RightOn", ["link-right-off"] = "RightOff",
+        ["link-topleft-on"] = "TopLeftOn", ["link-topleft-off"] = "TopLeftOff", ["link-topright-on"] = "TopRightOn", ["link-topright-off"] = "TopRightOff",
+        ["link-bottomleft-on"] = "BottomLeftOn", ["link-bottomleft-off"] = "BottomLeftOff",
+        ["link-bottomright-on"] = "BottomRightOn", ["link-bottomright-off"] = "BottomRightOff",
     };
 
-    public static IEnumerable<string> Names => OmegaCustomNames.Keys.Append("pendulum-ritual");
-
-    public const string OmegaCustomRepo = "zeak6464/OmegaCustom";
-    public const string OmegaCustomRawBase = "https://raw.githubusercontent.com/zeak6464/OmegaCustom/main/Textures/Interface/";
+    /// <summary>The full-card frames, which need the standard layout (a name band at the top).</summary>
+    private static bool IsFrame(string slot) => slot is "normal" or "effect" or "ritual" or "fusion" or "synchro" or "xyz" or "link" or "token" or "spell" or "trap"
+        || (slot.StartsWith("pendulum-", StringComparison.Ordinal) && slot != "pendulum-bottom");
 
     private static readonly string[] Extensions = [".png", ".jpg", ".jpeg", ".webp"];
     private static Dictionary<string, Bitmap> _images = new(StringComparer.OrdinalIgnoreCase);
-    private static HashSet<string> _omegaStyle = new(StringComparer.OrdinalIgnoreCase);
-    private static Dictionary<string, FrameGeometry> _geometry = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>Where the textures were loaded from, or null when none are loaded.</summary>
     public static string? Folder { get; private set; }
     public static int Count => _images.Count;
     public static event Action? Changed;
 
-    /// <summary>Loads every recognised image in the folder (null clears). Returns how many were found.</summary>
+    /// <summary>Textures Card Crafter looked for and didn't find in the folder.</summary>
+    public static IReadOnlyList<string> Missing { get; private set; } = [];
+
+    /// <summary>
+    /// Loads every recognised texture in the folder and its subfolders (null clears), plus any fonts there.
+    /// Returns how many textures were found.
+    /// </summary>
     public static int Load(string? folder)
     {
         var old = _images;
         var images = new Dictionary<string, Bitmap>(StringComparer.OrdinalIgnoreCase);
-        var omega = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var geometry = new Dictionary<string, FrameGeometry>(StringComparer.OrdinalIgnoreCase);
+        var missing = new List<string>();
         if (folder is not null && Directory.Exists(folder))
         {
-            foreach (var name in Names)
+            // Exported textures can carry a number, e.g. "EffectFrame #2375.png"; group them by their plain name.
+            var byName = Directory.EnumerateFiles(folder, "*.*", SearchOption.AllDirectories)
+                .Where(f => Extensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
+                .GroupBy(f => Numbered().Replace(Path.GetFileNameWithoutExtension(f), "").Trim(), StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+            foreach (var (slot, file) in Files)
             {
-                // Card Crafter's own name first, then the OmegaCustom texture name.
-                var candidates = new List<(string File, bool Omega)> { (name, false) };
-                if (OmegaCustomNames.TryGetValue(name, out var omegaName)) candidates.Add((omegaName, true));
-                foreach (var (file, isOmega) in candidates)
+                if (!byName.TryGetValue(file, out var candidates))
                 {
-                    var (bitmap, path) = TryLoad(folder, file);
-                    if (bitmap is null) continue;
-                    images[name] = bitmap;
-                    if (isOmega) omega.Add(name);
-                    // Full-card frames get their boxes measured; small icons (attributes, stars) don't need it.
-                    if (!name.StartsWith("attribute-") && name is not ("level" or "rank") && FrameGeometry.Measure(path!) is { } g)
-                        geometry[name] = g;
-                    break;
+                    if (slot is not ("pendulum-ritual" or "icon-field" or "token")) missing.Add(file);
+                    continue;
                 }
+                if (Choose(slot, file, candidates) is { } path && TryLoad(path) is { } bitmap) images[slot] = bitmap;
             }
         }
+        CardFonts.Load(images.Count > 0 ? folder : null);
         _images = images;
-        _omegaStyle = omega;
-        _geometry = geometry;
+        Missing = missing;
         Folder = images.Count > 0 ? folder : null;
         Changed?.Invoke();
         foreach (var b in old.Values) b.Dispose();
         return images.Count;
     }
 
-    private static (Bitmap? Bitmap, string? Path) TryLoad(string folder, string file)
+    [GeneratedRegex(@"\s*#\d+$")]
+    private static partial Regex Numbered();
+
+    /// <summary>
+    /// Picks one file when several share a name. Frames come in a standard version (name band, then the art)
+    /// and a full-art version with the art reaching the top; the preview needs the standard one. Otherwise the
+    /// file without a number wins.
+    /// </summary>
+    private static string? Choose(string slot, string name, List<string> candidates)
     {
-        foreach (var ext in Extensions)
+        if (candidates.Count == 1) return candidates[0];
+        if (IsFrame(slot))
         {
-            var path = Path.Combine(folder, file + ext);
-            if (!File.Exists(path)) continue;
-            try
-            {
-                using var stream = File.OpenRead(path);
-                return (new Bitmap(stream), path);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException)
-            {
-                // Unreadable images are skipped; the built-in drawing covers that part.
-            }
+            var standard = candidates.FirstOrDefault(HasNameBand);
+            if (standard is not null) return standard;
         }
-        return (null, null);
+        return candidates.FirstOrDefault(c => Path.GetFileNameWithoutExtension(c).Equals(name, StringComparison.OrdinalIgnoreCase))
+               ?? candidates.OrderBy(c => c, StringComparer.OrdinalIgnoreCase).First();
     }
 
-    public static Bitmap? Get(string name) => _images.GetValueOrDefault(name);
-
-    /// <summary>The measured boxes of a full-card frame image, or null.</summary>
-    public static FrameGeometry? Geometry(string name) => _geometry.GetValueOrDefault(name);
-
-    /// <summary>True when the image came from OmegaCustom, whose frames use YGO Omega's own layout.</summary>
-    public static bool IsOmegaStyle(string name) => _omegaStyle.Contains(name);
-
-    /// <summary>Where OmegaCustom's textures live inside an Omega install that has the pack applied.</summary>
-    public static string? FindInOmega(string? omegaRoot)
+    /// <summary>True when the frame has an opaque name band at the top and its art window starts below it.</summary>
+    private static bool HasNameBand(string path)
     {
-        if (omegaRoot is null) return null;
-        foreach (var rel in new[] { Path.Combine("YGO Omega_Data", "Files", "Textures", "Interface"), Path.Combine("Files", "Textures", "Interface"), Path.Combine("Textures", "Interface") })
+        try
         {
-            var dir = Path.Combine(omegaRoot, rel);
-            if (File.Exists(Path.Combine(dir, "EffectFrame.png"))) return dir;
+            using var bmp = SKBitmap.Decode(path);
+            if (bmp is null) return false;
+            int x = bmp.Width / 2;
+            return bmp.GetPixel(x, (int)(bmp.Height * 0.077)).Alpha > 200 && bmp.GetPixel(x, (int)(bmp.Height * 0.14)).Alpha > 200;
         }
-        return null;
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    private static Bitmap? TryLoad(string path)
+    {
+        try
+        {
+            using var stream = File.OpenRead(path);
+            return new Bitmap(stream);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException)
+        {
+            return null; // an unreadable texture is reported as missing by the preview
+        }
     }
 
     /// <summary>
-    /// Downloads just the card-frame textures from the OmegaCustom repository into <paramref name="folder"/>.
-    /// Returns how many files were saved.
+    /// Unpacks a zip of textures (and fonts) into <paramref name="intoFolder"/>/&lt;zip name&gt; and returns that folder.
+    /// Only images and font files are taken, and nothing is written outside the folder.
     /// </summary>
-    public static async Task<int> DownloadOmegaCustomAsync(HttpClient http, string folder, IProgress<double>? progress = null, CancellationToken ct = default)
+    public static string ExtractZip(string zipPath, string intoFolder)
     {
-        Directory.CreateDirectory(folder);
-        var files = OmegaCustomNames.Values.Distinct().ToList();
-        int saved = 0, done = 0;
-        foreach (var file in files)
+        var target = Path.Combine(intoFolder, Path.GetFileNameWithoutExtension(zipPath));
+        if (Directory.Exists(target)) Directory.Delete(target, recursive: true);
+        Directory.CreateDirectory(target);
+        var root = Path.GetFullPath(target) + Path.DirectorySeparatorChar;
+        using var zip = ZipFile.OpenRead(zipPath);
+        foreach (var entry in zip.Entries)
         {
-            using var response = await http.GetAsync(OmegaCustomRawBase + Uri.EscapeDataString(file) + ".png", ct);
-            if (response.IsSuccessStatusCode)
-            {
-                var bytes = await response.Content.ReadAsByteArrayAsync(ct);
-                // Only keep real PNGs.
-                if (bytes.Length > 8 && bytes[0] == 0x89 && bytes[1] == 0x50)
-                {
-                    await File.WriteAllBytesAsync(Path.Combine(folder, file + ".png"), bytes, ct);
-                    saved++;
-                }
-            }
-            progress?.Report(++done / (double)files.Count);
+            if (entry.Name.Length == 0) continue;
+            var ext = Path.GetExtension(entry.Name).ToLowerInvariant();
+            if (!Extensions.Contains(ext) && !CardFonts.Extensions.Contains(ext)) continue;
+            var dest = Path.GetFullPath(Path.Combine(target, entry.FullName));
+            if (!dest.StartsWith(root, StringComparison.Ordinal)) continue; // no "../" escapes
+            Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+            entry.ExtractToFile(dest, overwrite: true);
         }
-        return saved;
+        return target;
     }
+
+    public static Bitmap? Get(string name) => _images.GetValueOrDefault(name);
+    public static bool Has(string name) => _images.ContainsKey(name);
 }

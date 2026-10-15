@@ -765,81 +765,80 @@ public sealed partial class MainViewModel : ObservableObject
         _dialogs.OpenFolder(folder);
     }
 
-    // ---------------------------------------------------------------- card frame images
+    // ---------------------------------------------------------------- card textures
 
-    [ObservableProperty] private string _frameStatus = "Built-in frames";
+    [ObservableProperty] private string _frameStatus = "No card textures loaded";
+    [ObservableProperty] private string _fontStatus = Services.CardFonts.Summary;
 
+    /// <summary>Unpacks a zip of card textures (and fonts) into AppData and uses it.</summary>
+    [RelayCommand]
+    private async Task ChooseTextureZip()
+    {
+        var zip = await _dialogs.OpenFileAsync("Choose a .zip of card textures", "Zip file", "zip");
+        if (zip is null) return;
+        string folder;
+        try
+        {
+            folder = Services.FrameImages.ExtractZip(zip, Path.Combine(AppSettings.Folder, "Textures"));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            await _dialogs.ShowAsync("Couldn't open the zip", ex.Message);
+            return;
+        }
+        await UseTextures(folder);
+    }
+
+    /// <summary>Uses card textures (and fonts) from a folder.</summary>
     [RelayCommand]
     private async Task ChooseFrameFolder()
     {
-        var folder = await _dialogs.PickFolderAsync("Choose a folder of card frame images");
-        if (folder is null) return;
+        var folder = await _dialogs.PickFolderAsync("Choose a folder of card textures");
+        if (folder is not null) await UseTextures(folder);
+    }
+
+    private async Task UseTextures(string folder)
+    {
         var count = Services.FrameImages.Load(folder);
+        FontStatus = Services.CardFonts.Summary;
         if (count == 0)
         {
-            await _dialogs.ShowAsync("No frame images found",
-                "That folder has none of the expected images. Name them like effect.png, normal.png, synchro.png, xyz.png, link.png, " +
-                "spell.png, trap.png (plus optional attribute-dark.png, level.png, rank.png...). See the README for the full list.");
+            await _dialogs.ShowAsync("No card textures found",
+                "That has none of the card textures Card Crafter looks for, such as EffectFrame.png, SpellCardFrame.png, Dark.png and Level.png.");
             return;
         }
         _settings.FrameFolder = folder;
         _settings.Save();
-        FrameStatus = $"{count} frame images from {Path.GetFileName(folder)}";
-    }
-
-    /// <summary>Downloads the card-frame textures from the OmegaCustom repository and uses them.</summary>
-    [RelayCommand]
-    private async Task DownloadOmegaCustomFrames()
-    {
-        var folder = Path.Combine(AppSettings.Folder, "Frames", "OmegaCustom");
-        try
-        {
-            FrameStatus = "Downloading OmegaCustom textures…";
-            using var http = UpdateChecker.CreateClient();
-            var progress = new Progress<double>(p => FrameStatus = $"Downloading OmegaCustom textures… {p:P0}");
-            var saved = await Services.FrameImages.DownloadOmegaCustomAsync(http, folder, progress);
-            if (saved == 0)
-            {
-                FrameStatus = "Built-in frames";
-                await _dialogs.ShowAsync("Download failed", $"No textures could be downloaded from github.com/{Services.FrameImages.OmegaCustomRepo}.");
-                return;
-            }
-            var count = Services.FrameImages.Load(folder);
-            _settings.FrameFolder = folder;
-            _settings.Save();
-            FrameStatus = $"OmegaCustom textures ({count})";
-            Status = $"Using {count} card textures from github.com/{Services.FrameImages.OmegaCustomRepo}.";
-        }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException or UnauthorizedAccessException)
-        {
-            FrameStatus = Services.FrameImages.Count > 0 ? FrameStatus : "Built-in frames";
-            await _dialogs.ShowAsync("Download failed", ex.Message);
-        }
+        FrameStatus = TextureStatus(folder, count);
+        Status = Services.FrameImages.Missing.Count == 0
+            ? $"Using {count} card textures."
+            : $"Using {count} card textures. Not found: {string.Join(", ", Services.FrameImages.Missing)}.";
     }
 
     [RelayCommand]
-    private void UseBuiltInFrames()
+    private void ClearTextures()
     {
         Services.FrameImages.Load(null);
         _settings.FrameFolder = null;
         _settings.Save();
-        FrameStatus = "Built-in frames";
+        FrameStatus = "No card textures loaded";
+        FontStatus = Services.CardFonts.Summary;
     }
+
+    private static string TextureStatus(string folder, int count) => $"Textures: {Path.GetFileName(folder.TrimEnd(Path.DirectorySeparatorChar))} ({count})";
 
     private void LoadSavedFrames()
     {
+        // Version 0.3 could download OmegaCustom's textures; the preview now uses only textures the user provides.
+        if (_settings.FrameFolder is { } saved && Path.GetFullPath(saved).StartsWith(Path.Combine(AppSettings.Folder, "Frames"), StringComparison.OrdinalIgnoreCase))
+        {
+            _settings.FrameFolder = null;
+            _settings.Save();
+        }
         if (_settings.FrameFolder is not { } folder) return;
         var count = Services.FrameImages.Load(folder);
-        FrameStatus = count > 0 ? $"{count} frame images from {Path.GetFileName(folder)}" : "Built-in frames";
-    }
-
-    /// <summary>With no frames chosen, use OmegaCustom textures already applied to the Omega install.</summary>
-    private void UseOmegaTexturesIfPresent()
-    {
-        if (_settings.FrameFolder is not null || Services.FrameImages.Count > 0) return;
-        if (Services.FrameImages.FindInOmega(OmegaPath) is not { } dir) return;
-        var count = Services.FrameImages.Load(dir);
-        if (count > 0) FrameStatus = $"Omega's textures ({count})";
+        FrameStatus = count > 0 ? TextureStatus(folder, count) : "No card textures loaded";
+        FontStatus = Services.CardFonts.Summary;
     }
 
     // ---------------------------------------------------------------- Omega
@@ -914,7 +913,6 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
         ScanReport = Inventory.Report();
-        UseOmegaTexturesIfPresent();
         await ReloadCatalogAsync(Inventory);
         foreach (var p in Catalog.Problems) ScanReport += $"\nCouldn't read {p}";
         ScanReport += $"\nIn the game: {Catalog.Passcodes.Count} passcodes in use, {Catalog.Archetypes.Count} archetypes, {Catalog.UnknownTypes.Count} non-standard monster Types.\n";

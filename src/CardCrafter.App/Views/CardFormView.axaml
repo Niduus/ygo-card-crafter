@@ -246,18 +246,20 @@
         <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,6,0,0">
           <TextBlock Text="{Binding $parent[Window].((vm:MainViewModel)DataContext).FrameStatus}" FontSize="11"
                      Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
-          <Button Content="Frames…" FontSize="11" Padding="8,2"
-                  ToolTip.Tip="Draw the preview with card frame images from a folder you choose">
+          <Button Content="Textures…" FontSize="11" Padding="8,2"
+                  ToolTip.Tip="Choose the card textures the preview is assembled from">
             <Button.Flyout>
               <MenuFlyout>
-                <MenuItem Header="Download OmegaCustom card textures" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).DownloadOmegaCustomFramesCommand}"
-                          ToolTip.Tip="Card frames from github.com/zeak6464/OmegaCustom, saved to your AppData folder" />
-                <MenuItem Header="Use frame images from a folder…" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ChooseFrameFolderCommand}" />
-                <MenuItem Header="Use built-in frames" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).UseBuiltInFramesCommand}" />
+                <MenuItem Header="Use card textures from a .zip…" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ChooseTextureZipCommand}"
+                          ToolTip.Tip="A zip of card textures (frames, Attributes, stars, Link Arrows, icons) and optional fonts. It is unpacked into your AppData folder." />
+                <MenuItem Header="Use card textures from a folder…" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ChooseFrameFolderCommand}" />
+                <MenuItem Header="Stop using card textures" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ClearTexturesCommand}" />
               </MenuFlyout>
             </Button.Flyout>
           </Button>
         </StackPanel>
+        <TextBlock Text="{Binding $parent[Window].((vm:MainViewModel)DataContext).FontStatus}" FontSize="11" TextWrapping="Wrap"
+                   Foreground="{StaticResource MutedBrush}" Margin="0,2,0,0" MaxWidth="300" HorizontalAlignment="Left" />
         <Button Content="Save image…" Margin="0,6,0,0" HorizontalAlignment="Left" ToolTip.Tip="Save this preview as a PNG or JPG at any size">
           <Button.Flyout>
             <Flyout Placement="LeftEdgeAlignedTop">

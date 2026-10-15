@@ -21,7 +21,8 @@ public class ImageExportTests
         CardImageExporter.Save(card, "[Warrior/Effect]", "Text.", Path.Combine(AppContext.BaseDirectory, "sample-art.png"), width, path);
         using var bmp = SKBitmap.Decode(path);
         Assert.Equal(width, bmp.Width);
-        Assert.Equal((int)Math.Round(width * 614 / 421.0), bmp.Height);
+        // The textures' shape: 813 × 1185.
+        Assert.Equal((int)Math.Round(width * 1185 / 813.0), bmp.Height);
         var head = File.ReadAllBytes(path).Take(2).ToArray();
         Assert.Equal(ext == ".jpg" ? new byte[] { 0xFF, 0xD8 } : new byte[] { 0x89, 0x50 }, head);
     }

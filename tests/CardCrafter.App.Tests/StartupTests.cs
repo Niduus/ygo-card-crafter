@@ -52,30 +52,4 @@ public class StartupTests
         Assert.NotNull(vm.Catalog.Clash(89631139));
         Assert.Contains("passcodes in use", vm.ScanReport);
     }
-
-    [AvaloniaFact]
-    public void PreviewUsesChosenFrameImages()
-    {
-        var folder = Path.Combine(AppContext.BaseDirectory, "frames");
-        Assert.Equal(1, FrameImages.Load(folder));
-        try
-        {
-            var face = new CardFace { Width = 300 };
-            face.Update(new CardData { Name = "Template Test", Level = 4, Atk = 1800, Def = 1000, Text = "Drawn over a frame image." },
-                "[Warrior/Effect]", "Drawn over a frame image.", null);
-            var window = new Window { Width = 340, Height = 470, Content = face };
-            window.Show();
-            Dispatcher.UIThread.RunJobs();
-            var frame = window.CaptureRenderedFrame()!;
-            var dir = Environment.GetEnvironmentVariable("CARDCRAFTER_SCREENSHOTS") ?? Path.GetTempPath();
-            Directory.CreateDirectory(dir);
-            frame.Save(Path.Combine(dir, "8-frame-image.png"));
-            Assert.Equal("effect", CardFace.FrameKey(new CardData()));
-            Assert.Equal("pendulum-normal", CardFace.FrameKey(new CardData { Frame = MonsterFrame.Normal, Abilities = MonsterAbility.Pendulum }));
-        }
-        finally
-        {
-            FrameImages.Load(null);
-        }
-    }
 }
