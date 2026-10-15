@@ -39,6 +39,8 @@ public sealed class ScriptBuilder(CardProject project, CardPack? pack)
     {
         var parts = FilterCompiler.Conditions(f);
         if (!string.IsNullOrEmpty(extra)) parts.Add(extra);
+        if (f.PointedToByThisCard && !Card.IsLink && !Diagnostics.Any(d => d.Message.StartsWith("\"Cards this card points to\"", StringComparison.Ordinal)))
+            Diagnostics.Add(new(Severity.Warning, "\"Cards this card points to\" only works on Link monsters; other cards point to nothing."));
         var expr = parts.Count == 0 ? "true" : string.Join(" and ", parts);
         var fn = AddFunction(baseName, "c,e,tp", [$"return {expr}"]);
         var (self, opp) = Lua.Range(f);
@@ -55,7 +57,11 @@ public sealed class ScriptBuilder(CardProject project, CardPack? pack)
     /// <summary>A material filter for summon procedures: a function of (c), or "nil" when anything goes.</summary>
     public string MaterialFilter(CardFilter f, string baseName = "matfilter")
     {
-        var parts = FilterCompiler.Conditions(f);
+        var parts = FilterCompiler.Conditions(new CardFilter
+        {
+            CardType = f.CardType, Race = f.Race, Attribute = f.Attribute, Archetype = f.Archetype, CardCode = f.CardCode,
+            LevelMin = f.LevelMin, LevelMax = f.LevelMax, AtkMin = f.AtkMin, AtkMax = f.AtkMax,
+        });
         parts.Remove("c:IsType(TYPE_MONSTER)");
         if (parts.Count == 0) return "nil";
         return AddFunction(baseName, "c", [$"return {string.Join(" and ", parts)}"]);

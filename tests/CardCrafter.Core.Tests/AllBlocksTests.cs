@@ -62,7 +62,24 @@ public class AllBlocksTests
     }
 
     /// <summary>Wraps a single block in the smallest effect that makes sense for it.</summary>
+    /// <summary>Blocks about Link Arrows need a Link monster to sit on.</summary>
+    private static bool NeedsLink(BlockDefinition def, BlockInstance inst) =>
+        def.Id is "if.points_to" || inst.Values.GetValueOrDefault("zone") == "pointed";
+
     private static CardProject ProjectFor(BlockDefinition def, BlockInstance inst)
+    {
+        var project = ProjectFor0(def, inst);
+        if (NeedsLink(def, inst))
+        {
+            project.Card.Frame = MonsterFrame.Link;
+            project.Card.LinkMarkers = LinkMarker.Left | LinkMarker.Right;
+            project.Procedure.Kind = SummonProcedureKind.Link;
+        }
+        if (def.Id == "do.negate") project.Effects[0].When = new BlockInstance("when.quick").With("timing", "chain_any");
+        return project;
+    }
+
+    private static CardProject ProjectFor0(BlockDefinition def, BlockInstance inst)
     {
         var effect = new EffectEvent { Label = def.Name };
         CardData card;

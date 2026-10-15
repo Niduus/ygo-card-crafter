@@ -46,6 +46,15 @@ Level, ATK, face-up, or "other than this card".
 name ("You can only use this effect of X once per turn"). Give effects the same *shared group* number
 when they share one use.
 
+**Link Arrows.** Link monsters can use their arrows in effects. Any card picker has "only cards this card points to",
+so you can build "monsters this card points to gain 500 ATK" or "can't be destroyed". There are also IF blocks for
+"this card is linked / co-linked / points to 2 or more monsters", and Special Summons "to a zone this card points to".
+The card face draws the arrows, lit up where you set them.
+
+**Negation and responses.** Quick Effects and Traps can respond "when your opponent activates a card or effect" (or only
+monster effects, or only Spells/Traps). Pair that with **Negate the activation**, optionally destroying or banishing the
+card, to build Ash Blossom- or Solemn-style cards. **Negate the effects of** face-up cards works like Effect Veiler.
+
 **Lasting effects.** Pick the WHEN block "While this card is face-up" to make effects that are always on,
 such as "Dragon monsters you control gain 500 ATK" or "This card cannot be destroyed by battle".
 

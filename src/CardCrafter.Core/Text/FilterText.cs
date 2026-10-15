@@ -56,6 +56,15 @@ public static class FilterText
     private static string Location(CardFilter f, string preposition)
     {
         if (f.Zones == Zone.None) return "";
+        if (f.PointedToByThisCard)
+        {
+            return f.Owner switch
+            {
+                CardOwner.You => "you control that this card points to",
+                CardOwner.Opponent => "your opponent controls that this card points to",
+                _ => "this card points to",
+            };
+        }
         if (IsFieldOnly(f))
         {
             // Monsters on the field are always in a Monster Zone, so only Spell & Trap Zones need naming.

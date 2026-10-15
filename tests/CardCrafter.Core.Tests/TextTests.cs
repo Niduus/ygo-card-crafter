@@ -33,6 +33,22 @@ public class TextTests
     }
 
     [Fact]
+    public void NegateAndLinkTemplates_ReadLikeCardText()
+    {
+        string Text(string template)
+        {
+            var t = CardCrafter.Core.Templates.EffectTemplates.All.Single(x => x.Name == template);
+            return EffectTextGenerator.Generate(TemplateTests.CardWith(t));
+        }
+        Assert.Equal("When your opponent activates a card or effect (Quick Effect): You can discard this card; negate the activation, " +
+                     "and if you do, destroy that card. You can only use this effect of \"Ash Blossom & Joyous Spring\" once per turn.",
+            Text("Negate an activation"));
+        Assert.Equal("(Quick Effect): You can discard this card, then target 1 face-up monster your opponent controls; " +
+                     "negate its effects until the end of this turn.", Text("Negate a monster's effects"));
+        Assert.Equal("Monsters this card points to gain 500 ATK, and monsters this card points to cannot be destroyed by battle.", Text("Link support"));
+    }
+
+    [Fact]
     public void SpellActivation_HasNoYouCan()
     {
         Assert.Equal("Draw 2 cards.", EffectTextGenerator.Generate(Samples.PotOfGreedClone()));

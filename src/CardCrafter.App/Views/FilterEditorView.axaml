@@ -60,5 +60,12 @@
     </Grid>
     <CheckBox Content="Face-up only" IsChecked="{Binding FaceUpOnly}" IsVisible="{Binding !MaterialMode}" Margin="0,6,0,0" />
     <CheckBox Content="Not this card itself (&quot;other&quot;)" IsChecked="{Binding ExcludeThisCard}" IsVisible="{Binding !MaterialMode}" />
+    <CheckBox IsChecked="{Binding PointedToByThisCard}" IsVisible="{Binding !MaterialMode}"
+              ToolTip.Tip="Only cards in the zones this Link monster's Link Arrows point to">
+      <StackPanel Orientation="Horizontal" Spacing="6">
+        <Path Data="M12 3 L21 12 L16 12 L16 21 L8 21 L8 12 L3 12 Z" Fill="#F03A2E" Width="12" Height="12" Stretch="Uniform" />
+        <TextBlock Text="Only cards this card points to (Link Arrows)" />
+      </StackPanel>
+    </CheckBox>
   </StackPanel>
 </UserControl>

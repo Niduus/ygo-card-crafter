@@ -32,7 +32,7 @@ public sealed class EngineScenario
     public static bool Available => File.Exists(Harness) && Directory.Exists(EngineScripts);
 
     // Vanilla filler cards with no script.
-    public const long Warrior = 1001, Dragon = 1002, Fiend = 1004, Spell = 1003;
+    public const long Warrior = 1001, Dragon = 1002, Fiend = 1004, Spell = 1003, EffectFiller = 1005, Trap = 1006;
 
     private readonly CardPack _pack = new() { Name = "Engine Test" };
     private readonly List<string> _lines = [];
@@ -44,6 +44,8 @@ public sealed class EngineScenario
         _pack.Cards.Add(Vanilla(Dragon, "Filler Dragon", CardRace.Dragon, CardAttribute.Light, 1600));
         _pack.Cards.Add(Vanilla(Fiend, "Filler Fiend", CardRace.Fiend, CardAttribute.Dark, 1000));
         _pack.Cards.Add(new CardProject { Card = new CardData { Id = Spell, Name = "Filler Spell", Kind = CardKind.Spell } });
+        _pack.Cards.Add(new CardProject { Card = new CardData { Id = EffectFiller, Name = "Filler Effect Monster", Frame = MonsterFrame.Effect, Level = 4, Atk = 1400, Def = 1000 } });
+        _pack.Cards.Add(new CardProject { Card = new CardData { Id = Trap, Name = "Filler Trap", Kind = CardKind.Trap } });
     }
 
     private static CardProject Vanilla(long id, string name, CardRace race, CardAttribute attr, int atk) => new()

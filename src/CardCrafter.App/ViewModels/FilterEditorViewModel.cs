@@ -124,6 +124,7 @@ public sealed partial class FilterEditorViewModel : ObservableObject
     public decimal? AtkMin { get => _f.AtkMin; set { if (_f.AtkMin == (int?)value) return; _f.AtkMin = (int?)value; Changed(); } }
     public decimal? AtkMax { get => _f.AtkMax; set { if (_f.AtkMax == (int?)value) return; _f.AtkMax = (int?)value; Changed(); } }
     public bool FaceUpOnly { get => _f.FaceUpOnly; set { if (_f.FaceUpOnly == value) return; _f.FaceUpOnly = value; Changed(); } }
+    public bool PointedToByThisCard { get => _f.PointedToByThisCard; set { if (_f.PointedToByThisCard == value) return; _f.PointedToByThisCard = value; Changed(); } }
     public bool ExcludeThisCard { get => _f.ExcludeThisCard; set { if (_f.ExcludeThisCard == value) return; _f.ExcludeThisCard = value; Changed(); } }
 
     /// <summary>Called when the pack's archetype list changes so the drop-down refreshes.</summary>

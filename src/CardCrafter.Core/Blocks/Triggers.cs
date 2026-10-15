@@ -222,7 +222,13 @@ internal static class Timing
         new("attack", "when an opponent's monster declares an attack"),
         new("summon", "when your opponent Normal or Special Summons a monster"),
         new("any_summon", "when any monster is Summoned"),
+        new("chain_any", "when your opponent activates a card or effect"),
+        new("chain_monster", "when your opponent activates a monster effect"),
+        new("chain_spelltrap", "when your opponent activates a Spell/Trap Card"),
     ];
+
+    /// <summary>True when the effect responds to an activation, so "negate" blocks can be used.</summary>
+    public static bool IsChainTiming(string? code) => code == "EVENT_CHAINING";
 
     public static void Apply(BlockContext ctx, string timing)
     {
@@ -236,6 +242,18 @@ internal static class Timing
                 ctx.Effect.Code = "EVENT_SUMMON_SUCCESS";
                 ctx.Effect.ExtraCodes.Add("EVENT_SPSUMMON_SUCCESS");
                 ctx.Effect.Conditions.Add("eg:IsExists(Card.IsSummonPlayer,1,nil,1-tp)");
+                break;
+            case "chain_any":
+                ctx.Effect.Code = "EVENT_CHAINING";
+                ctx.Effect.Conditions.Add("rp==1-tp");
+                break;
+            case "chain_monster":
+                ctx.Effect.Code = "EVENT_CHAINING";
+                ctx.Effect.Conditions.Add("rp==1-tp and re:IsActiveType(TYPE_MONSTER)");
+                break;
+            case "chain_spelltrap":
+                ctx.Effect.Code = "EVENT_CHAINING";
+                ctx.Effect.Conditions.Add("rp==1-tp and re:IsHasType(EFFECT_TYPE_ACTIVATE)");
                 break;
             case "any_summon":
                 // Normal, Flip or Special Summons by either player, this card included.
@@ -254,6 +272,9 @@ internal static class Timing
         "attack" => "When an opponent's monster declares an attack",
         "summon" => "When your opponent Normal or Special Summons a monster",
         "any_summon" => "When a monster is Normal, Flip or Special Summoned",
+        "chain_any" => "When your opponent activates a card or effect",
+        "chain_monster" => "When your opponent activates a monster effect",
+        "chain_spelltrap" => "When your opponent activates a Spell/Trap Card",
         _ => "",
     };
 }

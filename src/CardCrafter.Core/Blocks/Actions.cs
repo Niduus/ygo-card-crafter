@@ -26,7 +26,7 @@ public abstract class CardGroupAction : ActionBlock
     protected virtual IEnumerable<string> After(string group, FilterRef f) => [];
     protected virtual IEnumerable<string> ExtraCategories(CardFilter f) => [];
     /// <summary>An extra activation check, e.g. free Monster Zones. Also guards the resolution.</summary>
-    protected virtual string? SpaceCheck(int count, CardFilter f) => null;
+    protected virtual string? SpaceCheck(int count, CardFilter f, BlockContext ctx) => null;
     protected abstract Func<CardFilter> DefaultCards { get; }
     protected virtual int MaxCount => 10;
     /// <summary>Wording after the target clause, e.g. "destroy {0}" where {0} is "it" or "them".</summary>
@@ -37,9 +37,15 @@ public abstract class CardGroupAction : ActionBlock
         if (!args.Bool("target")) return null;
         var n = args.Int("count");
         var target = $"target {n} {args.Describe("cards")}";
-        var action = string.Format(System.Globalization.CultureInfo.InvariantCulture, TargetedWording, n == 1 ? "it" : "them");
+        return (target, TargetedAction(args, n == 1 ? "it" : "them", n == 1));
+    }
+
+    /// <summary>What follows the semicolon, e.g. "destroy it". Override when the wording needs more blanks.</summary>
+    protected virtual string TargetedAction(BlockArgs args, string pronoun, bool single)
+    {
+        var action = string.Format(System.Globalization.CultureInfo.InvariantCulture, TargetedWording, pronoun);
         if (Param("position") is not null && args.Describe("position") is { Length: > 0 } pos) action += " " + pos;
-        return (target, action);
+        return action;
     }
 
     public override IReadOnlyList<ParamSpec> Params => _params ??= BuildParams();
@@ -64,9 +70,9 @@ public abstract class CardGroupAction : ActionBlock
         var n = ctx.Args.Int("count");
         var targeting = ctx.Args.Bool("target");
         var e = ctx.Effect;
-        e.AddCategory(Category);
+        if (Category.Length > 0) e.AddCategory(Category);
         foreach (var c in ExtraCategories(filter)) e.AddCategory(c);
-        var space = SpaceCheck(n, filter);
+        var space = SpaceCheck(n, filter, ctx);
         if (space is not null) e.TargetChecks.Add(space);
 
         var g = e.NewLocal("g");
@@ -85,7 +91,7 @@ public abstract class CardGroupAction : ActionBlock
             var tg = e.NewLocal("tg");
             e.TargetLines.Add($"Duel.Hint(HINT_SELECTMSG,tp,{Hint})");
             e.TargetLines.Add($"local {tg}=Duel.SelectTarget(tp,{f.Function},tp,{f.Self},{f.Opp},{n},{n},{f.Exclude},e,tp)");
-            e.TargetLines.Add($"Duel.SetOperationInfo(0,{Category},{tg},{tg}:GetCount(),0,0)");
+            if (Category.Length > 0) e.TargetLines.Add($"Duel.SetOperationInfo(0,{Category},{tg},{tg}:GetCount(),0,0)");
             body.Add($"local {g}=Duel.GetChainInfo(0,CHAININFO_TARGET_CARDS):Filter(Card.IsRelateToEffect,nil,e)");
             body.Add($"local {r}=0");
             body.Add(space is null ? $"if {g}:GetCount()>0 then" : $"if {g}:GetCount()>0 and {space} then");
@@ -93,7 +99,7 @@ public abstract class CardGroupAction : ActionBlock
         else
         {
             e.TargetChecks.Add($"Duel.IsExistingMatchingCard({f.Function},tp,{f.Self},{f.Opp},{n},{f.Exclude},e,tp)");
-            e.TargetLines.Add($"Duel.SetOperationInfo(0,{Category},nil,{n},{f.InfoPlayer},{f.InfoLocation})");
+            if (Category.Length > 0) e.TargetLines.Add($"Duel.SetOperationInfo(0,{Category},nil,{n},{f.InfoPlayer},{f.InfoLocation})");
             body.Add($"local {r}=0");
             if (space is not null) body.Add($"if {space} then");
             var ind = space is null ? "" : "\t";
@@ -136,7 +142,7 @@ public sealed class SpecialSummonAction : CardGroupAction
     protected override string TargetedWording => "Special Summon {0}";
     public override string Id => "do.special_summon";
     public override string Name => "Special Summon monsters";
-    public override string Sentence => "Special Summon {count} {cards} {target} {position}";
+    public override string Sentence => "Special Summon {count} {cards} {target} {position} {zone}";
     protected override string Category => "CATEGORY_SPECIAL_SUMMON";
     protected override string Hint => "HINTMSG_SPSUMMON";
     protected override int MaxCount => 5;
@@ -149,7 +155,14 @@ public sealed class SpecialSummonAction : CardGroupAction
             new("faceup", "", "face-up"),
             new("attack", "in Attack Position"),
             new("defense", "in Defense Position")),
+        ParamSpec.Choice("zone", "Zone", new("any", "", "to any zone"), new("pointed", "to a zone this card points to")),
     ];
+
+    protected override string TargetedAction(BlockArgs args, string pronoun, bool single)
+    {
+        var text = base.TargetedAction(args, pronoun, single);
+        return args.Describe("zone") is { Length: > 0 } z ? $"{text} {z}" : text;
+    }
 
     protected override string? AbleCheck(BlockContext ctx) => "c:IsCanBeSpecialSummoned(e,0,tp,false,false)";
 
@@ -161,13 +174,26 @@ public sealed class SpecialSummonAction : CardGroupAction
             "defense" => "POS_FACEUP_DEFENSE",
             _ => "POS_FACEUP",
         };
-        return $"Duel.SpecialSummon({g},0,tp,tp,false,false,{pos})";
+        return PointsTo(ctx)
+            ? $"Duel.SpecialSummon({g},0,tp,tp,false,false,{pos},e:GetHandler():GetLinkedZone(tp))"
+            : $"Duel.SpecialSummon({g},0,tp,tp,false,false,{pos})";
     }
 
-    protected override string? SpaceCheck(int count, CardFilter f) =>
-        f.Zones == Zone.ExtraDeck
-            ? $"Duel.GetLocationCountFromEx(tp)>={count}"
-            : $"Duel.GetLocationCount(tp,LOCATION_MZONE)>={count}";
+    protected override string? SpaceCheck(int count, CardFilter f, BlockContext ctx) =>
+        PointsTo(ctx)
+            ? $"Duel.GetLocationCount(tp,LOCATION_MZONE,tp,LOCATION_REASON_TOFIELD,e:GetHandler():GetLinkedZone(tp))>={count}"
+            : f.Zones == Zone.ExtraDeck
+                ? $"Duel.GetLocationCountFromEx(tp)>={count}"
+                : $"Duel.GetLocationCount(tp,LOCATION_MZONE)>={count}";
+
+    private static bool PointsTo(BlockContext ctx) => ctx.Args.Choice("zone") == "pointed";
+
+    public override void Compile(BlockContext ctx)
+    {
+        if (PointsTo(ctx) && !ctx.Card.IsLink)
+            ctx.Effect.Error("\"To a zone this card points to\" needs this card to be a Link monster.");
+        base.Compile(ctx);
+    }
 }
 
 public sealed class DestroyAction : CardGroupAction

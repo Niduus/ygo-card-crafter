@@ -11,9 +11,9 @@
 //   card <code> <player> <location> [count]
 //                                      put cards in place before the duel; location is
 //                                      deck|hand|mzone|szone|grave|removed|extra
-//   activate <code> [times]            player 0 activates this card's effects whenever offered
-//   summon <code>                      player 0 Normal Summons this card when it can
-//   spsummon <code>                    player 0 uses this card's summon procedure when it can
+//   activate <code> [times]            whoever controls this card activates its effects whenever offered
+//   summon <code>                      its controller Normal Summons this card when it can
+//   spsummon <code>                    its controller uses this card's summon procedure when it can
 //   turns <n>                          how many turns to play before checking (default 1)
 //   check <lua expression>             must be true after the last turn; player 0 is "0"
 //   expect_activations <n>             how many activations must have happened (default: no check)
@@ -181,7 +181,7 @@ static void respond(intptr_t pd, Scenario& sc) {
 	uint8_t b[64]{};
 	switch (unit.type) {
 	case PROCESSOR_SELECT_IDLECMD: {
-		if (player == 0) {
+		{
 			for (size_t i = 0; i < f->core.select_chains.size(); ++i) {
 				card* c = f->core.select_chains[i].triggering_effect->get_handler();
 				if (wants(sc, c)) { used(sc, c); set_responsei(pd, 5 | (int32_t)(i << 16)); return; }
@@ -215,11 +215,9 @@ static void respond(intptr_t pd, Scenario& sc) {
 				return;
 			}
 		}
-		if (player == 0) {
-			for (size_t i = 0; i < f->core.select_chains.size(); ++i) {
-				card* c = f->core.select_chains[i].triggering_effect->get_handler();
-				if (wants(sc, c)) { used(sc, c); set_responsei(pd, (int32_t)i); return; }
-			}
+		for (size_t i = 0; i < f->core.select_chains.size(); ++i) {
+			card* c = f->core.select_chains[i].triggering_effect->get_handler();
+			if (wants(sc, c)) { used(sc, c); set_responsei(pd, (int32_t)i); return; }
 		}
 		set_responsei(pd, -1);
 		return;
@@ -227,7 +225,7 @@ static void respond(intptr_t pd, Scenario& sc) {
 	case PROCESSOR_SELECT_EFFECTYN: {
 		// "Activate this optional effect?" for a single trigger: yes only for cards the scenario wants.
 		card* c = (card*)unit.ptarget;
-		if (player == 0 && c && wants(sc, c)) { used(sc, c); set_responsei(pd, 1); }
+		if (c && wants(sc, c)) { used(sc, c); set_responsei(pd, 1); }
 		else set_responsei(pd, 0);
 		return;
 	}

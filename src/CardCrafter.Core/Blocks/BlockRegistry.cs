@@ -15,11 +15,15 @@ public static class BlockRegistry
         new DestroysByBattleTrigger(),
         new FlipTrigger(),
         new PhaseTrigger(),
+        new UsedAsMaterialTrigger(),
         new WhileFaceUpTrigger(),
         // IF
         new CardsExistCondition(),
         new NoCardsCondition(),
         new SummonedThisTurnCondition(),
+        new LinkedCondition(),
+        new PointsToCondition(),
+        new MaterialsCondition(),
         new OpponentMoreMonstersCondition(),
         new LifePointsCondition(),
         new TurnCondition(),
@@ -30,6 +34,7 @@ public static class BlockRegistry
         new SelfCost(),
         new TributeCost(),
         new MoveCardsCost(),
+        new DetachCost(),
         // DO
         new DrawAction(),
         new AddToHandAction(),
@@ -43,12 +48,19 @@ public static class BlockRegistry
         new DamageAction(),
         new GainLifePointsAction(),
         new ChangeSelfStatsAction(),
+        new NegateAction(),
+        new NegateCardEffectsAction(),
+        new ChangeStatsAction(),
+        new SetSpellTrapAction(),
+        new MillAction(),
+        new ThisCardAction(),
         // DO (lasting)
         new BoostCardsPassive(),
         new SelfStatsPassive(),
         new IndestructiblePassive(),
         new UntargetablePassive(),
         new BattleAbilityPassive(),
+        new ProtectCardsPassive(),
     ];
 
     private static readonly Dictionary<string, BlockDefinition> ById = All.ToDictionary(b => b.Id);

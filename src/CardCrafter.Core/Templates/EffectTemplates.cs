@@ -175,6 +175,53 @@ public static class EffectTemplates
         },
         new()
         {
+            Name = "Negate an activation", LikeCard = "Ash Blossom & Joyous Spring", For = CardKind.Monster, Group = "Hand traps",
+            Description = "When your opponent activates a card or effect: discard this card; negate the activation, and if you do, destroy that card.",
+            Create = () => new EffectEvent
+            {
+                Label = "Negate", When = B("when.quick").With("timing", "chain_any").With("zone", "hand"), Limit = OncePerTurn.Hard,
+                Cost = [B("cost.this_card").With("how", "discard")],
+                Do = [B("do.negate").With("what", "activation").With("and", "destroy")],
+            },
+        },
+        new()
+        {
+            Name = "Negate a monster's effects", LikeCard = "Effect Veiler", For = CardKind.Monster, Group = "Hand traps",
+            Description = "(Quick Effect) Discard this card, then target 1 face-up monster your opponent controls; negate its effects until the end of this turn.",
+            Create = () => new EffectEvent
+            {
+                Label = "Veil", When = B("when.quick").With("zone", "hand"),
+                Cost = [B("cost.this_card").With("how", "discard")],
+                Do = [B("do.negate_effects").With("target", true)],
+            },
+        },
+        new()
+        {
+            Name = "Link support", LikeCard = "Link Arrow boosters", For = CardKind.Monster, Group = "Extra Deck",
+            Description = "A Link monster: monsters this card points to gain 500 ATK and can't be destroyed by battle.",
+            Create = () => new EffectEvent
+            {
+                Label = "Support", When = B("when.while_face_up"),
+                Do =
+                [
+                    B("passive.boost_cards").With("cards", new CardFilter { Owner = CardOwner.Either, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster, PointedToByThisCard = true }),
+                    B("passive.protect_cards").With("cards", new CardFilter { Owner = CardOwner.Either, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster, PointedToByThisCard = true }),
+                ],
+            },
+        },
+        new()
+        {
+            Name = "Detach to destroy", LikeCard = "Rank 4 Xyz removal", For = CardKind.Monster, Group = "Extra Deck",
+            Description = "An Xyz monster: detach 1 material, then target 1 card your opponent controls; destroy it.",
+            Create = () => new EffectEvent
+            {
+                Label = "Detach", When = B("when.ignition"), Limit = OncePerTurn.Soft,
+                Cost = [B("cost.detach")],
+                Do = [B("do.destroy").With("target", true)],
+            },
+        },
+        new()
+        {
             Name = "Standby heal", LikeCard = "Solemn Wishes", For = CardKind.Spell, Group = "Spells",
             Description = "During your Standby Phase: gain 500 LP. Put it on a Continuous Spell.",
             Create = () => new EffectEvent

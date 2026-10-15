@@ -20,7 +20,18 @@ public class TemplateTests
                 SpellKind = t.Name switch { "Type boost field" => SpellKind.Field, "Standby heal" => SpellKind.Continuous, "Destroy a Spell/Trap" => SpellKind.QuickPlay, _ => SpellKind.Normal },
             },
             CardKind.Trap => new CardData { Id = 100000601, Name = t.LikeCard, Kind = CardKind.Trap },
-            _ => new CardData { Id = 100000602, Name = t.LikeCard },
+            _ => t.Name switch
+            {
+                "Link support" => new CardData { Id = 100000603, Name = t.LikeCard, Frame = MonsterFrame.Link, LinkMarkers = LinkMarker.Left | LinkMarker.Right },
+                "Detach to destroy" => new CardData { Id = 100000604, Name = t.LikeCard, Frame = MonsterFrame.Xyz, Level = 4 },
+                _ => new CardData { Id = 100000602, Name = t.LikeCard },
+            },
+        },
+        Procedure = t.Name switch
+        {
+            "Link support" => new SummonProcedure { Kind = SummonProcedureKind.Link, MinMaterials = 2 },
+            "Detach to destroy" => new SummonProcedure { Kind = SummonProcedureKind.Xyz, MinMaterials = 2 },
+            _ => new SummonProcedure(),
         },
         Effects = [t.Create()],
     };

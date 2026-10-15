@@ -39,6 +39,8 @@ public sealed class CardFilter
     public int? AtkMax { get; set; }
     public bool FaceUpOnly { get; set; }
     public bool ExcludeThisCard { get; set; }
+    /// <summary>Only cards in the zones this Link monster's arrows point to.</summary>
+    public bool PointedToByThisCard { get; set; }
 
     public CardFilter Clone() => (CardFilter)MemberwiseClone();
 

@@ -55,6 +55,7 @@ public static class FilterCompiler
         if (f.LevelMax is { } lmax) parts.Add($"{card}:IsLevelBelow({lmax})");
         if (f.AtkMin is { } amin) parts.Add($"{card}:IsAttackAbove({amin})");
         if (f.AtkMax is { } amax) parts.Add($"{card}:IsAttackBelow({amax})");
+        if (f.PointedToByThisCard) parts.Add($"e:GetHandler():GetLinkedGroup():IsContains({card})");
         if (f.FaceUpOnly)
         {
             var onlyPublicZones = (f.Zones & ~(Zone.Field | Zone.Banished)) == Zone.None;

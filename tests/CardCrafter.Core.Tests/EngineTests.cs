@@ -144,6 +144,183 @@ public class EngineTests
     }
 
     [EngineFact]
+    public void Negate_StopsTheOpponentsSpell_AndDestroysIt()
+    {
+        var pot = Samples.PotOfGreedClone();
+        var ash = new CardProject
+        {
+            Card = new CardData { Id = 100000240, Name = "Hand Trap", Level = 3, Atk = 0, Def = 1800 },
+            Effects =
+            [
+                new EffectEvent
+                {
+                    When = new BlockInstance("when.quick").With("timing", "chain_any").With("zone", "hand"),
+                    Cost = [new BlockInstance("cost.this_card").With("how", "discard")],
+                    Do = [new BlockInstance("do.negate").With("what", "activation").With("and", "destroy")],
+                    Limit = OncePerTurn.Hard,
+                },
+            ],
+        };
+        new EngineScenario(pot, ash)
+            .Card(ash.Card.Id, 0, "hand").Card(Warrior, 0, "deck", 5)
+            .Card(pot.Card.Id, 1, "hand").Card(Warrior, 1, "deck", 5)
+            .Activate(ash.Card.Id).Activate(pot.Card.Id)
+            .Turns(2)
+            .ExpectActivations(2)
+            // The opponent drew 1 for turn, played the Spell, and drew nothing from it.
+            .Check("Duel.GetFieldGroupCount(1,LOCATION_HAND,0)==1")
+            .Check($"Duel.IsExistingMatchingCard(Card.IsCode,1,LOCATION_GRAVE,0,1,nil,{pot.Card.Id})")
+            .Check($"Duel.IsExistingMatchingCard(Card.IsCode,0,LOCATION_GRAVE,0,1,nil,{ash.Card.Id})")
+            .AssertPasses();
+    }
+
+    private static CardProject LinkCard(params EffectEvent[] effects) => new()
+    {
+        Card = new CardData { Id = 100000250, Name = "Arrow Keeper", Frame = MonsterFrame.Link, Atk = 1500, LinkMarkers = LinkMarker.Left | LinkMarker.Right },
+        Procedure = new SummonProcedure { Kind = SummonProcedureKind.Link, MinMaterials = 2 },
+        Effects = [.. effects],
+    };
+
+    [EngineFact]
+    public void LinkArrows_BoostAndProtectTheMonstersThisCardPointsTo()
+    {
+        var pointed = new CardFilter { Owner = CardOwner.Either, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster, PointedToByThisCard = true };
+        var link = LinkCard(new EffectEvent
+        {
+            When = new BlockInstance("when.while_face_up"),
+            Do =
+            [
+                new BlockInstance("passive.boost_cards").With("cards", pointed).With("amount", 500),
+                new BlockInstance("passive.protect_cards").With("cards", pointed.Clone()).With("by", "both"),
+            ],
+        });
+        // Zones 0, 1, 2: Warrior, the Link monster (arrows left and right), Warrior. Zone 3: Warrior it doesn't point to.
+        new EngineScenario(link)
+            .Card(Warrior, 0, "mzone").Card(link.Card.Id, 0, "mzone").Card(Warrior, 0, "mzone").Card(Warrior, 0, "mzone")
+            .Card(Warrior, 0, "deck", 3)
+            .Check("Duel.GetFieldCard(0,LOCATION_MZONE,0):GetAttack()==2000")
+            .Check("Duel.GetFieldCard(0,LOCATION_MZONE,2):GetAttack()==2000")
+            .Check("Duel.GetFieldCard(0,LOCATION_MZONE,3):GetAttack()==1500")
+            .Check("Duel.GetFieldCard(0,LOCATION_MZONE,0):IsHasEffect(EFFECT_INDESTRUCTABLE_BATTLE)~=nil")
+            .Check("Duel.GetFieldCard(0,LOCATION_MZONE,3):IsHasEffect(EFFECT_INDESTRUCTABLE_BATTLE)==nil")
+            .AssertPasses();
+    }
+
+    [EngineFact]
+    public void LinkArrows_ConditionsAndSummoningToAPointedZone()
+    {
+        var link = LinkCard(new EffectEvent
+        {
+            When = new BlockInstance("when.ignition"),
+            If = [new BlockInstance("if.points_to").With("count", 1)],
+            Do = [new BlockInstance("do.special_summon").With("zone", "pointed")
+                .With("cards", new CardFilter { Zones = Zone.Graveyard, CardType = FilterCardType.Monster })],
+        });
+        // The Link monster is in zone 0 pointing left (nothing) and right (zone 1, a Warrior). Zone 2 is empty but not pointed to,
+        // so the summon has nowhere to go after the Warrior moves... it must land in a pointed zone only.
+        new EngineScenario(link)
+            .Card(link.Card.Id, 0, "mzone").Card(Warrior, 0, "mzone")
+            .Card(Dragon, 0, "grave").Card(Warrior, 0, "deck", 3)
+            .Activate(link.Card.Id)
+            .ExpectActivations(0)
+            .AssertPasses();
+
+        var link2 = LinkCard(new EffectEvent
+        {
+            When = new BlockInstance("when.ignition"),
+            If = [new BlockInstance("if.linked").With("state", "unlinked")],
+            Do = [new BlockInstance("do.special_summon").With("zone", "pointed")
+                .With("cards", new CardFilter { Zones = Zone.Graveyard, CardType = FilterCardType.Monster })],
+        });
+        // Alone in zone 0, unlinked: the Dragon must be summoned into zone 1, the only zone it points to.
+        new EngineScenario(link2)
+            .Card(link2.Card.Id, 0, "mzone").Card(Dragon, 0, "grave").Card(Warrior, 0, "deck", 3)
+            .Activate(link2.Card.Id)
+            .ExpectActivations(1)
+            .Check("Duel.GetFieldCard(0,LOCATION_MZONE,1)~=nil and Duel.GetFieldCard(0,LOCATION_MZONE,1):IsCode(1002)")
+            .AssertPasses();
+    }
+
+    [EngineFact]
+    public void Xyz_DetachMaterialAsCost()
+    {
+        var xyz = new CardProject
+        {
+            Card = new CardData { Id = 100000260, Name = "Rank 4 Drawer", Frame = MonsterFrame.Xyz, Level = 4, Atk = 2000, Def = 2000 },
+            Procedure = new SummonProcedure { Kind = SummonProcedureKind.Xyz, MinMaterials = 2 },
+            Effects =
+            [
+                new EffectEvent
+                {
+                    When = new BlockInstance("when.ignition"),
+                    If = [new BlockInstance("if.xyz_materials").With("count", 2)],
+                    Cost = [new BlockInstance("cost.detach").With("count", 1)],
+                    Do = [new BlockInstance("do.draw").With("count", 1)],
+                    Limit = OncePerTurn.Soft,
+                },
+            ],
+        };
+        new EngineScenario(xyz)
+            .Card(Warrior, 0, "mzone", 2).Card(xyz.Card.Id, 0, "extra").Card(Warrior, 0, "deck", 3)
+            .SpSummon(xyz.Card.Id).Activate(xyz.Card.Id)
+            .ExpectActivations(1)
+            .Check("Duel.GetFieldGroupCount(0,LOCATION_HAND,0)==1")
+            .Check("Duel.GetFieldGroupCount(0,LOCATION_GRAVE,0)==1")
+            .AssertPasses();
+    }
+
+    [EngineFact]
+    public void UsedAsMaterialTrigger_Fires()
+    {
+        var mat = new CardProject
+        {
+            Card = new CardData { Id = 100000270, Name = "Eager Material", Level = 4, Atk = 1000 },
+            Effects =
+            [
+                new EffectEvent
+                {
+                    When = new BlockInstance("when.used_as_material").With("kind", "link"),
+                    Do = [new BlockInstance("do.draw").With("count", 1)],
+                },
+            ],
+        };
+        var xyz = new CardProject
+        {
+            Card = new CardData { Id = 100000271, Name = "Link Two", Frame = MonsterFrame.Link, Atk = 1600, LinkMarkers = LinkMarker.Left | LinkMarker.Right },
+            Procedure = new SummonProcedure { Kind = SummonProcedureKind.Link, MinMaterials = 2 },
+        };
+        new EngineScenario(mat, xyz)
+            .Card(mat.Card.Id, 0, "mzone").Card(Warrior, 0, "mzone").Card(xyz.Card.Id, 0, "extra").Card(Warrior, 0, "deck", 3)
+            .SpSummon(xyz.Card.Id).Activate(mat.Card.Id)
+            .ExpectActivations(1)
+            .Check("Duel.GetFieldGroupCount(0,LOCATION_HAND,0)==1")
+            .AssertPasses();
+    }
+
+    [EngineFact]
+    public void NegateEffects_LastsWhileFaceUp()
+    {
+        var card = new CardProject
+        {
+            Card = new CardData { Id = 100000280, Name = "Silencer", Level = 4 },
+            Effects =
+            [
+                new EffectEvent
+                {
+                    When = new BlockInstance("when.ignition"),
+                    Do = [new BlockInstance("do.negate_effects").With("target", true).With("duration", "always")],
+                },
+            ],
+        };
+        new EngineScenario(card)
+            .Card(card.Card.Id, 0, "mzone").Card(EffectFiller, 1, "mzone").Card(Warrior, 0, "deck", 3)
+            .Activate(card.Card.Id)
+            .ExpectActivations(1)
+            .Check("Duel.GetFieldCard(1,LOCATION_MZONE,0):IsDisabled()")
+            .AssertPasses();
+    }
+
+    [EngineFact]
     public void HardOncePerTurn_IsEnforced()
     {
         var pot = Samples.PotOfGreedClone();
@@ -241,8 +418,9 @@ public class EngineTests
             .AssertPasses();
     }
 
+    // Negation needs an opponent's activation to respond to, so it has its own duel below.
     public static IEnumerable<object[]> DoBlocks() =>
-        BlockRegistry.OfKind(BlockKind.Action).Select(b => new object[] { b.Id, false })
+        BlockRegistry.OfKind(BlockKind.Action).Where(b => b.Id != "do.negate").Select(b => new object[] { b.Id, false })
             .Concat(BlockRegistry.OfKind(BlockKind.Action).Where(b => b.Param("target") is not null).Select(b => new object[] { b.Id, true }));
 
     /// <summary>Every DO block, with its default settings, activated from a monster on a well-stocked board.</summary>
@@ -267,15 +445,16 @@ public class EngineTests
         };
         new EngineScenario(card)
             .Card(card.Card.Id, 0, fromHand ? "hand" : "mzone")
-            .Card(Warrior, 0, "deck", 6).Card(Warrior, 0, "grave", 2).Card(Spell, 0, "hand", 1)
-            .Card(Fiend, 1, "mzone", 2).Card(Warrior, 1, "deck", 3).Card(Warrior, 1, "grave", 2)
+            .Card(Warrior, 0, "deck", 6).Card(Trap, 0, "deck", 2).Card(Warrior, 0, "grave", 2).Card(Trap, 0, "grave", 1).Card(Spell, 0, "hand", 1)
+            .Card(Fiend, 1, "mzone", 1).Card(EffectFiller, 1, "mzone", 1).Card(Warrior, 1, "deck", 3).Card(Warrior, 1, "grave", 2)
             .Activate(card.Card.Id)
             .ExpectActivations(1)
             .AssertPasses();
     }
 
     public static IEnumerable<object[]> CostBlocks() =>
-        BlockRegistry.OfKind(BlockKind.Cost).SelectMany(def =>
+        // Detaching needs an Xyz monster with materials; Xyz_DetachMaterialAsCost covers it.
+        BlockRegistry.OfKind(BlockKind.Cost).Where(b => b.Id != "cost.detach").SelectMany(def =>
             new[] { def.CreateInstance() }
                 .Concat(def.Params.Where(p => p.Type == ParamType.Choice).SelectMany(p => p.Choices.Skip(1).Select(c => def.CreateInstance().With(p.Key, c.Value))))
                 .Select(inst => new object[] { def.Id, string.Join(",", inst.Values.Select(kv => $"{kv.Key}={kv.Value}")) }));
@@ -363,6 +542,20 @@ public class EngineTemplateTests
             case "Revive itself from GY": s.Card(id, 0, "grave").ExpectActivations(1).Check($"Duel.IsExistingMatchingCard(Card.IsCode,0,LOCATION_MZONE,0,1,nil,{id})"); break;
             case "Discard to search": s.Card(id, 0, "hand").ExpectActivations(1).Check("Duel.IsExistingMatchingCard(Card.IsCode,0,LOCATION_HAND,0,1,nil,1003)"); break;
             case "Quick banish from GY": s.Card(id, 0, "mzone").ExpectActivations(1).Check("Duel.GetFieldGroupCount(1,LOCATION_REMOVED,0)==1"); break;
+            case "Negate an activation":
+                // Played for real in Negate_StopsTheOpponentsSpell_AndDestroysIt; here it must load and wait.
+                s.Card(id, 0, "hand").ExpectActivations(0); break;
+            case "Negate a monster's effects":
+                // "Until the end of this turn" has worn off by the time checks run, so check it resolved.
+                s.Card(id, 0, "hand").Card(EffectFiller, 1, "mzone").ExpectActivations(1)
+                    .Check($"Duel.IsExistingMatchingCard(Card.IsCode,0,LOCATION_GRAVE,0,1,nil,{id})");
+                break;
+            case "Link support":
+                s.Card(Warrior, 0, "mzone").Card(id, 0, "mzone").ExpectActivations(0)
+                    .Check("Duel.GetFieldCard(0,LOCATION_MZONE,0):GetAttack()==2000");
+                break;
+            case "Detach to destroy":
+                s.Card(id, 0, "mzone").Card(Fiend, 1, "mzone").ExpectActivations(0); break;
             case "Battle protection": s.Card(id, 0, "mzone").ExpectActivations(0).Check("Duel.GetFieldCard(0,LOCATION_MZONE,0):IsHasEffect(EFFECT_INDESTRUCTABLE_BATTLE)~=nil"); break;
             case "Destroy an attacker":
             case "Banish on summon":
