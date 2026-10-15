@@ -258,7 +258,7 @@ public static partial class EffectTextGenerator
         string head;
         if (cond.Length == 0) head = when;
         // "If your opponent controls a card, you can activate this card from your hand": a rule, not a lasting "while".
-        else if (when.Length == 0) head = Clause(cond, passive && !effect.Do.All(b => b.BlockId == ActivateFromHandPassive.BlockId) ? "while" : "if");
+        else if (when.Length == 0) head = Clause(cond, passive && !effect.Do.All(b => b.BlockId is ActivateFromHandPassive.BlockId or NoTributeSummonPassive.BlockId) ? "while" : "if");
         else head = $"{when} {Clause(cond, "while")}";
 
         if (trigger is QuickTrigger) head = head.Length == 0 ? "(Quick Effect)" : $"{head} (Quick Effect)";

@@ -41,6 +41,11 @@ public static class BlockRegistry
         new CardPresentCondition(),
         new ThisCardEventsTrigger(),
         new OpponentSpecialSummonsAction(),
+        new FusionSummonAction(),
+        new AttackTargetsPassive(),
+        new NotDestroyedOncePassive(),
+        new NoTributeSummonPassive(),
+        new NameBecomesPassive(),
         new OpponentActivatedCondition(),
         new ZoneCondition(),
         // COST

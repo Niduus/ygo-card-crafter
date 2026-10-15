@@ -19,7 +19,12 @@ public sealed class ImmunePassive : PassiveBlock
             new("other", "other cards' effects"),
             new("spelltrap", "Spell/Trap effects"),
             new("monster", "other monsters' effects"),
-            new("opp_monster", "your opponent's monster effects")),
+            new("opp_monster", "your opponent's monster effects"),
+            new("spell", "Spell effects"),
+            new("trap", "Trap effects"),
+            new("opp_spell", "your opponent's Spell effects"),
+            new("opp_trap", "your opponent's Trap effects"),
+            new("opp_activated", "your opponent's activated effects")),
     ];
 
     public override void Compile(BlockContext ctx)
@@ -30,6 +35,11 @@ public sealed class ImmunePassive : PassiveBlock
             "spelltrap" => "te:IsActiveType(TYPE_SPELL+TYPE_TRAP)",
             "monster" => "te:IsActiveType(TYPE_MONSTER) and te:GetOwner()~=e:GetOwner()",
             "opp_monster" => "te:IsActiveType(TYPE_MONSTER) and te:GetOwnerPlayer()~=e:GetHandlerPlayer()",
+            "spell" => "te:IsActiveType(TYPE_SPELL)",
+            "trap" => "te:IsActiveType(TYPE_TRAP)",
+            "opp_spell" => "te:IsActiveType(TYPE_SPELL) and te:GetOwnerPlayer()~=e:GetHandlerPlayer()",
+            "opp_trap" => "te:IsActiveType(TYPE_TRAP) and te:GetOwnerPlayer()~=e:GetHandlerPlayer()",
+            "opp_activated" => "te:GetOwnerPlayer()~=e:GetHandlerPlayer() and te:IsActivated()",
             _ => "te:GetOwnerPlayer()~=e:GetHandlerPlayer()",
         };
         var fn = ctx.Script.AddFunction("immval", "e,te", [$"return {test}"]);
@@ -336,7 +346,8 @@ public sealed class SummonedByCondition : ConditionBlock
             new("link", "Link Summoned"), new("synchro", "Synchro Summoned"), new("xyz", "Xyz Summoned"),
             new("fusion", "Fusion Summoned"), new("ritual", "Ritual Summoned"), new("pendulum", "Pendulum Summoned"),
             new("normal", "Normal Summoned"), new("tribute", "Tribute Summoned"), new("from_hand", "Special Summoned from the hand"),
-            new("from_gy", "Special Summoned from the GY"), new("from_extra", "Special Summoned from the Extra Deck")),
+            new("from_gy", "Special Summoned from the GY"), new("from_extra", "Special Summoned from the Extra Deck"),
+            new("self", "Special Summoned by its own effect", "Special Summoned by its own effect or procedure (\"this way\")")),
     ];
 
     public override string Describe(BlockArgs args) => $"this card was {args.Describe("how")}";
@@ -353,6 +364,7 @@ public sealed class SummonedByCondition : ConditionBlock
         "from_hand" => "e:GetHandler():IsSummonType(SUMMON_TYPE_SPECIAL) and e:GetHandler():IsSummonLocation(LOCATION_HAND)",
         "from_gy" => "e:GetHandler():IsSummonType(SUMMON_TYPE_SPECIAL) and e:GetHandler():IsSummonLocation(LOCATION_GRAVE)",
         "from_extra" => "e:GetHandler():IsSummonType(SUMMON_TYPE_SPECIAL) and e:GetHandler():IsSummonLocation(LOCATION_EXTRA)",
+        "self" => "e:GetHandler():GetSummonType()==SUMMON_TYPE_SPECIAL+SUMMON_VALUE_SELF",
         _ => "e:GetHandler():IsSummonType(SUMMON_TYPE_LINK)",
     };
 
@@ -398,25 +410,51 @@ public sealed class SelfStatsPerCardPassive : PassiveBlock
     public override string Id => "passive.self_stats_per";
     public override string Group => "This card";
     public override string Name => "This card gains ATK/DEF for each card";
-    public override string Sentence => "This card {dir} {amount} {stat} for each {cards}";
+    public override string Sentence => "This card {dir} {amount} {stat} for each {per} {cards}";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Choice("dir", "Gains/loses", new("gain", "gains"), new("lose", "loses")),
         ParamSpec.Int("amount", "Amount", 300, 1, 99999),
         ParamSpec.Choice("stat", "Stat", new("atk", "ATK"), new("def", "DEF"), new("both", "ATK/DEF")),
-        ParamSpec.Cards("cards", "For each", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Graveyard, CardType = FilterCardType.Monster }),
+        ParamSpec.Choice("per", "For each",
+            new("cards", "", "card picked below"),
+            new("materials", "material attached to it", "material attached to it (Xyz)"),
+            new("level", "Level it has", "of its Levels (Level x amount)"),
+            new("linked", "monster it points to", "monster it points to (Link)"),
+            new("counters", "counter on it", "counter on it")),
+        ParamSpec.Cards("cards", "For each card (when \"card picked below\")", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Graveyard, CardType = FilterCardType.Monster }),
     ];
 
-    public override string Describe(BlockArgs args) =>
-        $"this card {args.Describe("dir")} {args.Int("amount")} {args.Describe("stat")} for each {Text.FilterText.Describe(args.Cards("cards"), args.Pack, preposition: "in", ownName: args.CardName)}";
+    public override string Describe(BlockArgs args)
+    {
+        var head = $"this card {args.Describe("dir")} {args.Int("amount")} {args.Describe("stat")}";
+        return args.Choice("per") switch
+        {
+            "materials" => $"{head} for each material attached to it",
+            "level" => $"{head} for each of its Levels",
+            "linked" => $"{head} for each monster it points to",
+            "counters" => $"{head} for each counter on it",
+            _ => $"{head} for each {Text.FilterText.Describe(args.Cards("cards"), args.Pack, preposition: "in", ownName: args.CardName)}",
+        };
+    }
 
     public override void Compile(BlockContext ctx)
     {
         Zones.RequireMonster(ctx, Name);
-        var f = ctx.Script.Filter(ctx.Args.Cards("cards"));
-        var amount = ctx.Args.Int("amount") * (ctx.Args.Choice("dir") == "lose" ? -1 : 1);
-        var value = ctx.Script.AddFunction("perval", "e,c",
-            [$"return Duel.GetMatchingGroupCount({f.Function},e:GetHandlerPlayer(),{f.Self},{f.Opp},{(f.Exclude == "nil" ? "nil" : "e:GetHandler()")},e,e:GetHandlerPlayer())*{amount.ToString(System.Globalization.CultureInfo.InvariantCulture)}"]);
+        var amount = (ctx.Args.Int("amount") * (ctx.Args.Choice("dir") == "lose" ? -1 : 1)).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        string count;
+        switch (ctx.Args.Choice("per"))
+        {
+            case "materials": count = "c:GetOverlayCount()"; break;
+            case "level": count = "c:GetLevel()"; break;
+            case "linked": count = "c:GetLinkedGroupCount()"; break;
+            case "counters": count = "c:GetCounter(0)"; break;
+            default:
+                var f = ctx.Script.Filter(ctx.Args.Cards("cards"));
+                count = $"Duel.GetMatchingGroupCount({f.Function},e:GetHandlerPlayer(),{f.Self},{f.Opp},{(f.Exclude == "nil" ? "nil" : "e:GetHandler()")},e,e:GetHandlerPlayer())";
+                break;
+        }
+        var value = ctx.Script.AddFunction("perval", "e,c", [$"return {count}*{amount}"]);
         var codes = ctx.Args.Choice("stat") switch
         {
             "def" => new[] { "EFFECT_UPDATE_DEFENSE" },

@@ -170,8 +170,10 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
         lines.Add($"{Var}:SetCondition({Script.AddFunction(Var + "con", "e,c", con)})");
         if (payLines.Count > 0)
             lines.Add($"{Var}:SetOperation({Script.AddFunction(Var + "op", "e,tp,eg,ep,ev,re,r,rp,c", payLines)})");
-        if (ProcedureZone is not null)
-            lines.Add($"{Var}:SetValue({Script.AddFunction(Var + "zone", "e,c", [$"return 0,{ProcedureZone}"])})");
+        // "Special Summoned this way": the Summon carries SUMMON_VALUE_SELF, as official procedures do.
+        lines.Add(ProcedureZone is not null
+            ? $"{Var}:SetValue({Script.AddFunction(Var + "zone", "e,c", [$"return SUMMON_VALUE_SELF,{ProcedureZone}"])})"
+            : $"{Var}:SetValue(SUMMON_VALUE_SELF)");
         lines.Add($"c:RegisterEffect({Var})");
         return lines;
     }

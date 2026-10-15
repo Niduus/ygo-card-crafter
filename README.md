@@ -144,6 +144,26 @@ Tributed", "If this card is sent to the GY or banished", "If this card is destro
 one effect, so its once per turn covers every event, and each event keeps its own check. Translated cards whose
 copies differ only in their event become this block.
 
+**Colour-coded card browser.** Every effect of a browsed card says what became of it, in colour, and quotes the
+sentence of the card's text it stands for:
+- 🟢 **Made into blocks**, with the blocks' text.
+- 🟡 **Done another way**: a Card tab setting (summoning rule, materials, "You can only control 1", Equip to) or
+  something Card Crafter writes itself, such as the card's activation.
+- 🟠 **Not translated yet**: Card Crafter couldn't read the script, but blocks for that kind of effect exist, so it can
+  most likely be built by hand from the quoted text.
+- 🔴 **No block does this**, and why: for example a lasting effect no block gives yet, or a hidden rule that runs on an
+  event.
+
+**More blocks from the official scripts.** **Fusion Summon** (Polymerization: from the hand or field, only the field,
+the hand, Deck too, banishing from the field or GY, or shuffling from the GY), "Once per turn, if this card would be
+destroyed by battle, it is not destroyed" (and "the first time each ... monster would be destroyed each turn"), "Your
+opponent cannot target other monsters you control for attacks", "You can Normal Summon this card without Tributing"
+(with IF blocks for when), "This card's name becomes "X" while on the field or in the GY", "If this card is Special
+Summoned by its own effect" (self Special Summons and procedures now carry SUMMON_VALUE_SELF like official cards),
+"gains ATK for each material attached to it / of its Levels / monster it points to", more "unaffected by" choices
+(Spell, Trap, your opponent's Spells/Traps or activated effects), and Special Summon conditions written out become the
+Card tab's summoning rule.
+
 **A certain card on the field.** The IF block **A certain card is on the field (or somewhere)** reads "if "Dark
 Magician" is on the field", "while you control "Blue-Eyes White Dragon"", "if your opponent does not control ..." or
 "while "Umi" is in a Field Zone", so a Quick Effect or Quick-Play Spell can Special Summon or activate only while that

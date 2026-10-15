@@ -98,14 +98,18 @@ public sealed class SummonedTrigger : SelfTriggerBlock
             new("flip", "Flip"),
             new("any", "Normal, Flip or Special"),
             new("link", "Link"), new("synchro", "Synchro"), new("xyz", "Xyz"),
-            new("fusion", "Fusion"), new("ritual", "Ritual"), new("pendulum", "Pendulum")),
+            new("fusion", "Fusion"), new("ritual", "Ritual"), new("pendulum", "Pendulum"),
+            new("self", "Special", "Special Summoned by its own effect (\"Summoned this way\")")),
         OptionalParam,
     ];
 
     /// <summary>Mitsurugi: "If this card is Normal or Special Summoned, or if this card is Tributed".</summary>
-    public override string Describe(BlockArgs args) => args.Choice("how") == "normal_special_tributed"
-        ? "If this card is Normal or Special Summoned, or if this card is Tributed"
-        : base.Describe(args);
+    public override string Describe(BlockArgs args) => args.Choice("how") switch
+    {
+        "normal_special_tributed" => "If this card is Normal or Special Summoned, or if this card is Tributed",
+        "self" => "If this card is Special Summoned by its own effect",
+        _ => base.Describe(args),
+    };
 
     public override void Compile(BlockContext ctx)
     {
@@ -117,7 +121,7 @@ public sealed class SummonedTrigger : SelfTriggerBlock
             case "flip": Setup(ctx, "EVENT_FLIP_SUMMON_SUCCESS"); break;
             case "normal_or_special": Setup(ctx, "EVENT_SUMMON_SUCCESS", "EVENT_SPSUMMON_SUCCESS"); break;
             case "normal_special_tributed": Setup(ctx, "EVENT_SUMMON_SUCCESS", "EVENT_SPSUMMON_SUCCESS", "EVENT_RELEASE"); break;
-            case "link" or "synchro" or "xyz" or "fusion" or "ritual" or "pendulum":
+            case "link" or "synchro" or "xyz" or "fusion" or "ritual" or "pendulum" or "self":
                 Setup(ctx, "EVENT_SPSUMMON_SUCCESS");
                 ctx.Effect.Conditions.Add(SummonedByCondition.Check(ctx.Args.Choice("how")));
                 break;

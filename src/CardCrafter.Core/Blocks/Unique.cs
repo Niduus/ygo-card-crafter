@@ -806,3 +806,124 @@ public sealed class DeclareNegateAction : ActionBlock
     public override (string Target, string Action)? DescribeTargeting(BlockArgs args) =>
         ("declare 1 card name", "negate the activated effects of cards with that original name until the end of this turn");
 }
+
+/// <summary>
+/// Polymerization and its family: "Fusion Summon 1 Fusion Monster from your Extra Deck, using monsters from your hand
+/// or field as Fusion Material", or by banishing materials from the GY (Miracle Fusion), from the Deck (Fusion Destiny)...
+/// The script is written out like Polymerization's, so it needs no helper from the game's library.
+/// </summary>
+public sealed class FusionSummonAction : ActionBlock
+{
+    public const string BlockId = "do.fusion_summon";
+    public override string Id => BlockId;
+    public override string Group => "Summon";
+    public override string Name => "Fusion Summon a monster";
+    public override string Sentence => "Fusion Summon 1 {cards} from your Extra Deck, {mats} (materials: {matcards})";
+    public override string Help => "Polymerization's effect. Pick the Fusion Monster (an archetype, an Attribute...), where the materials come from, and " +
+                                   "which monsters may be materials.";
+    public override IReadOnlyList<ParamSpec> Params { get; } =
+    [
+        ParamSpec.Cards("cards", "Fusion Monster", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.ExtraDeck, CardType = FilterCardType.Monster, MonsterKind = MonsterKind.Fusion }, Zone.ExtraDeck),
+        ParamSpec.Choice("mats", "Materials",
+            new("hand_field", "using monsters from your hand or field as Fusion Material"),
+            new("field", "using monsters you control as Fusion Material"),
+            new("hand", "using monsters from your hand as Fusion Material"),
+            new("hand_field_deck", "using monsters from your hand, field, or Deck as Fusion Material"),
+            new("field_gy_banish", "by banishing Fusion Materials from your field or GY"),
+            new("gy_banish", "by banishing Fusion Materials from your GY"),
+            new("gy_deck", "by shuffling Fusion Materials from your GY into the Deck")),
+        ParamSpec.Cards("matcards", "Which monsters can be material", () => new CardFilter { CardType = FilterCardType.Monster }, Zone.MonsterZone),
+    ];
+
+    private static CardFilter Fusion(BlockArgs args)
+    {
+        var f = args.Cards("cards").Clone();
+        f.MonsterKind = MonsterKind.Fusion;
+        f.CardType = FilterCardType.Monster;
+        f.Owner = CardOwner.You;
+        f.Zones = Zone.ExtraDeck;
+        return f;
+    }
+
+    public override string Describe(BlockArgs args)
+    {
+        var fusion = FilterText.Describe(Fusion(args), args.Pack, withLocation: false);
+        var mats = args.Cards("matcards");
+        var mons = FilterText.Describe(mats, args.Pack, plural: true, withLocation: false);
+        var how = args.Describe("mats");
+        // "using "HERO" monsters from your hand or field as Fusion Material".
+        if (mons != "monsters") how = how.Replace("using monsters", $"using {mons}", StringComparison.Ordinal).Replace("Fusion Materials from", $"{mons} from", StringComparison.Ordinal);
+        return $"Fusion Summon 1 {fusion} from your Extra Deck, {how}";
+    }
+
+    public override void Compile(BlockContext ctx)
+    {
+        var how = ctx.Args.Choice("mats");
+        var matConds = FilterCompiler.Conditions(ctx.Args.Cards("matcards")).Where(c => c != "c:IsType(TYPE_MONSTER)").ToList();
+        string Join(IEnumerable<string> parts) => string.Join(" and ", parts);
+        var baseMat = new List<string> { "c:IsCanBeFusionMaterial()" };
+        baseMat.AddRange(matConds);
+        // Monsters on the field must be affected by this effect to be used.
+        var notImmune = "(not c:IsOnField() or not c:IsImmuneToEffect(e))";
+        string matFilter, groupBody;
+        string send = "Duel.SendtoGrave(mat,REASON_EFFECT+REASON_MATERIAL+REASON_FUSION)";
+        switch (how)
+        {
+            case "field_gy_banish" or "gy_banish":
+                matFilter = ctx.Script.AddFunction("fusmatfilter", "c,e", [$"return {Join([.. baseMat, "c:IsAbleToRemove()", notImmune])}"]);
+                groupBody = $"return Duel.GetMatchingGroup(aux.NecroValleyFilter({matFilter}),tp,{(how == "gy_banish" ? "LOCATION_GRAVE" : "LOCATION_MZONE+LOCATION_GRAVE")},0,nil,e)";
+                send = "Duel.Remove(mat,POS_FACEUP,REASON_EFFECT+REASON_MATERIAL+REASON_FUSION)";
+                ctx.Effect.AddCategory("CATEGORY_REMOVE");
+                break;
+            case "gy_deck":
+                matFilter = ctx.Script.AddFunction("fusmatfilter", "c,e", [$"return {Join([.. baseMat, "c:IsAbleToDeck()"])}"]);
+                groupBody = $"return Duel.GetMatchingGroup(aux.NecroValleyFilter({matFilter}),tp,LOCATION_GRAVE,0,nil,e)";
+                send = "Duel.SendtoDeck(mat,nil,SEQ_DECKSHUFFLE,REASON_EFFECT+REASON_MATERIAL+REASON_FUSION)";
+                ctx.Effect.AddCategory("CATEGORY_TODECK");
+                break;
+            default:
+            {
+                var conds = new List<string>(baseMat) { notImmune };
+                if (how == "field") conds.Add("c:IsOnField()");
+                if (how == "hand") conds.Add("c:IsLocation(LOCATION_HAND)");
+                matFilter = ctx.Script.AddFunction("fusmatfilter", "c,e", [$"return {Join(conds)}"]);
+                if (how == "hand_field_deck")
+                {
+                    var deckFilter = ctx.Script.AddFunction("fusdeckfilter", "c,e", [$"return {Join([.. baseMat, "c:IsType(TYPE_MONSTER)", "c:IsAbleToGrave()"])}"]);
+                    groupBody = $"local g=Duel.GetFusionMaterial(tp):Filter({matFilter},nil,e) g:Merge(Duel.GetMatchingGroup({deckFilter},tp,LOCATION_DECK,0,nil,e)) return g";
+                    ctx.Effect.AddCategory("CATEGORY_DECKDES");
+                }
+                else groupBody = $"return Duel.GetFusionMaterial(tp):Filter({matFilter},nil,e)";
+                break;
+            }
+        }
+        var mats = ctx.Script.AddFunction("fusmat", "e,tp", [groupBody]);
+        var fusConds = FilterCompiler.Conditions(Fusion(ctx.Args)).Where(c => c is not "c:IsType(TYPE_MONSTER)" and not "c:IsType(TYPE_FUSION)").ToList();
+        var fus = ctx.Script.AddFunction("fusfilter", "c,e,tp,m,chkf",
+            [$"return {Join(["c:IsType(TYPE_FUSION)", .. fusConds, "c:IsCanBeSpecialSummoned(e,SUMMON_TYPE_FUSION,tp,false,false)", "c:CheckFusionMaterial(m,nil,chkf)"])}"]);
+        ctx.Effect.AddCategory("CATEGORY_SPECIAL_SUMMON");
+        ctx.Effect.AddCategory("CATEGORY_FUSION_SUMMON");
+        ctx.Effect.TargetChecks.Add($"Duel.IsExistingMatchingCard({fus},tp,LOCATION_EXTRA,0,1,nil,e,tp,{mats}(e,tp),tp)");
+        ctx.Effect.TargetLines.Add("Duel.SetOperationInfo(0,CATEGORY_SPECIAL_SUMMON,nil,1,tp,LOCATION_EXTRA)");
+        var r = ctx.Effect.NewLocal("r");
+        var mg = ctx.Effect.NewLocal("mg");
+        var sg = ctx.Effect.NewLocal("sg");
+        var tc = ctx.Effect.NewLocal("fc");
+        ctx.Effect.AddStep(
+        [
+            $"local {r}=0",
+            $"local {mg}={mats}(e,tp)",
+            $"local {sg}=Duel.GetMatchingGroup({fus},tp,LOCATION_EXTRA,0,nil,e,tp,{mg},tp)",
+            $"if {sg}:GetCount()>0 then",
+            "\tDuel.Hint(HINT_SELECTMSG,tp,HINTMSG_SPSUMMON)",
+            $"\tlocal {tc}={sg}:Select(tp,1,1,nil):GetFirst()",
+            $"\tlocal mat=Duel.SelectFusionMaterial(tp,{tc},{mg},nil,tp)",
+            $"\t{tc}:SetMaterial(mat)",
+            "\t" + send,
+            "\tDuel.BreakEffect()",
+            $"\t{r}=Duel.SpecialSummon({tc},SUMMON_TYPE_FUSION,tp,tp,false,false,POS_FACEUP)",
+            $"\t{tc}:CompleteProcedure()",
+            "end",
+        ], r, ctx.Link);
+    }
+}

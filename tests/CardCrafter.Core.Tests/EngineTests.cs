@@ -423,7 +423,7 @@ public class EngineTests
     public static IEnumerable<object[]> DoBlocks() =>
         // Responses to an activation, a Trap's column and Ritual Summons have their own duels in UniqueEngineTests.
         BlockRegistry.OfKind(BlockKind.Action).Where(b => b.Id is not ("do.negate" or "do.negate_summon" or "do.tokens" or "do.negate_unless" or "do.that_card"
-            or "do.negate_column" or "do.ritual_summon")).Select(b => new object[] { b.Id, false })
+            or "do.negate_column" or "do.ritual_summon" or "do.fusion_summon")).Select(b => new object[] { b.Id, false })
             .Concat(BlockRegistry.OfKind(BlockKind.Action).Where(b => b.Param("target") is not null).Select(b => new object[] { b.Id, true }));
 
     /// <summary>Every DO block, with its default settings, activated from a monster on a well-stocked board.</summary>

@@ -3,6 +3,7 @@ using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
 using CardCrafter.App.ViewModels;
 using CardCrafter.App.Views;
+using CardCrafter.Core.Compiler;
 using CardCrafter.Core.Database;
 using CardCrafter.Core.Omega;
 
@@ -72,8 +73,10 @@ public class CardBrowserTests
 
         // Pot of Greed's one effect has exact blocks.
         Assert.True(piece.AsBlocks, piece.Status);
-        Assert.StartsWith("Becomes blocks", piece.Status);
-        Assert.Contains("exact blocks, so \"Use as a new card\" makes it with blocks", browser.ScriptStatus);
+        Assert.StartsWith("Made into blocks", piece.Status);
+        Assert.Equal(PieceColor.Green, piece.Verdict.Color);
+        Assert.Contains("1 made into blocks", browser.ScriptStatus);
+        Assert.Contains("\"Use as a new card\" makes it with blocks", browser.ScriptStatus);
 
         // One effect into the starter card, as blocks...
         var starter = main.SelectedCard!;

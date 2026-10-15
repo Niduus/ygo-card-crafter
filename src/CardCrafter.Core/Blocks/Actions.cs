@@ -287,9 +287,11 @@ public sealed class SpecialSummonAction : CardGroupAction
             "defense" => "POS_FACEUP_DEFENSE",
             _ => "POS_FACEUP",
         };
+        // "This card itself" is Special Summoned by its own effect: SUMMON_VALUE_SELF, as official cards do.
+        var value = ctx.Args.Cards("cards").ThisCard ? "SUMMON_VALUE_SELF" : "0";
         return PointsTo(ctx)
-            ? $"Duel.SpecialSummon({g},0,tp,tp,{Ignore(ctx)},false,{pos},e:GetHandler():GetLinkedZone(tp))"
-            : $"Duel.SpecialSummon({g},0,tp,tp,{Ignore(ctx)},false,{pos})";
+            ? $"Duel.SpecialSummon({g},{value},tp,tp,{Ignore(ctx)},false,{pos},e:GetHandler():GetLinkedZone(tp))"
+            : $"Duel.SpecialSummon({g},{value},tp,tp,{Ignore(ctx)},false,{pos})";
     }
 
     protected override string? SpaceCheck(int count, CardFilter f, BlockContext ctx) =>
@@ -520,7 +522,7 @@ public sealed class SpecialSummonSelfAction : ActionBlock
         [
             $"local {r}=0",
             "if c:IsRelateToEffect(e) and Duel.GetLocationCount(tp,LOCATION_MZONE)>0 then",
-            $"\t{r}=Duel.SpecialSummon(c,0,tp,tp,false,false,{pos})",
+            $"\t{r}=Duel.SpecialSummon(c,SUMMON_VALUE_SELF,tp,tp,false,false,{pos})",
             "end",
         ], r, ctx.Link);
     }
