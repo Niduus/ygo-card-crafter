@@ -1,5 +1,7 @@
 # YGO Card Crafter
 
+**DISCLAIMER: This is vibe coded. Problems will occur and nothing is coded by my hands. I got bored and decided to make something that maybe helpful if released to the wild.**
+
 Make custom Yu-Gi-Oh! cards **and their scripts** for YGO Omega without writing Lua.
 
 Card Crafter is a desktop app with a GDevelop-style event sheet. Every effect is one row:
