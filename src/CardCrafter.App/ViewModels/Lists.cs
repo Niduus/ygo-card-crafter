@@ -8,6 +8,15 @@ public static class Lists
     public static readonly IReadOnlyList<Option<CardKind>> Kinds =
         Options.Of((CardKind.Monster, "Monster"), (CardKind.Spell, "Spell"), (CardKind.Trap, "Trap"));
 
+    /// <summary>Card pools as YGO Omega's deck editor names them.</summary>
+    public static readonly IReadOnlyList<Option<CardPool>> Pools = Options.Of(
+        (CardPool.Custom, "Custom"), (CardPool.Ocg, "OCG"), (CardPool.Tcg, "TCG"), (CardPool.OcgTcg, "OCG & TCG"));
+
+    public static string PoolName(long ot) => Pools.FirstOrDefault(p => (long)p.Value == ot)?.Label ?? $"ot {ot}";
+
+    public static readonly IReadOnlyList<Option<Limitation>> Limitations = Options.Of(
+        (Limitation.Unlimited, "Unlimited"), (Limitation.SemiLimited, "Semi-Limited"), (Limitation.Limited, "Limited"), (Limitation.Forbidden, "Forbidden"));
+
     public static readonly IReadOnlyList<Option<MonsterFrame>> Frames = Options.Of(
         (MonsterFrame.Normal, "Normal"), (MonsterFrame.Effect, "Effect"), (MonsterFrame.Ritual, "Ritual"),
         (MonsterFrame.Fusion, "Fusion"), (MonsterFrame.Synchro, "Synchro"), (MonsterFrame.Xyz, "Xyz"), (MonsterFrame.Link, "Link"));

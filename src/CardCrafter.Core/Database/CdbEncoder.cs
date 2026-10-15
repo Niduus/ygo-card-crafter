@@ -21,6 +21,17 @@ public static class CdbEncoder
         };
         for (int i = 0; i < 16; i++) row.Strings[i] = i < strings.Count ? strings[i] : "";
 
+        // YGO Omega's columns. A card in the OCG or TCG pool needs a release date there to be listed.
+        row.OmegaFlags = card.OmegaFlags;
+        row.Support = card.Support;
+        row.OcgDate = card.OcgDate ?? ((row.Ot & (long)CardPool.Ocg) != 0 && row.Ot < (long)CardPool.Custom ? DefaultReleaseDate : CdbRow.Unreleased);
+        row.TcgDate = card.TcgDate ?? ((row.Ot & (long)CardPool.Tcg) != 0 && row.Ot < (long)CardPool.Custom ? DefaultReleaseDate : CdbRow.Unreleased);
+        row.Script = card.DatabaseScript;
+        // Limits read from a database are written back as they were; a Limitation set in the editor applies to every banlist.
+        bool asRead = card.BanlistLimits.Count > 0 && (card.Limitation == Limitation.Unlimited || card.BanlistLimits.Values.All(v => v == (int)card.Limitation));
+        if (asRead) foreach (var (banlist, limit) in card.BanlistLimits) row.Limits[banlist] = limit;
+        else if (card.Limitation != Limitation.Unlimited) row.Limits[CdbFile.AllBanlists] = (int)card.Limitation;
+
         if (card.IsMonster)
         {
             row.Atk = card.Atk;
@@ -41,6 +52,9 @@ public static class CdbEncoder
         }
         return row;
     }
+
+    /// <summary>2000-01-01, used as the release date of custom cards placed in the OCG or TCG pool.</summary>
+    public const long DefaultReleaseDate = 946684800;
 
     public static long TypeOf(CardData card)
     {
@@ -121,6 +135,15 @@ public static class CdbEncoder
         var card = DecodeKnown(row);
         card.Category = row.Category;
         card.Ot = row.Ot;
+        card.OmegaFlags = row.OmegaFlags;
+        card.Support = row.Support;
+        card.OcgDate = row.OcgDate;
+        card.TcgDate = row.TcgDate;
+        card.DatabaseScript = row.Script;
+        card.BanlistLimits = new Dictionary<long, int>(row.Limits);
+        // The same limit on every banlist reads as one Limitation; mixed limits stay per banlist.
+        if (row.Limits.Count > 0 && row.Limits.Values.Distinct().Count() == 1 && Enum.IsDefined((Limitation)row.Limits.Values.First()))
+            card.Limitation = (Limitation)row.Limits.Values.First();
         // Whatever type bits the editor can't show are kept as they are.
         card.ExtraTypeBits = row.Type & ~TypeOf(card);
         return card;

@@ -253,6 +253,48 @@ public sealed partial class CardViewModel : ObservableObject
     public bool IsGemini { get => Ability(MonsterAbility.Gemini); set => SetAbility(MonsterAbility.Gemini, value, nameof(IsGemini)); }
     public bool IsPendulumAbility { get => Ability(MonsterAbility.Pendulum); set => SetAbility(MonsterAbility.Pendulum, value, nameof(IsPendulumAbility)); }
 
+    // ---- YGO Omega's card pool and limitation tags
+    /// <summary>"Same as the pack" plus each pool. The card's own pool is stored only when it differs from the pack's.</summary>
+    public IReadOnlyList<Option<long>> CardPoolOptions =>
+        new[] { new Option<long>(0, $"Same as the pack ({Lists.PoolName(_pack().Ot)})") }
+            .Concat(Lists.Pools.Select(p => new Option<long>((long)p.Value, p.Label))).ToList();
+
+    public Option<long> CardPoolChoice
+    {
+        get => CardPoolOptions.FirstOrDefault(o => o.Value == (C.Ot ?? 0)) ?? CardPoolOptions[0];
+        set
+        {
+            var ot = value is null || value.Value == 0 || value.Value == _pack().Ot ? (long?)null : value.Value;
+            if (ot == C.Ot) return;
+            C.Ot = ot;
+            // Release dates follow the pool: Omega lists OCG/TCG cards by them.
+            C.OcgDate = C.TcgDate = null;
+            OnPropertyChanged();
+            Changed();
+        }
+    }
+
+    public void OnPackPoolChanged()
+    {
+        if (C.Ot == _pack().Ot) C.Ot = null;
+        OnPropertyChanged(nameof(CardPoolOptions));
+        OnPropertyChanged(nameof(CardPoolChoice));
+    }
+
+    public IReadOnlyList<Option<Limitation>> LimitationOptions => Lists.Limitations;
+    public Option<Limitation> LimitationChoice
+    {
+        get => Options.Find(Lists.Limitations, C.Limitation);
+        set
+        {
+            if (value is null || (value.Value == C.Limitation && C.BanlistLimits.Count == 0)) return;
+            C.Limitation = value.Value;
+            C.BanlistLimits.Clear();
+            OnPropertyChanged();
+            Changed();
+        }
+    }
+
     // ---- summoning rules
     /// <summary>The choices that make sense for this frame. Extra Deck and Ritual monsters already can't be Normal Summoned.</summary>
     public IReadOnlyList<Option<SummonRule>> SummonRuleOptions => C.IsMainDeckNonRitual
@@ -292,6 +334,7 @@ public sealed partial class CardViewModel : ObservableObject
         C.LinkMarkers = on ? C.LinkMarkers | m : C.LinkMarkers & ~m;
         OnPropertyChanged(name);
         OnPropertyChanged(nameof(LinkRatingText));
+        OnPropertyChanged(nameof(LinkRatingShort));
         Changed();
     }
 
@@ -304,6 +347,8 @@ public sealed partial class CardViewModel : ObservableObject
     public bool ArrowBottom { get => Arrow(LinkMarker.Bottom); set => SetArrow(LinkMarker.Bottom, value, nameof(ArrowBottom)); }
     public bool ArrowBottomRight { get => Arrow(LinkMarker.BottomRight); set => SetArrow(LinkMarker.BottomRight, value, nameof(ArrowBottomRight)); }
     public string LinkRatingText => $"LINK-{C.LinkRating}";
+    /// <summary>The rating alone, shown in the middle of the Link Arrow picker.</summary>
+    public string LinkRatingShort => C.LinkRating.ToString(CultureInfo.InvariantCulture);
 
     public string Text { get => C.Text; set { if (C.Text == value) return; C.Text = value; OnPropertyChanged(); Changed(); } }
     public string PendulumText { get => C.PendulumText; set { if (C.PendulumText == value) return; C.PendulumText = value; OnPropertyChanged(); Changed(); } }

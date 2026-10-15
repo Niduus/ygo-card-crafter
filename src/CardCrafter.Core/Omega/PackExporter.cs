@@ -35,7 +35,8 @@ public static class PackExporter
     /// </summary>
     public static Func<string, string, bool>? ConvertToJpeg { get; set; }
 
-    public static ExportResult Export(CardPack pack, string outputFolder, string? packFolder = null)
+    /// <param name="schema">The database layout to write; YGO Omega's own when installing into Omega, ygopro's otherwise.</param>
+    public static ExportResult Export(CardPack pack, string outputFolder, string? packFolder = null, CdbSchema? schema = null)
     {
         Directory.CreateDirectory(outputFolder);
         var scriptDir = Path.Combine(outputFolder, "script");
@@ -80,7 +81,7 @@ public static class PackExporter
                 export.ImagePath = jpg;
             }
         }
-        CdbFile.WriteFresh(result.DatabasePath, rows);
+        CdbFile.WriteFresh(result.DatabasePath, rows, schema);
         return result;
     }
 

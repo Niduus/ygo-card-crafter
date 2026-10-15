@@ -102,6 +102,21 @@ public sealed partial class MainViewModel : ObservableObject
         set { if (_pack.Author == value) return; _pack.Author = value; OnPropertyChanged(); MarkDirty(); }
     }
 
+    /// <summary>The card pool ("ot") of the pack's cards. YGO Omega lists custom cards under Card Pool → Custom.</summary>
+    public IReadOnlyList<Option<CardPool>> PoolOptions => Lists.Pools;
+    public Option<CardPool> PackPool
+    {
+        get => Lists.Pools.FirstOrDefault(p => (int)p.Value == _pack.Ot) ?? Lists.Pools[0];
+        set
+        {
+            if (value is null || (int)value.Value == _pack.Ot) return;
+            _pack.Ot = (int)value.Value;
+            OnPropertyChanged();
+            foreach (var c in Cards) c.OnPackPoolChanged();
+            MarkDirty();
+        }
+    }
+
     private void MarkDirty() => IsDirty = true;
 
     // ---------------------------------------------------------------- packs
@@ -135,6 +150,7 @@ public sealed partial class MainViewModel : ObservableObject
         IsDirty = false;
         OnPropertyChanged(nameof(PackName));
         OnPropertyChanged(nameof(PackAuthor));
+        OnPropertyChanged(nameof(PackPool));
         OnPropertyChanged(nameof(Title));
     }
 
@@ -966,8 +982,10 @@ public sealed partial class MainViewModel : ObservableObject
         try
         {
             var folder = PackFolder;
-            var export = await Task.Run(() => PackExporter.Export(_pack, ExportFolder, folder));
-            var result = OmegaInstaller.Install(export, Inventory, AppSettings.BackupFolder, PackSerializer.ToJson(_pack));
+            var inventory = Inventory;
+            // Written in the layout of Omega's own database, so the game reads the card pool and limitation tags.
+            var export = await Task.Run(() => PackExporter.Export(_pack, ExportFolder, folder, inventory.GameSchema));
+            var result = OmegaInstaller.Install(export, inventory, AppSettings.BackupFolder, PackSerializer.ToJson(_pack));
             if (result.NeedsAdmin)
             {
                 var restart = await _dialogs.ConfirmAsync("Administrator needed",

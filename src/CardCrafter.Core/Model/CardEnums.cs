@@ -9,6 +9,15 @@ public enum SpellKind { Normal, QuickPlay, Continuous, Equip, Field, Ritual }
 
 public enum TrapKind { Normal, Continuous, Counter }
 
+/// <summary>
+/// The card pool, stored as "ot". YGO Omega's deck editor filters by it: custom cards belong in Custom,
+/// and the game treats values below 4 as official OCG/TCG cards.
+/// </summary>
+public enum CardPool { Ocg = 1, Tcg = 2, OcgTcg = 3, Custom = 4 }
+
+/// <summary>A card's status on a banlist. Cards on no banlist are Unlimited.</summary>
+public enum Limitation { Unlimited = 3, SemiLimited = 2, Limited = 1, Forbidden = 0 }
+
 /// <summary>How a monster may be Summoned, as its card text states it.</summary>
 public enum SummonRule
 {

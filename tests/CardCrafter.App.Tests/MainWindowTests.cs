@@ -53,6 +53,22 @@ public class MainWindowTests
     }
 
     [AvaloniaFact]
+    public void CardTab_LinkPendulumAndSpellLayouts()
+    {
+        var (window, vm) = Open();
+        var card = vm.SelectedCard!;
+        card.Frame = card.FrameOptions.First(o => o.Value == MonsterFrame.Link);
+        card.ArrowBottomLeft = card.ArrowBottom = card.ArrowBottomRight = true;
+        Shot(window, "13-card-link");
+        Assert.Equal("3", card.LinkRatingShort);
+        card.Frame = card.FrameOptions.First(o => o.Value == MonsterFrame.Effect);
+        card.IsPendulumAbility = true;
+        Shot(window, "14-card-pendulum");
+        card.Kind = card.KindOptions.First(o => o.Value == CardKind.Spell);
+        Shot(window, "15-card-spell");
+    }
+
+    [AvaloniaFact]
     public void SummonProcedure_HasNoDoBlocks_AndSetsTheCardText()
     {
         var (window, vm) = Open();

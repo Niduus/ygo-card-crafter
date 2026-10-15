@@ -40,6 +40,17 @@ public sealed class CardData
     public long Category { get; set; }
     /// <summary>Card-type bits the editor has no setting for, such as Token or Trap Monster.</summary>
     public long ExtraTypeBits { get; set; }
+    /// <summary>YGO Omega's card flags, support codes, release dates (Unix seconds) and in-database script, kept as read.</summary>
+    public long OmegaFlags { get; set; }
+    public long Support { get; set; }
+    public long? OcgDate { get; set; }
+    public long? TcgDate { get; set; }
+    public string? DatabaseScript { get; set; }
+
+    /// <summary>Status on every banlist in the game. Unlimited writes nothing, like official cards that aren't on a list.</summary>
+    public Limitation Limitation { get; set; } = Limitation.Unlimited;
+    /// <summary>Per-banlist limits read from a database (banlist id to limit), kept when <see cref="Limitation"/> is Unlimited.</summary>
+    public Dictionary<long, int> BanlistLimits { get; set; } = [];
 
     public bool IsMonster => Kind == CardKind.Monster;
     public bool IsLink => IsMonster && Frame == MonsterFrame.Link;

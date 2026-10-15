@@ -162,10 +162,18 @@ public static class DatabasePack
             return result;
         }
 
+        // Keep the database's layout: Omega's own inside Omega, otherwise whatever layout the file already has.
+        CdbSchema? schema = null;
+        try
+        {
+            schema = IsInOmega(dbPath, omega) && omega!.GameSchema is { } game ? game : File.Exists(dbPath) ? CdbSchema.Read(dbPath) : null;
+        }
+        catch (Microsoft.Data.Sqlite.SqliteException) { }
+
         var temp = Path.Combine(Path.GetTempPath(), "CardCrafter-save-" + Guid.NewGuid().ToString("N"));
         try
         {
-            var export = PackExporter.Export(pack, temp, packFolder);
+            var export = PackExporter.Export(pack, temp, packFolder, schema);
             var scriptFolder = ScriptFolderFor(dbPath, omega);
             var artFolder = ArtFolderFor(dbPath, omega);
             result.ScriptFolder = scriptFolder;

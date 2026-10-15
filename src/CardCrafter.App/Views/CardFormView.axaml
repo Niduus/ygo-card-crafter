@@ -4,6 +4,28 @@
              xmlns:views="using:CardCrafter.App.Views"
              x:Class="CardCrafter.App.Views.CardFormView"
              x:DataType="vm:CardViewModel">
+  <UserControl.Styles>
+    <Style Selector="ToggleButton.arrow">
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="VerticalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Margin" Value="2" />
+    </Style>
+    <Style Selector="ToggleButton.arrow Path">
+      <Setter Property="Data" Value="M 7,0 L 14,7 L 9.5,7 L 9.5,14 L 4.5,14 L 4.5,7 L 0,7 Z" />
+      <Setter Property="Width" Value="14" />
+      <Setter Property="Height" Value="14" />
+      <Setter Property="Stretch" Value="Uniform" />
+      <Setter Property="Fill" Value="#9CA3AF" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="ToggleButton.arrow:checked Path">
+      <Setter Property="Fill" Value="White" />
+    </Style>
+  </UserControl.Styles>
   <ScrollViewer>
     <Grid ColumnDefinitions="*,24,300" Margin="0,0,12,12">
       <StackPanel Grid.Column="0">
@@ -23,6 +45,20 @@
           <StackPanel Grid.Column="2">
             <TextBlock Classes="label" Text="Card kind" />
             <ComboBox ItemsSource="{Binding KindOptions}" SelectedItem="{Binding Kind}" HorizontalAlignment="Stretch" />
+          </StackPanel>
+        </Grid>
+
+        <!-- YGO Omega's tags: its deck editor searches cards by card pool and limitation -->
+        <Grid ColumnDefinitions="3*,12,2*">
+          <StackPanel Grid.Column="0">
+            <TextBlock Classes="label" Text="Card pool" />
+            <ComboBox ItemsSource="{Binding CardPoolOptions}" SelectedItem="{Binding CardPoolChoice}" HorizontalAlignment="Stretch"
+                      ToolTip.Tip="Where Omega's deck editor lists this card (Filter → Card Pool). Custom cards belong in Custom." />
+          </StackPanel>
+          <StackPanel Grid.Column="2">
+            <TextBlock Classes="label" Text="Limitation" />
+            <ComboBox ItemsSource="{Binding LimitationOptions}" SelectedItem="{Binding LimitationChoice}" HorizontalAlignment="Stretch"
+                      ToolTip.Tip="Forbidden, Limited or Semi-Limited on every banlist in Omega (Filter → Limitation). Unlimited cards aren't on any banlist." />
           </StackPanel>
         </Grid>
 
@@ -53,7 +89,11 @@
             </StackPanel>
             <StackPanel Grid.Column="0" IsVisible="{Binding IsLink}">
               <TextBlock Classes="label" Text="Link rating" />
-              <TextBlock Text="{Binding LinkRatingText}" FontWeight="Bold" Margin="0,6,0,0" ToolTip.Tip="Set by the number of Link Arrows" />
+              <!-- read-only, but the same height as the boxes next to it so the row lines up -->
+              <Border Height="32" CornerRadius="4" Background="#1A1B22" BorderBrush="#2A2C36" BorderThickness="1" Padding="10,0"
+                      ToolTip.Tip="Set by the number of Link Arrows">
+                <TextBlock Text="{Binding LinkRatingText}" FontWeight="Bold" VerticalAlignment="Center" />
+              </Border>
             </StackPanel>
             <StackPanel Grid.Column="2">
               <TextBlock Classes="label" Text="ATK" />
@@ -79,30 +119,51 @@
           <TextBlock Classes="label" Text="Summoning" />
           <ComboBox ItemsSource="{Binding SummonRuleOptions}" SelectedItem="{Binding SummonRuleChoice}" HorizontalAlignment="Stretch" />
           <TextBlock Text="{Binding SummonRuleHelp}" IsVisible="{Binding SummonRuleHelp, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-                     TextWrapping="Wrap" Opacity="0.7" FontSize="12" />
+                     TextWrapping="Wrap" Opacity="0.7" FontSize="12" Margin="0,4,0,0" />
 
-          <StackPanel IsVisible="{Binding IsPendulum}" Orientation="Horizontal" Spacing="12">
-            <StackPanel>
+          <!-- same three columns as Level / ATK / DEF above, so the fields line up -->
+          <Grid IsVisible="{Binding IsPendulum}" ColumnDefinitions="*,12,*,12,*">
+            <StackPanel Grid.Column="0">
               <TextBlock Classes="label" Text="Left scale" />
-              <NumericUpDown Value="{Binding LeftScale}" Minimum="0" Maximum="13" FormatString="0" Width="110" />
+              <NumericUpDown Value="{Binding LeftScale}" Minimum="0" Maximum="13" FormatString="0" />
             </StackPanel>
-            <StackPanel>
+            <StackPanel Grid.Column="2">
               <TextBlock Classes="label" Text="Right scale" />
-              <NumericUpDown Value="{Binding RightScale}" Minimum="0" Maximum="13" FormatString="0" Width="110" />
+              <NumericUpDown Value="{Binding RightScale}" Minimum="0" Maximum="13" FormatString="0" />
             </StackPanel>
-          </StackPanel>
+          </Grid>
 
           <StackPanel IsVisible="{Binding IsLink}">
             <TextBlock Classes="label" Text="Link Arrows" />
+            <!-- drawn arrows, rotated about their centre, so every one sits exactly in the middle of its button -->
             <Grid ColumnDefinitions="40,40,40" RowDefinitions="40,40,40" HorizontalAlignment="Left">
-              <ToggleButton Grid.Row="0" Grid.Column="0" Content="↖" IsChecked="{Binding ArrowTopLeft}" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="2" />
-              <ToggleButton Grid.Row="0" Grid.Column="1" Content="↑" IsChecked="{Binding ArrowTop}" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="2" />
-              <ToggleButton Grid.Row="0" Grid.Column="2" Content="↗" IsChecked="{Binding ArrowTopRight}" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="2" />
-              <ToggleButton Grid.Row="1" Grid.Column="0" Content="←" IsChecked="{Binding ArrowLeft}" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="2" />
-              <ToggleButton Grid.Row="1" Grid.Column="2" Content="→" IsChecked="{Binding ArrowRight}" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="2" />
-              <ToggleButton Grid.Row="2" Grid.Column="0" Content="↙" IsChecked="{Binding ArrowBottomLeft}" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="2" />
-              <ToggleButton Grid.Row="2" Grid.Column="1" Content="↓" IsChecked="{Binding ArrowBottom}" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="2" />
-              <ToggleButton Grid.Row="2" Grid.Column="2" Content="↘" IsChecked="{Binding ArrowBottomRight}" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="2" />
+              <ToggleButton Classes="arrow" Grid.Row="0" Grid.Column="0" IsChecked="{Binding ArrowTopLeft}" ToolTip.Tip="Top left Link Arrow">
+                <Path><Path.RenderTransform><RotateTransform Angle="-45" /></Path.RenderTransform></Path>
+              </ToggleButton>
+              <ToggleButton Classes="arrow" Grid.Row="0" Grid.Column="1" IsChecked="{Binding ArrowTop}" ToolTip.Tip="Top Link Arrow">
+                <Path><Path.RenderTransform><RotateTransform Angle="0" /></Path.RenderTransform></Path>
+              </ToggleButton>
+              <ToggleButton Classes="arrow" Grid.Row="0" Grid.Column="2" IsChecked="{Binding ArrowTopRight}" ToolTip.Tip="Top right Link Arrow">
+                <Path><Path.RenderTransform><RotateTransform Angle="45" /></Path.RenderTransform></Path>
+              </ToggleButton>
+              <ToggleButton Classes="arrow" Grid.Row="1" Grid.Column="0" IsChecked="{Binding ArrowLeft}" ToolTip.Tip="Left Link Arrow">
+                <Path><Path.RenderTransform><RotateTransform Angle="-90" /></Path.RenderTransform></Path>
+              </ToggleButton>
+              <ToggleButton Classes="arrow" Grid.Row="1" Grid.Column="2" IsChecked="{Binding ArrowRight}" ToolTip.Tip="Right Link Arrow">
+                <Path><Path.RenderTransform><RotateTransform Angle="90" /></Path.RenderTransform></Path>
+              </ToggleButton>
+              <ToggleButton Classes="arrow" Grid.Row="2" Grid.Column="0" IsChecked="{Binding ArrowBottomLeft}" ToolTip.Tip="Bottom left Link Arrow">
+                <Path><Path.RenderTransform><RotateTransform Angle="-135" /></Path.RenderTransform></Path>
+              </ToggleButton>
+              <ToggleButton Classes="arrow" Grid.Row="2" Grid.Column="1" IsChecked="{Binding ArrowBottom}" ToolTip.Tip="Bottom Link Arrow">
+                <Path><Path.RenderTransform><RotateTransform Angle="180" /></Path.RenderTransform></Path>
+              </ToggleButton>
+              <ToggleButton Classes="arrow" Grid.Row="2" Grid.Column="2" IsChecked="{Binding ArrowBottomRight}" ToolTip.Tip="Bottom right Link Arrow">
+                <Path><Path.RenderTransform><RotateTransform Angle="135" /></Path.RenderTransform></Path>
+              </ToggleButton>
+              <Border Grid.Row="1" Grid.Column="1" Margin="2" CornerRadius="4" Background="#22242C">
+                <TextBlock Text="{Binding LinkRatingShort}" HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="Bold" FontSize="12" />
+              </Border>
             </Grid>
           </StackPanel>
 
@@ -139,14 +200,18 @@
         </StackPanel>
 
         <!-- Spell / Trap -->
-        <StackPanel IsVisible="{Binding IsSpell}">
-          <TextBlock Classes="label" Text="Spell kind" />
-          <ComboBox ItemsSource="{Binding SpellKindOptions}" SelectedItem="{Binding SpellKind}" Width="220" />
-        </StackPanel>
-        <StackPanel IsVisible="{Binding IsTrap}">
-          <TextBlock Classes="label" Text="Trap kind" />
-          <ComboBox ItemsSource="{Binding TrapKindOptions}" SelectedItem="{Binding TrapKind}" Width="220" />
-        </StackPanel>
+        <Grid IsVisible="{Binding IsSpell}" ColumnDefinitions="*,12,*,12,*">
+          <StackPanel Grid.Column="0">
+            <TextBlock Classes="label" Text="Spell kind" />
+            <ComboBox ItemsSource="{Binding SpellKindOptions}" SelectedItem="{Binding SpellKind}" HorizontalAlignment="Stretch" />
+          </StackPanel>
+        </Grid>
+        <Grid IsVisible="{Binding IsTrap}" ColumnDefinitions="*,12,*,12,*">
+          <StackPanel Grid.Column="0">
+            <TextBlock Classes="label" Text="Trap kind" />
+            <ComboBox ItemsSource="{Binding TrapKindOptions}" SelectedItem="{Binding TrapKind}" HorizontalAlignment="Stretch" />
+          </StackPanel>
+        </Grid>
 
         <StackPanel IsVisible="{Binding HasArchetypes}">
           <TextBlock Classes="label" Text="Archetypes (add more on the left)" />

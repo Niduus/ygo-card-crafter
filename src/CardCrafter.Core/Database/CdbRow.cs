@@ -18,6 +18,23 @@ public sealed class CdbRow
     public string Desc { get; set; } = "";
     /// <summary>The 16 effect description strings (str1..str16).</summary>
     public string[] Strings { get; set; } = Enumerable.Repeat("", 16).ToArray();
+
+    // YGO Omega's own columns. In Omega's .db files "category" holds these flags and the search
+    // categories move to "genre"; CdbFile maps both ways so Category always means search categories.
+    /// <summary>Omega's card flags (Skill Card, Rush Duel, Duel Links, ...).</summary>
+    public long OmegaFlags { get; set; }
+    /// <summary>Omega's "support" archetype codes.</summary>
+    public long Support { get; set; }
+    /// <summary>Release dates as Unix seconds; <see cref="Unreleased"/> means not released.</summary>
+    public long OcgDate { get; set; } = Unreleased;
+    public long TcgDate { get; set; } = Unreleased;
+    /// <summary>A script stored in the database itself, as Omega can.</summary>
+    public string? Script { get; set; }
+    /// <summary>Banlist id to limit (0 Forbidden, 1 Limited, 2 Semi-Limited). Cards on no banlist are Unlimited.</summary>
+    public Dictionary<long, int> Limits { get; set; } = [];
+
+    /// <summary>Omega's "not released" date, 9999-12-31.</summary>
+    public const long Unreleased = 253402207200;
 }
 
 /// <summary>Card type bits from the engine.</summary>

@@ -97,6 +97,25 @@ public sealed partial class OmegaInventory
         return used;
     }
 
+    private CdbSchema? _gameSchema;
+    private bool _gameSchemaRead;
+
+    /// <summary>
+    /// The layout of the game's own card database. Custom databases are written in the same layout, so the game
+    /// reads their card pool, limitation and other columns like its own. Null when there is no readable official database.
+    /// </summary>
+    public CdbSchema? GameSchema
+    {
+        get
+        {
+            if (_gameSchemaRead) return _gameSchema;
+            _gameSchemaRead = true;
+            try { _gameSchema = OfficialDatabase is { } o ? CdbSchema.Read(o.Path) : null; }
+            catch (Exception) { _gameSchema = null; } // an unreadable database just means the standard layout is used
+            return _gameSchema;
+        }
+    }
+
     public string? BestImageFolder => ImageFolders.OrderByDescending(i => i.Count).FirstOrDefault()?.Path;
 
     public bool SupportsLooseFiles => BestScriptFolder is not null && BestDatabaseFolder is not null;
@@ -199,7 +218,15 @@ public sealed partial class OmegaInventory
         sb.AppendLine("Most common file types:");
         foreach (var kv in Extensions.OrderByDescending(kv => kv.Value).Take(15)) sb.AppendLine($"  {kv.Key}: {kv.Value}");
         sb.AppendLine();
-        if (OfficialDatabase is { } off) sb.AppendLine($"Official card database: {Rel(off.Path)} [{off.Cards} cards]");
+        if (OfficialDatabase is { } off)
+        {
+            sb.AppendLine($"Official card database: {Rel(off.Path)} [{off.Cards} cards]");
+            if (GameSchema is { } schema)
+            {
+                sb.AppendLine("Its layout, which custom databases are written in:");
+                sb.Append(schema.Describe());
+            }
+        }
         if (SupportsLooseFiles)
         {
             sb.AppendLine("Card Crafter will install:");

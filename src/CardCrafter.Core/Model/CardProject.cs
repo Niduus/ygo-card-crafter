@@ -53,11 +53,16 @@ public sealed class Archetype
 /// <summary>A pack of custom cards that is saved, shared and exported together.</summary>
 public sealed class CardPack
 {
-    public int FormatVersion { get; set; } = 1;
+    /// <summary>2: the default card pool became Custom (ot 4), which YGO Omega needs to list custom cards.</summary>
+    public int FormatVersion { get; set; } = CurrentFormat;
+    public const int CurrentFormat = 2;
     public string Name { get; set; } = "My Custom Cards";
     public string Author { get; set; } = "";
-    /// <summary>The "ot" database value. 3 means OCG and TCG, which every client shows.</summary>
-    public int Ot { get; set; } = 3;
+    /// <summary>
+    /// The card pool ("ot") for the pack's cards. Custom (4) by default: YGO Omega lists custom cards under
+    /// Card Pool → Custom and treats lower values as official cards.
+    /// </summary>
+    public int Ot { get; set; } = (int)CardPool.Custom;
     public List<Archetype> Archetypes { get; set; } = [];
     public List<CustomType> CustomTypes { get; set; } = [];
     public List<CardProject> Cards { get; set; } = [];

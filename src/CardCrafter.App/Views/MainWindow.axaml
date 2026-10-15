@@ -104,6 +104,9 @@
           <TextBox Text="{Binding PackName}" />
           <TextBlock Classes="label" Text="Author" />
           <TextBox Text="{Binding PackAuthor}" Watermark="your name" />
+          <TextBlock Classes="label" Text="Card pool in YGO Omega" />
+          <ComboBox ItemsSource="{Binding PoolOptions}" SelectedItem="{Binding PackPool}" HorizontalAlignment="Stretch"
+                    ToolTip.Tip="Omega's deck editor lists cards by card pool. Custom cards belong in Custom (Filter → Card Pool → Custom)." />
           <Grid ColumnDefinitions="*,Auto" Margin="0,14,0,4">
             <TextBlock Text="Cards" FontWeight="SemiBold" VerticalAlignment="Center" />
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2">

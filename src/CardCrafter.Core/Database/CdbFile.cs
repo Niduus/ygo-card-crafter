@@ -5,16 +5,6 @@ namespace CardCrafter.Core.Database;
 /// <summary>Reads and writes ygopro-format card databases (.cdb files, which are SQLite).</summary>
 public static class CdbFile
 {
-    private const string Schema = """
-        CREATE TABLE IF NOT EXISTS datas(
-            id integer primary key, ot integer, alias integer, setcode integer, type integer,
-            atk integer, def integer, level integer, race integer, attribute integer, category integer);
-        CREATE TABLE IF NOT EXISTS texts(
-            id integer primary key, name text, desc text,
-            str1 text, str2 text, str3 text, str4 text, str5 text, str6 text, str7 text, str8 text,
-            str9 text, str10 text, str11 text, str12 text, str13 text, str14 text, str15 text, str16 text);
-        """;
-
     private static SqliteConnection Open(string path, SqliteOpenMode mode)
     {
         var cs = new SqliteConnectionStringBuilder { DataSource = path, Mode = mode, Pooling = false }.ToString();
@@ -23,63 +13,131 @@ public static class CdbFile
         return conn;
     }
 
-    /// <summary>Writes rows into the database, creating it if needed. Existing cards with the same id are replaced.</summary>
-    public static void Write(string path, IEnumerable<CdbRow> rows)
+    /// <summary>
+    /// Writes rows into the database, creating it if needed, in the given layout (ygopro's by default, or a layout
+    /// read from the game's own database). Existing cards with the same id are replaced.
+    /// </summary>
+    public static void Write(string path, IEnumerable<CdbRow> rows, CdbSchema? schema = null)
     {
+        schema ??= CdbSchema.Ygopro;
+        var list = rows.ToList();
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
         using var conn = Open(path, SqliteOpenMode.ReadWriteCreate);
-        using (var create = conn.CreateCommand())
-        {
-            create.CommandText = Schema;
-            create.ExecuteNonQuery();
-        }
+        Exec(conn, IfNotExists(schema.DatasSql ?? CdbSchema.Ygopro.DatasSql!));
+        Exec(conn, IfNotExists(schema.TextsSql ?? CdbSchema.Ygopro.TextsSql!));
+        bool limits = schema.HasBanlists && schema.BandatasSql is not null && list.Any(r => r.Limits.Count > 0);
+        if (limits) Exec(conn, IfNotExists(schema.BandatasSql!));
 
         using var tx = conn.BeginTransaction();
-        using var datas = conn.CreateCommand();
-        datas.Transaction = tx;
-        datas.CommandText = "INSERT OR REPLACE INTO datas VALUES($id,$ot,$alias,$setcode,$type,$atk,$def,$level,$race,$attribute,$category)";
-        foreach (var p in new[] { "id", "ot", "alias", "setcode", "type", "atk", "def", "level", "race", "attribute", "category" })
-            datas.Parameters.Add("$" + p, SqliteType.Integer);
+        var datasCols = schema.Datas.Where(c => DatasValue(c, new CdbRow(), schema) is not Skip).ToList();
+        using var datas = Insert(conn, tx, "datas", datasCols.Select(c => c.Name));
+        var textsCols = schema.Texts.Where(c => TextsValue(c, new CdbRow()) is not Skip).ToList();
+        using var texts = Insert(conn, tx, "texts", textsCols.Select(c => c.Name));
 
-        using var texts = conn.CreateCommand();
-        texts.Transaction = tx;
-        var strCols = string.Join(",", Enumerable.Range(1, 16).Select(i => "$str" + i));
-        texts.CommandText = $"INSERT OR REPLACE INTO texts VALUES($id,$name,$desc,{strCols})";
-        texts.Parameters.Add("$id", SqliteType.Integer);
-        texts.Parameters.Add("$name", SqliteType.Text);
-        texts.Parameters.Add("$desc", SqliteType.Text);
-        for (int i = 1; i <= 16; i++) texts.Parameters.Add("$str" + i, SqliteType.Text);
-
-        foreach (var r in rows)
+        foreach (var r in list)
         {
-            datas.Parameters["$id"].Value = r.Id;
-            datas.Parameters["$ot"].Value = r.Ot;
-            datas.Parameters["$alias"].Value = r.Alias;
-            datas.Parameters["$setcode"].Value = r.Setcode;
-            datas.Parameters["$type"].Value = r.Type;
-            datas.Parameters["$atk"].Value = r.Atk;
-            datas.Parameters["$def"].Value = r.Def;
-            datas.Parameters["$level"].Value = r.Level;
-            datas.Parameters["$race"].Value = r.Race;
-            datas.Parameters["$attribute"].Value = r.Attribute;
-            datas.Parameters["$category"].Value = r.Category;
+            foreach (var c in datasCols) datas.Parameters["$" + c.Name].Value = DatasValue(c, r, schema) ?? DBNull.Value;
             datas.ExecuteNonQuery();
-
-            texts.Parameters["$id"].Value = r.Id;
-            texts.Parameters["$name"].Value = r.Name;
-            texts.Parameters["$desc"].Value = r.Desc;
-            // Empty strings, never NULL: some clients crash on NULL text columns.
-            for (int i = 0; i < 16; i++) texts.Parameters["$str" + (i + 1)].Value = r.Strings.ElementAtOrDefault(i) ?? "";
+            foreach (var c in textsCols) texts.Parameters["$" + c.Name].Value = TextsValue(c, r) ?? DBNull.Value;
             texts.ExecuteNonQuery();
+        }
+
+        if (limits)
+        {
+            var card = schema.BandataCardColumn!;
+            var extra = schema.Bandatas.Where(c => c.Name is not ("banlistid" or "limits") && c.Name != card && c.NotNull && c.Default is null
+                                                   && !(c.Name == "id" && c.Type.Contains("int"))).ToList();
+            using var del = conn.CreateCommand();
+            del.Transaction = tx;
+            del.CommandText = $"DELETE FROM bandatas WHERE \"{card}\" = $id";
+            del.Parameters.Add("$id", SqliteType.Integer);
+            using var ins = Insert(conn, tx, "bandatas", new[] { card, "banlistid", "limits" }.Concat(extra.Select(c => c.Name)));
+            foreach (var r in list)
+            {
+                del.Parameters["$id"].Value = r.Id;
+                del.ExecuteNonQuery();
+                var entries = r.Limits.TryGetValue(AllBanlists, out var all)
+                    ? schema.Banlists.Select(b => (b.Id, all))
+                    : r.Limits.Select(kv => (kv.Key, kv.Value));
+                foreach (var (banlist, limit) in entries)
+                {
+                    ins.Parameters["$" + card].Value = r.Id;
+                    ins.Parameters["$banlistid"].Value = banlist;
+                    ins.Parameters["$limits"].Value = limit;
+                    foreach (var c in extra) ins.Parameters["$" + c.Name].Value = c.Type.Contains("text") ? "" : 0;
+                    ins.ExecuteNonQuery();
+                }
+            }
         }
         tx.Commit();
     }
 
+    /// <summary>In <see cref="CdbRow.Limits"/>, this key means "on every banlist the game has".</summary>
+    public const long AllBanlists = -1;
+
+    /// <summary>Marks a column Card Crafter leaves to its default.</summary>
+    private sealed class Skip { public static readonly Skip Value = new(); }
+
+    private static object? DatasValue(CdbColumn c, CdbRow r, CdbSchema schema) => c.Name switch
+    {
+        "id" => r.Id,
+        "ot" => r.Ot,
+        "alias" => r.Alias,
+        "setcode" => r.Setcode,
+        "setid" => schema.FormatSetid(CdbEncoder.UnpackSetcodes(r.Setcode)),
+        "type" => r.Type,
+        "atk" => r.Atk,
+        "def" => r.Def,
+        "level" => r.Level,
+        "race" => r.Race,
+        "attribute" => r.Attribute,
+        "category" => schema.CategoryIsFlags ? r.OmegaFlags : r.Category,
+        "genre" => r.Category,
+        "support" => r.Support,
+        "ocgdate" => r.OcgDate,
+        "tcgdate" => r.TcgDate,
+        "script" => r.Script,
+        _ when c.NotNull && c.Default is null => c.Type.Contains("text") || c.Type.Contains("char") ? "" : 0,
+        _ => Skip.Value,
+    };
+
+    private static object? TextsValue(CdbColumn c, CdbRow r) => c.Name switch
+    {
+        "id" => r.Id,
+        "name" => r.Name,
+        "desc" => r.Desc,
+        // Empty strings, never NULL: some clients crash on NULL text columns.
+        _ when c.Name.StartsWith("str", StringComparison.Ordinal) && int.TryParse(c.Name[3..], out var i) && i is >= 1 and <= 16 => r.Strings.ElementAtOrDefault(i - 1) ?? "",
+        _ when c.NotNull && c.Default is null => c.Type.Contains("int") ? 0 : "",
+        _ => Skip.Value,
+    };
+
+    private static SqliteCommand Insert(SqliteConnection conn, SqliteTransaction tx, string table, IEnumerable<string> columns)
+    {
+        var cols = columns.ToList();
+        var cmd = conn.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = $"INSERT OR REPLACE INTO {table}({string.Join(",", cols.Select(c => $"\"{c}\""))}) VALUES({string.Join(",", cols.Select(c => "$" + c))})";
+        foreach (var c in cols) cmd.Parameters.Add(new SqliteParameter("$" + c, null));
+        return cmd;
+    }
+
+    private static void Exec(SqliteConnection conn, string sql)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+        cmd.ExecuteNonQuery();
+    }
+
+    private static string IfNotExists(string sql) =>
+        System.Text.RegularExpressions.Regex.Replace(sql.Trim().TrimEnd(';'), @"^\s*CREATE\s+TABLE\s+(?!IF\s+NOT\s+EXISTS)", "CREATE TABLE IF NOT EXISTS ",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
     /// <summary>Replaces the whole file with exactly these rows.</summary>
-    public static void WriteFresh(string path, IEnumerable<CdbRow> rows)
+    public static void WriteFresh(string path, IEnumerable<CdbRow> rows, CdbSchema? schema = null)
     {
         if (File.Exists(path)) File.Delete(path);
-        Write(path, rows);
+        Write(path, rows, schema);
     }
 
     /// <summary>
@@ -115,28 +173,56 @@ public static class CdbFile
 
     public static List<CdbRow> Read(string path)
     {
+        // Read whatever columns this database has: ygopro's, Omega's, or an older Omega layout.
+        var schema = CdbSchema.Read(path) ?? throw new InvalidDataException($"{Path.GetFileName(path)} has no card tables.");
         using var conn = Open(path, SqliteOpenMode.ReadOnly);
+        string D(string col) => schema.Has(col) ? $"d.\"{col}\"" : "NULL";
+        string T(string col) => schema.HasText(col) ? $"t.\"{col}\"" : "NULL";
+        var setcode = schema.Has("setcode") ? "d.setcode" : schema.Has("setid") ? "d.setid" : "NULL";
+        var categories = schema.CategoryIsFlags ? D("genre") : D("category");
+        var flags = schema.CategoryIsFlags ? D("category") : "NULL";
+        var strs = string.Join(", ", Enumerable.Range(1, 16).Select(i => T("str" + i)));
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = """
-            SELECT d.id, d.ot, d.alias, d.setcode, d.type, d.atk, d.def, d.level, d.race, d.attribute, d.category,
-                   t.name, t.desc, t.str1, t.str2, t.str3, t.str4, t.str5, t.str6, t.str7, t.str8,
-                   t.str9, t.str10, t.str11, t.str12, t.str13, t.str14, t.str15, t.str16
+        cmd.CommandText = $"""
+            SELECT d.id, {D("ot")}, {D("alias")}, {setcode}, {D("type")}, {D("atk")}, {D("def")}, {D("level")}, {D("race")}, {D("attribute")},
+                   {categories}, t.name, t.desc, {strs}, {flags}, {D("support")}, {D("ocgdate")}, {D("tcgdate")}, {D("script")}
             FROM datas d LEFT JOIN texts t ON t.id = d.id ORDER BY d.id
             """;
-        using var rd = cmd.ExecuteReader();
         var rows = new List<CdbRow>();
-        while (rd.Read())
+        using (var rd = cmd.ExecuteReader())
         {
-            var row = new CdbRow
+            while (rd.Read())
             {
-                Id = Long(rd, 0), Ot = Long(rd, 1), Alias = Long(rd, 2), Setcode = Long(rd, 3),
-                Type = Long(rd, 4), Atk = Long(rd, 5), Def = Long(rd, 6), Level = Long(rd, 7),
-                Race = Long(rd, 8), Attribute = Long(rd, 9), Category = Long(rd, 10),
-                Name = Str(rd, 11),
-                Desc = Str(rd, 12),
-            };
-            for (int i = 0; i < 16; i++) row.Strings[i] = Str(rd, 13 + i);
-            rows.Add(row);
+                var row = new CdbRow
+                {
+                    Id = Long(rd, 0), Ot = Long(rd, 1), Alias = Long(rd, 2),
+                    Setcode = schema.Has("setcode") ? Long(rd, 3) : CdbEncoder.PackSetcodes(CdbSchema.ParseSetid(Str(rd, 3))),
+                    Type = Long(rd, 4), Atk = Long(rd, 5), Def = Long(rd, 6), Level = Long(rd, 7),
+                    Race = Long(rd, 8), Attribute = Long(rd, 9), Category = Long(rd, 10),
+                    Name = Str(rd, 11),
+                    Desc = Str(rd, 12),
+                    OmegaFlags = Long(rd, 29), Support = Long(rd, 30),
+                    OcgDate = rd.IsDBNull(31) ? CdbRow.Unreleased : Long(rd, 31),
+                    TcgDate = rd.IsDBNull(32) ? CdbRow.Unreleased : Long(rd, 32),
+                    Script = rd.IsDBNull(33) ? null : Str(rd, 33),
+                };
+                for (int i = 0; i < 16; i++) row.Strings[i] = Str(rd, 13 + i);
+                rows.Add(row);
+            }
+        }
+
+        if (schema.HasBanlists)
+        {
+            var byId = rows.ToDictionary(r => r.Id);
+            using var ban = conn.CreateCommand();
+            ban.CommandText = $"SELECT \"{schema.BandataCardColumn}\", banlistid, limits FROM bandatas";
+            try
+            {
+                using var rd = ban.ExecuteReader();
+                while (rd.Read())
+                    if (byId.TryGetValue(Long(rd, 0), out var row)) row.Limits[Long(rd, 1)] = (int)Long(rd, 2);
+            }
+            catch (SqliteException) { /* an unexpected banlist layout must not stop the cards loading */ }
         }
         return rows;
     }

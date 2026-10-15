@@ -19,7 +19,16 @@ public static class PackSerializer
     public static string ToJson(CardPack pack) => JsonSerializer.Serialize(pack, Options);
 
     public static CardPack FromJson(string json) =>
-        JsonSerializer.Deserialize<CardPack>(json, Options) ?? throw new InvalidDataException("The pack file is empty.");
+        Upgrade(JsonSerializer.Deserialize<CardPack>(json, Options) ?? throw new InvalidDataException("The pack file is empty."));
+
+    /// <summary>Brings packs saved by older versions up to date.</summary>
+    private static CardPack Upgrade(CardPack pack)
+    {
+        // Version 1 put every card in the OCG/TCG pool (ot 3), where YGO Omega doesn't list custom cards.
+        if (pack.FormatVersion < 2 && pack.Ot == (int)CardPool.OcgTcg) pack.Ot = (int)CardPool.Custom;
+        pack.FormatVersion = CardPack.CurrentFormat;
+        return pack;
+    }
 
     public static void Save(CardPack pack, string path)
     {
