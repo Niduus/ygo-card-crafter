@@ -14,7 +14,7 @@ public class UpdateBannerTests
         "https://github.com/Niduus/ygo-card-crafter/releases/tag/v9.0.0", "https://github.com/Niduus/ygo-card-crafter/releases/download/v9.0.0/YGOCardCrafter.exe", 10, null);
 
     [AvaloniaFact]
-    public void BannerShowsAndButtonsWork()
+    public async Task BannerShowsAndButtonsWork()
     {
         var dialogs = new FakeDialogs();
         var settings = new AppSettings();
@@ -35,7 +35,7 @@ public class UpdateBannerTests
         Assert.Single(dialogs.OpenedUrls);
 
         // Outside the Windows exe (tests, dotnet run) updating opens the download page instead.
-        Assert.True(vm.UpdateNowCommand.ExecuteAsync(null).Wait(5000));
+        await vm.UpdateNowCommand.ExecuteAsync(null);
         Assert.Equal(2, dialogs.OpenedUrls.Count);
 
         vm.UpdateLaterCommand.Execute(null);

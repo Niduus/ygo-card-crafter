@@ -448,10 +448,13 @@ public sealed partial class MainViewModel : ObservableObject
 
     private string UpdateRepository => _settings.UpdateRepository ?? UpdateChecker.DefaultRepository;
 
-    /// <summary>The installed exe when running as the published single file; null when run from source.</summary>
+    /// <summary>
+    /// The installed exe when running as the published single file; null otherwise (run from source, or hosted by
+    /// another program such as a test runner). Only a file named exactly like the release asset is ever replaced.
+    /// </summary>
     private static string? InstalledExe =>
-        OperatingSystem.IsWindows() && Environment.ProcessPath is { } p && p.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
-        && !Path.GetFileNameWithoutExtension(p).Equals("dotnet", StringComparison.OrdinalIgnoreCase) ? p : null;
+        OperatingSystem.IsWindows() && Environment.ProcessPath is { } p
+        && Path.GetFileName(p).Equals(UpdateChecker.AssetName, StringComparison.OrdinalIgnoreCase) ? p : null;
 
     /// <summary>Looks for a newer release. Quiet at startup; tells the user the result when they asked.</summary>
     public async Task CheckForUpdatesAsync(bool userAsked)
