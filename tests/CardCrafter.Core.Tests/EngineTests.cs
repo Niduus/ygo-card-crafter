@@ -80,6 +80,69 @@ public class EngineTests
             .AssertPasses();
     }
 
+    private static CardProject SummonedQuickEffectCard() => new()
+    {
+        Card = new CardData { Id = 100000230, Name = "Ambusher", Level = 4, Atk = 1500 },
+        Effects =
+        [
+            new EffectEvent
+            {
+                Label = "Summoned this turn",
+                When = new BlockInstance("when.quick"),
+                If = [new BlockInstance("if.summoned_this_turn")],
+                Do = [new BlockInstance("do.draw").With("count", 1)],
+                Limit = OncePerTurn.Hard,
+            },
+        ],
+    };
+
+    [EngineFact]
+    public void QuickEffect_IfSummonedThisTurn_Works()
+    {
+        var card = SummonedQuickEffectCard();
+        new EngineScenario(card)
+            .Card(card.Card.Id, 0, "hand").Card(Warrior, 0, "deck", 5)
+            .Summon(card.Card.Id).Activate(card.Card.Id)
+            .ExpectActivations(1)
+            .Check("Duel.GetFieldGroupCount(0,LOCATION_HAND,0)==1")
+            .AssertPasses();
+    }
+
+    [EngineFact]
+    public void QuickEffect_IfSummonedThisTurn_NotUsableOtherwise()
+    {
+        var card = SummonedQuickEffectCard();
+        new EngineScenario(card)
+            .Card(card.Card.Id, 0, "mzone").Card(Warrior, 0, "deck", 5)
+            .Activate(card.Card.Id)
+            .ExpectActivations(0)
+            .AssertPasses();
+    }
+
+    [EngineFact]
+    public void QuickEffect_WhenAnyMonsterIsSummoned()
+    {
+        // In the GY: when a monster is Summoned (here, by its own owner), gain 500 LP.
+        var card = new CardProject
+        {
+            Card = new CardData { Id = 100000231, Name = "Watcher", Level = 4 },
+            Effects =
+            [
+                new EffectEvent
+                {
+                    When = new BlockInstance("when.quick").With("timing", "any_summon").With("zone", "graveyard"),
+                    Do = [new BlockInstance("do.gain_lp").With("amount", 500)],
+                },
+            ],
+        };
+        new EngineScenario(card)
+            .Card(card.Card.Id, 0, "grave").Card(Warrior, 0, "hand").Card(Warrior, 0, "deck", 5)
+            .Summon(Warrior).Activate(card.Card.Id)
+            .ExpectActivations(1)
+            .Check("Duel.GetLP(0)==8500")
+            .AssertPasses();
+    }
+
     [EngineFact]
     public void HardOncePerTurn_IsEnforced()
     {

@@ -1,3 +1,4 @@
+using CardCrafter.Core.Model;
 using CardCrafter.Core.Text;
 
 namespace CardCrafter.Core.Tests;
@@ -16,6 +17,19 @@ public class TextTests
             "During your opponent's turn (Quick Effect): You can banish this card, then target 1 monster your opponent controls; " +
             "destroy it, and if you do, inflict 500 damage to your opponent. You can only use this effect of \"Dragon Commander\" once per turn.", lines[1]);
         Assert.Equal("While you control 2 or more face-up Dragon monsters, Dragon monsters you control gain 300 ATK.", lines[2]);
+    }
+
+    [Fact]
+    public void SummonedThisTurnQuickEffect_Reads()
+    {
+        var effect = new EffectEvent
+        {
+            When = new BlockInstance("when.quick"),
+            If = [new BlockInstance("if.summoned_this_turn").With("how", "special")],
+            Do = [new BlockInstance("do.draw")],
+        };
+        Assert.Equal("If this card was Special Summoned this turn (Quick Effect): You can draw 1 card.",
+            EffectTextGenerator.Describe(effect, new CardCrafter.Core.Model.CardData { Name = "X" }));
     }
 
     [Fact]

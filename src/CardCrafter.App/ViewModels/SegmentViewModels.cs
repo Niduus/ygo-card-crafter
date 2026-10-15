@@ -19,6 +19,7 @@ public sealed class IntSegmentViewModel(ParamSpec spec, BlockInstance inst, Acti
     public decimal Minimum => spec.Min;
     public decimal Maximum => spec.Max;
     public decimal Increment => spec.Max > 1000 ? 100 : 1;
+    public double Width => spec.Max > 999 ? 76 : 48;
 
     public decimal? Value
     {

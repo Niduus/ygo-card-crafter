@@ -9,8 +9,8 @@ Each effect has exactly one.
 | Block | Reads as | Options |
 |---|---|---|
 | You activate it (Main Phase) | You activate it during your Main Phase, {zone} | **From**: on the field, in the Monster Zone, in the hand, in the GY, in the Spell & Trap Zone, in the Field Zone, in the Pendulum Zone, while banished |
-| Activate this Spell/Trap | Activate this card {timing} | **Timing**: at any time, when an opponent's monster declares an attack, when your opponent Normal or Special Summons a monster |
-| Quick Effect | (Quick Effect) You activate it {timing}, {zone} | **Timing**: at any time, when an opponent's monster declares an attack, when your opponent Normal or Special Summons a monster; **From**: on the field, in the Monster Zone, in the hand, in the GY, in the Spell & Trap Zone, in the Field Zone, in the Pendulum Zone, while banished |
+| Activate this Spell/Trap | Activate this card {timing} | **Timing**: at any time, when an opponent's monster declares an attack, when your opponent Normal or Special Summons a monster, when any monster is Summoned |
+| Quick Effect | (Quick Effect) You activate it {timing}, {zone} | **Timing**: at any time, when an opponent's monster declares an attack, when your opponent Normal or Special Summons a monster, when any monster is Summoned; **From**: on the field, in the Monster Zone, in the hand, in the GY, in the Spell & Trap Zone, in the Field Zone, in the Pendulum Zone, while banished |
 | This card is Summoned | If this card is {how} Summoned | **How**: Normal, Special, Normal or Special, Flip, Normal, Flip or Special; **optional ("You can")** on/off |
 | This card is sent to the GY | If this card is sent to the GY{from} | **From**: from anywhere, from the field, from the hand, from the Deck, from the hand or field; **optional ("You can")** on/off |
 | This card is destroyed | If this card is destroyed{by} | **By**: by anything, by battle, by a card effect, by an opponent's card; **optional ("You can")** on/off |
@@ -27,6 +27,7 @@ All of them must be true for the effect to be used.
 |---|---|---|
 | There are cards somewhere | There are {count} or more {cards} | **How many**: 1–60; **Which cards**: card picker |
 | There are no matching cards | There are no {cards} | **Which cards**: card picker |
+| This card was Summoned this turn | This card was {how} Summoned this turn | **How**: Normal, Flip or Special, Normal, Special, Flip |
 | Your opponent controls more monsters | Your opponent controls more monsters than you do |  |
 | Life Points compared to a number | {who} LP is {cmp} {amount} | **Whose**: Your, Your opponent's; **Compare**: at most, at least; **Amount**: 0–999999 |
 | Whose turn it is | It is {whose} turn | **Whose**: your, your opponent's |

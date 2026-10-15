@@ -221,6 +221,7 @@ internal static class Timing
         new("any", "at any time"),
         new("attack", "when an opponent's monster declares an attack"),
         new("summon", "when your opponent Normal or Special Summons a monster"),
+        new("any_summon", "when any monster is Summoned"),
     ];
 
     public static void Apply(BlockContext ctx, string timing)
@@ -236,6 +237,12 @@ internal static class Timing
                 ctx.Effect.ExtraCodes.Add("EVENT_SPSUMMON_SUCCESS");
                 ctx.Effect.Conditions.Add("eg:IsExists(Card.IsSummonPlayer,1,nil,1-tp)");
                 break;
+            case "any_summon":
+                // Normal, Flip or Special Summons by either player, this card included.
+                ctx.Effect.Code = "EVENT_SUMMON_SUCCESS";
+                ctx.Effect.ExtraCodes.Add("EVENT_FLIP_SUMMON_SUCCESS");
+                ctx.Effect.ExtraCodes.Add("EVENT_SPSUMMON_SUCCESS");
+                break;
             default:
                 ctx.Effect.Code = "EVENT_FREE_CHAIN";
                 break;
@@ -246,6 +253,7 @@ internal static class Timing
     {
         "attack" => "When an opponent's monster declares an attack",
         "summon" => "When your opponent Normal or Special Summons a monster",
+        "any_summon" => "When a monster is Normal, Flip or Special Summoned",
         _ => "",
     };
 }

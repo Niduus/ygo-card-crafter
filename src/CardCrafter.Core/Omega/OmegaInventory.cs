@@ -29,8 +29,73 @@ public sealed partial class OmegaInventory
         EngineLibraries.Select(Path.GetDirectoryName).FirstOrDefault(d => d is not null)
         ?? ScriptFolders.OrderByDescending(s => s.Count).FirstOrDefault()?.Path;
 
-    public string? BestDatabaseFolder =>
-        CardDatabases.OrderByDescending(d => d.Cards).Select(d => Path.GetDirectoryName(d.Path)).FirstOrDefault();
+    /// <summary>Databases this big are the game's own card list, never a place for custom cards.</summary>
+    public const int OfficialDatabaseMinCards = 5000;
+
+    /// <summary>The game's own card database (YGO Omega keeps it at Files\Bundles\db), if found.</summary>
+    public DatabaseInfo? OfficialDatabase =>
+        CardDatabases.Where(d => d.Cards >= OfficialDatabaseMinCards).OrderByDescending(d => d.Cards).FirstOrDefault();
+
+    /// <summary>
+    /// Where custom card databases go. YGO Omega reads every database in Files\Databases, so a folder named
+    /// "Databases" wins. Otherwise use a folder of small (custom) databases. Never the official database's folder.
+    /// </summary>
+    public string? BestDatabaseFolder
+    {
+        get
+        {
+            var custom = CardDatabases.Where(d => d.Cards < OfficialDatabaseMinCards).ToList();
+            var named = CardDatabases.Select(d => Path.GetDirectoryName(d.Path)!)
+                .FirstOrDefault(d => Path.GetFileName(d).Equals("Databases", StringComparison.OrdinalIgnoreCase));
+            if (named is not null) return named;
+            var official = OfficialDatabase is { } o ? Path.GetDirectoryName(o.Path) : null;
+            return custom.Select(d => Path.GetDirectoryName(d.Path)!)
+                .Where(d => !string.Equals(d, official, StringComparison.OrdinalIgnoreCase))
+                .GroupBy(d => d, StringComparer.OrdinalIgnoreCase)
+                .OrderByDescending(g => g.Count())
+                .Select(g => g.Key)
+                .FirstOrDefault();
+        }
+    }
+
+    /// <summary>The file extension the other custom databases use (".db" in YGO Omega), so ours matches.</summary>
+    public string DatabaseExtension
+    {
+        get
+        {
+            var folder = BestDatabaseFolder;
+            if (folder is null) return ".cdb";
+            return CardDatabases.Where(d => string.Equals(Path.GetDirectoryName(d.Path), folder, StringComparison.OrdinalIgnoreCase))
+                .Select(d => Path.GetExtension(d.Path).ToLowerInvariant())
+                .Where(e => e.Length > 0)
+                .GroupBy(e => e)
+                .OrderByDescending(g => g.Count())
+                .Select(g => g.Key)
+                .FirstOrDefault() ?? ".db";
+        }
+    }
+
+    /// <summary>
+    /// Passcodes already used by the official database and by other custom databases, with the file using each.
+    /// A custom card that reuses one of these would clash with that card in game.
+    /// </summary>
+    public Dictionary<long, string> UsedPasscodes(string? excludeFileName = null)
+    {
+        var used = new Dictionary<long, string>();
+        foreach (var db in CardDatabases)
+        {
+            if (excludeFileName is not null && Path.GetFileNameWithoutExtension(db.Path).Equals(excludeFileName, StringComparison.OrdinalIgnoreCase)) continue;
+            try
+            {
+                foreach (var id in CdbFile.ReadIds(db.Path)) used.TryAdd(id, Path.GetRelativePath(Root, db.Path));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Microsoft.Data.Sqlite.SqliteException)
+            {
+                // A locked or unreadable database just isn't checked.
+            }
+        }
+        return used;
+    }
 
     public string? BestImageFolder => ImageFolders.OrderByDescending(i => i.Count).FirstOrDefault()?.Path;
 
@@ -134,6 +199,15 @@ public sealed partial class OmegaInventory
         sb.AppendLine("Most common file types:");
         foreach (var kv in Extensions.OrderByDescending(kv => kv.Value).Take(15)) sb.AppendLine($"  {kv.Key}: {kv.Value}");
         sb.AppendLine();
+        if (OfficialDatabase is { } off) sb.AppendLine($"Official card database: {Rel(off.Path)} [{off.Cards} cards]");
+        if (SupportsLooseFiles)
+        {
+            sb.AppendLine("Card Crafter will install:");
+            sb.AppendLine($"  databases into {Rel(BestDatabaseFolder!)} as <pack name>{DatabaseExtension}");
+            sb.AppendLine($"  scripts into   {Rel(BestScriptFolder!)}");
+            if (BestImageFolder is { } img) sb.AppendLine($"  artwork into   {Rel(img)}");
+            sb.AppendLine();
+        }
         sb.AppendLine(SupportsLooseFiles
             ? "Result: found a script folder and a card database. Card Crafter can install custom cards here."
             : "Result: no loose card scripts or readable card database were found. Omega may pack its card data, " +

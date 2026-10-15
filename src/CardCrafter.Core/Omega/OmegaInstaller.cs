@@ -4,6 +4,8 @@ public sealed class InstallResult
 {
     public List<string> Copied { get; } = [];
     public List<string> BackedUp { get; } = [];
+    /// <summary>Cards whose passcode is already used by another database, as "passcode name (file)".</summary>
+    public List<string> Clashes { get; } = [];
     public string? BackupFolder { get; set; }
     /// <summary>True when Windows refused the copy, usually because Omega is under Program Files.</summary>
     public bool NeedsAdmin { get; set; }
@@ -24,10 +26,21 @@ public static class OmegaInstaller
             return result;
         }
 
-        var plan = new List<(string From, string To)>
+        // Match the game's own naming: YGO Omega's custom databases are "<name>.db".
+        var dbName = Path.GetFileNameWithoutExtension(export.DatabasePath);
+        var dbTarget = Path.Combine(inventory.BestDatabaseFolder!, dbName + inventory.DatabaseExtension);
+
+        // Two cards with one passcode clash in game, so refuse rather than install a broken pack.
+        var used = inventory.UsedPasscodes(excludeFileName: dbName);
+        foreach (var card in export.Cards.Select(c => c.Card.Card))
+            if (used.TryGetValue(card.Id, out var file)) result.Clashes.Add($"{card.Id} {card.Name} (already used in {file})");
+        if (result.Clashes.Count > 0)
         {
-            (export.DatabasePath, Path.Combine(inventory.BestDatabaseFolder!, Path.GetFileName(export.DatabasePath))),
-        };
+            result.Error = "Some passcodes are already used by other cards in Omega. Change them on the Card tab:\n" + string.Join("\n", result.Clashes);
+            return result;
+        }
+
+        var plan = new List<(string From, string To)> { (export.DatabasePath, dbTarget) };
         foreach (var card in export.Cards.Where(c => !c.Skipped))
         {
             plan.Add((card.ScriptPath!, Path.Combine(inventory.BestScriptFolder!, Path.GetFileName(card.ScriptPath!))));
@@ -35,8 +48,7 @@ public static class OmegaInstaller
                 plan.Add((card.ImagePath, Path.Combine(inventory.BestImageFolder, Path.GetFileName(card.ImagePath))));
         }
 
-        // Never overwrite an official card database: our file name must not already be one of theirs.
-        var dbTarget = plan[0].To;
+        // Never overwrite a database Card Crafter didn't make: our file name must not already be someone else's.
         if (inventory.CardDatabases.Any(d => string.Equals(Path.GetFullPath(d.Path), Path.GetFullPath(dbTarget), StringComparison.OrdinalIgnoreCase)
                                              && !IsOurs(d.Path, export)))
         {

@@ -50,6 +50,67 @@ public class OmegaTests
         Assert.Contains("Card Crafter can install", inv.Report());
     }
 
+    /// <summary>The layout found on a real YGO Omega install (Files\Bundles\db is the official database).</summary>
+    private static string RealOmegaLayout(string root)
+    {
+        var omega = Path.Combine(root, "YGO Omega");
+        var files = Path.Combine(omega, "YGO Omega_Data", "Files");
+        Directory.CreateDirectory(files);
+        File.WriteAllText(Path.Combine(omega, "YGO Omega.exe"), "");
+        var official = Enumerable.Range(1, 5001).Select(i => CdbEncoder.Encode(new CardData { Id = i }, [], 3));
+        Directory.CreateDirectory(Path.Combine(files, "Bundles"));
+        CdbFile.WriteFresh(Path.Combine(files, "Bundles", "db"), official);
+        File.Move(Path.Combine(files, "Bundles", "db"), Path.Combine(files, "Bundles", "db.tmp"));
+        File.Move(Path.Combine(files, "Bundles", "db.tmp"), Path.Combine(files, "Bundles", "db"));
+        CdbFile.WriteFresh(Path.Combine(files, "Databases", "Infestation.db"), [CdbEncoder.Encode(new CardData { Id = 200000001 }, [], 3)]);
+        CdbFile.WriteFresh(Path.Combine(files, "Databases", "Elder Divine.cdb"), [CdbEncoder.Encode(new CardData { Id = 200000002 }, [], 3)]);
+        CdbFile.WriteFresh(Path.Combine(files, "Databases", "Kitharas.db"), [CdbEncoder.Encode(new CardData { Id = 200000003 }, [], 3)]);
+        Directory.CreateDirectory(Path.Combine(files, "Scripts"));
+        File.WriteAllText(Path.Combine(files, "Scripts", "c200000001.lua"), "");
+        Directory.CreateDirectory(Path.Combine(files, "Arts"));
+        for (int i = 0; i < 25; i++) File.WriteAllText(Path.Combine(files, "Arts", $"{200000000 + i}.jpg"), "");
+        return omega;
+    }
+
+    [Fact]
+    public void RealLayout_InstallsIntoDatabasesFolderAsDb()
+    {
+        using var tmp = new TempDir();
+        var omega = RealOmegaLayout(tmp.Path);
+        var inv = OmegaInventory.Scan(omega);
+        var files = Path.Combine(omega, "YGO Omega_Data", "Files");
+        Assert.Equal(Path.Combine(files, "Bundles", "db"), inv.OfficialDatabase!.Path);
+        Assert.Equal(Path.Combine(files, "Databases"), inv.BestDatabaseFolder);
+        Assert.Equal(".db", inv.DatabaseExtension);
+        Assert.Equal(Path.Combine(files, "Scripts"), inv.BestScriptFolder);
+        Assert.Equal(Path.Combine(files, "Arts"), inv.BestImageFolder);
+
+        var export = PackExporter.Export(Samples.Pack(Samples.DragonCommander()), Path.Combine(tmp.Path, "out"));
+        var result = OmegaInstaller.Install(export, inv, Path.Combine(tmp.Path, "b"));
+        Assert.True(result.Success, result.Error);
+        Assert.True(File.Exists(Path.Combine(files, "Databases", "Test Pack.db")));
+        Assert.True(File.Exists(Path.Combine(files, "Scripts", "c100000002.lua")));
+        Assert.Equal(5001, CdbFile.Read(inv.OfficialDatabase.Path).Count);
+        Assert.Contains("Databases as <pack name>.db", inv.Report());
+    }
+
+    [Fact]
+    public void RealLayout_RefusesPasscodesUsedByOtherCards()
+    {
+        using var tmp = new TempDir();
+        var omega = RealOmegaLayout(tmp.Path);
+        var clash = Samples.DragonCommander();
+        clash.Card.Id = 200000001; // already used by Infestation.db
+        var official = Samples.PotOfGreedClone();
+        official.Card.Id = 42; // an official card
+        var export = PackExporter.Export(Samples.Pack(clash, official), Path.Combine(tmp.Path, "out"));
+        var result = OmegaInstaller.Install(export, OmegaInventory.Scan(omega), Path.Combine(tmp.Path, "b"));
+        Assert.False(result.Success);
+        Assert.Equal(2, result.Clashes.Count);
+        Assert.Contains(result.Clashes, c => c.Contains("Infestation.db"));
+        Assert.Contains(result.Clashes, c => c.Contains(Path.Combine("Bundles", "db")));
+    }
+
     [Fact]
     public void Inventory_ReportsPackedInstall()
     {

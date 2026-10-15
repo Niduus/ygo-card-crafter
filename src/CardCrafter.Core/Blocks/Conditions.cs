@@ -65,6 +65,39 @@ public sealed class NoCardsCondition : ConditionBlock
     }
 }
 
+public sealed class SummonedThisTurnCondition : ConditionBlock
+{
+    public override string Id => "if.summoned_this_turn";
+    public override string Group => "This card";
+    public override string Name => "This card was Summoned this turn";
+    public override string Sentence => "This card was {how} Summoned this turn";
+    public override string Help => "Pair it with a Quick Effect for \"If this card was Summoned this turn (Quick Effect): ...\".";
+    public override IReadOnlyList<ParamSpec> Params { get; } =
+    [
+        ParamSpec.Choice("how", "How",
+            new("any", "Normal, Flip or Special", "Normal, Flip or Special"),
+            new("normal", "Normal"),
+            new("special", "Special"),
+            new("flip", "Flip")),
+    ];
+
+    public override string Describe(BlockArgs args) => args.Choice("how") == "any"
+        ? "this card was Summoned this turn"
+        : $"this card was {args.Describe("how")} Summoned this turn";
+
+    public override void Compile(BlockContext ctx)
+    {
+        Zones.RequireMonster(ctx, Name);
+        ctx.Effect.Conditions.Add(ctx.Args.Choice("how") switch
+        {
+            "normal" => "e:GetHandler():IsStatus(STATUS_SUMMON_TURN)",
+            "special" => "e:GetHandler():IsStatus(STATUS_SPSUMMON_TURN)",
+            "flip" => "e:GetHandler():IsStatus(STATUS_FLIP_SUMMON_TURN)",
+            _ => "(e:GetHandler():IsStatus(STATUS_SUMMON_TURN) or e:GetHandler():IsStatus(STATUS_FLIP_SUMMON_TURN) or e:GetHandler():IsStatus(STATUS_SPSUMMON_TURN))",
+        });
+    }
+}
+
 public sealed class OpponentMoreMonstersCondition : ConditionBlock
 {
     public override string Id => "if.opponent_more_monsters";

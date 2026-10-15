@@ -19,6 +19,7 @@ public static class BlockRegistry
         // IF
         new CardsExistCondition(),
         new NoCardsCondition(),
+        new SummonedThisTurnCondition(),
         new OpponentMoreMonstersCondition(),
         new LifePointsCondition(),
         new TurnCondition(),

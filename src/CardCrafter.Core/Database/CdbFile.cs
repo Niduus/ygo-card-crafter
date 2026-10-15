@@ -110,6 +110,18 @@ public static class CdbFile
         return rows;
     }
 
+    /// <summary>Just the passcodes in a database. Fast even for the 20,000-card official database.</summary>
+    public static List<long> ReadIds(string path)
+    {
+        using var conn = Open(path, SqliteOpenMode.ReadOnly);
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT id FROM datas";
+        using var rd = cmd.ExecuteReader();
+        var ids = new List<long>();
+        while (rd.Read()) ids.Add(rd.GetInt64(0));
+        return ids;
+    }
+
     /// <summary>True when the file is SQLite and has the card tables, without throwing on other files.</summary>
     public static bool IsCardDatabase(string path, out int cardCount)
     {
