@@ -1,0 +1,191 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:CardCrafter.App.ViewModels"
+        xmlns:views="using:CardCrafter.App.Views"
+        xmlns:omega="using:CardCrafter.Core.Omega"
+        x:Class="CardCrafter.App.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Title="{Binding Title}"
+        Icon="avares://YGOCardCrafter/Assets/icon.ico"
+        Width="1360" Height="860" MinWidth="980" MinHeight="600"
+        WindowStartupLocation="CenterScreen">
+  <Window.KeyBindings>
+    <KeyBinding Gesture="Ctrl+S" Command="{Binding SavePackCommand}" />
+    <KeyBinding Gesture="Ctrl+Shift+S" Command="{Binding SavePackAsCommand}" />
+    <KeyBinding Gesture="Ctrl+O" Command="{Binding OpenPackCommand}" />
+    <KeyBinding Gesture="Ctrl+N" Command="{Binding NewPackCommand}" />
+  </Window.KeyBindings>
+
+  <DockPanel>
+    <!-- toolbar -->
+    <Border DockPanel.Dock="Top" Background="#15161B" Padding="10,8" BorderBrush="#2A2C36" BorderThickness="0,0,0,1">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6">
+          <Image Source="avares://YGOCardCrafter/Assets/icon.png" Width="26" Height="26" Margin="0,0,6,0" />
+          <Button Content="New" Command="{Binding NewPackCommand}" ToolTip.Tip="New pack (Ctrl+N)" />
+          <Button Content="Open…" Command="{Binding OpenPackCommand}" ToolTip.Tip="Open a .ycc pack (Ctrl+O)" />
+          <Button Content="Save" Command="{Binding SavePackCommand}" ToolTip.Tip="Save (Ctrl+S)" />
+          <Button Content="Save as…" Command="{Binding SavePackAsCommand}" />
+          <Border Width="1" Background="#2A2C36" Margin="6,2" />
+          <Button Content="Import .cdb…" Command="{Binding ImportCdbCommand}" ToolTip.Tip="Bring in cards from an existing custom card database" />
+          <Button Content="Export" Command="{Binding ExportCommand}" ToolTip.Tip="Write the .cdb, scripts and pics to a folder" />
+          <Button Content="Install into Omega" Command="{Binding InstallCommand}" IsEnabled="{Binding CanInstall}" Classes="accent" />
+        </StackPanel>
+        <TextBlock Grid.Column="2" Text="{Binding OmegaStatus}" VerticalAlignment="Center" FontSize="12"
+                   Foreground="{StaticResource MutedBrush}" MaxWidth="520" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding OmegaStatus}" />
+      </Grid>
+    </Border>
+
+    <!-- status bar -->
+    <Border DockPanel.Dock="Bottom" Background="#15161B" Padding="10,4" BorderBrush="#2A2C36" BorderThickness="0,1,0,0">
+      <TextBlock Text="{Binding Status}" FontSize="12" TextTrimming="CharacterEllipsis" />
+    </Border>
+
+    <!-- pack and card list -->
+    <Border DockPanel.Dock="Left" Width="280" Background="#191A20" BorderBrush="#2A2C36" BorderThickness="0,0,1,0" Padding="10">
+      <DockPanel>
+        <StackPanel DockPanel.Dock="Top">
+          <TextBlock Classes="label" Text="Pack name" Margin="0,0,0,2" />
+          <TextBox Text="{Binding PackName}" />
+          <TextBlock Classes="label" Text="Author" />
+          <TextBox Text="{Binding PackAuthor}" Watermark="your name" />
+          <Grid ColumnDefinitions="*,Auto" Margin="0,14,0,4">
+            <TextBlock Text="Cards" FontWeight="SemiBold" VerticalAlignment="Center" />
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2">
+              <Button Classes="icon" Content="+" ToolTip.Tip="Add a card">
+                <Button.Flyout>
+                  <MenuFlyout>
+                    <MenuItem Header="Monster" Command="{Binding AddCardCommand}" CommandParameter="Monster" />
+                    <MenuItem Header="Spell" Command="{Binding AddCardCommand}" CommandParameter="Spell" />
+                    <MenuItem Header="Trap" Command="{Binding AddCardCommand}" CommandParameter="Trap" />
+                  </MenuFlyout>
+                </Button.Flyout>
+              </Button>
+              <Button Classes="icon" Content="⧉" Command="{Binding DuplicateCardCommand}" ToolTip.Tip="Duplicate card" />
+              <Button Classes="icon" Content="🗑" Command="{Binding DeleteCardCommand}" ToolTip.Tip="Delete card" />
+            </StackPanel>
+          </Grid>
+        </StackPanel>
+
+        <Expander DockPanel.Dock="Bottom" Header="Custom Types" Margin="0,6,0,0" HorizontalAlignment="Stretch">
+          <StackPanel Spacing="4">
+            <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource MutedBrush}"
+                       Text="Monster Types beyond the standard ones. The value must match what YGO Omega uses for that Type." />
+            <ItemsControl ItemsSource="{Binding CustomTypes}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="vm:CustomTypeViewModel">
+                  <Grid ColumnDefinitions="*,4,96,Auto" Margin="0,2">
+                    <TextBox Grid.Column="0" Text="{Binding Name}" />
+                    <TextBox Grid.Column="2" Text="{Binding Value}" FontFamily="{StaticResource CodeFont}" />
+                    <Button Grid.Column="3" Classes="icon" Content="✕"
+                            Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).RemoveCustomTypeCommand}"
+                            CommandParameter="{Binding}" />
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <Button Content="+ Add custom Type" Command="{Binding AddCustomTypeCommand}" />
+            <StackPanel IsVisible="{Binding HasFoundTypes}" Spacing="2">
+              <TextBlock Classes="label" Text="Types found in your Omega (click to add)" />
+              <ItemsControl ItemsSource="{Binding FoundTypes}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate DataType="omega:UnknownType">
+                    <Button Classes="chip" HorizontalAlignment="Stretch" Content="{Binding Label}"
+                            Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).UseFoundTypeCommand}" CommandParameter="{Binding}" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </StackPanel>
+        </Expander>
+
+        <Expander DockPanel.Dock="Bottom" Header="Archetypes" Margin="0,8,0,0" HorizontalAlignment="Stretch">
+          <StackPanel Spacing="4">
+            <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource MutedBrush}"
+                       Text="An archetype is a name shared by a group of cards. Each needs a code from 0x1 to 0xffff that other packs don't use." />
+            <ItemsControl ItemsSource="{Binding Archetypes}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="vm:ArchetypeViewModel">
+                  <Grid ColumnDefinitions="*,4,80,Auto" RowDefinitions="Auto,Auto" Margin="0,2">
+                    <TextBlock Grid.Row="1" Grid.ColumnSpan="4" Text="{Binding Warning}" IsVisible="{Binding HasWarning}"
+                               TextWrapping="Wrap" FontSize="11" Foreground="#FCD34D" Margin="0,2,0,0" />
+                    <TextBox Grid.Column="0" Text="{Binding Name}" />
+                    <TextBox Grid.Column="2" Text="{Binding Code}" FontFamily="{StaticResource CodeFont}" />
+                    <Button Grid.Column="3" Classes="icon" Content="✕"
+                            Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).RemoveArchetypeCommand}"
+                            CommandParameter="{Binding}" />
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <StackPanel Orientation="Horizontal" Spacing="4">
+              <Button Content="+ New archetype" Command="{Binding AddArchetypeCommand}"
+                      ToolTip.Tip="A new archetype with a code nothing in Omega uses" />
+              <Button Content="Use one from Omega…" IsEnabled="{Binding HasCatalog}"
+                      ToolTip.Tip="Make your cards part of an archetype that already exists in the game">
+                <Button.Flyout>
+                  <Flyout Placement="RightEdgeAlignedBottom">
+                    <StackPanel Width="340" Spacing="6">
+                      <TextBox Text="{Binding ArchetypeSearch}" Watermark="Search, e.g. HERO or Blue-Eyes" />
+                      <ListBox ItemsSource="{Binding KnownArchetypes}" Height="320">
+                        <ListBox.ItemTemplate>
+                          <DataTemplate DataType="omega:KnownArchetype">
+                            <Button Background="Transparent" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                    Command="{Binding $parent[ListBox].((vm:MainViewModel)DataContext).UseKnownArchetypeCommand}" CommandParameter="{Binding}">
+                              <StackPanel>
+                                <TextBlock Text="{Binding Label}" />
+                                <TextBlock Text="{Binding Examples[0]}" FontSize="11" Foreground="{StaticResource MutedBrush}" />
+                              </StackPanel>
+                            </Button>
+                          </DataTemplate>
+                        </ListBox.ItemTemplate>
+                      </ListBox>
+                    </StackPanel>
+                  </Flyout>
+                </Button.Flyout>
+              </Button>
+            </StackPanel>
+          </StackPanel>
+        </Expander>
+
+        <ListBox ItemsSource="{Binding Cards}" SelectedItem="{Binding SelectedCard}" Background="Transparent">
+          <ListBox.ItemTemplate>
+            <DataTemplate DataType="vm:CardViewModel">
+              <Grid ColumnDefinitions="Auto,*">
+                <TextBlock Grid.Column="0" Text="{Binding StatusIcon}" Margin="0,0,8,0" VerticalAlignment="Center" />
+                <StackPanel Grid.Column="1">
+                  <TextBlock Text="{Binding ListLabel}" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Text="{Binding ListDetail}" FontSize="11" Foreground="{StaticResource MutedBrush}" />
+                </StackPanel>
+              </Grid>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </DockPanel>
+    </Border>
+
+    <!-- editor -->
+    <TabControl Margin="12,6,12,0" x:Name="Tabs">
+      <TabItem Header="Card">
+        <Panel>
+          <Panel IsVisible="{Binding HasSelection}"><views:CardFormView DataContext="{Binding SelectedCard}" /></Panel>
+          <TextBlock Text="Add a card with the + button on the left." IsVisible="{Binding !HasSelection}" Margin="0,20" />
+        </Panel>
+      </TabItem>
+      <TabItem Header="Effects">
+        <Panel>
+          <Panel IsVisible="{Binding HasSelection}"><views:EffectSheetView DataContext="{Binding SelectedCard}" /></Panel>
+          <TextBlock Text="Add a card with the + button on the left." IsVisible="{Binding !HasSelection}" Margin="0,20" />
+        </Panel>
+      </TabItem>
+      <TabItem Header="Script">
+        <Panel>
+          <Panel IsVisible="{Binding HasSelection}"><views:ScriptView DataContext="{Binding SelectedCard}" /></Panel>
+        </Panel>
+      </TabItem>
+      <TabItem Header="Omega">
+        <views:OmegaView />
+      </TabItem>
+    </TabControl>
+  </DockPanel>
+</Window>

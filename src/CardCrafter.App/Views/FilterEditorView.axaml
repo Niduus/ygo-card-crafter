@@ -1,0 +1,71 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CardCrafter.App.ViewModels"
+             x:Class="CardCrafter.App.Views.FilterEditorView"
+             x:DataType="vm:FilterEditorViewModel"
+             Width="360">
+  <StackPanel Spacing="2">
+    <TextBlock Text="Which cards?" FontWeight="SemiBold" />
+    <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" Foreground="#C7D7FE" Margin="0,0,0,6" />
+
+    <TextBlock Classes="label" Text="Whose" IsVisible="{Binding ShowOwner}" />
+    <ComboBox ItemsSource="{Binding OwnerOptions}" SelectedItem="{Binding Owner}" IsVisible="{Binding ShowOwner}" HorizontalAlignment="Stretch" />
+
+    <TextBlock Classes="label" Text="Where" IsVisible="{Binding ShowWhere}" />
+    <WrapPanel IsVisible="{Binding ShowWhere}">
+      <CheckBox Content="Hand" IsChecked="{Binding InHand}" IsVisible="{Binding ShowHand}" Margin="0,0,10,0" />
+      <CheckBox Content="Deck" IsChecked="{Binding InDeck}" IsVisible="{Binding ShowDeck}" Margin="0,0,10,0" />
+      <CheckBox Content="Extra Deck" IsChecked="{Binding InExtra}" IsVisible="{Binding ShowExtra}" Margin="0,0,10,0" />
+      <CheckBox Content="Monster Zone" IsChecked="{Binding InMonsterZone}" IsVisible="{Binding ShowMonsterZone}" Margin="0,0,10,0" />
+      <CheckBox Content="Spell &amp; Trap Zone" IsChecked="{Binding InSpellTrapZone}" IsVisible="{Binding ShowSpellTrapZone}" Margin="0,0,10,0" />
+      <CheckBox Content="GY" IsChecked="{Binding InGraveyard}" IsVisible="{Binding ShowGraveyard}" Margin="0,0,10,0" />
+      <CheckBox Content="Banished" IsChecked="{Binding InBanished}" IsVisible="{Binding ShowBanished}" Margin="0,0,10,0" />
+    </WrapPanel>
+
+    <Grid ColumnDefinitions="*,8,*" RowDefinitions="Auto,Auto,Auto,Auto">
+      <StackPanel Grid.Row="0" Grid.Column="0">
+        <TextBlock Classes="label" Text="Card type" />
+        <ComboBox ItemsSource="{Binding TypeOptions}" SelectedItem="{Binding CardType}" HorizontalAlignment="Stretch" />
+      </StackPanel>
+      <StackPanel Grid.Row="0" Grid.Column="2">
+        <TextBlock Classes="label" Text="Archetype" />
+        <ComboBox ItemsSource="{Binding ArchetypeOptions}" SelectedItem="{Binding Archetype}" HorizontalAlignment="Stretch" />
+      </StackPanel>
+      <StackPanel Grid.Row="1" Grid.Column="0">
+        <TextBlock Classes="label" Text="Monster Type" />
+        <ComboBox ItemsSource="{Binding RaceOptions}" SelectedItem="{Binding Race}" HorizontalAlignment="Stretch" MaxDropDownHeight="320" />
+      </StackPanel>
+      <StackPanel Grid.Row="1" Grid.Column="2">
+        <TextBlock Classes="label" Text="Attribute" />
+        <ComboBox ItemsSource="{Binding AttributeOptions}" SelectedItem="{Binding Attribute}" HorizontalAlignment="Stretch" />
+      </StackPanel>
+      <StackPanel Grid.Row="2" Grid.Column="0">
+        <TextBlock Classes="label" Text="Level from / to" />
+        <StackPanel Orientation="Horizontal" Spacing="4">
+          <NumericUpDown Value="{Binding LevelMin}" Minimum="0" Maximum="13" FormatString="0" Width="84" ShowButtonSpinner="False" Watermark="any" />
+          <NumericUpDown Value="{Binding LevelMax}" Minimum="0" Maximum="13" FormatString="0" Width="84" ShowButtonSpinner="False" Watermark="any" />
+        </StackPanel>
+      </StackPanel>
+      <StackPanel Grid.Row="2" Grid.Column="2">
+        <TextBlock Classes="label" Text="ATK from / to" />
+        <StackPanel Orientation="Horizontal" Spacing="4">
+          <NumericUpDown Value="{Binding AtkMin}" Minimum="0" Maximum="99999" Increment="100" FormatString="0" Width="84" ShowButtonSpinner="False" Watermark="any" />
+          <NumericUpDown Value="{Binding AtkMax}" Minimum="0" Maximum="99999" Increment="100" FormatString="0" Width="84" ShowButtonSpinner="False" Watermark="any" />
+        </StackPanel>
+      </StackPanel>
+      <StackPanel Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="3">
+        <TextBlock Classes="label" Text="Only this card (passcode)" />
+        <TextBox Text="{Binding CardCode}" Watermark="any card" />
+      </StackPanel>
+    </Grid>
+    <CheckBox Content="Face-up only" IsChecked="{Binding FaceUpOnly}" IsVisible="{Binding !MaterialMode}" Margin="0,6,0,0" />
+    <CheckBox Content="Not this card itself (&quot;other&quot;)" IsChecked="{Binding ExcludeThisCard}" IsVisible="{Binding !MaterialMode}" />
+    <CheckBox IsChecked="{Binding PointedToByThisCard}" IsVisible="{Binding !MaterialMode}"
+              ToolTip.Tip="Only cards in the zones this Link monster's Link Arrows point to">
+      <StackPanel Orientation="Horizontal" Spacing="6">
+        <Path Data="M12 3 L21 12 L16 12 L16 21 L8 21 L8 12 L3 12 Z" Fill="#F03A2E" Width="12" Height="12" Stretch="Uniform" />
+        <TextBlock Text="Only cards this card points to (Link Arrows)" />
+      </StackPanel>
+    </CheckBox>
+  </StackPanel>
+</UserControl>

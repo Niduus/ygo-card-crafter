@@ -1,0 +1,230 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Styles.Resources>
+    <SolidColorBrush x:Key="WhenBrush" Color="#3B82F6" />
+    <SolidColorBrush x:Key="IfBrush" Color="#14B8A6" />
+    <SolidColorBrush x:Key="CostBrush" Color="#F59E0B" />
+    <SolidColorBrush x:Key="DoBrush" Color="#22C55E" />
+    <SolidColorBrush x:Key="AlwaysBrush" Color="#A855F7" />
+    <SolidColorBrush x:Key="SheetBrush" Color="#1E1F26" />
+    <SolidColorBrush x:Key="RowBrush" Color="#272934" />
+    <SolidColorBrush x:Key="ErrorBrush" Color="#F87171" />
+    <SolidColorBrush x:Key="MutedBrush" Color="#9CA3AF" />
+    <!-- Column tints: the same colours at low opacity for panel backgrounds -->
+    <SolidColorBrush x:Key="WhenTint" Color="#1A3B82F6" />
+    <SolidColorBrush x:Key="IfTint" Color="#1A14B8A6" />
+    <SolidColorBrush x:Key="CostTint" Color="#1AF59E0B" />
+    <SolidColorBrush x:Key="DoTint" Color="#1A22C55E" />
+    <SolidColorBrush x:Key="AlwaysTint" Color="#1AA855F7" />
+    <!-- Column icons (24x24) -->
+    <StreamGeometry x:Key="WhenIcon">M13 2 L3 14 H11 L10 22 L21 9 H13 Z</StreamGeometry>
+    <StreamGeometry x:Key="IfIcon">M3 4 H21 L14 12.5 V19 L10 21 V12.5 Z</StreamGeometry>
+    <StreamGeometry x:Key="CostIcon">M12 2 L21 12 L12 22 L3 12 Z M12 7 L7.5 12 L12 17 L16.5 12 Z</StreamGeometry>
+    <StreamGeometry x:Key="DoIcon">M7 4 L20 12 L7 20 Z</StreamGeometry>
+    <StreamGeometry x:Key="AlwaysIcon">M12 2 L20 5 V11 C20 16 16.5 20 12 22 C7.5 20 4 16 4 11 V5 Z</StreamGeometry>
+    <FontFamily x:Key="CodeFont">Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace</FontFamily>
+  </Styles.Resources>
+
+  <!-- ===== Event sheet columns ===== -->
+  <!-- A column panel: tinted background, rounded -->
+  <Style Selector="Border.section">
+    <Setter Property="CornerRadius" Value="10" />
+    <Setter Property="Padding" Value="10,8,10,10" />
+    <Setter Property="Margin" Value="0,0,0,10" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+  <Style Selector="Border.section.when"><Setter Property="Background" Value="{StaticResource WhenTint}" /><Setter Property="BorderBrush" Value="#333B82F6" /></Style>
+  <Style Selector="Border.section.if"><Setter Property="Background" Value="{StaticResource IfTint}" /><Setter Property="BorderBrush" Value="#3314B8A6" /></Style>
+  <Style Selector="Border.section.cost"><Setter Property="Background" Value="{StaticResource CostTint}" /><Setter Property="BorderBrush" Value="#33F59E0B" /></Style>
+  <Style Selector="Border.section.do"><Setter Property="Background" Value="{StaticResource DoTint}" /><Setter Property="BorderBrush" Value="#3322C55E" /></Style>
+  <Style Selector="Border.section.always"><Setter Property="Background" Value="{StaticResource AlwaysTint}" /><Setter Property="BorderBrush" Value="#33A855F7" /></Style>
+
+  <!-- Column badge: coloured pill with an icon and the column name -->
+  <Style Selector="Border.badge">
+    <Setter Property="CornerRadius" Value="12" />
+    <Setter Property="Padding" Value="8,3,10,3" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Border.badge TextBlock">
+    <Setter Property="FontWeight" Value="Bold" />
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="Foreground" Value="#0B0C10" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Border.badge Path">
+    <Setter Property="Width" Value="13" />
+    <Setter Property="Height" Value="13" />
+    <Setter Property="Stretch" Value="Uniform" />
+    <Setter Property="Fill" Value="#0B0C10" />
+    <Setter Property="Margin" Value="0,0,6,0" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Border.badge.when"><Setter Property="Background" Value="{StaticResource WhenBrush}" /></Style>
+  <Style Selector="Border.badge.if"><Setter Property="Background" Value="{StaticResource IfBrush}" /></Style>
+  <Style Selector="Border.badge.cost"><Setter Property="Background" Value="{StaticResource CostBrush}" /></Style>
+  <Style Selector="Border.badge.do"><Setter Property="Background" Value="{StaticResource DoBrush}" /></Style>
+  <Style Selector="Border.badge.always"><Setter Property="Background" Value="{StaticResource AlwaysBrush}" /></Style>
+  <Style Selector="TextBlock.hint">
+    <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="Margin" Value="10,0,0,0" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+
+  <!-- A placed block: dark card with a coloured strip and icon -->
+  <Style Selector="Border.block">
+    <Setter Property="Background" Value="{StaticResource RowBrush}" />
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="BorderThickness" Value="3,0,0,0" />
+    <Setter Property="Padding" Value="10,6,4,6" />
+    <Setter Property="Margin" Value="0,3" />
+    <Setter Property="BoxShadow" Value="0 1 3 0 #40000000" />
+  </Style>
+  <Style Selector="Border.block:pointerover">
+    <Setter Property="Background" Value="#2E313E" />
+  </Style>
+  <Style Selector="Border.block Path.kind">
+    <Setter Property="Width" Value="14" />
+    <Setter Property="Height" Value="14" />
+    <Setter Property="Stretch" Value="Uniform" />
+    <Setter Property="Margin" Value="0,0,10,0" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Border.block.Trigger"><Setter Property="BorderBrush" Value="{StaticResource WhenBrush}" /></Style>
+  <Style Selector="Border.block.Trigger Path.kind"><Setter Property="Data" Value="{StaticResource WhenIcon}" /><Setter Property="Fill" Value="{StaticResource WhenBrush}" /></Style>
+  <Style Selector="Border.block.Condition"><Setter Property="BorderBrush" Value="{StaticResource IfBrush}" /></Style>
+  <Style Selector="Border.block.Condition Path.kind"><Setter Property="Data" Value="{StaticResource IfIcon}" /><Setter Property="Fill" Value="{StaticResource IfBrush}" /></Style>
+  <Style Selector="Border.block.Cost"><Setter Property="BorderBrush" Value="{StaticResource CostBrush}" /></Style>
+  <Style Selector="Border.block.Cost Path.kind"><Setter Property="Data" Value="{StaticResource CostIcon}" /><Setter Property="Fill" Value="{StaticResource CostBrush}" /></Style>
+  <Style Selector="Border.block.Action"><Setter Property="BorderBrush" Value="{StaticResource DoBrush}" /></Style>
+  <Style Selector="Border.block.Action Path.kind"><Setter Property="Data" Value="{StaticResource DoIcon}" /><Setter Property="Fill" Value="{StaticResource DoBrush}" /></Style>
+  <Style Selector="Border.block.Passive"><Setter Property="BorderBrush" Value="{StaticResource AlwaysBrush}" /></Style>
+  <Style Selector="Border.block.Passive Path.kind"><Setter Property="Data" Value="{StaticResource AlwaysIcon}" /><Setter Property="Fill" Value="{StaticResource AlwaysBrush}" /></Style>
+
+  <!-- The "and / then / and if you do" connector between actions -->
+  <Style Selector="ComboBox.link">
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="MinHeight" Value="24" />
+    <Setter Property="Height" Value="26" />
+    <Setter Property="Padding" Value="10,0,6,0" />
+    <Setter Property="CornerRadius" Value="13" />
+    <Setter Property="Background" Value="#1A22C55E" />
+    <Setter Property="BorderBrush" Value="#6622C55E" />
+    <Setter Property="Foreground" Value="#86EFAC" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+
+  <!-- "+ Add ..." buttons: dashed, in the column colour -->
+  <Style Selector="Button.add">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Margin" Value="0,6,0,0" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border x:Name="Frame" CornerRadius="8" Padding="10,5" Background="Transparent">
+          <Panel>
+            <Rectangle x:Name="Dash" StrokeDashArray="4,3" StrokeThickness="1.2" Stroke="#555A6B" RadiusX="8" RadiusY="8" Margin="-10,-5" />
+            <ContentPresenter Content="{TemplateBinding Content}" HorizontalAlignment="Center" Foreground="{TemplateBinding Foreground}" FontSize="12" />
+          </Panel>
+        </Border>
+      </ControlTemplate>
+    </Setter>
+    <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+  </Style>
+  <Style Selector="Button.add:pointerover /template/ Border#Frame"><Setter Property="Background" Value="#14FFFFFF" /></Style>
+  <Style Selector="Button.add.when"><Setter Property="Foreground" Value="#93C5FD" /></Style>
+  <Style Selector="Button.add.when /template/ Rectangle#Dash"><Setter Property="Stroke" Value="#663B82F6" /></Style>
+  <Style Selector="Button.add.if"><Setter Property="Foreground" Value="#5EEAD4" /></Style>
+  <Style Selector="Button.add.if /template/ Rectangle#Dash"><Setter Property="Stroke" Value="#6614B8A6" /></Style>
+  <Style Selector="Button.add.cost"><Setter Property="Foreground" Value="#FCD34D" /></Style>
+  <Style Selector="Button.add.cost /template/ Rectangle#Dash"><Setter Property="Stroke" Value="#66F59E0B" /></Style>
+  <Style Selector="Button.add.do"><Setter Property="Foreground" Value="#86EFAC" /></Style>
+  <Style Selector="Button.add.do /template/ Rectangle#Dash"><Setter Property="Stroke" Value="#6622C55E" /></Style>
+
+  <!-- Effect number badge -->
+  <Style Selector="Border.number">
+    <Setter Property="Background" Value="#3A3D4C" />
+    <Setter Property="CornerRadius" Value="12" />
+    <Setter Property="MinWidth" Value="24" />
+    <Setter Property="Height" Value="24" />
+    <Setter Property="Margin" Value="0,0,10,0" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+
+  <Style Selector="Border.effect">
+    <Setter Property="Background" Value="{StaticResource SheetBrush}" />
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="Padding" Value="14" />
+    <Setter Property="Margin" Value="0,0,0,14" />
+    <Setter Property="BorderBrush" Value="#30333F" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+
+  <!-- Small square icon buttons -->
+  <Style Selector="Button.icon">
+    <Setter Property="Padding" Value="6,2" />
+    <Setter Property="MinWidth" Value="28" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="FontSize" Value="13" />
+  </Style>
+
+
+  <!-- Card-filter chips: click to edit "which cards" -->
+  <Style Selector="Button.chip">
+    <Setter Property="Background" Value="#2F3A55" />
+    <Setter Property="Foreground" Value="#C7D7FE" />
+    <Setter Property="Padding" Value="8,2" />
+    <Setter Property="CornerRadius" Value="10" />
+    <Setter Property="Margin" Value="3,1" />
+  </Style>
+
+  <Style Selector="TextBlock.sentence">
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Margin" Value="3,6" />
+  </Style>
+  <Style Selector="TextBlock.label">
+    <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="Margin" Value="0,8,0,2" />
+  </Style>
+  <Style Selector="TextBlock.h2">
+    <Setter Property="FontSize" Value="16" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Margin" Value="0,12,0,4" />
+  </Style>
+  <!-- Every number box: value centred in the box, not stuck in the top-left corner -->
+  <Style Selector="NumericUpDown">
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+  </Style>
+  <Style Selector="NumericUpDown /template/ TextBox">
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+  </Style>
+
+  <!-- Blanks inside a block sentence: compact and lined up with the words around them -->
+  <Style Selector="ComboBox.inline">
+    <Setter Property="Margin" Value="3,2" />
+    <Setter Property="MinHeight" Value="30" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="NumericUpDown.inline">
+    <Setter Property="Margin" Value="3,2" />
+    <Setter Property="MinHeight" Value="30" />
+    <Setter Property="Height" Value="30" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+  </Style>
+  <Style Selector="NumericUpDown.inline /template/ TextBox">
+    <Setter Property="MinHeight" Value="30" />
+    <Setter Property="Padding" Value="4,0" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+  </Style>
+  <Style Selector="NumericUpDown.inline /template/ ButtonSpinner">
+    <Setter Property="MinHeight" Value="30" />
+  </Style>
+  <Style Selector="CheckBox">
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+</Styles>

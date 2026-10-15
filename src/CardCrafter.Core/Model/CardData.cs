@@ -1,0 +1,46 @@
+namespace CardCrafter.Core.Model;
+
+/// <summary>Everything that goes into the card database row for one card.</summary>
+public sealed class CardData
+{
+    /// <summary>The card's passcode. Custom cards should use a 9-digit number nobody else uses.</summary>
+    public long Id { get; set; } = 100000001;
+    public long Alias { get; set; }
+    public string Name { get; set; } = "New Card";
+    public string Text { get; set; } = "";
+    public string PendulumText { get; set; } = "";
+
+    public CardKind Kind { get; set; } = CardKind.Monster;
+
+    public MonsterFrame Frame { get; set; } = MonsterFrame.Effect;
+    public MonsterAbility Abilities { get; set; }
+    public CardAttribute Attribute { get; set; } = CardAttribute.Dark;
+    public CardRace Race { get; set; } = CardRace.Warrior;
+    public int Level { get; set; } = 4;
+    /// <summary>ATK value. -2 means "?".</summary>
+    public int Atk { get; set; } = 1800;
+    /// <summary>DEF value. -2 means "?". Ignored for Link monsters.</summary>
+    public int Def { get; set; } = 1000;
+    public LinkMarker LinkMarkers { get; set; }
+    public int LeftScale { get; set; }
+    public int RightScale { get; set; }
+
+    public SpellKind SpellKind { get; set; }
+    public TrapKind TrapKind { get; set; }
+
+    /// <summary>Archetype codes (setcodes), up to four.</summary>
+    public List<int> Archetypes { get; set; } = [];
+
+    public bool IsMonster => Kind == CardKind.Monster;
+    public bool IsLink => IsMonster && Frame == MonsterFrame.Link;
+    public bool IsXyz => IsMonster && Frame == MonsterFrame.Xyz;
+    public bool IsPendulum => IsMonster && Abilities.HasFlag(MonsterAbility.Pendulum);
+    public bool IsExtraDeck => IsMonster && Frame is MonsterFrame.Fusion or MonsterFrame.Synchro or MonsterFrame.Xyz or MonsterFrame.Link;
+    public bool IsEffectMonster => IsMonster && Frame != MonsterFrame.Normal;
+
+    /// <summary>A Link monster's rating is its number of arrows.</summary>
+    public int LinkRating => System.Numerics.BitOperations.PopCount((uint)LinkMarkers);
+
+    /// <summary>The engine's offset for "hard once per turn" codes: 1 for official-range ids, 100 for 9-digit ids.</summary>
+    public long CountCodeOffset => Id < 100000000 ? 1 : 100;
+}

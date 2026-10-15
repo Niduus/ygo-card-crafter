@@ -1,0 +1,189 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CardCrafter.App.ViewModels"
+             xmlns:views="using:CardCrafter.App.Views"
+             x:Class="CardCrafter.App.Views.CardFormView"
+             x:DataType="vm:CardViewModel">
+  <ScrollViewer>
+    <Grid ColumnDefinitions="*,24,300" Margin="0,0,12,12">
+      <StackPanel Grid.Column="0">
+        <Grid ColumnDefinitions="*,12,250,12,170">
+          <StackPanel Grid.Column="0">
+            <TextBlock Classes="label" Text="Card name" />
+            <TextBox Text="{Binding Name}" />
+          </StackPanel>
+          <StackPanel Grid.Column="2">
+            <TextBlock Classes="label" Text="Passcode (card ID)" />
+            <Grid ColumnDefinitions="*,Auto">
+              <NumericUpDown Value="{Binding Id}" Minimum="1" Maximum="4294967295" FormatString="0" ShowButtonSpinner="False"
+                             ToolTip.Tip="The card's unique number. Click Generate and Card Crafter picks one nothing else uses." />
+              <Button Grid.Column="1" Content="Generate" Command="{Binding GeneratePasscodeCommand}" Margin="4,0,0,0"
+                      ToolTip.Tip="Pick a free passcode that no card in this pack or in Omega uses" />
+            </Grid>
+          </StackPanel>
+          <StackPanel Grid.Column="4">
+            <TextBlock Classes="label" Text="Card kind" />
+            <ComboBox ItemsSource="{Binding KindOptions}" SelectedItem="{Binding Kind}" HorizontalAlignment="Stretch" />
+          </StackPanel>
+        </Grid>
+
+        <Border IsVisible="{Binding HasPasscodeWarning}" Background="#3B2F12" CornerRadius="6" Padding="10,6" Margin="0,8,0,0">
+          <TextBlock Text="{Binding PasscodeWarning}" TextWrapping="Wrap" Foreground="#FCD34D" />
+        </Border>
+
+        <!-- Monster -->
+        <StackPanel IsVisible="{Binding IsMonster}">
+          <Grid ColumnDefinitions="*,12,*,12,*">
+            <StackPanel Grid.Column="0">
+              <TextBlock Classes="label" Text="Frame" />
+              <ComboBox ItemsSource="{Binding FrameOptions}" SelectedItem="{Binding Frame}" HorizontalAlignment="Stretch" />
+            </StackPanel>
+            <StackPanel Grid.Column="2">
+              <TextBlock Classes="label" Text="Attribute" />
+              <ComboBox ItemsSource="{Binding AttributeOptions}" SelectedItem="{Binding Attribute}" HorizontalAlignment="Stretch" />
+            </StackPanel>
+            <StackPanel Grid.Column="4">
+              <TextBlock Classes="label" Text="Type" />
+              <ComboBox ItemsSource="{Binding RaceOptions}" SelectedItem="{Binding Race}" HorizontalAlignment="Stretch" MaxDropDownHeight="360" />
+            </StackPanel>
+          </Grid>
+          <Grid ColumnDefinitions="*,12,*,12,*">
+            <StackPanel Grid.Column="0" IsVisible="{Binding ShowLevel}">
+              <TextBlock Classes="label" Text="{Binding LevelLabel}" />
+              <NumericUpDown Value="{Binding Level}" Minimum="0" Maximum="13" FormatString="0" />
+            </StackPanel>
+            <StackPanel Grid.Column="0" IsVisible="{Binding IsLink}">
+              <TextBlock Classes="label" Text="Link rating" />
+              <TextBlock Text="{Binding LinkRatingText}" FontWeight="Bold" Margin="0,6,0,0" ToolTip.Tip="Set by the number of Link Arrows" />
+            </StackPanel>
+            <StackPanel Grid.Column="2">
+              <TextBlock Classes="label" Text="ATK (type ? for unknown)" />
+              <TextBox Text="{Binding Atk}" />
+            </StackPanel>
+            <StackPanel Grid.Column="4" IsVisible="{Binding ShowDef}">
+              <TextBlock Classes="label" Text="DEF (type ? for unknown)" />
+              <TextBox Text="{Binding Def}" />
+            </StackPanel>
+          </Grid>
+
+          <TextBlock Classes="label" Text="Abilities" />
+          <WrapPanel>
+            <CheckBox Content="Tuner" IsChecked="{Binding IsTuner}" Margin="0,0,14,0" />
+            <CheckBox Content="Flip" IsChecked="{Binding IsFlip}" Margin="0,0,14,0" />
+            <CheckBox Content="Pendulum" IsChecked="{Binding IsPendulumAbility}" Margin="0,0,14,0" />
+            <CheckBox Content="Gemini" IsChecked="{Binding IsGemini}" Margin="0,0,14,0" />
+            <CheckBox Content="Spirit" IsChecked="{Binding IsSpirit}" Margin="0,0,14,0" />
+            <CheckBox Content="Toon" IsChecked="{Binding IsToon}" Margin="0,0,14,0" />
+            <CheckBox Content="Union" IsChecked="{Binding IsUnion}" Margin="0,0,14,0" />
+            <CheckBox Content="Can't be Normal Summoned" IsChecked="{Binding IsSpecialSummonOnly}" Margin="0,0,14,0" />
+          </WrapPanel>
+
+          <StackPanel IsVisible="{Binding IsPendulum}" Orientation="Horizontal" Spacing="12">
+            <StackPanel>
+              <TextBlock Classes="label" Text="Left scale" />
+              <NumericUpDown Value="{Binding LeftScale}" Minimum="0" Maximum="13" FormatString="0" Width="110" />
+            </StackPanel>
+            <StackPanel>
+              <TextBlock Classes="label" Text="Right scale" />
+              <NumericUpDown Value="{Binding RightScale}" Minimum="0" Maximum="13" FormatString="0" Width="110" />
+            </StackPanel>
+          </StackPanel>
+
+          <StackPanel IsVisible="{Binding IsLink}">
+            <TextBlock Classes="label" Text="Link Arrows" />
+            <Grid ColumnDefinitions="40,40,40" RowDefinitions="40,40,40" HorizontalAlignment="Left">
+              <ToggleButton Grid.Row="0" Grid.Column="0" Content="↖" IsChecked="{Binding ArrowTopLeft}" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="2" />
+              <ToggleButton Grid.Row="0" Grid.Column="1" Content="↑" IsChecked="{Binding ArrowTop}" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="2" />
+              <ToggleButton Grid.Row="0" Grid.Column="2" Content="↗" IsChecked="{Binding ArrowTopRight}" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="2" />
+              <ToggleButton Grid.Row="1" Grid.Column="0" Content="←" IsChecked="{Binding ArrowLeft}" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="2" />
+              <ToggleButton Grid.Row="1" Grid.Column="2" Content="→" IsChecked="{Binding ArrowRight}" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="2" />
+              <ToggleButton Grid.Row="2" Grid.Column="0" Content="↙" IsChecked="{Binding ArrowBottomLeft}" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="2" />
+              <ToggleButton Grid.Row="2" Grid.Column="1" Content="↓" IsChecked="{Binding ArrowBottom}" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="2" />
+              <ToggleButton Grid.Row="2" Grid.Column="2" Content="↘" IsChecked="{Binding ArrowBottomRight}" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="2" />
+            </Grid>
+          </StackPanel>
+
+          <!-- Extra Deck summoning -->
+          <StackPanel IsVisible="{Binding IsExtraDeck}">
+            <TextBlock Classes="h2" Text="{Binding ProcedureTitle}" />
+            <StackPanel IsVisible="{Binding IsFusion}">
+              <TextBlock Classes="label" Text="Exact materials by passcode (comma separated). Leave empty to use &quot;what a material must be&quot; below." />
+              <TextBox Text="{Binding FusionCodes}" Watermark="e.g. 89631139, 46986414" />
+            </StackPanel>
+            <StackPanel IsVisible="{Binding IsSynchro}">
+              <TextBlock Classes="label" Text="The Tuner must be" />
+              <Button Classes="chip" Content="{Binding TunerFilter.Summary}">
+                <Button.Flyout><Flyout><views:FilterEditorView DataContext="{Binding TunerFilter}" /></Flyout></Button.Flyout>
+              </Button>
+            </StackPanel>
+            <StackPanel IsVisible="{Binding ShowMaterialFilter}">
+              <TextBlock Classes="label" Text="Each material must be" />
+              <Button Classes="chip" Content="{Binding MaterialFilter.Summary}">
+                <Button.Flyout><Flyout><views:FilterEditorView DataContext="{Binding MaterialFilter}" /></Flyout></Button.Flyout>
+              </Button>
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <StackPanel>
+                  <TextBlock Classes="label" Text="{Binding MinMaterialsLabel}" />
+                  <NumericUpDown Value="{Binding MinMaterials}" Minimum="1" Maximum="10" FormatString="0" Width="120" />
+                </StackPanel>
+                <StackPanel>
+                  <TextBlock Classes="label" Text="At most (0 = no limit)" />
+                  <NumericUpDown Value="{Binding MaxMaterials}" Minimum="0" Maximum="10" FormatString="0" Width="120" />
+                </StackPanel>
+              </StackPanel>
+            </StackPanel>
+          </StackPanel>
+        </StackPanel>
+
+        <!-- Spell / Trap -->
+        <StackPanel IsVisible="{Binding IsSpell}">
+          <TextBlock Classes="label" Text="Spell kind" />
+          <ComboBox ItemsSource="{Binding SpellKindOptions}" SelectedItem="{Binding SpellKind}" Width="220" />
+        </StackPanel>
+        <StackPanel IsVisible="{Binding IsTrap}">
+          <TextBlock Classes="label" Text="Trap kind" />
+          <ComboBox ItemsSource="{Binding TrapKindOptions}" SelectedItem="{Binding TrapKind}" Width="220" />
+        </StackPanel>
+
+        <StackPanel IsVisible="{Binding HasArchetypes}">
+          <TextBlock Classes="label" Text="Archetypes (add more on the left)" />
+          <ItemsControl ItemsSource="{Binding ArchetypeChoices}">
+            <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate DataType="vm:ArchetypeChoice">
+                <CheckBox Content="{Binding Label}" IsChecked="{Binding IsSelected}" Margin="0,0,14,0" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+
+        <TextBlock Classes="h2" Text="Card text" />
+        <StackPanel IsVisible="{Binding IsPendulum}">
+          <TextBlock Classes="label" Text="Pendulum Effect" />
+          <TextBox Text="{Binding PendulumText}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="60" />
+          <TextBlock Classes="label" Text="Monster Effect" />
+        </StackPanel>
+        <TextBox Text="{Binding Text}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="110" />
+        <TextBlock Classes="label" Text="Suggested text from your effects" />
+        <Border Background="#16171C" CornerRadius="6" Padding="10,6">
+          <TextBlock Text="{Binding SuggestedText}" TextWrapping="Wrap" FontStyle="Italic" />
+        </Border>
+        <Button Content="Use suggested text" Command="{Binding UseSuggestedTextCommand}" Margin="0,6,0,0" />
+      </StackPanel>
+
+      <!-- Live card face and card art -->
+      <StackPanel Grid.Column="2">
+        <TextBlock Classes="label" Text="Preview" />
+        <views:CardFace x:Name="Face" Width="300" HorizontalAlignment="Left" />
+        <TextBlock Classes="label" Text="Card art: the picture inside the frame" />
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <Button Content="Choose art…" Click="OnPickArtwork" />
+          <Button Content="Remove" Click="OnRemoveArtwork" IsVisible="{Binding HasArtwork}" />
+        </StackPanel>
+        <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" Width="300" HorizontalAlignment="Left"
+                   Text="Use just the illustration, not a whole card. Square images fit best; YGO Omega draws the frame itself and keeps art as .jpg in its Arts folder." />
+        <TextBlock Text="{Binding ArtworkPath}" TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" Width="300" HorizontalAlignment="Left" />
+      </StackPanel>
+    </Grid>
+  </ScrollViewer>
+</UserControl>

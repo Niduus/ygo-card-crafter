@@ -1,0 +1,9 @@
+bin/
+obj/
+publish/
+*.user
+.vs/
+.idea/
+TestResults/
+engine/
+screenshots/

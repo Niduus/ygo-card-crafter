@@ -1,0 +1,50 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{5730D38C-9020-45B5-B974-C6D8E83A9B87}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CardCrafter.Core", "src\CardCrafter.Core\CardCrafter.Core.csproj", "{A2EA904E-2308-4D55-9F2C-59D46BAC3F88}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{715F6E82-63EA-48CC-A462-5BDAC86539CF}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CardCrafter.Core.Tests", "tests\CardCrafter.Core.Tests\CardCrafter.Core.Tests.csproj", "{C44F2F1E-DE9D-45E3-9C11-35F2B877801A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CardCrafter.App", "src\CardCrafter.App\CardCrafter.App.csproj", "{2465E0A3-3832-45AB-A1F4-EC0647CECD8A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CardCrafter.App.Tests", "tests\CardCrafter.App.Tests\CardCrafter.App.Tests.csproj", "{26ED156E-D4B7-4DC9-8F43-67E09B590DCC}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{A2EA904E-2308-4D55-9F2C-59D46BAC3F88}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A2EA904E-2308-4D55-9F2C-59D46BAC3F88}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A2EA904E-2308-4D55-9F2C-59D46BAC3F88}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A2EA904E-2308-4D55-9F2C-59D46BAC3F88}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C44F2F1E-DE9D-45E3-9C11-35F2B877801A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C44F2F1E-DE9D-45E3-9C11-35F2B877801A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C44F2F1E-DE9D-45E3-9C11-35F2B877801A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C44F2F1E-DE9D-45E3-9C11-35F2B877801A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2465E0A3-3832-45AB-A1F4-EC0647CECD8A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2465E0A3-3832-45AB-A1F4-EC0647CECD8A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2465E0A3-3832-45AB-A1F4-EC0647CECD8A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2465E0A3-3832-45AB-A1F4-EC0647CECD8A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{26ED156E-D4B7-4DC9-8F43-67E09B590DCC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{26ED156E-D4B7-4DC9-8F43-67E09B590DCC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{26ED156E-D4B7-4DC9-8F43-67E09B590DCC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{26ED156E-D4B7-4DC9-8F43-67E09B590DCC}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{A2EA904E-2308-4D55-9F2C-59D46BAC3F88} = {5730D38C-9020-45B5-B974-C6D8E83A9B87}
+		{C44F2F1E-DE9D-45E3-9C11-35F2B877801A} = {715F6E82-63EA-48CC-A462-5BDAC86539CF}
+		{2465E0A3-3832-45AB-A1F4-EC0647CECD8A} = {5730D38C-9020-45B5-B974-C6D8E83A9B87}
+		{26ED156E-D4B7-4DC9-8F43-67E09B590DCC} = {715F6E82-63EA-48CC-A462-5BDAC86539CF}
+	EndGlobalSection
+EndGlobal
