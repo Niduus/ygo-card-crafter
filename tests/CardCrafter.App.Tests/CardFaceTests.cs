@@ -24,6 +24,30 @@ public class CardFaceTests
         return new CardViewModel(project, () => pack, () => { }, catalog);
     }
 
+    /// <summary>One card at the size YGO Omega shows it, to compare against the game side by side.</summary>
+    [AvaloniaFact]
+    public void FaceCloseUp()
+    {
+        var art = new Bitmap(Path.Combine(AppContext.BaseDirectory, "sample-art.png"));
+        var pack = new CardPack { Author = "Studio Example" };
+        var vm = Vm(new CardData
+        {
+            Name = "Emberveil, Painter of Flames", Attribute = CardAttribute.Fire, Race = CardRace.Spellcaster, Abilities = MonsterAbility.Tuner,
+            Level = 7, Atk = 2500, Def = 2500, Id = 3000000,
+            Text = "You can reveal this card in your hand and send 1 Level 7 or higher Spellcaster monster from your Extra Deck to the GY; " +
+                   "Special Summon this card from your hand. If this card is Normal or Special Summoned: You can add 1 Level 7 Spellcaster " +
+                   "monster from your Deck to your hand. You can only use each effect of \"Emberveil, Painter of Flames\" once per turn.",
+        }, pack);
+        var face = new CardFace { Width = 409 };
+        face.Update(vm.Data, vm.TypeLine, vm.FaceText, art, vm.Copyright);
+        Assert.Equal($"©{DateTime.Now.Year} Studio Example", vm.Copyright);
+        var window = new Window { Width = 409, Height = 596, Content = face, Background = Avalonia.Media.Brushes.Black };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+        Directory.CreateDirectory(ShotDir);
+        window.CaptureRenderedFrame()?.Save(Path.Combine(ShotDir, "16-card-closeup.png"));
+    }
+
     [AvaloniaFact]
     public void FacesRenderForEveryKindOfCard() => RenderAllKinds("7-card-faces.png");
 

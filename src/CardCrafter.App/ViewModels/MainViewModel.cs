@@ -724,7 +724,7 @@ public sealed partial class MainViewModel : ObservableObject
     private int ImageWidth => SelectedImageSize.Width > 0 ? SelectedImageSize.Width : (int)Math.Clamp(CustomImageWidth ?? 813, 64, 8000);
 
     private void SaveImage(CardViewModel card, string path) =>
-        Services.CardImageExporter.Save(card.Data, card.TypeLine, card.FaceText, card.ResolvedArtwork, ImageWidth, path);
+        Services.CardImageExporter.Save(card.Data, card.TypeLine, card.FaceText, card.ResolvedArtwork, ImageWidth, path, card.Copyright);
 
     [RelayCommand]
     private async Task SaveCardImage()

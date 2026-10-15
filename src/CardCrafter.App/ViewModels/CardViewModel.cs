@@ -153,6 +153,8 @@ public sealed partial class CardViewModel : ObservableObject
     [ObservableProperty] private int _faceVersion;
     public string TypeLine => CardFaceText.TypeLine(C, _pack());
     public string FaceText => string.IsNullOrWhiteSpace(C.Text) ? SuggestedText : C.Text;
+    /// <summary>The copyright line at the bottom right of the card face, from the pack's author.</summary>
+    public string Copyright => string.IsNullOrWhiteSpace(_pack().Author) ? "" : $"©{DateTime.Now.Year} {_pack().Author.Trim()}";
     public CardData Data => C;
 
     // ---- card data

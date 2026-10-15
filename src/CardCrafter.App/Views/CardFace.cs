@@ -24,6 +24,7 @@ public sealed class CardFace : Control
     private string _typeLine = "";
     private string _text = "";
     private Bitmap? _art;
+    private string _copyright = "";
 
     public CardFace()
     {
@@ -31,9 +32,10 @@ public sealed class CardFace : Control
         DetachedFromVisualTree += (_, _) => FrameImages.Changed -= InvalidateVisual;
     }
 
-    public void Update(CardData card, string typeLine, string text, Bitmap? art)
+    public void Update(CardData card, string typeLine, string text, Bitmap? art, string copyright = "")
     {
         _card = card;
+        _copyright = copyright;
         _typeLine = typeLine;
         _text = text;
         _art = art;
@@ -201,6 +203,13 @@ public sealed class CardFace : Control
         IBrush ink = lightText ? Brushes.White : Brush("#141414");
         var (template, layout, geometry) = Template(c);
         _geometry = geometry;
+
+        if (template is null)
+        {
+            // No frame images chosen: draw the whole card like a printed one.
+            ClassicCard.Draw(ctx, c, _typeLine, _text, _art, _copyright);
+            return;
+        }
 
         if (template is not null)
         {

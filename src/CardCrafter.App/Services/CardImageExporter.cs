@@ -27,13 +27,13 @@ public sealed record ImageSize(string Label, int Width)
 /// <summary>Renders card previews to image files at any size. The face is vector-drawn, so large sizes stay sharp.</summary>
 public static class CardImageExporter
 {
-    public static void Save(CardData card, string typeLine, string text, string? artPath, int width, string path)
+    public static void Save(CardData card, string typeLine, string text, string? artPath, int width, string path, string copyright = "")
     {
         width = Math.Clamp(width, 64, 8000);
         var height = (int)Math.Round(width * CardFace.H / CardFace.W);
         using var art = LoadArt(artPath);
         var face = new CardFace();
-        face.Update(card, typeLine, text, art);
+        face.Update(card, typeLine, text, art, copyright);
         using var rtb = new RenderTargetBitmap(new PixelSize(width, height), new Vector(96, 96));
         using (var ctx = rtb.CreateDrawingContext())
             face.Draw(ctx, new Size(width, height));
