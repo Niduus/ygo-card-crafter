@@ -582,6 +582,36 @@ public sealed partial class MainViewModel : ObservableObject
         FrameStatus = $"{count} frame images from {Path.GetFileName(folder)}";
     }
 
+    /// <summary>Downloads the card-frame textures from the OmegaCustom repository and uses them.</summary>
+    [RelayCommand]
+    private async Task DownloadOmegaCustomFrames()
+    {
+        var folder = Path.Combine(AppSettings.Folder, "Frames", "OmegaCustom");
+        try
+        {
+            FrameStatus = "Downloading OmegaCustom textures…";
+            using var http = UpdateChecker.CreateClient();
+            var progress = new Progress<double>(p => FrameStatus = $"Downloading OmegaCustom textures… {p:P0}");
+            var saved = await Services.FrameImages.DownloadOmegaCustomAsync(http, folder, progress);
+            if (saved == 0)
+            {
+                FrameStatus = "Built-in frames";
+                await _dialogs.ShowAsync("Download failed", $"No textures could be downloaded from github.com/{Services.FrameImages.OmegaCustomRepo}.");
+                return;
+            }
+            var count = Services.FrameImages.Load(folder);
+            _settings.FrameFolder = folder;
+            _settings.Save();
+            FrameStatus = $"OmegaCustom textures ({count})";
+            Status = $"Using {count} card textures from github.com/{Services.FrameImages.OmegaCustomRepo}.";
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException or UnauthorizedAccessException)
+        {
+            FrameStatus = Services.FrameImages.Count > 0 ? FrameStatus : "Built-in frames";
+            await _dialogs.ShowAsync("Download failed", ex.Message);
+        }
+    }
+
     [RelayCommand]
     private void UseBuiltInFrames()
     {
@@ -596,6 +626,15 @@ public sealed partial class MainViewModel : ObservableObject
         if (_settings.FrameFolder is not { } folder) return;
         var count = Services.FrameImages.Load(folder);
         FrameStatus = count > 0 ? $"{count} frame images from {Path.GetFileName(folder)}" : "Built-in frames";
+    }
+
+    /// <summary>With no frames chosen, use OmegaCustom textures already applied to the Omega install.</summary>
+    private void UseOmegaTexturesIfPresent()
+    {
+        if (_settings.FrameFolder is not null || Services.FrameImages.Count > 0) return;
+        if (Services.FrameImages.FindInOmega(OmegaPath) is not { } dir) return;
+        var count = Services.FrameImages.Load(dir);
+        if (count > 0) FrameStatus = $"Omega's textures ({count})";
     }
 
     // ---------------------------------------------------------------- Omega
@@ -665,6 +704,7 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
         ScanReport = Inventory.Report();
+        UseOmegaTexturesIfPresent();
         var inventory = Inventory;
         var ownDb = PackExporter.SafeFileName(_pack.Name);
         try

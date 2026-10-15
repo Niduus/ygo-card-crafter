@@ -25,7 +25,9 @@ public class CardFaceTests
     }
 
     [AvaloniaFact]
-    public void FacesRenderForEveryKindOfCard()
+    public void FacesRenderForEveryKindOfCard() => RenderAllKinds("7-card-faces.png");
+
+    private static void RenderAllKinds(string shot)
     {
         var art = new Bitmap(Path.Combine(AppContext.BaseDirectory, "sample-art.png"));
         var cards = new[]
@@ -54,7 +56,27 @@ public class CardFaceTests
         window.Show();
         Dispatcher.UIThread.RunJobs();
         Directory.CreateDirectory(ShotDir);
-        window.CaptureRenderedFrame()?.Save(Path.Combine(ShotDir, "7-card-faces.png"));
+        window.CaptureRenderedFrame()?.Save(Path.Combine(ShotDir, shot));
+    }
+
+    /// <summary>
+    /// Renders every card kind over the OmegaCustom textures. Runs only when CARDCRAFTER_OMEGACUSTOM points to a
+    /// checkout's Textures/Interface folder; the textures themselves are never committed here.
+    /// </summary>
+    [AvaloniaFact]
+    public void FacesRenderOverOmegaCustomTextures()
+    {
+        var folder = Environment.GetEnvironmentVariable("CARDCRAFTER_OMEGACUSTOM");
+        if (folder is null || !Directory.Exists(folder)) return;
+        Assert.True(CardCrafter.App.Services.FrameImages.Load(folder) >= 20);
+        try
+        {
+            RenderAllKinds("7b-card-faces-omegacustom.png");
+        }
+        finally
+        {
+            CardCrafter.App.Services.FrameImages.Load(null);
+        }
     }
 
     [AvaloniaFact]
@@ -126,4 +148,28 @@ public sealed class TempDirectory : IDisposable
 {
     public string Path { get; } = Directory.CreateTempSubdirectory("cc-app-").FullName;
     public void Dispose() { try { Directory.Delete(Path, true); } catch (IOException) { } }
+}
+
+public class OmegaCustomDownloadTests
+{
+    /// <summary>Talks to GitHub, so it only runs when CARDCRAFTER_NETWORK_TESTS is set.</summary>
+    [AvaloniaFact]
+    public async Task DownloadsAndLoadsOmegaCustomTextures()
+    {
+        if (Environment.GetEnvironmentVariable("CARDCRAFTER_NETWORK_TESTS") is null) return;
+        using var tmp = new TempDirectory();
+        using var http = CardCrafter.Core.Updates.UpdateChecker.CreateClient();
+        var saved = await CardCrafter.App.Services.FrameImages.DownloadOmegaCustomAsync(http, tmp.Path);
+        Assert.True(saved >= 25, $"saved {saved}");
+        try
+        {
+            Assert.True(CardCrafter.App.Services.FrameImages.Load(tmp.Path) >= 25);
+            Assert.NotNull(CardCrafter.App.Services.FrameImages.Geometry("effect")?.Art);
+            Assert.NotNull(CardCrafter.App.Services.FrameImages.Geometry("spell")?.Text);
+        }
+        finally
+        {
+            CardCrafter.App.Services.FrameImages.Load(null);
+        }
+    }
 }

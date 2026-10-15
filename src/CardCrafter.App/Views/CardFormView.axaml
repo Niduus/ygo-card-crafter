@@ -182,6 +182,8 @@
                   ToolTip.Tip="Draw the preview with card frame images from a folder you choose">
             <Button.Flyout>
               <MenuFlyout>
+                <MenuItem Header="Download OmegaCustom card textures" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).DownloadOmegaCustomFramesCommand}"
+                          ToolTip.Tip="Card frames from github.com/zeak6464/OmegaCustom, saved to your AppData folder" />
                 <MenuItem Header="Use frame images from a folder…" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ChooseFrameFolderCommand}" />
                 <MenuItem Header="Use built-in frames" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).UseBuiltInFramesCommand}" />
               </MenuFlyout>
