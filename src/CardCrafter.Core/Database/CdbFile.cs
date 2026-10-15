@@ -98,16 +98,45 @@ public static class CdbFile
         {
             var row = new CdbRow
             {
-                Id = rd.GetInt64(0), Ot = rd.GetInt64(1), Alias = rd.GetInt64(2), Setcode = rd.GetInt64(3),
-                Type = rd.GetInt64(4), Atk = rd.GetInt64(5), Def = rd.GetInt64(6), Level = rd.GetInt64(7),
-                Race = rd.GetInt64(8), Attribute = rd.GetInt64(9), Category = rd.GetInt64(10),
-                Name = rd.IsDBNull(11) ? "" : rd.GetString(11),
-                Desc = rd.IsDBNull(12) ? "" : rd.GetString(12),
+                Id = Long(rd, 0), Ot = Long(rd, 1), Alias = Long(rd, 2), Setcode = Long(rd, 3),
+                Type = Long(rd, 4), Atk = Long(rd, 5), Def = Long(rd, 6), Level = Long(rd, 7),
+                Race = Long(rd, 8), Attribute = Long(rd, 9), Category = Long(rd, 10),
+                Name = Str(rd, 11),
+                Desc = Str(rd, 12),
             };
-            for (int i = 0; i < 16; i++) row.Strings[i] = rd.IsDBNull(13 + i) ? "" : rd.GetString(13 + i);
+            for (int i = 0; i < 16; i++) row.Strings[i] = Str(rd, 13 + i);
             rows.Add(row);
         }
         return rows;
+    }
+
+    // Databases made by other tools (and the game's own) can hold NULLs, text in number columns,
+    // or text stored as bytes. Read every value defensively instead of failing on one odd row.
+    private static long Long(SqliteDataReader rd, int i)
+    {
+        if (rd.IsDBNull(i)) return 0;
+        var v = rd.GetValue(i);
+        return v switch
+        {
+            long l => l,
+            int n => n,
+            double d => (long)d,
+            string s when long.TryParse(s, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var p) => p,
+            string s when s.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+                && long.TryParse(s[2..], System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture, out var h) => h,
+            _ => 0,
+        };
+    }
+
+    private static string Str(SqliteDataReader rd, int i)
+    {
+        if (rd.IsDBNull(i)) return "";
+        return rd.GetValue(i) switch
+        {
+            string s => s,
+            byte[] b => System.Text.Encoding.UTF8.GetString(b),
+            var o => Convert.ToString(o, System.Globalization.CultureInfo.InvariantCulture) ?? "",
+        };
     }
 
     /// <summary>Just the passcodes in a database. Fast even for the 20,000-card official database.</summary>
@@ -118,7 +147,7 @@ public static class CdbFile
         cmd.CommandText = "SELECT id FROM datas";
         using var rd = cmd.ExecuteReader();
         var ids = new List<long>();
-        while (rd.Read()) ids.Add(rd.GetInt64(0));
+        while (rd.Read()) ids.Add(Long(rd, 0));
         return ids;
     }
 
@@ -137,7 +166,7 @@ public static class CdbFile
             cardCount = Convert.ToInt32(cmd.ExecuteScalar());
             return true;
         }
-        catch (SqliteException)
+        catch (Exception ex) when (ex is SqliteException or InvalidCastException or FormatException or IOException or UnauthorizedAccessException)
         {
             return false;
         }

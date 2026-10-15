@@ -89,9 +89,9 @@ public sealed partial class OmegaInventory
             {
                 foreach (var id in CdbFile.ReadIds(db.Path)) used.TryAdd(id, Path.GetRelativePath(Root, db.Path));
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Microsoft.Data.Sqlite.SqliteException)
+            catch (Exception)
             {
-                // A locked or unreadable database just isn't checked.
+                // A locked or unreadable database just isn't checked; it must never stop an install.
             }
         }
         return used;

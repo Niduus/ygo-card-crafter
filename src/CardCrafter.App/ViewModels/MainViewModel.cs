@@ -429,6 +429,44 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
+    // ---------------------------------------------------------------- card frame images
+
+    [ObservableProperty] private string _frameStatus = "Built-in frames";
+
+    [RelayCommand]
+    private async Task ChooseFrameFolder()
+    {
+        var folder = await _dialogs.PickFolderAsync("Choose a folder of card frame images");
+        if (folder is null) return;
+        var count = Services.FrameImages.Load(folder);
+        if (count == 0)
+        {
+            await _dialogs.ShowAsync("No frame images found",
+                "That folder has none of the expected images. Name them like effect.png, normal.png, synchro.png, xyz.png, link.png, " +
+                "spell.png, trap.png (plus optional attribute-dark.png, level.png, rank.png...). See the README for the full list.");
+            return;
+        }
+        _settings.FrameFolder = folder;
+        _settings.Save();
+        FrameStatus = $"{count} frame images from {Path.GetFileName(folder)}";
+    }
+
+    [RelayCommand]
+    private void UseBuiltInFrames()
+    {
+        Services.FrameImages.Load(null);
+        _settings.FrameFolder = null;
+        _settings.Save();
+        FrameStatus = "Built-in frames";
+    }
+
+    private void LoadSavedFrames()
+    {
+        if (_settings.FrameFolder is not { } folder) return;
+        var count = Services.FrameImages.Load(folder);
+        FrameStatus = count > 0 ? $"{count} frame images from {Path.GetFileName(folder)}" : "Built-in frames";
+    }
+
     // ---------------------------------------------------------------- Omega
 
     [ObservableProperty] private string? _omegaPath;
@@ -447,7 +485,13 @@ public sealed partial class MainViewModel : ObservableObject
     {
         OmegaStatus = "Looking for YGO Omega…";
         var saved = _settings.OmegaPath;
-        var found = await Task.Run(() => OmegaLocator.Find(saved));
+        OmegaInstall? found;
+        try { found = await Task.Run(() => OmegaLocator.Find(saved)); }
+        catch (Exception ex)
+        {
+            CrashLogHook?.Invoke("find omega", ex);
+            found = null;
+        }
         if (found is null)
         {
             OmegaFound = false;
@@ -478,11 +522,31 @@ public sealed partial class MainViewModel : ObservableObject
         _settings.OmegaPath = root;
         _settings.Save();
         OmegaStatus = $"YGO Omega: {root} ({how}). Scanning…";
-        Inventory = await Task.Run(() => OmegaInventory.Scan(root));
+        try
+        {
+            Inventory = await Task.Run(() => OmegaInventory.Scan(root));
+        }
+        catch (Exception ex)
+        {
+            CrashLogHook?.Invoke("scan omega", ex);
+            Inventory = null;
+            OmegaStatus = $"YGO Omega: {root}. Couldn't scan the folder: {ex.Message}";
+            return;
+        }
         ScanReport = Inventory.Report();
         var inventory = Inventory;
         var ownDb = PackExporter.SafeFileName(_pack.Name);
-        Catalog = await Task.Run(() => OmegaCatalog.Load(inventory, ownDb));
+        try
+        {
+            Catalog = await Task.Run(() => OmegaCatalog.Load(inventory, ownDb));
+        }
+        catch (Exception ex)
+        {
+            CrashLogHook?.Invoke("read omega databases", ex);
+            Catalog = OmegaCatalog.Empty;
+            ScanReport += $"\nCouldn't read Omega's card databases: {ex.Message}\n";
+        }
+        foreach (var p in Catalog.Problems) ScanReport += $"\nCouldn't read {p}";
         RefreshCatalogLists();
         foreach (var c in Cards) c.Refresh();
         ScanReport += $"\nIn the game: {Catalog.Passcodes.Count} passcodes in use, {Catalog.Archetypes.Count} archetypes, {Catalog.UnknownTypes.Count} non-standard monster Types.\n";
@@ -563,6 +627,9 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
+    /// <summary>Where unexpected errors are reported (the app's crash log). Null in tests.</summary>
+    public static Action<string, Exception>? CrashLogHook { get; set; }
+
     /// <summary>Raised when the app should close, e.g. after restarting as administrator.</summary>
     public event Action? RequestClose;
 
@@ -571,6 +638,7 @@ public sealed partial class MainViewModel : ObservableObject
     {
         var path = args.FirstOrDefault(a => a.EndsWith(PackSerializer.Extension, StringComparison.OrdinalIgnoreCase) && File.Exists(a));
         path ??= _settings.LastPackPath is { } last && File.Exists(last) ? last : null;
+        LoadSavedFrames();
         if (path is not null) OpenPath(path);
         await DetectOmega();
         if (args.Contains("--install") && CanInstall) await Install();

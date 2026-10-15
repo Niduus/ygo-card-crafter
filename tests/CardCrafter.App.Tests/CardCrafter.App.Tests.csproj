@@ -15,6 +15,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="sample-art.png" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="frames\*.png" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />

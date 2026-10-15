@@ -85,3 +85,54 @@ public class CatalogTests
         Assert.Equal("Cyborg", back.CustomTypes[0].Name);
     }
 }
+
+public class OddDatabaseTests
+{
+    /// <summary>A database like other tools write: NULLs, numbers stored as text, names stored as bytes.</summary>
+    [Fact]
+    public void Catalog_ReadsDatabasesWithNullsAndOddTypes()
+    {
+        using var tmp = new TempDir();
+        var path = Path.Combine(tmp.Path, "db");
+        using (var conn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={path};Pooling=False"))
+        {
+            conn.Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = """
+                CREATE TABLE datas(id integer primary key, ot integer, alias integer, setcode integer, type integer,
+                    atk integer, def integer, level integer, race integer, attribute integer, category integer);
+                CREATE TABLE texts(id integer primary key, name text, desc text,
+                    str1 text, str2 text, str3 text, str4 text, str5 text, str6 text, str7 text, str8 text,
+                    str9 text, str10 text, str11 text, str12 text, str13 text, str14 text, str15 text, str16 text);
+                INSERT INTO datas VALUES(10, NULL, NULL, '0x1f', 33, '1800', NULL, 4, 1, 32, NULL);
+                INSERT INTO datas VALUES(11, 3, 0, 31, 33, 1000, 1000, 4, 1, 32, 0);
+                INSERT INTO datas VALUES(12, 3, 0, 0, 33, 1000, 1000, 4, 1, 32, 0);
+                INSERT INTO texts(id, name, desc) VALUES(10, 'Neo Something', NULL);
+                INSERT INTO texts(id, name, desc) VALUES(11, CAST('Neo Other' AS BLOB), 'x');
+                """;
+            cmd.ExecuteNonQuery();
+        }
+        Assert.True(CdbFile.IsCardDatabase(path, out var n) && n == 3);
+        var rows = CdbFile.Read(path);
+        Assert.Equal(3, rows.Count);
+        Assert.Equal(0x1f, rows[0].Setcode);
+        Assert.Equal(1800, rows[0].Atk);
+        Assert.Equal("Neo Other", rows[1].Name);
+        Assert.Equal("", rows[2].Name);
+
+        var cat = CardCrafter.Core.Omega.OmegaCatalog.Load([path], tmp.Path);
+        Assert.Empty(cat.Problems);
+        Assert.Equal(3, cat.Passcodes.Count);
+        Assert.Contains(cat.Archetypes, a => a.Code == 0x1f && a.Cards == 2);
+    }
+
+    [Fact]
+    public void Catalog_SkipsUnreadableFilesWithoutThrowing()
+    {
+        using var tmp = new TempDir();
+        var bad = Path.Combine(tmp.Path, "broken.db");
+        File.WriteAllText(bad, "SQLite format 3\0 but not really");
+        var cat = CardCrafter.Core.Omega.OmegaCatalog.Load([bad], tmp.Path);
+        Assert.Single(cat.Problems);
+    }
+}

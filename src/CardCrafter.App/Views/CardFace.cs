@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using CardCrafter.App.Services;
 using CardCrafter.Core.Model;
 using CardCrafter.Core.Text;
 
@@ -21,6 +22,26 @@ public sealed class CardFace : Control
     private string _typeLine = "";
     private string _text = "";
     private Bitmap? _art;
+
+    public CardFace()
+    {
+        // Redraw when the user picks a different folder of frame images.
+        FrameImages.Changed += InvalidateVisual;
+        DetachedFromVisualTree += (_, _) => FrameImages.Changed -= InvalidateVisual;
+        AttachedToVisualTree += (_, _) => { FrameImages.Changed -= InvalidateVisual; FrameImages.Changed += InvalidateVisual; };
+    }
+
+    /// <summary>The frame image name for this card, e.g. "synchro" or "pendulum-effect".</summary>
+    public static string FrameKey(CardData c)
+    {
+        if (c.Kind == CardKind.Spell) return "spell";
+        if (c.Kind == CardKind.Trap) return "trap";
+        var frame = c.Frame.ToString().ToLowerInvariant();
+        return c.IsPendulum && c.Frame != MonsterFrame.Link ? "pendulum-" + frame : frame;
+    }
+
+    private static Bitmap? FrameImageFor(CardData c) =>
+        FrameImages.Get(FrameKey(c)) ?? (c.IsPendulum ? FrameImages.Get(c.Frame.ToString().ToLowerInvariant()) : null);
 
     public void Update(CardData card, string typeLine, string text, Bitmap? art)
     {
@@ -82,7 +103,35 @@ public sealed class CardFace : Control
 
         var (frame, lightText) = FrameColor(c);
         IBrush ink = lightText ? Brushes.White : Brush("#141414");
+        var template = FrameImageFor(c);
+        _template = template is not null;
 
+        if (template is not null)
+        {
+            ctx.DrawImage(template, new Rect(0, 0, W, H));
+        }
+        else
+        {
+            DrawBuiltInFrame(ctx, c, frame);
+        }
+
+        DrawName(ctx, c, ink);
+        DrawAttribute(ctx, c);
+        if (c.IsMonster) DrawStars(ctx, c); else DrawSpellTrapLine(ctx, c, ink);
+        var art = c.IsPendulum ? new Rect(28, 114, W - 56, 268) : new Rect(52, 114, 317, 317);
+        DrawArt(ctx, art);
+        if (c.IsLink) DrawLinkArrows(ctx, c, art);
+        if (c.IsPendulum) DrawPendulumBox(ctx, c);
+        DrawTextBox(ctx, c);
+
+        ctx.DrawText(Text(c.Id.ToString(CultureInfo.InvariantCulture), SansBold, 11, ink), new Point(20, H - 23));
+    }
+
+    /// <summary>True while drawing over a frame image: the image already has the boxes, so only content is drawn.</summary>
+    private bool _template;
+
+    private static void DrawBuiltInFrame(DrawingContext ctx, CardData c, Color frame)
+    {
         // Card body and coloured frame.
         ctx.DrawRectangle(Brush("#151515"), null, new RoundedRect(new Rect(0, 0, W, H), 14));
         var frameBrush = new LinearGradientBrush
@@ -102,24 +151,13 @@ public sealed class CardFace : Control
             };
         }
         ctx.DrawRectangle(frameBrush, null, new RoundedRect(new Rect(9, 9, W - 18, H - 18), 8));
-
-        DrawName(ctx, c, ink);
-        DrawAttribute(ctx, c);
-        if (c.IsMonster) DrawStars(ctx, c); else DrawSpellTrapLine(ctx, c, ink);
-        var art = c.IsPendulum ? new Rect(28, 114, W - 56, 268) : new Rect(52, 114, 317, 317);
-        DrawArt(ctx, art);
-        if (c.IsLink) DrawLinkArrows(ctx, c, art);
-        if (c.IsPendulum) DrawPendulumBox(ctx, c);
-        DrawTextBox(ctx, c);
-
-        ctx.DrawText(Text(c.Id.ToString(CultureInfo.InvariantCulture), SansBold, 11, ink), new Point(20, H - 23));
     }
 
     private void DrawName(DrawingContext ctx, CardData c, IBrush ink)
     {
         var box = new Rect(26, 24, W - 52, 50);
         var (frame, _) = FrameColor(c);
-        ctx.DrawRectangle(new SolidColorBrush(Shade(frame, c.Frame == MonsterFrame.Xyz && c.IsMonster ? 0.12 : 0.28)), new Pen(Brush("#3A2E1E"), 2), new RoundedRect(box, 3));
+        if (!_template) ctx.DrawRectangle(new SolidColorBrush(Shade(frame, c.Frame == MonsterFrame.Xyz && c.IsMonster ? 0.12 : 0.28)), new Pen(Brush("#3A2E1E"), 2), new RoundedRect(box, 3));
         var name = Text(string.IsNullOrWhiteSpace(c.Name) ? "Card Name" : c.Name, NameFont, 30, ink);
         const double maxWidth = 300;
         var sx = name.Width > maxWidth ? maxWidth / name.Width : 1;
@@ -131,6 +169,17 @@ public sealed class CardFace : Control
     private static void DrawAttribute(DrawingContext ctx, CardData c)
     {
         var center = new Point(W - 52, 49);
+        var key = c.Kind switch
+        {
+            CardKind.Spell => "attribute-spell",
+            CardKind.Trap => "attribute-trap",
+            _ => "attribute-" + c.Attribute.ToString().ToLowerInvariant(),
+        };
+        if (FrameImages.Get(key) is { } icon)
+        {
+            ctx.DrawImage(icon, new Rect(center.X - 22, center.Y - 22, 44, 44));
+            return;
+        }
         string label;
         string color;
         if (c.Kind == CardKind.Spell) (label, color) = ("SPELL", "#16916F");
@@ -178,11 +227,17 @@ public sealed class CardFace : Control
         if (c.IsLink) return;
         var count = Math.Clamp(c.Level, 0, 13);
         var rank = c.IsXyz;
+        var image = FrameImages.Get(rank ? "rank" : "level");
         for (int i = 0; i < count; i++)
         {
             // Levels line up from the right, Ranks from the left, as on real cards.
             var x = rank ? 46 + i * 26.5 : W - 46 - i * 26.5;
             var center = new Point(x, 93);
+            if (image is not null)
+            {
+                ctx.DrawImage(image, new Rect(center.X - 12, center.Y - 12, 24, 24));
+                continue;
+            }
             ctx.DrawEllipse(new SolidColorBrush(Hex(rank ? "#1C1C1C" : "#D8432B")), new Pen(Brush(rank ? "#C9A23A" : "#7A1F12"), 1.5), center, 11, 11);
             ctx.DrawGeometry(Brush(rank ? "#E9C24F" : "#FFD34D"), null, StarGeometry(center, 8));
         }
@@ -254,13 +309,13 @@ public sealed class CardFace : Control
         Arrow(LinkMarker.BottomRight, new(r + 8, b + 8), new(r - 22, b + 8), new(r + 8, b - 22));
     }
 
-    private static void DrawPendulumBox(DrawingContext ctx, CardData c)
+    private void DrawPendulumBox(DrawingContext ctx, CardData c)
     {
         var box = new Rect(28, 386, W - 56, 60);
-        ctx.DrawRectangle(Brush("#E9F3EC"), new Pen(Brush("#2C5E4E"), 1.5), box);
+        if (!_template) ctx.DrawRectangle(Brush("#E9F3EC"), new Pen(Brush("#2C5E4E"), 1.5), box);
         foreach (var (x, value, arrow) in new[] { (box.X, c.LeftScale, "◀"), (box.Right - 40, c.RightScale, "▶") })
         {
-            ctx.DrawRectangle(Brush("#CFE5D8"), null, new Rect(x, box.Y, 40, box.Height));
+            if (!_template) ctx.DrawRectangle(Brush("#CFE5D8"), null, new Rect(x, box.Y, 40, box.Height));
             var a = Text(arrow, SansBold, 11, Brush("#2E6FD1"));
             ctx.DrawText(a, new Point(x + 20 - a.Width / 2, box.Y + 4));
             var n = Text(value.ToString(CultureInfo.InvariantCulture), SansBold, 22, Brush("#111111"));
@@ -273,7 +328,7 @@ public sealed class CardFace : Control
     {
         var box = new Rect(26, 452, W - 52, 136);
         var normal = c.IsMonster && c.Frame == MonsterFrame.Normal;
-        ctx.DrawRectangle(Brush(normal ? "#F4E3B5" : "#F1E6CB"), new Pen(Brush("#8C7A50"), 1.5), box);
+        if (!_template) ctx.DrawRectangle(Brush(normal ? "#F4E3B5" : "#F1E6CB"), new Pen(Brush("#8C7A50"), 1.5), box);
         var black = Brush("#141414");
         double top = box.Y + 5;
         var bottom = box.Bottom - 4;
@@ -283,7 +338,7 @@ public sealed class CardFace : Control
             ctx.DrawText(type, new Point(box.X + 8, top));
             top += type.Height + 1;
             bottom = box.Bottom - 26;
-            ctx.DrawLine(new Pen(black, 1.2), new Point(box.X + 6, bottom + 2), new Point(box.Right - 6, bottom + 2));
+            if (!_template) ctx.DrawLine(new Pen(black, 1.2), new Point(box.X + 6, bottom + 2), new Point(box.Right - 6, bottom + 2));
             var stats = c.IsLink
                 ? $"ATK/{CardFaceText.Stat(c.Atk)}   LINK–{c.LinkRating}"
                 : $"ATK/{CardFaceText.Stat(c.Atk)}   DEF/{CardFaceText.Stat(c.Def)}";

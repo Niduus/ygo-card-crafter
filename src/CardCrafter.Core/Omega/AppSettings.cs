@@ -7,6 +7,8 @@ public sealed class AppSettings
 {
     public string? OmegaPath { get; set; }
     public string? LastPackPath { get; set; }
+    /// <summary>Folder of card-frame images for the preview, or null for the built-in drawing.</summary>
+    public string? FrameFolder { get; set; }
     public List<string> RecentPacks { get; set; } = [];
 
     public static string Folder

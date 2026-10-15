@@ -175,6 +175,19 @@
       <StackPanel Grid.Column="2">
         <TextBlock Classes="label" Text="Preview" />
         <views:CardFace x:Name="Face" Width="300" HorizontalAlignment="Left" />
+        <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,6,0,0">
+          <TextBlock Text="{Binding $parent[Window].((vm:MainViewModel)DataContext).FrameStatus}" FontSize="11"
+                     Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+          <Button Content="Frames…" FontSize="11" Padding="8,2"
+                  ToolTip.Tip="Draw the preview with card frame images from a folder you choose">
+            <Button.Flyout>
+              <MenuFlyout>
+                <MenuItem Header="Use frame images from a folder…" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ChooseFrameFolderCommand}" />
+                <MenuItem Header="Use built-in frames" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).UseBuiltInFramesCommand}" />
+              </MenuFlyout>
+            </Button.Flyout>
+          </Button>
+        </StackPanel>
         <TextBlock Classes="label" Text="Card art: the picture inside the frame" />
         <StackPanel Orientation="Horizontal" Spacing="6">
           <Button Content="Choose art…" Click="OnPickArtwork" />

@@ -70,6 +70,16 @@ shows a warning the next time Card Crafter scans Omega, and installing is refuse
 Link Arrows, Pendulum scales, type line, card text and ATK/DEF. **Choose art…** sets the illustration inside the frame.
 YGO Omega draws the frame itself, so only the art is exported, as `.jpg`.
 
+**Card frame images.** Card Crafter doesn't include Konami's card frame artwork. To preview with real-looking frames,
+click **Frames… → Use frame images from a folder…** under the preview and pick a folder of full-card templates you have.
+Name them `normal`, `effect`, `ritual`, `fusion`, `synchro`, `xyz`, `link`, `token`, `spell`, `trap`, and
+`pendulum-normal`, `pendulum-effect` and so on (`.png` or `.jpg`). Optional extras replace single parts:
+`attribute-dark` … `attribute-divine`, `attribute-spell`, `attribute-trap`, `level`, `rank`. Templates should use
+the standard card proportions (59 × 86); the name, stars, art, text and ATK/DEF are drawn on top in the standard places.
+
+**If something goes wrong.** Unexpected errors are shown in a message and saved to
+`%AppData%\YGO Card Crafter\crash.log` instead of closing the app. Please attach that file when reporting a problem.
+
 **Archetypes and custom Types.** In the left panel, **Archetypes → Use one from Omega…** lists every archetype already
 in the game, with names guessed from their cards, so your cards can join an existing archetype. **New archetype** picks a
 code nothing in Omega uses. **Custom Types** adds monster Types beyond the standard ones; Types Omega already uses are

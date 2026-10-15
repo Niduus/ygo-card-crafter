@@ -27,6 +27,8 @@ public sealed class OmegaCatalog
     public Dictionary<long, string> Passcodes { get; } = [];
     public List<KnownArchetype> Archetypes { get; } = [];
     public List<UnknownType> UnknownTypes { get; } = [];
+    /// <summary>Databases that couldn't be read, with the reason. Reading other tools' files must never crash the app.</summary>
+    public List<string> Problems { get; } = [];
 
     public static OmegaCatalog Empty { get; } = new();
 
@@ -46,7 +48,11 @@ public sealed class OmegaCatalog
         {
             List<CdbRow> rows;
             try { rows = CdbFile.Read(db); }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Microsoft.Data.Sqlite.SqliteException) { continue; }
+            catch (Exception ex)
+            {
+                catalog.Problems.Add($"{Path.GetRelativePath(root, db)}: {ex.Message}");
+                continue;
+            }
             var file = Path.GetRelativePath(root, db);
             foreach (var row in rows)
             {
