@@ -42,6 +42,8 @@ public sealed class CardFilter
     public CardAttribute Attribute { get; set; }
     /// <summary>Archetype code, 0 for any.</summary>
     public int Archetype { get; set; }
+    /// <summary>A second archetype, 0 for none: ""Dominators" or "Dominus Purge" Traps".</summary>
+    public int Archetype2 { get; set; }
     /// <summary>A specific card's passcode, 0 for any.</summary>
     public long CardCode { get; set; }
     public int? LevelMin { get; set; }
@@ -49,6 +51,8 @@ public sealed class CardFilter
     public int? AtkMin { get; set; }
     public int? AtkMax { get; set; }
     public bool FaceUpOnly { get; set; }
+    /// <summary>Only face-down cards: "Face-down cards in your Spell & Trap Zone".</summary>
+    public bool FaceDownOnly { get; set; }
     public bool ExcludeThisCard { get; set; }
     /// <summary>This exact card, not any card with its name: "Special Summon this card from your hand".</summary>
     public bool ThisCard { get; set; }

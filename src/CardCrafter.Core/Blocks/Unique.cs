@@ -82,6 +82,64 @@ public sealed class OpponentTributesAction : ActionBlock
 }
 
 /// <summary>
+/// Dominus Spark: "then if you have no Traps in your GY, your opponent can Special Summon 1 monster from their hand".
+/// Your opponent chooses whether to, and which monster.
+/// </summary>
+public sealed class OpponentSpecialSummonsAction : ActionBlock
+{
+    public override string Id => "do.opponent_special_summons";
+    public override string Group => "Summon";
+    public override string Name => "Your opponent can Special Summon a monster (their choice)";
+    public override string Sentence => "Your opponent can Special Summon {count} {cards}";
+    public override IReadOnlyList<ParamSpec> Params { get; } =
+    [
+        ParamSpec.Int("count", "How many", 1, 1, 5),
+        ParamSpec.Cards("cards", "Which monsters (in your opponent's hand, Deck or GY)",
+            () => new CardFilter { Owner = CardOwner.Opponent, Zones = Zone.Hand, CardType = FilterCardType.Monster }, Zone.Hand | Zone.Deck | Zone.Graveyard | Zone.Banished),
+    ];
+
+    private static CardFilter Theirs(BlockArgs args)
+    {
+        var f = args.Cards("cards").Clone();
+        f.Owner = CardOwner.Opponent;
+        f.CardType = FilterCardType.Monster;
+        if ((f.Zones & (Zone.Hand | Zone.Deck | Zone.Graveyard | Zone.Banished)) == 0) f.Zones = Zone.Hand;
+        f.Zones &= Zone.Hand | Zone.Deck | Zone.Graveyard | Zone.Banished;
+        return f;
+    }
+
+    public override string Describe(BlockArgs args)
+    {
+        var n = args.Int("count");
+        var text = FilterText.Describe(Theirs(args), args.Pack, plural: n != 1).Replace("your opponent's ", "their ", StringComparison.Ordinal);
+        return $"your opponent can Special Summon {n} {text}";
+    }
+
+    public override void Compile(BlockContext ctx)
+    {
+        var n = ctx.Args.Int("count");
+        var f = Theirs(ctx.Args);
+        // The filter is called with the opponent as "tp", so their cards are on its own side.
+        var mine = f.Clone();
+        mine.Owner = CardOwner.You;
+        var r0 = ctx.Script.Filter(mine, "c:IsCanBeSpecialSummoned(e,0,tp,false,false)", "spfilter");
+        var r = ctx.Effect.NewLocal("r");
+        var g = ctx.Effect.NewLocal("g");
+        ctx.Effect.AddCategory("CATEGORY_SPECIAL_SUMMON");
+        ctx.Effect.AddStep(
+        [
+            $"local {r}=0",
+            $"if Duel.GetLocationCount(1-tp,LOCATION_MZONE)>={n} and Duel.IsExistingMatchingCard({r0.Function},1-tp,{r0.Self},0,{n},nil,e,1-tp)",
+            $"	and Duel.SelectYesNo(1-tp,aux.Stringid(id,{Math.Min(ctx.Effect.Index, 16) - 1})) then",
+            "	Duel.Hint(HINT_SELECTMSG,1-tp,HINTMSG_SPSUMMON)",
+            $"	local {g}=Duel.SelectMatchingCard(1-tp,{r0.Function},1-tp,{r0.Self},0,{n},{n},nil,e,1-tp)",
+            $"	{r}=Duel.SpecialSummon({g},0,1-tp,1-tp,false,false,POS_FACEUP)",
+            "end",
+        ], r, ctx.Link);
+    }
+}
+
+/// <summary>
 /// "If another Reptile monster(s) you control would be destroyed by battle or card effect, you can Tribute this card
 /// instead." Mitsurugi, Ryzeal Detonator (detach a material), Toon Bookmark (banish it from the GY).
 /// </summary>

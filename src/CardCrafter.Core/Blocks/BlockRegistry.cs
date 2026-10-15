@@ -38,6 +38,8 @@ public static class BlockRegistry
         new NotSentThisTurnCondition(),
         new CanBattleCondition(),
         new CompareLifePointsCondition(),
+        new CardPresentCondition(),
+        new OpponentSpecialSummonsAction(),
         new OpponentActivatedCondition(),
         new ZoneCondition(),
         // COST

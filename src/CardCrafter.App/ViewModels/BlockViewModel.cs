@@ -66,6 +66,8 @@ public sealed partial class BlockViewModel : ObservableObject
     };
     public string Help => Definition.Help.Length > 0 ? Definition.Help : Definition.Name;
     public bool IsTrigger => Definition.Kind == BlockKind.Trigger;
+    /// <summary>An "or when" trigger after the first one.</summary>
+    [ObservableProperty] private bool _isAlsoWhen;
 
     /// <summary>Only DO blocks after the first show how they link to the one before.</summary>
     [ObservableProperty] private bool _showLink;

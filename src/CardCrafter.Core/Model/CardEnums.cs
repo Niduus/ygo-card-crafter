@@ -128,8 +128,15 @@ public static class EnumNames
         RaceNames.TryGetValue(race, out var n) ? n : IsStandard(race) ? race.ToString()
         : Bits(race) is { Count: > 1 } bits ? string.Join(" or ", bits.Select(Display)) : $"Type 0x{(long)race:x}";
 
-    public static string Display(CardAttribute attribute) =>
-        string.Join(" or ", Bits(attribute).Select(a => a.ToString().ToUpperInvariant()));
+    /// <summary>"LIGHT", "LIGHT or DARK", "LIGHT, EARTH, or WIND": in the order card text lists them.</summary>
+    public static string Display(CardAttribute attribute)
+    {
+        var names = Bits(attribute).OrderBy(a => Array.IndexOf(AttributeOrder, a)).Select(a => a.ToString().ToUpperInvariant()).ToList();
+        return names.Count <= 2 ? string.Join(" or ", names) : string.Join(", ", names.Take(names.Count - 1)) + ", or " + names[^1];
+    }
+
+    private static readonly CardAttribute[] AttributeOrder =
+        [CardAttribute.Light, CardAttribute.Dark, CardAttribute.Earth, CardAttribute.Water, CardAttribute.Fire, CardAttribute.Wind, CardAttribute.Divine];
 
     /// <summary>The single Attributes in a combination such as LIGHT or EARTH.</summary>
     public static IEnumerable<CardAttribute> Bits(CardAttribute attribute) =>

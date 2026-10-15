@@ -129,6 +129,9 @@ public static partial class EffectTextGenerator
             var body = before.Length == 0 ? actions : $"{before}; {actions}";
             // "You can" once, even when the first action is itself optional.
             if (optional && body.StartsWith("you can ", StringComparison.Ordinal)) body = body["you can ".Length..];
+            // Murakumo: "You can activate this effect; your opponent can discard 1 card, or that effect is negated."
+            if (optional && before.Length == 0 && (body.StartsWith("your opponent can ", StringComparison.Ordinal) || body.StartsWith("your opponent ", StringComparison.Ordinal)))
+                body = "activate this effect; " + body;
             body = optional ? "You can " + body : SentenceCase.Upper(body);
             text = head.Length == 0 ? body : $"{SentenceCase.Upper(head)}: {body}";
         }
@@ -143,6 +146,8 @@ public static partial class EffectTextGenerator
             text += activation
                 ? $" You can only activate 1 \"{card.Name}\" per turn."
                 : $" You can only use this effect of \"{card.Name}\" once per turn.";
+        if (effect.Limit == OncePerTurn.Chain && limited)
+            text += $" You can only activate this effect of \"{card.Name}\" once per Chain.";
         if (effect.Limit == OncePerTurn.Duel && limited)
             text += activation
                 ? $" You can only activate 1 \"{card.Name}\" per Duel."
@@ -235,6 +240,9 @@ public static partial class EffectTextGenerator
     private static string Head(BlockDefinition trigger, EffectEvent effect, CardPack? pack, bool passive)
     {
         var when = Text(effect.When!, pack);
+        // "If this card is Normal or Special Summoned, or if this card is Tributed".
+        foreach (var also in effect.AlsoWhen.Select(b => Text(b, pack)).Where(t => t.Length > 0))
+            when = when.Length == 0 ? also : $"{when}, or {SentenceCase.Lower(also)}";
         var conditions = effect.If.Select(b => Text(b, pack)).Where(t => t.Length > 0).ToList();
         var cond = string.Join(" and ", conditions);
 

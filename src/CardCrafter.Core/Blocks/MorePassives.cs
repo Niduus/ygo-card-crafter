@@ -102,6 +102,7 @@ public sealed class CardsRulePassive : PassiveBlock
             new("cannot_attack", "cannot attack"),
             new("negated", "have their effects negated"),
             new("untargetable", "cannot be targeted by your opponent's card effects"),
+            new("untargetable_any", "cannot be targeted by card effects"),
             new("not_attack_target", "cannot be targeted for attacks"),
             new("unaffected", "are unaffected by your opponent's card effects"),
             new("pierce", "inflict piercing battle damage")),
@@ -121,6 +122,7 @@ public sealed class CardsRulePassive : PassiveBlock
         {
             "negated" => (new[] { "EFFECT_DISABLE", "EFFECT_DISABLE_EFFECT" }, "1"),
             "untargetable" => (["EFFECT_CANNOT_BE_EFFECT_TARGET"], "aux.tgoval"),
+            "untargetable_any" => (["EFFECT_CANNOT_BE_EFFECT_TARGET"], "1"),
             "not_attack_target" => (["EFFECT_CANNOT_BE_BATTLE_TARGET"], "aux.imval1"),
             "unaffected" => (["EFFECT_IMMUNE_EFFECT"], ctx.Script.AddFunction("immval", "e,te", ["return te:GetOwnerPlayer()~=e:GetHandlerPlayer()"])),
             "pierce" => (["EFFECT_PIERCE"], "1"),

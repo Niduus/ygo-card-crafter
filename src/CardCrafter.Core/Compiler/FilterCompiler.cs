@@ -89,7 +89,9 @@ public static class FilterCompiler
         if (f.CardCode != 0) parts.Add($"{card}:{isCode}({Lua.Num(f.CardCode)})");
         if (f.ExceptOwnName) parts.Add($"not {card}:{isCode}(id)");
         if (f.ExceptCode != 0) parts.Add($"not {card}:{isCode}({Lua.Num(f.ExceptCode)})");
-        if (f.Archetype != 0) parts.Add($"{card}:{isSet}({Lua.Hex(f.Archetype)})");
+        if (f.Archetype != 0 && f.Archetype2 != 0) parts.Add($"({card}:{isSet}({Lua.Hex(f.Archetype)}) or {card}:{isSet}({Lua.Hex(f.Archetype2)}))");
+        else if (f.Archetype != 0) parts.Add($"{card}:{isSet}({Lua.Hex(f.Archetype)})");
+        else if (f.Archetype2 != 0) parts.Add($"{card}:{isSet}({Lua.Hex(f.Archetype2)})");
         if (f.Race != CardRace.None) parts.Add($"{card}:{isRace}({EnumNames.LuaConstant(f.Race)})");
         if (f.Attribute != CardAttribute.None) parts.Add($"{card}:{isAttr}({EnumNames.LuaConstant(f.Attribute)})");
         // Xyz Monsters have a Rank, not a Level.
@@ -104,7 +106,8 @@ public static class FilterCompiler
         if (f.AtkMax is { } amax) parts.Add($"{card}:IsAttackBelow({amax})");
         if (f.PointedToByThisCard) parts.Add($"e:GetHandler():GetLinkedGroup():IsContains({card})");
         if (f.CenterZone) parts.Add($"{card}:IsLocation(LOCATION_MZONE) and {card}:GetSequence()==2");
-        if (f.FaceUpOnly)
+        if (f.FaceDownOnly) parts.Add($"{card}:IsFacedown()");
+        else if (f.FaceUpOnly)
         {
             var onlyPublicZones = (f.Zones & ~(Zone.Field | Zone.Banished)) == Zone.None;
             parts.Add(onlyPublicZones

@@ -100,5 +100,5 @@ public sealed class CardPack
         CustomTypes.FirstOrDefault(t => t.Value == (long)race)?.Name is { Length: > 0 } n ? n : EnumNames.Display(race);
 
     public string ArchetypeName(int code) =>
-        Archetypes.FirstOrDefault(a => a.Code == code)?.Name is { Length: > 0 } n ? n : $"0x{code:x}";
+        Archetypes.FirstOrDefault(a => a.Code == code)?.Name is { Length: > 0 } n ? n : Text.ArchetypeNames.Find(code) ?? $"0x{code:x}";
 }

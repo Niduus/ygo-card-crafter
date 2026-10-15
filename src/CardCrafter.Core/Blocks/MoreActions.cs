@@ -667,7 +667,9 @@ public sealed class SummonRestrictionAction : ActionBlock
         if (ctx.Args.Bool("from_hand"))
         {
             if (ctx.Card.Kind != CardKind.Trap) ctx.Effect.Warn("\"Only if activated from the hand\" is for Trap Cards that can be activated from the hand.");
-            lines = ["if e:GetHandler():IsStatus(STATUS_ACT_FROM_HAND) then", .. lines.Select(l => "\t" + l), "end"];
+            // Its own sentence: it applies whatever the rest of the effect did.
+            ctx.Effect.AddFinally(["if e:GetHandler():IsStatus(STATUS_ACT_FROM_HAND) then", .. lines.Select(l => "\t" + l), "end"]);
+            return;
         }
         ctx.Effect.AddStep(lines, null, ctx.Link);
     }

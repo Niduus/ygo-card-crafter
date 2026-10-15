@@ -55,7 +55,8 @@ public static class Lists
         (OncePerTurn.None, "No limit"),
         (OncePerTurn.Soft, "Once per turn (each copy)"),
         (OncePerTurn.Hard, "Once per turn (by card name)"),
-        (OncePerTurn.Duel, "Once per Duel (by card name)"));
+        (OncePerTurn.Duel, "Once per Duel (by card name)"),
+        (OncePerTurn.Chain, "Once per Chain"));
 
     public static readonly IReadOnlyList<Option<ActionLink>> Links = Options.Of(
         (ActionLink.And, "and"),

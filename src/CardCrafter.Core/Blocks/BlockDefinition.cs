@@ -43,6 +43,8 @@ public sealed class ParamSpec
     public Zone AllowedZones { get; init; }
     /// <summary>For card filters: the picker offers "This card itself".</summary>
     public bool AllowThisCard { get; init; }
+    /// <summary>For card filters: the block says where the card is, so the picker only asks what the card is.</summary>
+    public bool WhereFromBlock { get; init; }
 
     public static ParamSpec Int(string key, string label, int def, int min = 0, int max = 999999) =>
         new() { Key = key, Label = label, Type = ParamType.Integer, Default = def.ToString(CultureInfo.InvariantCulture), Min = min, Max = max };

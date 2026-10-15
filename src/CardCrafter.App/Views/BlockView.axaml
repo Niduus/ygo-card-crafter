@@ -12,6 +12,8 @@
       <ComboBox Grid.Column="1" Classes="link" ItemsSource="{Binding LinkOptions}" SelectedItem="{Binding Link}"
                 ToolTip.Tip="How this action connects to the one above it" />
     </Grid>
+    <TextBlock Text="or" IsVisible="{Binding IsAlsoWhen}" FontWeight="SemiBold" Foreground="#C7D7FE" Margin="22,2,0,2"
+               ToolTip.Tip="This trigger also starts the effect" />
     <Border x:Name="Row" Classes="block" ToolTip.Tip="{Binding Help}">
       <Grid ColumnDefinitions="Auto,*,Auto">
         <Path Grid.Column="0" Classes="kind" ToolTip.Tip="{Binding KindLabel}" />

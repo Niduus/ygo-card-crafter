@@ -49,6 +49,26 @@ public partial class EffectSheetView : UserControl
         menu.ShowAt(button);
     }
 
+    /// <summary>"+ Or when...": another trigger for the same effect.</summary>
+    private void OnAddAlsoWhen(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { DataContext: EffectViewModel effect } button) return;
+        var menu = new MenuFlyout();
+        foreach (var group in effect.AlsoWhenChoices.GroupBy(b => b.Group))
+        {
+            var header = new MenuItem { Header = group.Key };
+            foreach (var def in group)
+            {
+                var item = new MenuItem { Header = def.Name };
+                if (def.Help.Length > 0) ToolTip.SetTip(item, def.Help);
+                item.Click += (_, _) => effect.AddAlsoWhen(def);
+                header.Items.Add(item);
+            }
+            menu.Items.Add(header);
+        }
+        menu.ShowAt(button);
+    }
+
     private void OnTemplates(object? sender, RoutedEventArgs e)
     {
         if (sender is not Button button || DataContext is not CardViewModel card) return;

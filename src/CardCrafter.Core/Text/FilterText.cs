@@ -13,7 +13,7 @@ public static class FilterText
         var except = new List<string>();
         if (f.ExceptOwnName) except.Add(ownName is { Length: > 0 } n ? $"\"{n}\"" : "cards with this card's name");
         if (f.ExceptCode != 0)
-            except.Add(pack?.Cards.FirstOrDefault(c => c.Card.Id == f.ExceptCode)?.Card.Name is { Length: > 0 } en ? $"\"{en}\"" : $"passcode {f.ExceptCode}");
+            except.Add(CardNames.Find(f.ExceptCode, pack) is { } en ? $"\"{en}\"" : $"passcode {f.ExceptCode}");
         return except.Count == 0 || f.ThisCard ? "" : ", except " + string.Join(" or ", except);
     }
 
@@ -25,7 +25,8 @@ public static class FilterText
         if (f.ThisCard) return "this card";
         var words = new List<string>();
         if (f.ExcludeThisCard) words.Add("other");
-        if (f.FaceUpOnly) words.Add("face-up");
+        if (f.FaceDownOnly) words.Add("face-down");
+        else if (f.FaceUpOnly) words.Add("face-up");
         // "non-Tuner WIND monsters": a "non-" kind comes first, before the Level and Attribute.
         if (f.CardCode == 0 && KindNoun(f.MonsterKind) is { Non: true } non) words.Add(non.Noun);
         if (f.LevelMin is { } lo && f.LevelMax is { } hi)
@@ -34,12 +35,14 @@ public static class FilterText
         else if (f.LevelMin is { } min) words.Add($"{Lv(f)} {min} or higher");
         if (f.Attribute != CardAttribute.None) words.Add(EnumNames.Display(f.Attribute));
         if (f.Race != CardRace.None) words.Add(pack?.TypeName(f.Race) ?? EnumNames.Display(f.Race));
-        if (f.Archetype != 0) words.Add($"\"{pack?.ArchetypeName(f.Archetype) ?? $"0x{f.Archetype:x}"}\"");
+        string Arch(int code) => $"\"{(pack is not null ? pack.ArchetypeName(code) : ArchetypeNames.Find(code) ?? $"0x{code:x}")}\"";
+        if (f.Archetype != 0 && f.Archetype2 != 0) words.Add($"{Arch(f.Archetype)} or {Arch(f.Archetype2)}");
+        else if (f.Archetype != 0 || f.Archetype2 != 0) words.Add(Arch(f.Archetype != 0 ? f.Archetype : f.Archetype2));
 
         string noun;
         if (f.CardCode != 0)
         {
-            var name = pack?.Cards.FirstOrDefault(c => c.Card.Id == f.CardCode)?.Card.Name;
+            var name = CardNames.Find(f.CardCode, pack);
             noun = name is null ? $"card with passcode {f.CardCode}" : $"\"{name}\"";
             words.Clear();
             if (f.ExcludeThisCard) words.Add("other");

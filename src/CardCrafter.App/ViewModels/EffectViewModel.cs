@@ -36,6 +36,20 @@ public sealed partial class EffectViewModel : ObservableObject
     public ObservableCollection<BlockViewModel> Actions { get; } = [];
 
     public bool HasTrigger => Trigger.Count > 0;
+    /// <summary>"Or when ...": another trigger can start the same effect (not lasting effects or Summon procedures).</summary>
+    public bool CanAddAlsoWhen => Model.When is not null && !IsPassive && !IsProcedure;
+
+    /// <summary>Triggers offered by "Or when ...": the ones that start an activated effect.</summary>
+    public IEnumerable<BlockDefinition> AlsoWhenChoices => BlockRegistry.OfKind(BlockKind.Trigger)
+        .Where(d => d.Id is not ("when.while_face_up" or SummonProcedureTrigger.BlockId));
+
+    public void AddAlsoWhen(BlockDefinition def)
+    {
+        if (!CanAddAlsoWhen) return;
+        Model.AlsoWhen.Add(def.CreateInstance());
+        Rebuild();
+        _changed();
+    }
     public bool IsPassive => Model.When?.BlockId == "when.while_face_up";
     /// <summary>A Special Summon procedure: the Summon is what it does, so it has no DO blocks.</summary>
     public bool IsProcedure => Model.When?.BlockId == SummonProcedureTrigger.BlockId;
@@ -91,6 +105,7 @@ public sealed partial class EffectViewModel : ObservableObject
         }
         // A Summon procedure keeps its IF and COST blocks but does nothing else.
         if (IsProcedure) Model.Do.Clear();
+        if (IsPassive || IsProcedure) Model.AlsoWhen.Clear();
         Rebuild();
         _changed();
     }
@@ -124,7 +139,13 @@ public sealed partial class EffectViewModel : ObservableObject
 
     public void RemoveBlock(BlockViewModel block)
     {
-        if (block.IsTrigger) Model.When = null;
+        if (Model.AlsoWhen.Contains(block.Instance)) Model.AlsoWhen.Remove(block.Instance);
+        else if (block.IsTrigger)
+        {
+            // The next "or when" trigger becomes the first.
+            Model.When = Model.AlsoWhen.FirstOrDefault();
+            if (Model.AlsoWhen.Count > 0) Model.AlsoWhen.RemoveAt(0);
+        }
         else ListFor(block)?.Remove(block.Instance);
         Rebuild();
         _changed();
@@ -152,12 +173,14 @@ public sealed partial class EffectViewModel : ObservableObject
 
     private void Rebuild()
     {
-        Fill(Trigger, Model.When is null ? [] : [Model.When]);
+        Fill(Trigger, Model.When is null ? [] : [Model.When, .. Model.AlsoWhen]);
+        for (int i = 0; i < Trigger.Count; i++) Trigger[i].IsAlsoWhen = i > 0;
         Fill(Conditions, Model.If);
         Fill(Costs, Model.Cost);
         Fill(Actions, Model.Do);
         for (int i = 0; i < Actions.Count; i++) Actions[i].ShowLink = i > 0 && !IsPassive;
         OnPropertyChanged(nameof(HasTrigger));
+        OnPropertyChanged(nameof(CanAddAlsoWhen));
         OnPropertyChanged(nameof(IsPassive));
         OnPropertyChanged(nameof(IsProcedure));
         OnPropertyChanged(nameof(CostHint));

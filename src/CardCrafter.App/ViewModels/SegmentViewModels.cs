@@ -88,7 +88,7 @@ public sealed class CardsSegmentViewModel : SegmentViewModel
         {
             OnPropertyChanged(nameof(Summary));
             changed();
-        }, allowThisCard: spec.AllowThisCard);
+        }, allowThisCard: spec.AllowThisCard, whereFromBlock: spec.WhereFromBlock);
     }
 
     public string Label { get; }

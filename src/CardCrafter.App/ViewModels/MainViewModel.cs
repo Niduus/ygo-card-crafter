@@ -801,6 +801,20 @@ public sealed partial class MainViewModel : ObservableObject
         return _library;
     }
 
+    /// <summary>Reads every card's name from Omega's databases, for card text and the card pickers' name box.</summary>
+    private async Task LoadCardNamesAsync()
+    {
+        try
+        {
+            var library = await GetLibraryAsync();
+            Core.Text.CardNames.Set(library.Cards.Select(c => (c.Id, c.Row.Name)));
+        }
+        catch (Exception ex)
+        {
+            CrashLogHook?.Invoke("read card names", ex);
+        }
+    }
+
     public Task<string?> PickDatabaseToBrowseAsync() => _dialogs.OpenFileAsync("Browse the cards in a database", "Card database", "db", "cdb");
 
     /// <summary>Where card scripts are looked for: Omega's script folders, then the folders next to the opened database.</summary>
@@ -1091,6 +1105,7 @@ public sealed partial class MainViewModel : ObservableObject
         try
         {
             Inventory = await Task.Run(() => OmegaInventory.Scan(root));
+            _ = LoadCardNamesAsync();
         }
         catch (Exception ex)
         {
@@ -1120,6 +1135,7 @@ public sealed partial class MainViewModel : ObservableObject
         try
         {
             Catalog = await Task.Run(() => OmegaCatalog.Load(inventory, ownDb));
+            Core.Text.ArchetypeNames.Set(Catalog.Archetypes.Select(a => (a.Code, a.Name)));
         }
         catch (Exception ex)
         {

@@ -92,6 +92,7 @@ public static class ScriptCompiler
             return;
         }
         if (!Run(effect, src.When, BlockKind.Trigger, pack)) return;
+        foreach (var also in src.AlsoWhen) AddAlsoWhen(effect, also, pack);
 
         foreach (var b in src.If) Run(effect, b, BlockKind.Condition, pack);
 
@@ -159,6 +160,29 @@ public static class ScriptCompiler
             effect.Error("Add at least one DO block: what the effect does.");
         if (effect.IsPassive && src.Limit != OncePerTurn.None)
             effect.Warn("Once-per-turn limits do nothing on \"while face-up\" effects and were ignored.");
+    }
+
+    /// <summary>
+    /// "Or when ...": the other trigger is the same kind of effect on another event, so the effect is cloned with that
+    /// event's code. Triggers that differ in more than the event (where the card is, what they check) can't share an effect.
+    /// </summary>
+    private static void AddAlsoWhen(EffectBuilder effect, BlockInstance also, CardPack? pack)
+    {
+        var scratch = new EffectBuilder(new ScriptBuilder(new CardProject { Card = effect.Card }, pack), effect.Source, effect.Index);
+        if (!Run(scratch, also, BlockKind.Trigger, pack)) { foreach (var d in scratch.Script.Diagnostics) effect.Script.Diagnostics.Add(d); return; }
+        foreach (var d in scratch.Script.Diagnostics) effect.Script.Diagnostics.Add(d);
+        var name = BlockRegistry.Find(also.BlockId)?.Name ?? also.BlockId;
+        if (scratch.IsPassive || scratch.IsSummonProcedure || effect.IsPassive || effect.IsSummonProcedure || scratch.Code is null
+            || !scratch.Types.ToHashSet().SetEquals(effect.Types) || scratch.Range != effect.Range
+            || !scratch.Conditions.SequenceEqual(effect.Conditions) || scratch.IsMandatory != effect.IsMandatory)
+        {
+            effect.Error($"\"Or when\": \"{name}\" can't start the same effect as the first WHEN (it is used from another place, " +
+                         "checks something else, or is a different kind of effect). Make it a separate effect with the same DO blocks.");
+            return;
+        }
+        foreach (var code in new[] { scratch.Code }.Concat(scratch.ExtraCodes))
+            if (code != effect.Code && !effect.ExtraCodes.Contains(code)) effect.ExtraCodes.Add(code);
+        foreach (var prop in scratch.Properties) effect.AddProperty(prop);
     }
 
     private static bool Run(EffectBuilder effect, BlockInstance inst, BlockKind expected, CardPack? pack)
@@ -286,6 +310,9 @@ public static class ScriptCompiler
                 {
                     case OncePerTurn.Soft:
                         limit = "1";
+                        break;
+                    case OncePerTurn.Chain:
+                        limit = "1,EFFECT_COUNT_CODE_CHAIN";
                         break;
                     case OncePerTurn.Hard or OncePerTurn.Duel:
                         var group = e.Source.SharedLimitGroup > 0 ? e.Source.SharedLimitGroup : -e.Index;

@@ -109,6 +109,14 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
     public void AddStep(IEnumerable<string> lines, string? result, ActionLink link) =>
         _steps.Add(new OperationStep { Lines = lines.ToList(), Result = result, Link = link, Optional = CurrentOptional, Branch = CurrentBranch });
 
+    private readonly List<string> _finally = [];
+
+    /// <summary>
+    /// Lines that run at the end of the operation whatever happened before, like Dominus' "If you activated this card
+    /// from your hand, you cannot ... for the rest of this Duel."
+    /// </summary>
+    public void AddFinally(IEnumerable<string> lines) => _finally.AddRange(lines);
+
     /// <summary>An IF block among the DO blocks: the steps after it in its option happen only if the condition holds.</summary>
     public void AddGate(string condition, ActionLink link) =>
         _steps.Add(new OperationStep { Lines = [], Link = link, Branch = CurrentBranch, Gate = condition });
@@ -119,7 +127,7 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
     /// <summary>True when a lasting effect takes the effect's "once per turn", like "Tribute this card instead".</summary>
     public bool HasLimitedPassive => _passives.Any(p => p.Limited);
 
-    public bool HasSteps => _steps.Count > 0;
+    public bool HasSteps => _steps.Count > 0 || _finally.Count > 0;
 
     /// <summary>The Lua variable with how many cards the last DO step affected, for "for each of those cards".</summary>
     public string? LastResult => _steps.LastOrDefault(s => s.Result is not null)?.Result;
@@ -209,7 +217,7 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
             var fn = Script.AddFunction(p + "tg", args, body);
             lines.Add($"{Var}:SetTarget({fn})");
         }
-        if (_steps.Count > 0)
+        if (_steps.Count > 0 || _finally.Count > 0)
         {
             var fn = Script.AddFunction(p + "op", "e,tp,eg,ep,ev,re,r,rp", BuildOperation());
             lines.Add($"{Var}:SetOperation({fn})");
@@ -296,9 +304,10 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
     {
         var body = new List<string> { "local c=e:GetHandler()" };
         var branches = _steps.Select(s => s.Branch).Distinct().OrderBy(b => b).ToList();
-        if (branches.Count == 1 && branches[0] == 0)
+        if (branches.Count == 0 || branches.Count == 1 && branches[0] == 0)
         {
             body.AddRange(Chain(_steps, ""));
+            body.AddRange(_finally);
             return body;
         }
         body.Add("local _,op=e:GetLabel()");
@@ -310,6 +319,7 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
             body.AddRange(Chain(_steps.Where(s => s.Branch == b).ToList(), "\t"));
         }
         body.Add("end");
+        body.AddRange(_finally);
         return body;
     }
 

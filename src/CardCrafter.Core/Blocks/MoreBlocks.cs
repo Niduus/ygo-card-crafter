@@ -343,8 +343,38 @@ public sealed class SetSpellTrapAction : CardGroupAction
     protected override string TargetedWording => "Set {0}";
     protected override Func<CardFilter> DefaultCards => () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Deck, CardType = FilterCardType.Trap };
     protected override string? AbleCheck(BlockContext ctx) => "c:IsSSetable()";
-    protected override string Apply(string group, BlockContext ctx) => $"Duel.SSet(tp,{group})";
     protected override string? SpaceCheck(int count, CardFilter f, BlockContext ctx) => $"Duel.GetLocationCount(tp,LOCATION_SZONE)>={count}";
+
+    protected override IReadOnlyList<ParamSpec> BuildParams() => [.. base.BuildParams(), ParamSpec.Flag("this_turn", "it can be activated this turn", false)];
+
+    /// <summary>Rosepamela: "Set 1 Trap from your Deck. It can be activated this turn."</summary>
+    public override string Afterword(BlockArgs args) => args.Bool("this_turn") ? $"{(args.IsPlural ? "They" : "It")} can be activated this turn." : "";
+
+    public override string Describe(BlockArgs args) => base.Describe(args).Replace(" it can be activated this turn", "", StringComparison.Ordinal);
+
+    protected override string Apply(string group, BlockContext ctx)
+    {
+        if (!ctx.Args.Bool("this_turn")) return $"Duel.SSet(tp,{group})";
+        var fn = ctx.Script.AddFunction("setthisturn", "g,e,tp",
+        [
+            "local n=Duel.SSet(tp,g)",
+            "if n>0 then",
+            "\tlocal og=Duel.GetOperatedGroup()",
+            "\tlocal tc=og:GetFirst()",
+            "\twhile tc do",
+            "\t\tlocal e1=Effect.CreateEffect(e:GetHandler())",
+            "\t\te1:SetType(EFFECT_TYPE_SINGLE)",
+            "\t\te1:SetProperty(EFFECT_FLAG_SET_AVAILABLE)",
+            "\t\te1:SetCode(tc:IsType(TYPE_QUICKPLAY) and EFFECT_QP_ACT_IN_SET_TURN or EFFECT_TRAP_ACT_IN_SET_TURN)",
+            "\t\te1:SetReset(RESET_EVENT+RESETS_STANDARD)",
+            "\t\ttc:RegisterEffect(e1)",
+            "\t\ttc=og:GetNext()",
+            "\tend",
+            "end",
+            "return n",
+        ]);
+        return $"{fn}({group},e,tp)";
+    }
 }
 
 public sealed class MillAction : ActionBlock
@@ -435,7 +465,8 @@ public sealed class ProtectCardsPassive : PassiveBlock
         ParamSpec.Choice("by", "By",
             new("battle", "by battle"),
             new("effect", "by card effects"),
-            new("both", "by battle or card effects")),
+            new("both", "by battle or card effects"),
+            new("opponent_effect", "by your opponent's card effects")),
     ];
 
     public override string Describe(BlockArgs args) =>
@@ -451,7 +482,7 @@ public sealed class ProtectCardsPassive : PassiveBlock
         var by = ctx.Args.Choice("by");
         var codes = by switch
         {
-            "effect" => new[] { "EFFECT_INDESTRUCTABLE_EFFECT" },
+            "effect" or "opponent_effect" => new[] { "EFFECT_INDESTRUCTABLE_EFFECT" },
             "both" => ["EFFECT_INDESTRUCTABLE_BATTLE", "EFFECT_INDESTRUCTABLE_EFFECT"],
             _ => ["EFFECT_INDESTRUCTABLE_BATTLE"],
         };
@@ -463,7 +494,7 @@ public sealed class ProtectCardsPassive : PassiveBlock
                 $"{v}:SetRange({range})",
                 $"{v}:SetTargetRange({f.Self},{f.Opp})",
                 $"{v}:SetTarget({target})",
-                $"{v}:SetValue(1)",
+                $"{v}:SetValue({(by == "opponent_effect" ? "aux.indoval" : "1")})",
             ]);
     }
 }

@@ -76,6 +76,8 @@
                           </ItemsControl>
                           <Button Classes="add when" Tag="Trigger" Click="OnAddBlock" Content="+ Choose what starts it" IsVisible="{Binding !HasTrigger}" />
                           <Button Classes="add when" Tag="Trigger" Click="OnAddBlock" Content="Change trigger" IsVisible="{Binding HasTrigger}" />
+                          <Button Classes="add when" Click="OnAddAlsoWhen" Content="+ Or when..." IsVisible="{Binding CanAddAlsoWhen}"
+                                  ToolTip.Tip="Another trigger that starts the same effect, like &quot;If this card is Normal or Special Summoned, or if this card is Tributed&quot;" />
                         </StackPanel>
                       </Border>
                       <Border Classes="section if">

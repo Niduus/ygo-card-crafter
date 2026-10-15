@@ -9,6 +9,8 @@ public enum OncePerTurn
     Hard,
     /// <summary>"You can only use this effect of X once per Duel."</summary>
     Duel,
+    /// <summary>"You can only activate this effect of X once per Chain" (Futsu no Mitama no Mitsurugi).</summary>
+    Chain,
 }
 
 /// <summary>How an action connects to the one before it, matching card-text wording.</summary>
@@ -79,6 +81,11 @@ public sealed class EffectEvent
 {
     public string Label { get; set; } = "Effect";
     public BlockInstance? When { get; set; }
+    /// <summary>
+    /// "Or when ...": more WHEN blocks that also start this effect, like Mitsurugi's "If this card is Normal or Special
+    /// Summoned, or if this card is Tributed". Each starts the same effect, sharing its once per turn.
+    /// </summary>
+    public List<BlockInstance> AlsoWhen { get; set; } = [];
     public List<BlockInstance> If { get; set; } = [];
     public List<BlockInstance> Cost { get; set; } = [];
     public List<BlockInstance> Do { get; set; } = [];

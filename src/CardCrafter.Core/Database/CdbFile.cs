@@ -25,13 +25,23 @@ public static class CdbFile
         using var conn = Open(path, SqliteOpenMode.ReadWriteCreate);
         Exec(conn, IfNotExists(schema.DatasSql ?? CdbSchema.Ygopro.DatasSql!));
         Exec(conn, IfNotExists(schema.TextsSql ?? CdbSchema.Ygopro.TextsSql!));
+        // Effect descriptions and prompts (aux.Stringid) come from str1..str16. Some layouts, like older Omega
+        // databases, have no such columns; without them the game shows a placeholder, so they are always added.
+        var textCols = schema.Texts.ToList();
+        var have = Columns(conn, "texts");
+        for (int i = 1; i <= 16; i++)
+        {
+            var name = "str" + i;
+            if (!have.Contains(name, StringComparer.OrdinalIgnoreCase)) Exec(conn, $"ALTER TABLE texts ADD COLUMN {name} text");
+            if (!textCols.Any(c => c.Name.Equals(name, StringComparison.OrdinalIgnoreCase))) textCols.Add(new CdbColumn(name, "text", false, null));
+        }
         bool limits = schema.HasBanlists && schema.BandatasSql is not null && list.Any(r => r.Limits.Count > 0);
         if (limits) Exec(conn, IfNotExists(schema.BandatasSql!));
 
         using var tx = conn.BeginTransaction();
         var datasCols = schema.Datas.Where(c => DatasValue(c, new CdbRow(), schema) is not Skip).ToList();
         using var datas = Insert(conn, tx, "datas", datasCols.Select(c => c.Name));
-        var textsCols = schema.Texts.Where(c => TextsValue(c, new CdbRow()) is not Skip).ToList();
+        var textsCols = textCols.Where(c => TextsValue(c, new CdbRow()) is not Skip).ToList();
         using var texts = Insert(conn, tx, "texts", textsCols.Select(c => c.Name));
 
         foreach (var r in list)
@@ -413,6 +423,16 @@ public static class CdbFile
                 // A text table with other columns is skipped.
             }
         }
+    }
+
+    private static List<string> Columns(SqliteConnection conn, string table)
+    {
+        var names = new List<string>();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"PRAGMA table_info(\"{table}\")";
+        using var rd = cmd.ExecuteReader();
+        while (rd.Read()) names.Add(rd.GetString(1));
+        return names;
     }
 
     // Databases made by other tools (and the game's own) can hold NULLs, text in number columns,

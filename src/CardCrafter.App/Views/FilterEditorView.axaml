@@ -37,7 +37,9 @@
       </StackPanel>
       <StackPanel Grid.Row="1" Grid.Column="0">
         <TextBlock Classes="label" Text="Archetype" />
-        <ComboBox ItemsSource="{Binding ArchetypeOptions}" SelectedItem="{Binding Archetype}" HorizontalAlignment="Stretch" />
+        <ComboBox ItemsSource="{Binding ArchetypeOptions}" SelectedItem="{Binding Archetype}" HorizontalAlignment="Stretch" MaxDropDownHeight="320" />
+        <ComboBox ItemsSource="{Binding ArchetypeOptions}" SelectedItem="{Binding Archetype2}" HorizontalAlignment="Stretch" MaxDropDownHeight="320" Margin="0,4,0,0"
+                  ToolTip.Tip="Or this archetype: &quot;a &quot;Dominators&quot; or &quot;Dominus Purge&quot; Trap&quot;. Leave as &quot;Any archetype&quot; for none." />
       </StackPanel>
       <StackPanel Grid.Row="1" Grid.Column="2">
         <TextBlock Classes="label" Text="Monster Type" />
@@ -70,8 +72,10 @@
         </StackPanel>
       </StackPanel>
       <StackPanel Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="3">
-        <TextBlock Classes="label" Text="Only this card (passcode)" />
-        <TextBox Text="{Binding CardCode}" Watermark="any card" />
+        <TextBlock Classes="label" Text="Only this card (name or passcode)" />
+        <AutoCompleteBox Text="{Binding CardCode}" ItemsSource="{Binding CardNameChoices}" Watermark="any card: type a name, e.g. Dark Magician"
+                         FilterMode="Contains" MinimumPrefixLength="2" MaxDropDownHeight="260" HorizontalAlignment="Stretch"
+                         ToolTip.Tip="Type part of a card's name and pick it, or type its passcode. Names come from this pack and from YGO Omega's card databases." />
       </StackPanel>
     </Grid>
     <Grid ColumnDefinitions="Auto,8,*" Margin="0,6,0,0">
@@ -80,6 +84,8 @@
       <TextBox Grid.Column="2" Text="{Binding ExceptCode}" Watermark="except (passcode)" />
     </Grid>
     <CheckBox Content="Face-up only" IsChecked="{Binding FaceUpOnly}" IsVisible="{Binding !MaterialMode}" Margin="0,6,0,0" />
+    <CheckBox Content="Face-down only" IsChecked="{Binding FaceDownOnly}" IsVisible="{Binding !MaterialMode}"
+              ToolTip.Tip="Only face-down cards, like &quot;face-down cards in your Spell &amp; Trap Zone&quot;" />
     <CheckBox Content="Not this card itself (&quot;other&quot;)" IsChecked="{Binding ExcludeThisCard}" IsVisible="{Binding !MaterialMode}" />
     <CheckBox IsChecked="{Binding PointedToByThisCard}" IsVisible="{Binding !MaterialMode}"
               ToolTip.Tip="Only cards in the zones this Link monster's Link Arrows point to">

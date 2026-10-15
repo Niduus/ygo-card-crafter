@@ -91,7 +91,7 @@ public class SummonConditionTests
         Assert.Equal("1 DARK Tuner + 1+ non-Tuner WIND monsters", FirstLine(p));
     }
 
-    /// <summary>Invoked Raidjin-style: 1 "Aleister" monster + 1 EARTH or LIGHT monster.</summary>
+    /// <summary>Invoked Raidjin-style: 1 "Aleister" monster + 1 LIGHT or EARTH monster.</summary>
     private static (CardProject Card, CardPack Pack) Invoked()
     {
         var p = new CardProject
@@ -115,7 +115,7 @@ public class SummonConditionTests
     public void Fusion_MaterialsOneByOne()
     {
         var (p, pack) = Invoked();
-        Assert.Equal("1 \"Aleister\" monster + 1 EARTH or LIGHT monster", FirstLine(p, pack));
+        Assert.Equal("1 \"Aleister\" monster + 1 LIGHT or EARTH monster", FirstLine(p, pack));
         var r = ScriptCompiler.Compile(p, pack);
         Assert.False(r.HasErrors, string.Join("\n", r.Diagnostics));
         Assert.Contains("aux.AddFusionProcMix(c,true,true,", r.Lua);
@@ -131,7 +131,7 @@ public class SummonConditionTests
         p.Procedure.Materials[0] = new MaterialSlot { Filter = new CardFilter { CardType = FilterCardType.Monster, CardCode = 46986414 } };
         p.Procedure.Materials[1].Min = 1;
         p.Procedure.Materials[1].Max = 0;
-        Assert.Equal("\"Dark Magician\" + 1+ EARTH or LIGHT monsters", FirstLine(p, pack));
+        Assert.Equal("\"Dark Magician\" + 1+ LIGHT or EARTH monsters", FirstLine(p, pack));
         var r = ScriptCompiler.Compile(p, pack);
         Assert.Contains("aux.AddFusionProcMixRep(c,true,true,", r.Lua);
         Assert.Contains(",1,127,46986414)", r.Lua);

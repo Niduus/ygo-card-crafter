@@ -94,12 +94,18 @@ public sealed class SummonedTrigger : SelfTriggerBlock
             new("normal", "Normal"),
             new("special", "Special"),
             new("normal_or_special", "Normal or Special"),
+            new("normal_special_tributed", "Normal or Special", "Normal or Special Summoned, or Tributed"),
             new("flip", "Flip"),
             new("any", "Normal, Flip or Special"),
             new("link", "Link"), new("synchro", "Synchro"), new("xyz", "Xyz"),
             new("fusion", "Fusion"), new("ritual", "Ritual"), new("pendulum", "Pendulum")),
         OptionalParam,
     ];
+
+    /// <summary>Mitsurugi: "If this card is Normal or Special Summoned, or if this card is Tributed".</summary>
+    public override string Describe(BlockArgs args) => args.Choice("how") == "normal_special_tributed"
+        ? "If this card is Normal or Special Summoned, or if this card is Tributed"
+        : base.Describe(args);
 
     public override void Compile(BlockContext ctx)
     {
@@ -110,6 +116,7 @@ public sealed class SummonedTrigger : SelfTriggerBlock
             case "special": Setup(ctx, "EVENT_SPSUMMON_SUCCESS"); break;
             case "flip": Setup(ctx, "EVENT_FLIP_SUMMON_SUCCESS"); break;
             case "normal_or_special": Setup(ctx, "EVENT_SUMMON_SUCCESS", "EVENT_SPSUMMON_SUCCESS"); break;
+            case "normal_special_tributed": Setup(ctx, "EVENT_SUMMON_SUCCESS", "EVENT_SPSUMMON_SUCCESS", "EVENT_RELEASE"); break;
             case "link" or "synchro" or "xyz" or "fusion" or "ritual" or "pendulum":
                 Setup(ctx, "EVENT_SPSUMMON_SUCCESS");
                 ctx.Effect.Conditions.Add(SummonedByCondition.Check(ctx.Args.Choice("how")));
@@ -390,6 +397,7 @@ internal static class Timing
         new("any_summon", "when any monster is Summoned"),
         new("chain_any", "when your opponent activates a card or effect"),
         new("chain_monster", "when your opponent activates a monster effect"),
+        new("chain_monster_field", "when your opponent activates a monster effect on the field"),
         new("chain_spelltrap", "when your opponent activates a Spell/Trap Card"),
         new("chain_spell", "when your opponent activates a Spell Card"),
         new("chain_trap", "when your opponent activates a Trap Card"),
@@ -416,7 +424,7 @@ internal static class Timing
 
     /// <summary>True when the timing is something the opponent does, so "during their turn" reads naturally after it.</summary>
     public static bool IsOpponents(string timing) => timing is "attack" or "attack_direct" or "summon" or "summon_normal" or "summon_special"
-        or "summon_flip" or "would_summon" or "would_special" or "chain_any" or "chain_monster" or "chain_spelltrap" or "chain_spell" or "chain_trap";
+        or "summon_flip" or "would_summon" or "would_special" or "chain_any" or "chain_monster" or "chain_monster_field" or "chain_spelltrap" or "chain_spell" or "chain_trap";
 
     public static void Apply(BlockContext ctx, string timing)
     {
@@ -501,7 +509,12 @@ internal static class Timing
                 break;
             case "chain_searches":
                 e.Code = "EVENT_CHAINING";
-                e.Conditions.Add("re:IsHasCategory(CATEGORY_SEARCH)");
+                // Drawing adds cards from the Deck to the hand too (Dominus Purge).
+                e.Conditions.Add("(re:IsHasCategory(CATEGORY_SEARCH) or re:IsHasCategory(CATEGORY_DRAW))");
+                break;
+            case "chain_monster_field":
+                e.Code = "EVENT_CHAINING";
+                e.Conditions.Add("rp==1-tp and re:IsActiveType(TYPE_MONSTER) and re:GetActivateLocation()&LOCATION_ONFIELD~=0");
                 break;
             case "chain_destroys":
                 e.Code = "EVENT_CHAINING";
@@ -539,6 +552,8 @@ internal static class Timing
                 break;
             default:
                 e.Code = "EVENT_FREE_CHAIN";
+                // Like official cards: tells the game when to offer the effect, including during the Main Phase and End Phase.
+                e.HintTiming ??= "TIMINGS_CHECK_MONSTER+TIMING_MAIN_END+TIMING_END_PHASE";
                 break;
         }
     }

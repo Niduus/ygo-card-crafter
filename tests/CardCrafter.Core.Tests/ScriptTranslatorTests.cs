@@ -142,6 +142,36 @@ public class ScriptTranslatorTests
     }
 }
 
+public class TranslationReportTests
+{
+    /// <summary>
+    /// A developer's report: CARDCRAFTER_TRANSLATE_IDS (comma-separated passcodes) lists how each effect of those
+    /// cards translates, written to CARDCRAFTER_TRANSLATE_OUT. Does nothing without them.
+    /// </summary>
+    [EngineFact]
+    public void ListedCards_Report()
+    {
+        if (Environment.GetEnvironmentVariable("CARDCRAFTER_TRANSLATE_IDS") is not { Length: > 0 } list) return;
+        var real = Environment.GetEnvironmentVariable("CARDCRAFTER_CARDS_CDB") is { } cdb && File.Exists(cdb)
+            ? CardCrafter.Core.Database.CdbFile.Read(cdb).GroupBy(r => r.Id).ToDictionary(g => g.Key, g => g.First())
+            : [];
+        var lines = new List<string>();
+        foreach (var id in list.Split(',').Select(x => long.Parse(x.Trim(), System.Globalization.CultureInfo.InvariantCulture)))
+        {
+            var file = Path.Combine(EngineScenario.EngineScripts!, $"c{id}.lua");
+            if (!File.Exists(file)) { lines.Add($"{id}: no script"); continue; }
+            var card = real.TryGetValue(id, out var row) ? CardCrafter.Core.Database.CdbEncoder.Decode(row) : new CardData { Name = "T", Level = 4 };
+            var result = ScriptTranslator.Translate(File.ReadAllText(file), id, card);
+            lines.Add($"== {id} {card.Name}");
+            foreach (var piece in result.Pieces)
+                lines.Add(piece.Effect is not null
+                    ? "  OK   " + string.Join(" / ", piece.Effects.Select(e => CardCrafter.Core.Text.EffectTextGenerator.Describe(e, card)))
+                    : $"  {(piece.Translated ? "ok  " : "NO  ")} {piece.Piece.Title}: {piece.Reason}");
+        }
+        File.WriteAllLines(Environment.GetEnvironmentVariable("CARDCRAFTER_TRANSLATE_OUT") ?? "translate-report.txt", lines);
+    }
+}
+
 public class TranslatorRobustnessTests
 {
     /// <summary>Every official script: translating, describing each effect and switching a card to blocks never throws.</summary>

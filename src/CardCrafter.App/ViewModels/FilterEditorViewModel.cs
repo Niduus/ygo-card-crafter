@@ -17,8 +17,9 @@ public sealed partial class FilterEditorViewModel : ObservableObject
     private readonly Action _changed;
     private readonly Func<CardPack> _pack;
 
-    public FilterEditorViewModel(CardFilter filter, Zone allowedZones, bool materialMode, Func<CardPack> pack, Action changed, bool ownerChoice = false, bool allowThisCard = false)
+    public FilterEditorViewModel(CardFilter filter, Zone allowedZones, bool materialMode, Func<CardPack> pack, Action changed, bool ownerChoice = false, bool allowThisCard = false, bool whereFromBlock = false)
     {
+        _whereFromBlock = whereFromBlock;
         AllowThisCard = allowThisCard;
         _f = filter;
         _pack = pack;
@@ -29,12 +30,13 @@ public sealed partial class FilterEditorViewModel : ObservableObject
     }
 
     private readonly bool _ownerChoice;
+    private readonly bool _whereFromBlock;
 
     public Zone AllowedZones { get; }
     /// <summary>Summon materials: only "what the card is" matters, not where it is.</summary>
     public bool MaterialMode { get; }
-    public bool ShowWhere => !MaterialMode && (AllowedZones == Zone.None || System.Numerics.BitOperations.PopCount((uint)AllowedZones) > 1);
-    public bool ShowOwner => _ownerChoice || (!MaterialMode && AllowedZones == Zone.None);
+    public bool ShowWhere => !MaterialMode && !_whereFromBlock && (AllowedZones == Zone.None || System.Numerics.BitOperations.PopCount((uint)AllowedZones) > 1);
+    public bool ShowOwner => !_whereFromBlock && (_ownerChoice || (!MaterialMode && AllowedZones == Zone.None));
 
     /// <summary>The picker offers "This card itself" (for actions that can move, destroy or Summon this exact card).</summary>
     public bool AllowThisCard { get; }
@@ -142,8 +144,18 @@ public sealed partial class FilterEditorViewModel : ObservableObject
     public bool AttrDivine { get => HasAttr(CardAttribute.Divine); set => SetAttr(CardAttribute.Divine, value, nameof(AttrDivine)); }
 
     private IReadOnlyList<ArchetypeOption>? _archetypeOptions;
-    public IReadOnlyList<ArchetypeOption> ArchetypeOptions => _archetypeOptions ??=
-        [new(0, "Any archetype"), .. _pack().Archetypes.Select(a => new ArchetypeOption(a.Code, $"{a.Name} (0x{a.Code:x})"))];
+    /// <summary>The pack's archetypes, then the ones in YGO Omega's cards, and the filter's own if it is neither.</summary>
+    public IReadOnlyList<ArchetypeOption> ArchetypeOptions => _archetypeOptions ??= BuildArchetypeOptions();
+
+    private List<ArchetypeOption> BuildArchetypeOptions()
+    {
+        var list = new List<ArchetypeOption> { new(0, "Any archetype") };
+        var seen = new HashSet<int> { 0 };
+        foreach (var a in _pack().Archetypes) if (seen.Add(a.Code)) list.Add(new(a.Code, $"{a.Name} (0x{a.Code:x})"));
+        foreach (var (code, name) in ArchetypeNames.All) if (seen.Add(code)) list.Add(new(code, $"{name} (0x{code:x})"));
+        foreach (var code in new[] { _f.Archetype, _f.Archetype2 }) if (seen.Add(code)) list.Add(new(code, $"0x{code:x}"));
+        return list;
+    }
 
     public ArchetypeOption? Archetype
     {
@@ -151,13 +163,53 @@ public sealed partial class FilterEditorViewModel : ObservableObject
         set { if (value is null || value.Code == _f.Archetype) return; _f.Archetype = value.Code; Changed(); }
     }
 
+    /// <summary>""Dominators" or "Dominus Purge"": a second archetype a card may be from instead.</summary>
+    public ArchetypeOption? Archetype2
+    {
+        get => ArchetypeOptions.FirstOrDefault(a => a.Code == _f.Archetype2) ?? ArchetypeOptions[0];
+        set { if (value is null || value.Code == _f.Archetype2) return; _f.Archetype2 = value.Code; Changed(); }
+    }
+
+    public bool FaceDownOnly
+    {
+        get => _f.FaceDownOnly;
+        set { if (_f.FaceDownOnly == value) return; _f.FaceDownOnly = value; if (value) _f.FaceUpOnly = false; OnPropertyChanged(nameof(FaceUpOnly)); Changed(); }
+    }
+
+    /// <summary>"Dark Magician (46986414)": a card's name with its passcode, as the card-name box lists it.</summary>
+    public static string Entry(string name, long id) => $"{name} ({id.ToString(CultureInfo.InvariantCulture)})";
+
+    /// <summary>Cards the name box suggests: the pack's cards, then every card in YGO Omega's databases.</summary>
+    public IEnumerable<string> CardNameChoices =>
+        _pack().Cards.Where(c => c.Card.Name.Length > 0).Select(c => Entry(c.Card.Name, c.Card.Id))
+            .Concat(CardNames.All.Select(c => Entry(c.Name, c.Id))).Distinct();
+
+    /// <summary>Reads what was typed: "Name (passcode)", a passcode, or a card's exact name. 0 when it is none of them.</summary>
+    public long ParseCard(string? text)
+    {
+        text = text?.Trim() ?? "";
+        if (text.Length == 0) return 0;
+        var m = System.Text.RegularExpressions.Regex.Match(text, @"\((\d+)\)$");
+        if (m.Success) return long.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture);
+        if (long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v)) return v;
+        if (_pack().Cards.FirstOrDefault(c => string.Equals(c.Card.Name, text, StringComparison.OrdinalIgnoreCase)) is { } own) return own.Card.Id;
+        foreach (var (id, name) in CardNames.All)
+            if (string.Equals(name, text, StringComparison.OrdinalIgnoreCase)) return id;
+        return -1;
+    }
+
+    private string? _typed;
+
+    /// <summary>The card's name and passcode; typing a name or a passcode picks the card.</summary>
     public string CardCode
     {
-        get => _f.CardCode == 0 ? "" : _f.CardCode.ToString(CultureInfo.InvariantCulture);
+        get => _typed ?? (_f.CardCode == 0 ? "" : CardNames.Find(_f.CardCode, _pack()) is { } n ? Entry(n, _f.CardCode) : _f.CardCode.ToString(CultureInfo.InvariantCulture));
         set
         {
-            var code = long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) ? v : 0;
-            if (code == _f.CardCode) return;
+            var code = ParseCard(value);
+            // A name still being typed stays as typed; the card is picked once it matches one.
+            _typed = code < 0 ? value : null;
+            if (code < 0 || code == _f.CardCode) return;
             _f.CardCode = code;
             Changed();
         }
@@ -167,7 +219,7 @@ public sealed partial class FilterEditorViewModel : ObservableObject
     public decimal? LevelMax { get => _f.LevelMax; set { if (_f.LevelMax == (int?)value) return; _f.LevelMax = (int?)value; Changed(); } }
     public decimal? AtkMin { get => _f.AtkMin; set { if (_f.AtkMin == (int?)value) return; _f.AtkMin = (int?)value; Changed(); } }
     public decimal? AtkMax { get => _f.AtkMax; set { if (_f.AtkMax == (int?)value) return; _f.AtkMax = (int?)value; Changed(); } }
-    public bool FaceUpOnly { get => _f.FaceUpOnly; set { if (_f.FaceUpOnly == value) return; _f.FaceUpOnly = value; Changed(); } }
+    public bool FaceUpOnly { get => _f.FaceUpOnly; set { if (_f.FaceUpOnly == value) return; _f.FaceUpOnly = value; if (value) _f.FaceDownOnly = false; OnPropertyChanged(nameof(FaceDownOnly)); Changed(); } }
     public bool PointedToByThisCard { get => _f.PointedToByThisCard; set { if (_f.PointedToByThisCard == value) return; _f.PointedToByThisCard = value; Changed(); } }
     public bool CenterZone { get => _f.CenterZone; set { if (_f.CenterZone == value) return; _f.CenterZone = value; Changed(); } }
     public bool ExcludeThisCard { get => _f.ExcludeThisCard; set { if (_f.ExcludeThisCard == value) return; _f.ExcludeThisCard = value; Changed(); } }
@@ -181,6 +233,7 @@ public sealed partial class FilterEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(Race));
         OnPropertyChanged(nameof(ArchetypeOptions));
         OnPropertyChanged(nameof(Archetype));
+        OnPropertyChanged(nameof(Archetype2));
         OnPropertyChanged(nameof(Summary));
     }
 }

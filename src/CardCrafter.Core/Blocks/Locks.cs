@@ -21,6 +21,7 @@ internal static class Locks
         new("activate_monster_hand", "activate the effects of monsters in the hand"),
         new("activate_monster_field", "activate the effects of monsters on the field"),
         new("activate_monster_gy", "activate the effects of monsters in the GY or that are banished"),
+        new("activate_monster_offfield", "activate the effects of monsters in the hand, GY, and banishment"),
         new("activate_spell", "activate Spell Cards or Spell effects on the field"),
         new("activate_trap", "activate Trap Cards or Trap effects on the field"),
         new("activate_spelltrap", "activate Spell/Trap Cards or their effects on the field"),
@@ -102,7 +103,8 @@ internal static class Locks
     /// <summary>"activate the effects of LIGHT, EARTH and WIND monsters" or "Special Summon DARK monsters".</summary>
     private static string Named(string what, CardFilter f, BlockArgs args)
     {
-        var cards = FilterText.Describe(f, args.Pack, plural: true, withLocation: false, ownName: args.CardName);
+        // "the effects of EARTH, WATER, FIRE, and WIND monsters": all of them are locked.
+        var cards = FilterText.Describe(f, args.Pack, plural: true, withLocation: false, ownName: args.CardName).Replace(", or ", ", and ", StringComparison.Ordinal);
         return what == "special_of" ? $"Special Summon {cards}" : $"activate the effects of {cards}";
     }
 
@@ -171,6 +173,7 @@ internal static class Locks
         "activate_monster_hand" => "re:IsActiveType(TYPE_MONSTER) and re:GetActivateLocation()==LOCATION_HAND",
         "activate_monster_field" => "re:IsActiveType(TYPE_MONSTER) and re:GetActivateLocation()==LOCATION_MZONE",
         "activate_monster_gy" => "re:IsActiveType(TYPE_MONSTER) and (re:GetActivateLocation()==LOCATION_GRAVE or re:GetActivateLocation()==LOCATION_REMOVED)",
+        "activate_monster_offfield" => "re:IsActiveType(TYPE_MONSTER) and re:GetActivateLocation()&(LOCATION_HAND+LOCATION_GRAVE+LOCATION_REMOVED)~=0",
         "activate_spell" => "re:IsActiveType(TYPE_SPELL) and (re:GetHandler():IsOnField() or re:IsHasType(EFFECT_TYPE_ACTIVATE))",
         "activate_trap" => "re:IsActiveType(TYPE_TRAP) and (re:GetHandler():IsOnField() or re:IsHasType(EFFECT_TYPE_ACTIVATE))",
         "activate_spelltrap" => "re:IsActiveType(TYPE_SPELL+TYPE_TRAP) and (re:GetHandler():IsOnField() or re:IsHasType(EFFECT_TYPE_ACTIVATE))",

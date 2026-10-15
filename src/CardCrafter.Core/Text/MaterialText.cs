@@ -71,7 +71,7 @@ public static class MaterialText
     }
 
     private static string Name(long code, CardPack? pack) =>
-        pack?.Cards.FirstOrDefault(c => c.Card.Id == code)?.Card.Name is { Length: > 0 } n ? $"\"{n}\"" : $"card with passcode {code}";
+        CardNames.Find(code, pack) is { } n ? $"\"{n}\"" : $"card with passcode {code}";
 
     /// <summary>"a "Sky Striker" monster", "an Effect Monster".</summary>
     private static string Article(string noun) =>

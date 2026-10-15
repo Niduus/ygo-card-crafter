@@ -11,6 +11,8 @@ public abstract class ConditionBlock : BlockDefinition
 
 public sealed class CardsExistCondition : ConditionBlock
 {
+    private static bool AnStart(string noun) => noun.Length > 0 && "AEIOUaeiou".Contains(noun[0]) && !noun.StartsWith("Us", StringComparison.Ordinal);
+
     public override string Id => "if.cards_exist";
     public override string Group => "Cards";
     public override string Name => "There are cards somewhere";
@@ -27,9 +29,13 @@ public sealed class CardsExistCondition : ConditionBlock
         var n = args.Int("count");
         var cards = args.Cards("cards");
         var noun = FilterText.Describe(cards, args.Pack, plural: n != 1, preposition: "in");
-        return FilterText.IsFieldOnly(cards) && cards.Owner != CardOwner.Either
-            ? $"{(cards.Owner == CardOwner.You ? "you control" : "your opponent controls")} {(n == 1 ? "a" : n + " or more")} {FilterText.Describe(cards, args.Pack, n != 1, "", withLocation: false)}"
-            : $"there {(n == 1 ? "is" : "are")} {(n == 1 ? "a" : n + " or more")} {noun}";
+        var article = n == 1 ? (AnStart(noun) ? "an" : "a") : n + " or more";
+        if (FilterText.IsFieldOnly(cards) && cards.Owner != CardOwner.Either)
+            return $"{(cards.Owner == CardOwner.You ? "you control" : "your opponent controls")} {article} {FilterText.Describe(cards, args.Pack, n != 1, "", withLocation: false)}";
+        // "you have a Trap in your GY", as cards say it.
+        if (cards.Owner == CardOwner.You && (cards.Zones & Zone.Field) == 0 && cards.Zones != Zone.None)
+            return $"you have {article} {noun}";
+        return $"there {(n == 1 ? "is" : "are")} {article} {noun}";
     }
 
     public override void Compile(BlockContext ctx)
@@ -53,9 +59,12 @@ public sealed class NoCardsCondition : ConditionBlock
     public override string Describe(BlockArgs args)
     {
         var cards = args.Cards("cards");
-        return FilterText.IsFieldOnly(cards) && cards.Owner != CardOwner.Either
-            ? $"{(cards.Owner == CardOwner.You ? "you control no" : "your opponent controls no")} {FilterText.Describe(cards, args.Pack, true, "", withLocation: false)}"
-            : $"there are no {FilterText.Describe(cards, args.Pack, true, "in")}";
+        if (FilterText.IsFieldOnly(cards) && cards.Owner != CardOwner.Either)
+            return $"{(cards.Owner == CardOwner.You ? "you control no" : "your opponent controls no")} {FilterText.Describe(cards, args.Pack, true, "", withLocation: false)}";
+        // "you have no Traps in your GY".
+        if (cards.Owner == CardOwner.You && (cards.Zones & Zone.Field) == 0 && cards.Zones != Zone.None)
+            return $"you have no {FilterText.Describe(cards, args.Pack, true, "in")}";
+        return $"there are no {FilterText.Describe(cards, args.Pack, true, "in")}";
     }
 
     public override void Compile(BlockContext ctx)
@@ -197,4 +206,119 @@ public sealed class PhaseCondition : ConditionBlock
         "main2" => "Duel.GetCurrentPhase()==PHASE_MAIN2",
         _ => "(Duel.GetCurrentPhase()==PHASE_MAIN1 or Duel.GetCurrentPhase()==PHASE_MAIN2)",
     });
+}
+
+/// <summary>
+/// "If "Dark Magician" is on the field", "while you control "Blue-Eyes White Dragon"", "while "Umi" is on the field":
+/// a certain card (usually picked by name) is somewhere.
+/// </summary>
+public sealed class CardPresentCondition : ConditionBlock
+{
+    public override string Id => "if.card_present";
+    public override string Group => "Cards";
+    public override string Name => "A certain card is on the field (or somewhere)";
+    public override string Sentence => "{card} {is} {where}";
+    public override string Help => "Pick the card by name in the card picker. For example: if \"Dark Magician\" is on the field, while you control \"Blue-Eyes White Dragon\", or while \"Umi\" is in a Field Zone. Combine it with a WHEN like \"(Quick Effect) at any time\" to Special Summon or activate only while that card is there.";
+    public override IReadOnlyList<ParamSpec> Params { get; } =
+    [
+        new ParamSpec
+        {
+            Key = "card", Label = "Which card", Type = ParamType.Cards, WhereFromBlock = true,
+            DefaultFilter = () => new CardFilter { Owner = CardOwner.Either, Zones = Zone.Field, CardType = FilterCardType.Any, FaceUpOnly = true },
+        },
+        ParamSpec.Choice("is", "Is or is not", new("is", "is"), new("not", "is not")),
+        ParamSpec.Choice("where", "Where",
+            new("field", "on the field"),
+            new("you", "controlled by you", "you control it"),
+            new("opponent", "controlled by your opponent", "your opponent controls it"),
+            new("field_zone", "in a Field Zone", "in a Field Zone (the face-up Field Spell)"),
+            new("monster", "in a Monster Zone"),
+            new("gy", "in your GY"),
+            new("any_gy", "in a GY", "in either GY"),
+            new("banished", "banished", "banished (by either player)"),
+            new("hand", "in your hand")),
+    ];
+
+    /// <summary>The card picker's card, placed where the block says.</summary>
+    public static CardFilter Placed(CardFilter picked, string where)
+    {
+        var f = picked.Clone();
+        (f.Owner, f.Zones) = where switch
+        {
+            "you" => (CardOwner.You, Zone.Field),
+            "opponent" => (CardOwner.Opponent, Zone.Field),
+            "field_zone" => (CardOwner.Either, Zone.SpellTrapZone),
+            "monster" => (CardOwner.Either, Zone.MonsterZone),
+            "gy" => (CardOwner.You, Zone.Graveyard),
+            "any_gy" => (CardOwner.Either, Zone.Graveyard),
+            "banished" => (CardOwner.Either, Zone.Banished),
+            "hand" => (CardOwner.You, Zone.Hand),
+            _ => (CardOwner.Either, Zone.Field),
+        };
+        if (where is "gy" or "any_gy" or "hand") f.FaceUpOnly = false;
+        if (where == "field_zone") f.FaceUpOnly = true;
+        return f;
+    }
+
+    /// <summary>Only a card's name: "while "Umi" is on the field" can use Duel.IsEnvironment.</summary>
+    public static bool NameOnly(CardFilter f) =>
+        f.CardCode != 0 && f.Archetype == 0 && f.Race == CardRace.None && f.Attribute == CardAttribute.None && f.MonsterKind == MonsterKind.Any
+        && f.LevelMin is null && f.LevelMax is null && f.AtkMin is null && f.AtkMax is null && !f.ExcludeThisCard && !f.PointedToByThisCard && !f.CenterZone;
+
+    /// <summary>The "where" choice that holds the filter's own zones and owner, or null.</summary>
+    public static string? WhereOf(CardFilter f) => (f.Zones, f.Owner) switch
+    {
+        (Zone.Field, CardOwner.Either) => "field",
+        (Zone.Field, CardOwner.You) => "you",
+        (Zone.Field, CardOwner.Opponent) => "opponent",
+        (Zone.MonsterZone, CardOwner.Either) => "monster",
+        (Zone.Graveyard, CardOwner.You) => "gy",
+        (Zone.Graveyard, CardOwner.Either) => "any_gy",
+        (Zone.Banished, CardOwner.Either) => "banished",
+        (Zone.Hand, CardOwner.You) => "hand",
+        _ => null,
+    };
+
+    public override string Describe(BlockArgs args)
+    {
+        var picked = args.Cards("card");
+        var where = args.Choice("where");
+        var not = args.Choice("is") == "not";
+        var noun = FilterText.Describe(picked, args.Pack, plural: false, withLocation: false);
+        var named = picked.CardCode != 0 || picked.ThisCard;
+        var a = named ? noun : ("AEIOUaeiou".Contains(noun[0]) ? "an " : "a ") + noun;
+        return where switch
+        {
+            "you" => not ? $"you do not control {a}" : $"you control {a}",
+            "opponent" => not ? $"your opponent does not control {a}" : $"your opponent controls {a}",
+            _ when named => $"{noun} is{(not ? " not" : "")} {args.Describe("where")}",
+            _ => not ? $"there is no {noun} {args.Describe("where")}" : $"{a} is {args.Describe("where")}",
+        };
+    }
+
+    public override void Compile(BlockContext ctx)
+    {
+        var where = ctx.Args.Choice("where");
+        var not = ctx.Args.Choice("is") == "not" ? "not " : "";
+        var f = Placed(ctx.Args.Cards("card"), where);
+        if (f.ThisCard)
+        {
+            var loc = where switch
+            {
+                "field_zone" => "LOCATION_FZONE", "monster" => "LOCATION_MZONE", "gy" or "any_gy" => "LOCATION_GRAVE",
+                "banished" => "LOCATION_REMOVED", "hand" => "LOCATION_HAND", _ => "LOCATION_ONFIELD",
+            };
+            var who = where switch { "you" or "gy" or "hand" => " and e:GetHandler():IsControler(tp)", "opponent" => " and e:GetHandler():IsControler(1-tp)", _ => "" };
+            ctx.Effect.Conditions.Add($"{not}(e:GetHandler():IsLocation({loc}){who})");
+            return;
+        }
+        if (where == "field_zone" && NameOnly(f))
+        {
+            ctx.Effect.Conditions.Add($"{not}Duel.IsEnvironment({Lua.Num(f.CardCode)})");
+            return;
+        }
+        var r = ctx.Script.Filter(f);
+        var (self, opp) = where == "field_zone" ? ("LOCATION_FZONE", "LOCATION_FZONE") : (r.Self, r.Opp);
+        ctx.Effect.Conditions.Add($"{not}Duel.IsExistingMatchingCard({r.Function},tp,{self},{opp},1,{r.Exclude},e,tp)");
+    }
 }

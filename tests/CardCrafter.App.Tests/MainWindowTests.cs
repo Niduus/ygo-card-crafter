@@ -86,7 +86,7 @@ public class MainWindowTests
         card.AddFusionSlotCommand.Execute(null);
         card.FusionSlots[1].Filter.AttrLight = true;
         card.FusionSlots[1].Filter.AttrEarth = true;
-        Assert.Equal("1 \"Aleister\" monster + 1 EARTH or LIGHT monster", card.MaterialsText);
+        Assert.Equal("1 \"Aleister\" monster + 1 LIGHT or EARTH monster", card.MaterialsText);
         Assert.False(card.HasErrors, string.Join("\n", card.Diagnostics.Select(d => d.Text)));
         Shot(window, "19-card-fusion-materials");
 

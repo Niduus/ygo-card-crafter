@@ -42,7 +42,7 @@ your pack open. The version button in the top-right corner checks on demand. Upd
 
 | Column | Meaning | Examples |
 |---|---|---|
-| **WHEN** | What starts the effect. One per effect. | You activate it in the Main Phase · Quick Effect · If this card is Summoned · Activate this Spell/Trap · While this card is face-up |
+| **WHEN** | What starts the effect. Add more with **+ Or when...** ("If this card is Normal or Special Summoned, or if this card is Tributed"). | You activate it in the Main Phase · Quick Effect · If this card is Summoned · Activate this Spell/Trap · While this card is face-up |
 | **IF** | What must be true. | You control 2 or more Dragon monsters · It is your opponent's turn · Your LP are 2000 or less |
 | **COST** | What you pay to activate. | Discard 1 card · Pay 1000 LP · Banish this card |
 | **DO** | What happens, in order. | Draw 2 cards · Add 1 monster from your Deck to your hand · Target 1 card; destroy it |
@@ -132,6 +132,22 @@ option has its own blocks, targets and checks, the player picks one that can be 
   cards with that original name until the end of this turn".
 - "If this card battles a monster, neither can be destroyed by that battle", "ignoring its Summoning conditions",
   Main Phase 1 / Main Phase 2 (plain "Main Phase" means either) and Spell/Trap as a card type in every picker.
+
+**A certain card on the field.** The IF block **A certain card is on the field (or somewhere)** reads "if "Dark
+Magician" is on the field", "while you control "Blue-Eyes White Dragon"", "if your opponent does not control ..." or
+"while "Umi" is in a Field Zone", so a Quick Effect or Quick-Play Spell can Special Summon or activate only while that
+card is there. Every card picker's **Only this card** box takes a name: type part of it and pick from your pack and
+every card in YGO Omega's databases (or type a passcode). Card pickers can also take a second archetype
+(""Dominators" or "Dominus Purge" Traps") and **face-down only** cards.
+
+**More from Dominus and Mitsurugi.** The browser now turns every Dominus card into blocks, including Dominusteer
+Rosepamela ("reveal this card in your hand; add 1 card, then discard 1 card", "Set 1 Trap. It can be activated this
+turn", "face-down cards in your Spell & Trap Zone cannot be destroyed"), the "your opponent can Special Summon 1 monster
+from their hand/GY" step of Spark and Spiral (**Your opponent can Special Summon a monster**), and "If you activated
+this card from your hand, you cannot activate the effects of LIGHT, EARTH, and WIND monsters for the rest of this
+Duel", which applies whatever else the card did. Mitsurugi's "If this card is Normal or Special Summoned, or if this
+card is Tributed" is one WHEN, Murakumo's "your opponent can discard 1 card, or that effect is negated" and Futsu no
+Mitama's **once per Chain** translate, and so do Habakiri and Great Purification's negation.
 
 **Card text.** The suggested text reads like a printed card: the effects run together in one paragraph, a card with
 several once-per-turn effects ends with "You can only use each effect of "X" once per turn.", and the picked zones
