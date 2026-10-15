@@ -29,6 +29,12 @@ public sealed class ExportResult
 /// </summary>
 public static class PackExporter
 {
+    /// <summary>
+    /// Converts an image to JPEG (source path, destination path; false if it can't). YGO Omega keeps card art as .jpg,
+    /// so PNG and other art is converted on export. Set by the app, which has an image library; null copies as is.
+    /// </summary>
+    public static Func<string, string, bool>? ConvertToJpeg { get; set; }
+
     public static ExportResult Export(CardPack pack, string outputFolder, string? packFolder = null)
     {
         Directory.CreateDirectory(outputFolder);
@@ -62,10 +68,16 @@ public static class PackExporter
             if (art is not null)
             {
                 Directory.CreateDirectory(picsDir);
-                var ext = Path.GetExtension(art).ToLowerInvariant() == ".png" ? ".png" : ".jpg";
-                var dest = Path.Combine(picsDir, card.Card.Id + ext);
-                File.Copy(art, dest, overwrite: true);
-                export.ImagePath = dest;
+                var ext = Path.GetExtension(art).ToLowerInvariant();
+                var jpg = Path.Combine(picsDir, card.Card.Id + ".jpg");
+                if (ext is ".jpg" or ".jpeg") File.Copy(art, jpg, overwrite: true);
+                else if (ConvertToJpeg is null || !ConvertToJpeg(art, jpg))
+                {
+                    jpg = Path.Combine(picsDir, card.Card.Id + ext);
+                    File.Copy(art, jpg, overwrite: true);
+                    export.Checks.Add(new Diagnostic(Severity.Warning, $"Art for \"{card.Card.Name}\" is {ext}; YGO Omega expects .jpg."));
+                }
+                export.ImagePath = jpg;
             }
         }
         CdbFile.WriteFresh(result.DatabasePath, rows);

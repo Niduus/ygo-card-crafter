@@ -9,6 +9,8 @@ and even suggested card text. Then it finds your Omega folder and installs the c
 
 ![The event sheet](docs/screenshots/2-effects-tab.png)
 
+![Live card-face previews](docs/screenshots/7-card-faces.png)
+
 ## Why
 
 Ask "how do I script my custom card?" on Discord and the answer is usually "copy an official script
@@ -50,6 +52,20 @@ such as "Dragon monsters you control gain 500 ATK" or "This card cannot be destr
 **Extra Deck monsters.** Fusion, Synchro, Xyz and Link monsters get their summoning procedure from the
 Card tab: materials by passcode or by "what a material must be", and how many.
 
+**Passcodes.** Every card needs a unique passcode. Click **Generate** and Card Crafter picks one that no card in your
+pack or anywhere in Omega uses. Each generated passcode starts its own block of 10,000 numbers, so once-per-turn
+limits never collide between cards. If a passcode is ever taken later, for example by a new official card, the card
+shows a warning the next time Card Crafter scans Omega, and installing is refused until it is changed.
+
+**Card face.** The Card tab shows a live preview drawn like a real card: frame colour, name, Attribute, Level, Rank or
+Link Arrows, Pendulum scales, type line, card text and ATK/DEF. **Choose art…** sets the illustration inside the frame.
+YGO Omega draws the frame itself, so only the art is exported, as `.jpg`.
+
+**Archetypes and custom Types.** In the left panel, **Archetypes → Use one from Omega…** lists every archetype already
+in the game, with names guessed from their cards, so your cards can join an existing archetype. **New archetype** picks a
+code nothing in Omega uses. **Custom Types** adds monster Types beyond the standard ones; Types Omega already uses are
+listed there to add with one click.
+
 **Templates.** **+ From a template…** inserts effects modelled on well-known cards: Pot of Greed, Monster Reborn,
 Mystical Space Typhoon, Elemental HERO Stratos, Cyber Dragon, and more. They are normal blocks you can change.
 
@@ -72,16 +88,23 @@ If it still can't find Omega, use **Browse…** on the Omega tab.
 
 ### Installing into Omega
 
-Card Crafter scans the Omega folder for a card database, a script folder, and a card-image folder, and installs
-into the ones it finds. Anything it would replace is backed up first to `%AppData%\YGO Card Crafter\Backups`.
-It never overwrites a database it didn't make.
+Card Crafter scans the Omega folder and installs where Omega keeps custom cards:
+
+| What | Where in the Omega folder |
+|---|---|
+| Card database | `YGO Omega_Data\Files\Databases\<pack name>.db` |
+| Scripts | `YGO Omega_Data\Files\Scripts\c<passcode>.lua` |
+| Card art | `YGO Omega_Data\Files\Arts\<passcode>.jpg` |
+
+It never writes next to Omega's own card database (`Files\Bundles\db`), never overwrites a database it didn't make,
+and refuses to install cards whose passcodes are already used. Anything it replaces is backed up first to
+`%AppData%\YGO Card Crafter\Backups`.
 
 Omega is often installed under `C:\Program Files (x86)`, where Windows only lets administrators write. When that
 happens Card Crafter offers to restart itself as administrator and finish the install.
 
-> **Status:** the Omega install layout has not been confirmed against a real Omega install yet.
-> If **Install into Omega** stays greyed out, Omega keeps its card data in a format Card Crafter can't write to yet.
-> Use **Export** instead, and post the report from the Omega tab (**Copy report**) so support can be added.
+> If **Install into Omega** stays greyed out, your Omega version keeps card data somewhere Card Crafter doesn't
+> recognise. Use **Export** instead, and post the report from the Omega tab (**Copy report**) so support can be added.
 
 ## What gets written
 

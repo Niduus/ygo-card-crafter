@@ -11,8 +11,31 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace CardCrafter.App.ViewModels;
 
+public sealed partial class CustomTypeViewModel(CustomType model, Action changed) : ObservableObject
+{
+    public CustomType Model { get; } = model;
+    public string Name { get => Model.Name; set { if (Model.Name == value) return; Model.Name = value; OnPropertyChanged(); changed(); } }
+    public string Value
+    {
+        get => $"0x{Model.Value:x}";
+        set
+        {
+            var s = value.Trim().ToLowerInvariant().Replace("0x", "");
+            if (long.TryParse(s, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var v) && v > 0 && v != Model.Value)
+            {
+                Model.Value = v;
+                changed();
+            }
+            OnPropertyChanged();
+        }
+    }
+}
+
 public sealed partial class ArchetypeViewModel(Archetype model, Action changed) : ObservableObject
 {
+    [ObservableProperty] private string _warning = "";
+    public bool HasWarning => Warning.Length > 0;
+    partial void OnWarningChanged(string value) => OnPropertyChanged(nameof(HasWarning));
     public Archetype Model { get; } = model;
     public string Name { get => Model.Name; set { if (Model.Name == value) return; Model.Name = value; OnPropertyChanged(); changed(); } }
     public string Code
@@ -21,9 +44,12 @@ public sealed partial class ArchetypeViewModel(Archetype model, Action changed) 
         set
         {
             var s = value.Trim().ToLowerInvariant().Replace("0x", "");
-            if (int.TryParse(s, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var v) && v is > 0 and <= 0xffff) Model.Code = v;
+            if (int.TryParse(s, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var v) && v is > 0 and <= 0xffff && v != Model.Code)
+            {
+                Model.Code = v;
+                changed();
+            }
             OnPropertyChanged();
-            changed();
         }
     }
 }
@@ -46,6 +72,10 @@ public sealed partial class MainViewModel : ObservableObject
     public CardPack Pack => _pack;
     public ObservableCollection<CardViewModel> Cards { get; } = [];
     public ObservableCollection<ArchetypeViewModel> Archetypes { get; } = [];
+    public ObservableCollection<CustomTypeViewModel> CustomTypes { get; } = [];
+
+    /// <summary>Everything already in Omega: passcodes in use, archetypes, custom Types. Empty until Omega is scanned.</summary>
+    public OmegaCatalog Catalog { get; private set; } = OmegaCatalog.Empty;
 
     [ObservableProperty] private CardViewModel? _selectedCard;
     [ObservableProperty] private string? _packPath;
@@ -78,7 +108,7 @@ public sealed partial class MainViewModel : ObservableObject
         var pack = new CardPack { Name = "My Custom Cards" };
         var card = new CardProject
         {
-            Card = new CardData { Id = 100000001, Name = "My First Card", Attribute = CardAttribute.Light, Race = CardRace.Warrior, Level = 4, Atk = 1600, Def = 1200 },
+            Card = new CardData { Id = PasscodeGenerator.Generate([]), Name = "My First Card", Attribute = CardAttribute.Light, Race = CardRace.Warrior, Level = 4, Atk = 1600, Def = 1200 },
         };
         card.Effects.Add(EffectTemplates.All.First(t => t.Name == "Search on summon").Create());
         card.Card.Text = Core.Text.EffectTextGenerator.Generate(card, pack);
@@ -94,6 +124,9 @@ public sealed partial class MainViewModel : ObservableObject
         foreach (var c in pack.Cards) Cards.Add(NewCardViewModel(c));
         Archetypes.Clear();
         foreach (var a in pack.Archetypes) Archetypes.Add(new ArchetypeViewModel(a, OnArchetypesChanged));
+        CustomTypes.Clear();
+        foreach (var t in pack.CustomTypes) CustomTypes.Add(new CustomTypeViewModel(t, OnTypesChanged));
+        RefreshCatalogLists();
         SelectedCard = Cards.FirstOrDefault();
         IsDirty = false;
         OnPropertyChanged(nameof(PackName));
@@ -102,7 +135,11 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     private CardViewModel NewCardViewModel(CardProject p) =>
-        new(p, () => _pack, MarkDirty) { PackFolder = PackPath is null ? null : Path.GetDirectoryName(PackPath) };
+        new(p, () => _pack, MarkDirty, () => Catalog, NewPasscode) { PackFolder = PackPath is null ? null : Path.GetDirectoryName(PackPath) };
+
+    /// <summary>A free passcode: not in this pack (except the card asking) and not anywhere in Omega.</summary>
+    public long NewPasscode(long except = 0) =>
+        PasscodeGenerator.Generate(_pack.Cards.Select(c => c.Card.Id).Where(id => id != except).Concat(Catalog.Passcodes.Keys));
 
     public async Task<bool> ConfirmDiscardAsync()
     {
@@ -179,11 +216,7 @@ public sealed partial class MainViewModel : ObservableObject
 
     // ---------------------------------------------------------------- cards
 
-    private long NextId()
-    {
-        var max = _pack.Cards.Select(c => c.Card.Id).DefaultIfEmpty(100000000).Max();
-        return Math.Max(max + 1, 100000001);
-    }
+    private long NextId() => NewPasscode();
 
     [RelayCommand]
     private void AddCard(string kind)
@@ -280,9 +313,7 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void AddArchetype()
     {
-        var used = _pack.Archetypes.Select(a => a.Code).ToHashSet();
-        var code = 0xa00;
-        while (used.Contains(code)) code++;
+        var code = Catalog.FreeArchetypeCode(_pack.Archetypes.Select(a => a.Code));
         var a = new Archetype { Code = code, Name = "New Archetype" };
         _pack.Archetypes.Add(a);
         Archetypes.Add(new ArchetypeViewModel(a, OnArchetypesChanged));
@@ -298,9 +329,99 @@ public sealed partial class MainViewModel : ObservableObject
         OnArchetypesChanged();
     }
 
+    // ---- archetypes already in Omega
+    [ObservableProperty] private string _archetypeSearch = "";
+    partial void OnArchetypeSearchChanged(string value) => RefreshCatalogLists();
+    public ObservableCollection<KnownArchetype> KnownArchetypes { get; } = [];
+    public bool HasCatalog => Catalog.Passcodes.Count > 0;
+
+    [RelayCommand]
+    private void UseKnownArchetype(KnownArchetype? known)
+    {
+        if (known is null) return;
+        if (_pack.Archetypes.Any(a => a.Code == known.Code))
+        {
+            Status = $"\"{known.Name}\" is already in this pack.";
+            return;
+        }
+        var a = new Archetype { Code = known.Code, Name = known.Name };
+        _pack.Archetypes.Add(a);
+        Archetypes.Add(new ArchetypeViewModel(a, OnArchetypesChanged));
+        OnArchetypesChanged();
+        Status = $"Added the \"{known.Name}\" archetype (0x{known.Code:x}). Your cards can now belong to it and search for it.";
+    }
+
+    // ---- custom Types
+    public ObservableCollection<UnknownType> FoundTypes { get; } = [];
+    public bool HasFoundTypes => FoundTypes.Count > 0;
+
+    [RelayCommand]
+    private void AddCustomType()
+    {
+        var taken = _pack.CustomTypes.Select(t => t.Value).Concat(Catalog.UnknownTypes.Select(t => t.Value)).ToHashSet();
+        long value = 0x4000000;
+        while (taken.Contains(value) || (value & EnumNames.StandardRaceMask) != 0) value <<= 1;
+        AddType(new CustomType { Value = value, Name = "New Type" });
+    }
+
+    [RelayCommand]
+    private void UseFoundType(UnknownType? found)
+    {
+        if (found is null) return;
+        AddType(new CustomType { Value = found.Value, Name = $"Type 0x{found.Value:x}" });
+        Status = $"Added Omega's Type 0x{found.Value:x}. Rename it to match the game (cards using it include {string.Join(", ", found.Examples)}).";
+    }
+
+    private void AddType(CustomType t)
+    {
+        _pack.CustomTypes.Add(t);
+        CustomTypes.Add(new CustomTypeViewModel(t, OnTypesChanged));
+        OnTypesChanged();
+    }
+
+    [RelayCommand]
+    private void RemoveCustomType(CustomTypeViewModel? vm)
+    {
+        if (vm is null) return;
+        _pack.CustomTypes.Remove(vm.Model);
+        CustomTypes.Remove(vm);
+        OnTypesChanged();
+    }
+
+    private void OnTypesChanged()
+    {
+        MarkDirty();
+        RefreshCatalogLists();
+        foreach (var c in Cards)
+        {
+            c.RebuildTypes();
+            c.Refresh();
+        }
+    }
+
+    private void RefreshCatalogLists()
+    {
+        KnownArchetypes.Clear();
+        var q = ArchetypeSearch.Trim();
+        foreach (var k in Catalog.Archetypes.Where(k => q.Length == 0 || k.Label.Contains(q, StringComparison.OrdinalIgnoreCase)).Take(200))
+            KnownArchetypes.Add(k);
+        FoundTypes.Clear();
+        foreach (var t in Catalog.UnknownTypes.Where(t => _pack.CustomTypes.All(c => c.Value != t.Value))) FoundTypes.Add(t);
+        OnPropertyChanged(nameof(HasFoundTypes));
+        OnPropertyChanged(nameof(HasCatalog));
+        foreach (var a in Archetypes)
+        {
+            var other = Catalog.Archetypes.FirstOrDefault(k => k.Code == a.Model.Code);
+            a.Warning = other is not null && !string.Equals(other.Name, a.Model.Name, StringComparison.OrdinalIgnoreCase)
+                ? $"Omega already uses 0x{a.Model.Code:x} for \"{other.Name}\" ({other.Cards} cards). Use a different code unless you mean that archetype."
+                : "";
+        }
+    }
+
     private void OnArchetypesChanged()
     {
         MarkDirty();
+        RefreshCatalogLists();
         foreach (var c in Cards)
         {
             c.RebuildArchetypes();
@@ -359,6 +480,13 @@ public sealed partial class MainViewModel : ObservableObject
         OmegaStatus = $"YGO Omega: {root} ({how}). Scanning…";
         Inventory = await Task.Run(() => OmegaInventory.Scan(root));
         ScanReport = Inventory.Report();
+        var inventory = Inventory;
+        var ownDb = PackExporter.SafeFileName(_pack.Name);
+        Catalog = await Task.Run(() => OmegaCatalog.Load(inventory, ownDb));
+        RefreshCatalogLists();
+        foreach (var c in Cards) c.Refresh();
+        ScanReport += $"\nIn the game: {Catalog.Passcodes.Count} passcodes in use, {Catalog.Archetypes.Count} archetypes, {Catalog.UnknownTypes.Count} non-standard monster Types.\n";
+        foreach (var t in Catalog.UnknownTypes) ScanReport += $"  Type {t.Label}\n";
         OmegaStatus = Inventory.SupportsLooseFiles
             ? $"YGO Omega: {root} — ready to install cards."
             : $"YGO Omega: {root} — cards will be exported to a folder (see the Omega tab).";

@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:CardCrafter.App.ViewModels"
         xmlns:views="using:CardCrafter.App.Views"
+        xmlns:omega="using:CardCrafter.Core.Omega"
         x:Class="CardCrafter.App.Views.MainWindow"
         x:DataType="vm:MainViewModel"
         Title="{Binding Title}"
@@ -66,6 +67,38 @@
           </Grid>
         </StackPanel>
 
+        <Expander DockPanel.Dock="Bottom" Header="Custom Types" Margin="0,6,0,0" HorizontalAlignment="Stretch">
+          <StackPanel Spacing="4">
+            <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource MutedBrush}"
+                       Text="Monster Types beyond the standard ones. The value must match what YGO Omega uses for that Type." />
+            <ItemsControl ItemsSource="{Binding CustomTypes}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="vm:CustomTypeViewModel">
+                  <Grid ColumnDefinitions="*,4,96,Auto" Margin="0,2">
+                    <TextBox Grid.Column="0" Text="{Binding Name}" />
+                    <TextBox Grid.Column="2" Text="{Binding Value}" FontFamily="{StaticResource CodeFont}" />
+                    <Button Grid.Column="3" Classes="icon" Content="✕"
+                            Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).RemoveCustomTypeCommand}"
+                            CommandParameter="{Binding}" />
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <Button Content="+ Add custom Type" Command="{Binding AddCustomTypeCommand}" />
+            <StackPanel IsVisible="{Binding HasFoundTypes}" Spacing="2">
+              <TextBlock Classes="label" Text="Types found in your Omega (click to add)" />
+              <ItemsControl ItemsSource="{Binding FoundTypes}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate DataType="omega:UnknownType">
+                    <Button Classes="chip" HorizontalAlignment="Stretch" Content="{Binding Label}"
+                            Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).UseFoundTypeCommand}" CommandParameter="{Binding}" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </StackPanel>
+        </Expander>
+
         <Expander DockPanel.Dock="Bottom" Header="Archetypes" Margin="0,8,0,0" HorizontalAlignment="Stretch">
           <StackPanel Spacing="4">
             <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource MutedBrush}"
@@ -73,7 +106,9 @@
             <ItemsControl ItemsSource="{Binding Archetypes}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate DataType="vm:ArchetypeViewModel">
-                  <Grid ColumnDefinitions="*,4,80,Auto" Margin="0,2">
+                  <Grid ColumnDefinitions="*,4,80,Auto" RowDefinitions="Auto,Auto" Margin="0,2">
+                    <TextBlock Grid.Row="1" Grid.ColumnSpan="4" Text="{Binding Warning}" IsVisible="{Binding HasWarning}"
+                               TextWrapping="Wrap" FontSize="11" Foreground="#FCD34D" Margin="0,2,0,0" />
                     <TextBox Grid.Column="0" Text="{Binding Name}" />
                     <TextBox Grid.Column="2" Text="{Binding Code}" FontFamily="{StaticResource CodeFont}" />
                     <Button Grid.Column="3" Classes="icon" Content="✕"
@@ -83,7 +118,33 @@
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
-            <Button Content="+ Add archetype" Command="{Binding AddArchetypeCommand}" />
+            <StackPanel Orientation="Horizontal" Spacing="4">
+              <Button Content="+ New archetype" Command="{Binding AddArchetypeCommand}"
+                      ToolTip.Tip="A new archetype with a code nothing in Omega uses" />
+              <Button Content="Use one from Omega…" IsEnabled="{Binding HasCatalog}"
+                      ToolTip.Tip="Make your cards part of an archetype that already exists in the game">
+                <Button.Flyout>
+                  <Flyout Placement="RightEdgeAlignedBottom">
+                    <StackPanel Width="340" Spacing="6">
+                      <TextBox Text="{Binding ArchetypeSearch}" Watermark="Search, e.g. HERO or Blue-Eyes" />
+                      <ListBox ItemsSource="{Binding KnownArchetypes}" Height="320">
+                        <ListBox.ItemTemplate>
+                          <DataTemplate DataType="omega:KnownArchetype">
+                            <Button Background="Transparent" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                    Command="{Binding $parent[ListBox].((vm:MainViewModel)DataContext).UseKnownArchetypeCommand}" CommandParameter="{Binding}">
+                              <StackPanel>
+                                <TextBlock Text="{Binding Label}" />
+                                <TextBlock Text="{Binding Examples[0]}" FontSize="11" Foreground="{StaticResource MutedBrush}" />
+                              </StackPanel>
+                            </Button>
+                          </DataTemplate>
+                        </ListBox.ItemTemplate>
+                      </ListBox>
+                    </StackPanel>
+                  </Flyout>
+                </Button.Flyout>
+              </Button>
+            </StackPanel>
           </StackPanel>
         </Expander>
 

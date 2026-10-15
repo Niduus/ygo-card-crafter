@@ -7,21 +7,29 @@
   <ScrollViewer>
     <Grid ColumnDefinitions="*,24,300" Margin="0,0,12,12">
       <StackPanel Grid.Column="0">
-        <Grid ColumnDefinitions="2*,12,*,12,*">
+        <Grid ColumnDefinitions="*,12,250,12,170">
           <StackPanel Grid.Column="0">
             <TextBlock Classes="label" Text="Card name" />
             <TextBox Text="{Binding Name}" />
           </StackPanel>
           <StackPanel Grid.Column="2">
             <TextBlock Classes="label" Text="Passcode (card ID)" />
-            <NumericUpDown Value="{Binding Id}" Minimum="1" Maximum="4294967295" FormatString="0" ShowButtonSpinner="False"
-                           ToolTip.Tip="A unique number for this card. Custom cards use 9 digits so they never clash with official cards." />
+            <Grid ColumnDefinitions="*,Auto">
+              <NumericUpDown Value="{Binding Id}" Minimum="1" Maximum="4294967295" FormatString="0" ShowButtonSpinner="False"
+                             ToolTip.Tip="The card's unique number. Click Generate and Card Crafter picks one nothing else uses." />
+              <Button Grid.Column="1" Content="Generate" Command="{Binding GeneratePasscodeCommand}" Margin="4,0,0,0"
+                      ToolTip.Tip="Pick a free passcode that no card in this pack or in Omega uses" />
+            </Grid>
           </StackPanel>
           <StackPanel Grid.Column="4">
             <TextBlock Classes="label" Text="Card kind" />
             <ComboBox ItemsSource="{Binding KindOptions}" SelectedItem="{Binding Kind}" HorizontalAlignment="Stretch" />
           </StackPanel>
         </Grid>
+
+        <Border IsVisible="{Binding HasPasscodeWarning}" Background="#3B2F12" CornerRadius="6" Padding="10,6" Margin="0,8,0,0">
+          <TextBlock Text="{Binding PasscodeWarning}" TextWrapping="Wrap" Foreground="#FCD34D" />
+        </Border>
 
         <!-- Monster -->
         <StackPanel IsVisible="{Binding IsMonster}">
@@ -163,21 +171,18 @@
         <Button Content="Use suggested text" Command="{Binding UseSuggestedTextCommand}" Margin="0,6,0,0" />
       </StackPanel>
 
-      <!-- Artwork -->
+      <!-- Live card face and card art -->
       <StackPanel Grid.Column="2">
-        <TextBlock Classes="label" Text="Artwork (shown in-game)" />
-        <Border Background="#16171C" CornerRadius="6" Height="400" ClipToBounds="True">
-          <Panel>
-            <Image x:Name="ArtPreview" Stretch="Uniform" />
-            <TextBlock Text="No artwork yet" IsVisible="{Binding !HasArtwork}" HorizontalAlignment="Center" VerticalAlignment="Center"
-                       Foreground="{StaticResource MutedBrush}" />
-          </Panel>
-        </Border>
-        <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,6,0,0">
-          <Button Content="Choose image…" Click="OnPickArtwork" />
+        <TextBlock Classes="label" Text="Preview" />
+        <views:CardFace x:Name="Face" Width="300" HorizontalAlignment="Left" />
+        <TextBlock Classes="label" Text="Card art: the picture inside the frame" />
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <Button Content="Choose art…" Click="OnPickArtwork" />
           <Button Content="Remove" Click="OnRemoveArtwork" IsVisible="{Binding HasArtwork}" />
         </StackPanel>
-        <TextBlock Text="{Binding ArtworkPath}" TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" />
+        <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" Width="300" HorizontalAlignment="Left"
+                   Text="Use just the illustration, not a whole card. Square images fit best; YGO Omega draws the frame itself and keeps art as .jpg in its Arts folder." />
+        <TextBlock Text="{Binding ArtworkPath}" TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" Width="300" HorizontalAlignment="Left" />
       </StackPanel>
     </Grid>
   </ScrollViewer>

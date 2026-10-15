@@ -37,8 +37,11 @@ public enum CardAttribute
     Divine = 0x40,
 }
 
-/// <summary>Monster types ("races" in the engine), using the engine's bit values.</summary>
-public enum CardRace
+/// <summary>
+/// Monster Types ("races" in the engine), using the engine's bit values.
+/// Packs can add their own Types with other bit values; those are stored as undefined values of this enum.
+/// </summary>
+public enum CardRace : long
 {
     None = 0,
     Warrior = 0x1,
@@ -95,12 +98,18 @@ public static class EnumNames
         [CardRace.CreatorGod] = "Creator God",
     };
 
-    public static string Display(CardRace race) => RaceNames.TryGetValue(race, out var n) ? n : race.ToString();
+    public static bool IsStandard(CardRace race) => Enum.IsDefined(race);
+
+    /// <summary>Every standard Type bit OR'd together; any other bit is a custom Type.</summary>
+    public static readonly long StandardRaceMask = Enum.GetValues<CardRace>().Aggregate(0L, (m, r) => m | (long)r);
+
+    public static string Display(CardRace race) =>
+        RaceNames.TryGetValue(race, out var n) ? n : IsStandard(race) ? race.ToString() : $"Type 0x{(long)race:x}";
 
     public static string Display(CardAttribute attribute) => attribute.ToString().ToUpperInvariant();
 
     /// <summary>The Lua constant name for a race, e.g. RACE_WINDBEAST.</summary>
-    public static string LuaConstant(CardRace race) => race switch
+    public static string LuaConstant(CardRace race) => !IsStandard(race) ? "0x" + ((long)race).ToString("x") : race switch
     {
         CardRace.WingedBeast => "RACE_WINDBEAST",
         CardRace.BeastWarrior => "RACE_BEASTWARRIOR",

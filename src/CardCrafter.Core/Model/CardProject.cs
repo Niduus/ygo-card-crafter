@@ -32,6 +32,13 @@ public sealed class CardProject
     public string? ArtworkPath { get; set; }
 }
 
+/// <summary>A pack's own monster Type, such as Omega's custom Types. The value must match what the game uses.</summary>
+public sealed class CustomType
+{
+    public long Value { get; set; }
+    public string Name { get; set; } = "";
+}
+
 public sealed class Archetype
 {
     public int Code { get; set; }
@@ -47,7 +54,12 @@ public sealed class CardPack
     /// <summary>The "ot" database value. 3 means OCG and TCG, which every client shows.</summary>
     public int Ot { get; set; } = 3;
     public List<Archetype> Archetypes { get; set; } = [];
+    public List<CustomType> CustomTypes { get; set; } = [];
     public List<CardProject> Cards { get; set; } = [];
+
+    /// <summary>The display name of a Type, including this pack's custom Types.</summary>
+    public string TypeName(CardRace race) =>
+        CustomTypes.FirstOrDefault(t => t.Value == (long)race)?.Name is { Length: > 0 } n ? n : EnumNames.Display(race);
 
     public string ArchetypeName(int code) =>
         Archetypes.FirstOrDefault(a => a.Code == code)?.Name is { Length: > 0 } n ? n : $"0x{code:x}";

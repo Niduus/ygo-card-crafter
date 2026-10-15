@@ -82,10 +82,11 @@ public sealed partial class FilterEditorViewModel : ObservableObject
         set { if (value is null || Equals(_f.CardType, value.Value)) return; _f.CardType = value.Value; Changed(); }
     }
 
-    public IReadOnlyList<Option<CardRace>> RaceOptions => Lists.RacesOrAny;
+    private IReadOnlyList<Option<CardRace>>? _raceOptions;
+    public IReadOnlyList<Option<CardRace>> RaceOptions => _raceOptions ??= [new(CardRace.None, "Any Type"), .. Lists.RacesFor(_pack(), _f.Race)];
     public Option<CardRace> Race
     {
-        get => Options.Find(Lists.RacesOrAny, _f.Race);
+        get => Options.Find(RaceOptions, _f.Race);
         set { if (value is null || Equals(_f.Race, value.Value)) return; _f.Race = value.Value; Changed(); }
     }
 
@@ -129,6 +130,9 @@ public sealed partial class FilterEditorViewModel : ObservableObject
     public void RefreshArchetypes()
     {
         _archetypeOptions = null;
+        _raceOptions = null;
+        OnPropertyChanged(nameof(RaceOptions));
+        OnPropertyChanged(nameof(Race));
         OnPropertyChanged(nameof(ArchetypeOptions));
         OnPropertyChanged(nameof(Archetype));
         OnPropertyChanged(nameof(Summary));

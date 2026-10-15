@@ -17,7 +17,7 @@ public static class FilterText
         else if (f.LevelMax is { } max) words.Add($"Level {max} or lower");
         else if (f.LevelMin is { } min) words.Add($"Level {min} or higher");
         if (f.Attribute != CardAttribute.None) words.Add(EnumNames.Display(f.Attribute));
-        if (f.Race != CardRace.None) words.Add(EnumNames.Display(f.Race));
+        if (f.Race != CardRace.None) words.Add(pack?.TypeName(f.Race) ?? EnumNames.Display(f.Race));
         if (f.Archetype != 0) words.Add($"\"{pack?.ArchetypeName(f.Archetype) ?? $"0x{f.Archetype:x}"}\"");
 
         string noun;

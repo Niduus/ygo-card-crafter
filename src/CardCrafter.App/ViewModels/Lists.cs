@@ -32,6 +32,16 @@ public static class Lists
 
     public static readonly IReadOnlyList<Option<CardRace>> RacesOrAny = [new(CardRace.None, "Any Type"), .. Races];
 
+    /// <summary>Standard Types plus the pack's custom Types, and the current value if it is neither.</summary>
+    public static List<Option<CardRace>> RacesFor(CardPack pack, CardRace current)
+    {
+        var list = Races.ToList();
+        foreach (var t in pack.CustomTypes.OrderBy(t => t.Name))
+            if (list.All(o => (long)o.Value != t.Value)) list.Add(new((CardRace)t.Value, $"{t.Name} (custom)"));
+        if (current != CardRace.None && list.All(o => o.Value != current)) list.Add(new(current, pack.TypeName(current)));
+        return list;
+    }
+
     public static readonly IReadOnlyList<Option<OncePerTurn>> Limits = Options.Of(
         (OncePerTurn.None, "No limit"),
         (OncePerTurn.Soft, "Once per turn (each copy)"),

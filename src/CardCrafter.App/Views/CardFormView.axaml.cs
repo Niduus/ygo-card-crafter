@@ -22,27 +22,39 @@ public partial class CardFormView : UserControl
         };
     }
 
+    private Bitmap? _art;
+
     private void OnCardChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(CardViewModel.ArtworkPath)) LoadPreview();
+        else if (e.PropertyName == nameof(CardViewModel.FaceVersion)) UpdateFace();
     }
 
     private void LoadPreview()
     {
-        var old = ArtPreview.Source as IDisposable;
-        ArtPreview.Source = null;
-        old?.Dispose();
+        var old = _art;
+        _art = null;
         var path = _card?.ResolvedArtwork;
-        if (path is null) return;
-        try
+        if (path is not null)
         {
-            using var stream = File.OpenRead(path);
-            ArtPreview.Source = new Bitmap(stream);
+            try
+            {
+                using var stream = File.OpenRead(path);
+                _art = new Bitmap(stream);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+            {
+                // Unreadable or unsupported images just show the empty art box.
+            }
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
-        {
-            // Unreadable or unsupported images just show no preview.
-        }
+        UpdateFace();
+        old?.Dispose();
+    }
+
+    private void UpdateFace()
+    {
+        if (_card is null) return;
+        Face.Update(_card.Data, _card.TypeLine, _card.FaceText, _art);
     }
 
     private async void OnPickArtwork(object? sender, RoutedEventArgs e)
@@ -50,7 +62,7 @@ public partial class CardFormView : UserControl
         if (_card is null || TopLevel.GetTopLevel(this) is not { } top) return;
         var files = await top.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title = "Choose card artwork",
+            Title = "Choose card art",
             AllowMultiple = false,
             FileTypeFilter = [FilePickerFileTypes.ImageJpg, FilePickerFileTypes.ImagePng],
         });

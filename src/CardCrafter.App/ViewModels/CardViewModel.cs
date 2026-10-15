@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using CardCrafter.Core.Compiler;
 using CardCrafter.Core.Model;
+using CardCrafter.Core.Omega;
 using CardCrafter.Core.Templates;
 using CardCrafter.Core.Text;
 using CardCrafter.Core.Validation;
@@ -36,11 +37,16 @@ public sealed partial class CardViewModel : ObservableObject
     private readonly Action _dirty;
     private bool _refreshing;
 
-    public CardViewModel(CardProject project, Func<CardPack> pack, Action dirty)
+    private readonly Func<OmegaCatalog> _catalog;
+    private readonly Func<long, long> _newPasscode;
+
+    public CardViewModel(CardProject project, Func<CardPack> pack, Action dirty, Func<OmegaCatalog>? catalog = null, Func<long, long>? newPasscode = null)
     {
         Project = project;
         _pack = pack;
         _dirty = dirty;
+        _catalog = catalog ?? (() => OmegaCatalog.Empty);
+        _newPasscode = newPasscode ?? (except => PasscodeGenerator.Generate(pack().Cards.Select(c => c.Card.Id).Where(id => id != except)));
         foreach (var e in project.Effects) Effects.Add(new EffectViewModel(e, this, pack, Changed));
         MaterialFilter = new FilterEditorViewModel(project.Procedure.MaterialFilter, Zone.None, true, pack, Changed);
         TunerFilter = new FilterEditorViewModel(project.Procedure.TunerFilter, Zone.None, true, pack, Changed);
@@ -88,6 +94,9 @@ public sealed partial class CardViewModel : ObservableObject
             Lua = result.Lua;
             var all = result.Diagnostics.ToList();
             if (!result.HasErrors) all.AddRange(ScriptChecker.Check(result.Lua));
+            var passcode = PasscodeProblems(pack);
+            all.AddRange(passcode);
+            PasscodeWarning = string.Join("\n", passcode.Select(d => d.Message));
             Diagnostics.Clear();
             foreach (var d in all.OrderByDescending(d => d.Severity))
                 Diagnostics.Add(new DiagnosticItem(d.Severity, d.ToString().Replace("[Error] ", "").Replace("[Warning] ", "").Replace("[Info] ", "")));
@@ -108,12 +117,43 @@ public sealed partial class CardViewModel : ObservableObject
             OnPropertyChanged(nameof(ListLabel));
             OnPropertyChanged(nameof(ListDetail));
             OnPropertyChanged(nameof(HasNoEffects));
+            OnPropertyChanged(nameof(TypeLine));
+            OnPropertyChanged(nameof(FaceText));
+            FaceVersion++;
         }
         finally
         {
             _refreshing = false;
         }
     }
+
+    // ---- passcode
+    [ObservableProperty] private string _passcodeWarning = "";
+    public bool HasPasscodeWarning => PasscodeWarning.Length > 0;
+    partial void OnPasscodeWarningChanged(string value) => OnPropertyChanged(nameof(HasPasscodeWarning));
+
+    private List<Diagnostic> PasscodeProblems(CardPack pack)
+    {
+        var list = new List<Diagnostic>();
+        var others = pack.Cards.Where(p => !ReferenceEquals(p, Project)).ToList();
+        if (others.FirstOrDefault(o => o.Card.Id == C.Id) is { } dup)
+            list.Add(new(Severity.Error, $"Passcode {C.Id} is also used by \"{dup.Card.Name}\" in this pack. Click Generate for a free one."));
+        if (_catalog().Clash(C.Id) is { } used)
+            list.Add(new(Severity.Warning, $"Passcode {C.Id} is already used in Omega by {used}. Click Generate for a free one."));
+        if (others.FirstOrDefault(o => PasscodeGenerator.TooClose(o.Card.Id, C.Id)) is { } close)
+            list.Add(new(Severity.Info, $"Passcode is close to \"{close.Card.Name}\" ({close.Card.Id}); their once-per-turn limits can interfere. Generate keeps cards apart."));
+        return list;
+    }
+
+    [RelayCommand]
+    private void GeneratePasscode() => Id = _newPasscode(C.Id);
+
+    // ---- card face preview
+    /// <summary>Bumped on every change so the preview knows to redraw.</summary>
+    [ObservableProperty] private int _faceVersion;
+    public string TypeLine => CardFaceText.TypeLine(C, _pack());
+    public string FaceText => string.IsNullOrWhiteSpace(C.Text) ? SuggestedText : C.Text;
+    public CardData Data => C;
 
     // ---- card data
     public string Name { get => C.Name; set { if (C.Name == value) return; C.Name = value; OnPropertyChanged(); Changed(); } }
@@ -174,10 +214,11 @@ public sealed partial class CardViewModel : ObservableObject
         set { if (value is null || Equals(C.Attribute, value.Value)) return; C.Attribute = value.Value; OnPropertyChanged(); Changed(); }
     }
 
-    public IReadOnlyList<Option<CardRace>> RaceOptions => Lists.Races;
+    private IReadOnlyList<Option<CardRace>>? _raceOptions;
+    public IReadOnlyList<Option<CardRace>> RaceOptions => _raceOptions ??= Lists.RacesFor(_pack(), C.Race);
     public Option<CardRace> Race
     {
-        get => Options.Find(Lists.Races, C.Race);
+        get => Options.Find(RaceOptions, C.Race);
         set { if (value is null || Equals(C.Race, value.Value)) return; C.Race = value.Value; OnPropertyChanged(); Changed(); }
     }
 
@@ -292,6 +333,16 @@ public sealed partial class CardViewModel : ObservableObject
     // ---- archetypes
     public ObservableCollection<ArchetypeChoice> ArchetypeChoices { get; } = [];
     public bool HasArchetypes => ArchetypeChoices.Count > 0;
+
+    public void RebuildTypes()
+    {
+        _raceOptions = null;
+        OnPropertyChanged(nameof(RaceOptions));
+        OnPropertyChanged(nameof(Race));
+        foreach (var e in Effects) e.RefreshFilters();
+        MaterialFilter.RefreshArchetypes();
+        TunerFilter.RefreshArchetypes();
+    }
 
     public void RebuildArchetypes()
     {
