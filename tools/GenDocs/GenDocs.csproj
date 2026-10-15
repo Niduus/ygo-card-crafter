@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- Regenerates docs/blocks.md: dotnet run --project tools/GenDocs -- docs/blocks.md -->
+  <!-- Regenerates docs/blocks.md. Run from the repo root: dotnet run with project tools/GenDocs, passing docs/blocks.md -->
   <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
   <ItemGroup><ProjectReference Include="..\..\src\CardCrafter.Core\CardCrafter.Core.csproj" /></ItemGroup>
 </Project>
