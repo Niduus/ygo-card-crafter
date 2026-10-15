@@ -36,6 +36,9 @@ public sealed class CdbSchema
         sql is not null && System.Text.RegularExpressions.Regex.IsMatch(sql, @"\)\s*(WITHOUT\s+ROWID\s*,\s*)?STRICT(\s*,\s*WITHOUT\s+ROWID)?\s*;?\s*$",
             System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
+    /// <summary>Every table in the database with its columns, for the scan report.</summary>
+    public List<(string Table, string Columns)> AllTables { get; init; } = [];
+
     /// <summary>The most common "ot" values and how many cards use each, for the scan report.</summary>
     public List<(long Ot, int Count)> OtValues { get; init; } = [];
 
@@ -92,6 +95,19 @@ public sealed class CdbSchema
         if (datas.Any(c => c.Name == "setid") && !datas.Any(c => c.Name == "setcode"))
             (sep, hex) = LearnSetidFormat(conn);
 
+        var all = new List<(string, string)>();
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name";
+            var names = new List<string>();
+            using (var rd = cmd.ExecuteReader()) while (rd.Read()) names.Add(rd.GetString(0));
+            foreach (var n in names)
+            {
+                var strict = System.Text.RegularExpressions.Regex.IsMatch(TableSql(conn, n) ?? "", @"\)\s*[^)]*STRICT[^)]*$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                all.Add((n, string.Join(", ", Columns(conn, n).Select(c => c.Type.Length > 0 ? $"{c.Name} {c.Type}" : c.Name)) + (strict ? " (STRICT)" : "")));
+            }
+        }
+
         var setcode = datas.FirstOrDefault(c => c.Name == "setcode") is { } sc ? SetcodeFormat.Learn(conn, sc) : SetcodeFormat.Integer;
 
         var ots = new List<(long, int)>();
@@ -110,7 +126,7 @@ public sealed class CdbSchema
         {
             Datas = datas, Texts = texts, Bandatas = bandatas,
             DatasSql = TableSql(conn, "datas"), TextsSql = TableSql(conn, "texts"), BandatasSql = bandatas.Count > 0 ? TableSql(conn, "bandatas") : null,
-            Banlists = banlists, SetidSeparator = sep, SetidHex = hex, OtValues = ots, Setcode = setcode,
+            Banlists = banlists, SetidSeparator = sep, SetidHex = hex, OtValues = ots, Setcode = setcode, AllTables = all,
         };
     }
 
@@ -175,11 +191,13 @@ public sealed class CdbSchema
     public string Describe()
     {
         var sb = new System.Text.StringBuilder();
-        sb.AppendLine($"  datas columns: {string.Join(", ", Datas.Select(c => c.Name))}");
-        sb.AppendLine($"  texts columns: {string.Join(", ", Texts.Select(c => c.Name))}");
-        if (Has("setcode")) sb.AppendLine($"  archetypes (setcode): {Setcode.Describe()}{(DatasStrict ? "; STRICT table" : "")}");
+        sb.AppendLine($"  datas columns: {string.Join(", ", Datas.Select(c => c.Type.Length > 0 ? $"{c.Name} {c.Type}" : c.Name))}{(DatasStrict ? " (STRICT)" : "")}");
+        sb.AppendLine($"  texts columns: {string.Join(", ", Texts.Select(c => c.Type.Length > 0 ? $"{c.Name} {c.Type}" : c.Name))}{(TextsStrict ? " (STRICT)" : "")}");
+        if (Has("setcode")) sb.AppendLine($"  archetypes (setcode): {Setcode.Describe()}");
         if (OtValues.Count > 0) sb.AppendLine($"  ot (card pool) values: {string.Join(", ", OtValues.Select(o => $"{o.Ot} ×{o.Count}"))}");
         if (Bandatas.Count > 0) sb.AppendLine($"  bandatas columns: {string.Join(", ", Bandatas.Select(c => c.Name))}");
+        foreach (var (table, columns) in AllTables.Where(t => t.Table is not ("datas" or "texts")))
+            sb.AppendLine($"  table {table}: {columns}");
         if (Banlists.Count > 0) sb.AppendLine($"  banlists: {string.Join(", ", Banlists.Take(12).Select(b => $"{b.Id} {b.Name}"))}{(Banlists.Count > 12 ? $" and {Banlists.Count - 12} more" : "")}");
         return sb.ToString();
     }
