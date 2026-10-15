@@ -138,7 +138,8 @@ Magician" is on the field", "while you control "Blue-Eyes White Dragon"", "if yo
 "while "Umi" is in a Field Zone", so a Quick Effect or Quick-Play Spell can Special Summon or activate only while that
 card is there. Every card picker's **Only this card** box takes a name: type part of it and pick from your pack and
 every card in YGO Omega's databases (or type a passcode). Card pickers can also take a second archetype
-(""Dominators" or "Dominus Purge" Traps") and **face-down only** cards.
+(""Dominators" or "Dominus Purge" Traps") and **face-down only** cards. Archetypes in YGO Omega's cards show by name
+("Mitsurugi", not "0x1c3"): each name comes from what card texts put in quotes, such as "add 1 "Mitsurugi" monster".
 
 **More from Dominus and Mitsurugi.** The browser now turns every Dominus card into blocks, including Dominusteer
 Rosepamela ("reveal this card in your hand; add 1 card, then discard 1 card", "Set 1 Trap. It can be activated this

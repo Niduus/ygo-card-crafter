@@ -136,3 +136,35 @@ public class OddDatabaseTests
         Assert.Single(cat.Problems);
     }
 }
+
+public class ArchetypeNameGuessTests
+{
+    [Fact]
+    public void QuotedNames_InCardTexts_NameTheArchetype()
+    {
+        var quoted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        OmegaCatalog.AddQuoted("You can add 1 \"Mitsurugi\" monster from your Deck to your hand, except \"Ame no Murakumo no Mitsurugi\".", quoted);
+        OmegaCatalog.AddQuoted("Add 1 \"Dominus\" card. Set 1 \"Dominators\" or \"Dominus Purge\" Trap.", quoted);
+        Assert.Equal("Mitsurugi", OmegaCatalog.GuessName(["Ame no Murakumo no Mitsurugi", "Futsu no Mitama no Mitsurugi", "Mitsurugi Ritual", "Mitsurugi no Mikoto, Saji"], quoted));
+        Assert.Equal("Dominus", OmegaCatalog.GuessName(["Dominus Spark", "Dominus Impulse", "Dominus Purge", "Dominusteer Rosepamela"], quoted));
+        Assert.Equal("Dominus Purge", OmegaCatalog.GuessName(["Dominus Purge"], quoted));
+        Assert.Equal("Dominators", OmegaCatalog.GuessName(["Songs of the Dominators"], quoted));
+    }
+
+    /// <summary>With a real card database (CARDCRAFTER_CARDS_CDB), well-known archetypes get their names.</summary>
+    [Fact]
+    public void RealDatabase_NamesArchetypes()
+    {
+        if (Environment.GetEnvironmentVariable("CARDCRAFTER_CARDS_CDB") is not { } cdb || !File.Exists(cdb)) return;
+        using var tmp = new TempDir();
+        var copy = Path.Combine(tmp.Path, "cards.cdb");
+        File.Copy(cdb, copy);
+        var catalog = OmegaCatalog.Load([copy], tmp.Path);
+        string Name(int code) => catalog.Archetypes.First(a => a.Code == code).Name;
+        Assert.Equal("Mitsurugi", Name(0x1c3));
+        Assert.Equal("Dominus", Name(0x1c6));
+        Assert.Equal("Blue-Eyes", Name(0xdd));
+        if (Environment.GetEnvironmentVariable("CARDCRAFTER_ARCHETYPE_REPORT") is { } report)
+            File.WriteAllLines(report, catalog.Archetypes.OrderBy(a => a.Code).Select(a => $"0x{a.Code:x}\t{a.Name}\t{string.Join(" | ", a.Examples)}"));
+    }
+}

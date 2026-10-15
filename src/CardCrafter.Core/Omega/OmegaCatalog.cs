@@ -61,6 +61,8 @@ public sealed class OmegaCatalog
         var catalog = new OmegaCatalog();
         var byCode = new Dictionary<int, List<string>>();
         var types = new Dictionary<long, List<string>>();
+        // Names that card texts put in quotes: "add 1 "Mitsurugi" monster" names the archetype.
+        var quoted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var db in databases)
         {
             List<CdbRow> rows;
@@ -76,6 +78,7 @@ public sealed class OmegaCatalog
                 catalog.Passcodes.TryAdd(row.Id, $"{row.Name} ({file})");
                 // Alternate artworks share a name and setcodes with the original; count each card once.
                 if (row.Alias != 0) continue;
+                AddQuoted(row.Desc, quoted);
                 foreach (var code in CdbEncoder.UnpackSetcodes(row.Setcode))
                 {
                     if (!byCode.TryGetValue(code, out var names)) byCode[code] = names = [];
@@ -95,11 +98,77 @@ public sealed class OmegaCatalog
             }
         }
         foreach (var (code, names) in byCode)
-            catalog.Archetypes.Add(new KnownArchetype(code, GuessName(names) ?? $"0x{code:x}", names.Count, names.Distinct().Take(3).ToList()));
+            catalog.Archetypes.Add(new KnownArchetype(code, GuessName(names, quoted) ?? $"0x{code:x}", names.Count, names.Distinct().Take(3).ToList()));
         catalog.Archetypes.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
         foreach (var (value, names) in types.OrderBy(t => t.Key))
             catalog.UnknownTypes.Add(new UnknownType(value, names.Count, names.Distinct().Take(3).ToList()));
         return catalog;
+    }
+
+    /// <summary>
+    /// Every "quoted" name in a card's text. Names used as archetypes (""Mitsurugi" monster", ""Dominators" or
+    /// "Dominus Purge" Trap") are also marked with "#" in front.
+    /// </summary>
+    public static void AddQuoted(string text, HashSet<string> into)
+    {
+        text ??= "";
+        foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(text, "\"([^\"\r\n]{2,60})\""))
+            into.Add(m.Groups[1].Value.Trim());
+        const string noun = @"(?:cards?|monsters?|Spells?|Traps?|Spell/Traps?|Ritual|Fusion|Synchro|Xyz|Link|Pendulum|Tuners?|Normal|Effect|Continuous|Quick-Play|Field|Equip|Counter|Tokens?)\b";
+        foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(text,
+                     "((?:\"[^\"\r\n]{2,60}\"(?:,| or| and|, or|, and)? ?)+)" + noun))
+            foreach (System.Text.RegularExpressions.Match q in System.Text.RegularExpressions.Regex.Matches(m.Groups[1].Value, "\"([^\"\r\n]{2,60})\""))
+                into.Add("#" + q.Groups[1].Value.Trim());
+    }
+
+    /// <summary>
+    /// Guesses an archetype's name from its cards' names and the names card texts put in quotes: the quoted name found
+    /// in the most of its cards' names, such as "Mitsurugi" in "Ame no Murakumo no Mitsurugi" and "Mitsurugi Ritual".
+    /// Falls back to the shared leading words.
+    /// </summary>
+    public static string? GuessName(IReadOnlyList<string> names, IReadOnlySet<string> quoted)
+    {
+        var distinct = names.Where(n => n.Length > 0).Distinct().ToList();
+        if (distinct.Count == 0) return null;
+        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var name in distinct)
+        {
+            var words = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < words.Length; i++)
+                for (int len = 1; len <= Math.Min(5, words.Length - i); len++)
+                {
+                    var gram = string.Join(' ', words.Skip(i).Take(len)).Trim(',', ':', '!', '?', '.');
+                    if (quoted.Contains(gram) && seen.Add(gram)) counts[gram] = counts.GetValueOrDefault(gram) + 1;
+                }
+            // A word-part such as "Dominus" in "Dominusteer".
+            foreach (var q in WordStarts(words, quoted))
+                if (seen.Add(q)) counts[q] = counts.GetValueOrDefault(q) + 1;
+        }
+        var needed = Math.Max(1, (int)Math.Ceiling(distinct.Count * 0.4));
+        bool Archetypal(string name) => quoted.Contains("#" + name);
+        var ranked = counts.Where(kv => kv.Value >= needed)
+            .OrderByDescending(kv => kv.Value).ThenByDescending(kv => Archetypal(kv.Key)).ThenByDescending(kv => kv.Key.Length)
+            .ToList();
+        if (ranked.Count == 0) return GuessName(distinct);
+        var best = ranked[0];
+        // "Elemental HERO" over "HERO": a longer name used as an archetype that covers nearly as many cards.
+        foreach (var kv in ranked)
+            if (kv.Key.Length > best.Key.Length && kv.Key.Contains(best.Key, StringComparison.OrdinalIgnoreCase)
+                && Archetypal(kv.Key) && kv.Value >= best.Value * 0.8)
+                best = kv;
+        // A whole card name only quoted to name that card ("You can only activate 1 "Songs of the Dominators" per turn")
+        // loses to a name used as an archetype inside it.
+        if (!Archetypal(best.Key) && ranked.FirstOrDefault(kv => kv.Value == best.Value && Archetypal(kv.Key)) is { Key: not null } arch)
+            best = arch;
+        return best.Key;
+    }
+
+    private static IEnumerable<string> WordStarts(string[] words, IReadOnlySet<string> quoted)
+    {
+        foreach (var w in words)
+            for (int n = 4; n < w.Length; n++)
+                if (quoted.Contains(w[..n])) yield return w[..n];
     }
 
     /// <summary>
