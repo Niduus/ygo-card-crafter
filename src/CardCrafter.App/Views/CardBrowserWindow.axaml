@@ -75,6 +75,12 @@
             <TextBlock IsVisible="{Binding HasScript}" TextWrapping="Wrap" FontSize="12">
               <Run Text="Each part is one effect with the functions it needs. " /><Run Text="Add to " /><Run Text="{Binding CurrentCardName}" FontWeight="SemiBold" /><Run Text=" adds it as blocks when it has exact blocks, otherwise into that card's script, renamed so nothing clashes." />
             </TextBlock>
+            <WrapPanel IsVisible="{Binding HasScript}">
+              <TextBlock Text="● Made into blocks" Foreground="#8FD19E" FontSize="12" Margin="0,0,14,0" />
+              <TextBlock Text="● Done another way" Foreground="#F2D45C" FontSize="12" Margin="0,0,14,0" />
+              <TextBlock Text="● Not translated yet (blocks could build it)" Foreground="#F5A25D" FontSize="12" Margin="0,0,14,0" />
+              <TextBlock Text="● No block does this" Foreground="#F28B82" FontSize="12" />
+            </WrapPanel>
             <ItemsControl ItemsSource="{Binding Pieces}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate DataType="vm:BrowserPiece">
@@ -85,7 +91,11 @@
                         <Button Grid.Column="1" Content="{Binding AddLabel}" VerticalAlignment="Center"
                                 Command="{Binding $parent[Window].((vm:CardBrowserViewModel)DataContext).AddPieceCommand}" CommandParameter="{Binding}" />
                       </Grid>
-                      <TextBlock Text="{Binding Status}" Foreground="{Binding StatusColor}" FontSize="12" TextWrapping="Wrap" />
+                      <Grid ColumnDefinitions="Auto,*">
+                        <TextBlock Text="{Binding Dot}" Foreground="{Binding StatusColor}" FontSize="14" Margin="0,-2,6,0" />
+                        <TextBlock Grid.Column="1" Text="{Binding Status}" Foreground="{Binding StatusColor}" FontSize="12" TextWrapping="Wrap" />
+                      </Grid>
+                      <TextBlock Text="{Binding CitationText}" IsVisible="{Binding HasCitation}" FontSize="12" FontStyle="Italic" TextWrapping="Wrap" Foreground="#C9CBD6" Margin="20,0,0,0" />
                       <Expander Header="Show the code" HorizontalAlignment="Stretch">
                         <SelectableTextBlock Text="{Binding Preview}" FontFamily="Cascadia Mono, Consolas, Menlo, monospace" FontSize="12" TextWrapping="NoWrap" />
                       </Expander>

@@ -42,7 +42,7 @@ your pack open. The version button in the top-right corner checks on demand. Upd
 
 | Column | Meaning | Examples |
 |---|---|---|
-| **WHEN** | What starts the effect. Add more with **+ Or when...** ("If this card is Normal or Special Summoned, or if this card is Tributed"). | You activate it in the Main Phase · Quick Effect · If this card is Summoned · Activate this Spell/Trap · While this card is face-up |
+| **WHEN** | What starts the effect. **This card: any of these happen** ticks any mix of events; **+ Or when...** adds any other trigger. | You activate it in the Main Phase · Quick Effect · If this card is Summoned · Activate this Spell/Trap · While this card is face-up |
 | **IF** | What must be true. | You control 2 or more Dragon monsters · It is your opponent's turn · Your LP are 2000 or less |
 | **COST** | What you pay to activate. | Discard 1 card · Pay 1000 LP · Banish this card |
 | **DO** | What happens, in order. | Draw 2 cards · Add 1 monster from your Deck to your hand · Target 1 card; destroy it |
@@ -132,6 +132,17 @@ option has its own blocks, targets and checks, the player picks one that can be 
   cards with that original name until the end of this turn".
 - "If this card battles a monster, neither can be destroyed by that battle", "ignoring its Summoning conditions",
   Main Phase 1 / Main Phase 2 (plain "Main Phase" means either) and Spell/Trap as a card type in every picker.
+
+**Any mix of things that happen to this card.** The WHEN block **This card: any of these happen (tick several)** has a
+tick box for every event that starts a self trigger: Normal, Tribute, Flip and Special Summons (and Ritual, Fusion,
+Synchro, Xyz, Link and Pendulum Summons, or Special Summoned from the hand or GY), Tributed, sent to the GY (from
+anywhere, the field, the hand or the Deck), destroyed (any way, by battle, by a card effect or by an opponent's card),
+banished, returned from the field to the hand, added to the hand except by drawing, shuffled into the Deck, discarded,
+flipped face-up, targeted by a card effect, used as material, leaves the field, inflicts battle damage, and destroys
+a monster by battle. The text joins them like a card: "If this card is Normal or Special Summoned, or if this card is
+Tributed", "If this card is sent to the GY or banished", "If this card is destroyed by battle or card effect". It is
+one effect, so its once per turn covers every event, and each event keeps its own check. Translated cards whose
+copies differ only in their event become this block.
 
 **A certain card on the field.** The IF block **A certain card is on the field (or somewhere)** reads "if "Dark
 Magician" is on the field", "while you control "Blue-Eyes White Dragon"", "if your opponent does not control ..." or

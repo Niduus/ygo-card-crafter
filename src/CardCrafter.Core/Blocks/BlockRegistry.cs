@@ -39,6 +39,7 @@ public static class BlockRegistry
         new CanBattleCondition(),
         new CompareLifePointsCondition(),
         new CardPresentCondition(),
+        new ThisCardEventsTrigger(),
         new OpponentSpecialSummonsAction(),
         new OpponentActivatedCondition(),
         new ZoneCondition(),

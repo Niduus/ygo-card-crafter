@@ -9,23 +9,33 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace CardCrafter.App.ViewModels;
 
-/// <summary>One effect of a browsed card's script, and whether it has exact blocks.</summary>
-public sealed class BrowserPiece(TranslatedPiece translated, CardData card)
+/// <summary>
+/// One effect of a browsed card's script, coloured by what became of it: green made into blocks, yellow done another
+/// way, orange not translated (but blocks could build it), red no block does it. Each quotes its card text.
+/// </summary>
+public sealed class BrowserPiece(TranslatedPiece translated, CardData card, string? citation = null)
 {
     public TranslatedPiece Translated { get; } = translated;
     public string Title => Translated.Piece.Title;
     public string Preview => Translated.Piece.Preview;
     public bool AsBlocks => Translated.Effect is not null;
-    private int EffectCount => Translated.Effects.Count();
     public string AddLabel => AsBlocks ? "Add as blocks" : "Add as script";
-    public string Status => Translated.Effect is { } e
-        ? "Becomes blocks: " + string.Join(" ", Translated.Effects.Select(x => EffectTextGenerator.Describe(x, card)))
-        : Translated.Rule is { } rule ? $"Becomes the summoning rule on the Card tab: {(rule == SummonRule.ProcedureOnly ? "only by its own procedure" : "cannot be Normal Summoned/Set")}."
-        : Translated.NoSpecialSummon ? "Becomes \"Cannot be Special Summoned\" on the Card tab."
-        : Translated.EquipTo is not null ? "Becomes the Equip Spell's \"Equip to\" on the Card tab."
-        : Translated.Translated ? "Needs no blocks: Card Crafter does this itself."
-        : "Stays script: " + Translated.Reason + ".";
-    public string StatusColor => AsBlocks || Translated.Translated ? "#8FD19E" : "#E0B872";
+    public PieceVerdict Verdict { get; } = TranslationVerdict.Of(translated, card);
+    public string Status => $"{Verdict.Headline}: {Verdict.Note}";
+    public string StatusColor => ColorOf(Verdict.Color);
+    public string Dot => "●";
+    /// <summary>The card-text sentence this effect stands for.</summary>
+    public string? Citation { get; } = citation;
+    public bool HasCitation => Citation is not null;
+    public string CitationText => $"Card text: \u201C{Citation}\u201D";
+
+    public static string ColorOf(PieceColor c) => c switch
+    {
+        PieceColor.Green => "#8FD19E",
+        PieceColor.Yellow => "#F2D45C",
+        PieceColor.Orange => "#F5A25D",
+        _ => "#F28B82",
+    };
 }
 
 /// <summary>
@@ -144,12 +154,18 @@ public sealed partial class CardBrowserViewModel : ObservableObject
         ScriptSource = from;
         var data = CdbEncoder.Decode(Selected!.Row);
         var translation = ScriptTranslator.Translate(lua, Selected.Id, data, Selected.Row.Strings);
-        foreach (var piece in translation.Pieces) Pieces.Add(new BrowserPiece(piece, data));
+        var citations = EffectCitation.Assign(Selected.Row.Desc, translation.Pieces, data);
+        for (int i = 0; i < translation.Pieces.Count; i++) Pieces.Add(new BrowserPiece(translation.Pieces[i], data, citations[i]));
+        string Count(PieceColor c, string what) => Pieces.Count(p => p.Verdict.Color == c) is var n and > 0 ? $"{n} {what}" : "";
+        var counts = string.Join(", ", new[]
+        {
+            Count(PieceColor.Green, "made into blocks"), Count(PieceColor.Yellow, "done another way"),
+            Count(PieceColor.Orange, "not translated yet"), Count(PieceColor.Red, "with no block"),
+        }.Where(c => c.Length > 0));
         ScriptStatus = Pieces.Count == 0
             ? $"Script from {from}. It couldn't be split into effects, but \"Use as a new card\" copies it whole."
-            : $"Script from {from}: {Pieces.Count} part{(Pieces.Count == 1 ? "" : "s")}, "
-              + (translation.Complete ? (Pieces.Count == 1 ? "which has" : "all with") + " exact blocks, so \"Use as a new card\" makes it with blocks."
-                 : $"{translation.TranslatedCount} with exact blocks. \"Use as a new card\" keeps it as script.");
+            : $"Script from {from}: {Pieces.Count} part{(Pieces.Count == 1 ? "" : "s")} ({counts}). "
+              + (translation.Complete ? "\"Use as a new card\" makes it with blocks." : "\"Use as a new card\" keeps it as script.");
     }
 
     /// <summary>Gets the official script from the ygopro-scripts repository on GitHub when Omega's folders don't have it.</summary>

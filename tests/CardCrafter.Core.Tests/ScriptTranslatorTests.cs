@@ -98,6 +98,7 @@ public class ScriptTranslatorTests
         var reasons = new Dictionary<string, int>();
         var details = new Dictionary<string, int>();
         var examples = new Dictionary<string, List<long>>();
+        var colours = Enum.GetValues<PieceColor>().ToDictionary(c => c, _ => 0);
         foreach (var file in Directory.EnumerateFiles(EngineScenario.EngineScripts!, "c*.lua"))
         {
             if (!long.TryParse(Path.GetFileNameWithoutExtension(file)[1..], out var id)) continue;
@@ -122,6 +123,7 @@ public class ScriptTranslatorTests
                 }
             }
             if (result.Complete) complete++;
+            foreach (var p in result.Pieces) colours[TranslationVerdict.Of(p, card).Color]++;
             foreach (var r in result.Pieces.Where(p => !p.Translated))
             {
                 var key = System.Text.RegularExpressions.Regex.Replace(r.Reason ?? "", @"\(.*", "(…");
@@ -133,6 +135,7 @@ public class ScriptTranslatorTests
             }
         }
         Console.WriteLine($"{complete} of {scripts} official scripts translate completely; {translated} of {pieces} effects.");
+        Console.WriteLine("Colours: " + string.Join(", ", colours.Select(c => $"{c.Key} {c.Value}")));
         if (Environment.GetEnvironmentVariable("CARDCRAFTER_TRANSLATION_REPORT") is { } report)
         {
             File.WriteAllLines(report, reasons.OrderByDescending(r => r.Value).Select(r => $"{r.Value}\t{r.Key}"));
@@ -163,10 +166,14 @@ public class TranslationReportTests
             var card = real.TryGetValue(id, out var row) ? CardCrafter.Core.Database.CdbEncoder.Decode(row) : new CardData { Name = "T", Level = 4 };
             var result = ScriptTranslator.Translate(File.ReadAllText(file), id, card);
             lines.Add($"== {id} {card.Name}");
-            foreach (var piece in result.Pieces)
-                lines.Add(piece.Effect is not null
-                    ? "  OK   " + string.Join(" / ", piece.Effects.Select(e => CardCrafter.Core.Text.EffectTextGenerator.Describe(e, card)))
-                    : $"  {(piece.Translated ? "ok  " : "NO  ")} {piece.Piece.Title}: {piece.Reason}");
+            var cites = CardCrafter.Core.Text.EffectCitation.Assign(row?.Desc ?? "", result.Pieces, card);
+            for (int i = 0; i < result.Pieces.Count; i++)
+            {
+                var piece = result.Pieces[i];
+                var v = TranslationVerdict.Of(piece, card);
+                lines.Add($"  {v.Color,-6} {piece.Piece.Title}: {v.Note}");
+                if (cites[i] is { } cite) lines.Add($"         cites: {cite}");
+            }
         }
         File.WriteAllLines(Environment.GetEnvironmentVariable("CARDCRAFTER_TRANSLATE_OUT") ?? "translate-report.txt", lines);
     }

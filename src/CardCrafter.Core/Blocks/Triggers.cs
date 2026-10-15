@@ -916,3 +916,134 @@ public sealed class WhileFaceUpTrigger : BlockDefinition
         ctx.Effect.Range = Zones.Resolve(ctx.Args.Choice("zone"), ctx.Card);
     }
 }
+
+/// <summary>
+/// "If this card is Normal or Special Summoned, or if this card is Tributed or banished": any mix of the things that
+/// can happen to this card, each ticked on its own. One effect starts on each of them and shares its once per turn.
+/// </summary>
+public sealed class ThisCardEventsTrigger : SelfTriggerBlock
+{
+    public const string BlockId = "when.this_card_events";
+
+    /// <summary>One thing that can happen to this card: its tick box, how card text says it, its event and its check.</summary>
+    public sealed record Event(string Key, string Label, string Code, string? Check = null, bool Monster = false);
+
+    /// <summary>Summons read together: "Normal, Flip, or Special Summoned".</summary>
+    public static readonly Event[] Summons =
+    [
+        new("normal", "Normal", "EVENT_SUMMON_SUCCESS", Monster: true),
+        new("tribute_summon", "Tribute", "EVENT_SUMMON_SUCCESS", "e:GetHandler():IsSummonType(SUMMON_TYPE_ADVANCE)", true),
+        new("flip_summon", "Flip", "EVENT_FLIP_SUMMON_SUCCESS", Monster: true),
+        new("special", "Special", "EVENT_SPSUMMON_SUCCESS", Monster: true),
+        new("ritual", "Ritual", "EVENT_SPSUMMON_SUCCESS", "e:GetHandler():IsSummonType(SUMMON_TYPE_RITUAL)", true),
+        new("fusion", "Fusion", "EVENT_SPSUMMON_SUCCESS", "e:GetHandler():IsSummonType(SUMMON_TYPE_FUSION)", true),
+        new("synchro", "Synchro", "EVENT_SPSUMMON_SUCCESS", "e:GetHandler():IsSummonType(SUMMON_TYPE_SYNCHRO)", true),
+        new("xyz", "Xyz", "EVENT_SPSUMMON_SUCCESS", "e:GetHandler():IsSummonType(SUMMON_TYPE_XYZ)", true),
+        new("link", "Link", "EVENT_SPSUMMON_SUCCESS", "e:GetHandler():IsSummonType(SUMMON_TYPE_LINK)", true),
+        new("pendulum", "Pendulum", "EVENT_SPSUMMON_SUCCESS", "e:GetHandler():IsSummonType(SUMMON_TYPE_PENDULUM)", true),
+    ];
+
+    /// <summary>What happens to this card: "If this card is Tributed, sent to the GY, or banished".</summary>
+    public static readonly Event[] Happenings =
+    [
+        new("special_gy", "Special Summoned from the GY", "EVENT_SPSUMMON_SUCCESS", "e:GetHandler():IsSummonLocation(LOCATION_GRAVE)", true),
+        new("special_hand", "Special Summoned from the hand", "EVENT_SPSUMMON_SUCCESS", "e:GetHandler():IsSummonLocation(LOCATION_HAND)", true),
+        new("tributed", "Tributed", "EVENT_RELEASE"),
+        new("sent_gy", "sent to the GY", "EVENT_TO_GRAVE"),
+        new("sent_gy_field", "sent from the field to the GY", "EVENT_TO_GRAVE", "e:GetHandler():IsPreviousLocation(LOCATION_ONFIELD)"),
+        new("sent_gy_hand", "sent from the hand to the GY", "EVENT_TO_GRAVE", "e:GetHandler():IsPreviousLocation(LOCATION_HAND)"),
+        new("sent_gy_deck", "sent from the Deck to the GY", "EVENT_TO_GRAVE", "e:GetHandler():IsPreviousLocation(LOCATION_DECK)"),
+        new("destroyed", "destroyed", "EVENT_DESTROYED"),
+        new("destroyed_battle", "destroyed by battle", "EVENT_BATTLE_DESTROYED", Monster: true),
+        new("destroyed_effect", "destroyed by a card effect", "EVENT_DESTROYED", "e:GetHandler():IsReason(REASON_EFFECT)"),
+        new("destroyed_opponent", "destroyed by an opponent's card", "EVENT_DESTROYED", "rp==1-tp and e:GetHandler():IsPreviousControler(tp)"),
+        new("banished", "banished", "EVENT_REMOVE"),
+        new("returned_hand", "returned from the field to the hand", "EVENT_TO_HAND", "e:GetHandler():IsPreviousLocation(LOCATION_ONFIELD)"),
+        new("added_hand", "added to your hand, except by drawing it", "EVENT_TO_HAND", "not e:GetHandler():IsReason(REASON_DRAW)"),
+        new("returned_deck", "shuffled into the Deck", "EVENT_TO_DECK"),
+        new("discarded", "discarded", "EVENT_DISCARD"),
+        new("flipped", "flipped face-up", "EVENT_FLIP", Monster: true),
+        new("targeted", "targeted by a card effect", "EVENT_BECOME_TARGET"),
+        new("material", "used as material", "EVENT_BE_MATERIAL", Monster: true),
+    ];
+
+    /// <summary>What this card does: "or if this card leaves the field".</summary>
+    public static readonly Event[] Doings =
+    [
+        new("leaves_field", "leaves the field", "EVENT_LEAVE_FIELD"),
+        new("battle_damage", "inflicts battle damage to your opponent", "EVENT_BATTLE_DAMAGE", "ep~=tp", true),
+        new("destroys_battle", "destroys an opponent's monster by battle", "EVENT_BATTLE_DESTROYING", "aux.bdocon(e,tp,eg,ep,ev,re,r,rp)", true),
+    ];
+
+    public static IEnumerable<Event> All => Summons.Concat(Happenings).Concat(Doings);
+
+    public override string Id => BlockId;
+    public override string Name => "This card: any of these happen (tick several)";
+    public override string Help => "Tick everything that starts this effect, like Mitsurugi's \"If this card is Normal or Special Summoned, or if this card is " +
+                                   "Tributed\" or \"If this card is sent to the GY or banished\". It is one effect: its once per turn covers all of them.";
+    public override string Sentence => "If this card is Summoned: " + string.Join(" ", Summons.Select(e => "{" + e.Key + "}"))
+        + " · or if it is: " + string.Join(" ", Happenings.Select(e => "{" + e.Key + "}"))
+        + " · or if it: " + string.Join(" ", Doings.Select(e => "{" + e.Key + "}"));
+
+    public override IReadOnlyList<ParamSpec> Params { get; } =
+    [
+        .. Summons.Select(e => ParamSpec.Flag(e.Key, e.Label, e.Key == "normal" || e.Key == "special")),
+        .. Happenings.Select(e => ParamSpec.Flag(e.Key, e.Label, false)),
+        .. Doings.Select(e => ParamSpec.Flag(e.Key, e.Label, false)),
+        OptionalParam,
+    ];
+
+    public static List<Event> Ticked(BlockArgs args) => All.Where(e => args.Bool(e.Key)).ToList();
+
+    /// <summary>"A or B", "A, B, or C".</summary>
+    private static string Or(IReadOnlyList<string> items) => items.Count switch
+    {
+        0 => "",
+        1 => items[0],
+        2 => $"{items[0]} or {items[1]}",
+        _ => string.Join(", ", items.Take(items.Count - 1)) + ", or " + items[^1],
+    };
+
+    public override string Describe(BlockArgs args)
+    {
+        var ticked = Ticked(args);
+        var clauses = new List<string>();
+        var summons = Summons.Where(e => ticked.Contains(e)).Select(e => e.Label).ToList();
+        var happenings = Happenings.Where(e => ticked.Contains(e)).Select(e => e.Label).ToList();
+        // "destroyed by battle or card effect".
+        if (happenings.Contains("destroyed by battle") && happenings.Contains("destroyed by a card effect"))
+        {
+            var at = happenings.IndexOf("destroyed by battle");
+            happenings.Remove("destroyed by a card effect");
+            happenings[at] = "destroyed by battle or card effect";
+        }
+        if (summons.Count > 0) clauses.Add($"this card is {Or(summons)} Summoned");
+        if (happenings.Count > 0) clauses.Add($"this card is {Or(happenings)}");
+        clauses.AddRange(Doings.Where(e => ticked.Contains(e)).Select(e => $"this card {e.Label}"));
+        return clauses.Count == 0 ? "If (tick what happens to this card)" : "If " + string.Join(", or if ", clauses);
+    }
+
+    public override void Compile(BlockContext ctx)
+    {
+        var ticked = Ticked(ctx.Args);
+        if (ticked.Count == 0)
+        {
+            ctx.Effect.Error($"\"{Name}\": tick at least one thing that starts the effect.");
+            return;
+        }
+        if (ticked.Any(e => e.Monster)) Zones.RequireMonster(ctx, Name);
+        // One event per code; a code whose ticks all have checks only starts the effect when one of them holds.
+        var codes = ticked.GroupBy(e => e.Code).ToList();
+        Setup(ctx, codes[0].Key, codes.Skip(1).Select(g => g.Key).ToArray());
+        string? Check(IGrouping<string, Event> g) => g.Any(e => e.Check is null) ? null : string.Join(" or ", g.Select(e => $"({e.Check})"));
+        if (codes.Count == 1)
+        {
+            if (Check(codes[0]) is { } only) ctx.Effect.Conditions.Add(codes[0].Count() == 1 ? codes[0].First().Check! : $"({only})");
+        }
+        else if (codes.Any(g => Check(g) is not null))
+        {
+            // Each copy of the effect has its own code: e:GetCode() says which event started it.
+            ctx.Effect.Conditions.Add("(" + string.Join(" or ", codes.Select(g => Check(g) is { } c ? $"(e:GetCode()=={g.Key} and ({c}))" : $"e:GetCode()=={g.Key}")) + ")");
+        }
+    }
+}
