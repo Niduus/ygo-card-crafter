@@ -21,7 +21,12 @@ public enum BlockKind
 
 public enum ParamType { Integer, Choice, Bool, Cards }
 
-public sealed record ChoiceOption(string Value, string Label);
+/// <param name="Label">Wording used in card text. May be empty, e.g. "from anywhere" reads as nothing.</param>
+/// <param name="Ui">Wording shown in the editor when it should differ from <paramref name="Label"/>.</param>
+public sealed record ChoiceOption(string Value, string Label, string? Ui = null)
+{
+    public string Display => Ui ?? (Label.Trim().Length > 0 ? Label.Trim() : Value);
+}
 
 /// <summary>One fill-in-the-blank slot in a block's sentence, written as {key} in the sentence.</summary>
 public sealed class ParamSpec

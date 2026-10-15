@@ -7,7 +7,7 @@ internal static class Zones
 {
     public static readonly ChoiceOption[] RangeChoices =
     [
-        new("auto", "where it is played"),
+        new("auto", "on the field"),
         new("monster_zone", "in the Monster Zone"),
         new("hand", "in the hand"),
         new("graveyard", "in the GY"),
@@ -99,7 +99,7 @@ public sealed class SentToGraveTrigger : SelfTriggerBlock
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Choice("from", "From",
-            new("any", ""),
+            new("any", "", "from anywhere"),
             new("field", " from the field"),
             new("hand", " from the hand"),
             new("deck", " from the Deck"),
@@ -130,7 +130,7 @@ public sealed class DestroyedTrigger : SelfTriggerBlock
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Choice("by", "By",
-            new("any", ""),
+            new("any", "", "by anything"),
             new("battle", " by battle"),
             new("effect", " by a card effect"),
             new("opponent", " by an opponent's card")),

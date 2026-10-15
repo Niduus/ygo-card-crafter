@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  DOTNET_NOLOGO: true
+  # The open-source engine the script tests run against. Bump these to test against newer engine versions.
+  YGOPRO_CORE_REF: c4ccbab40702e4af6da4f4ad1d7a04c3ea80ad02
+  YGOPRO_SCRIPTS_REF: 14745a5a3908861bba65d79cf9c542605c83d9cb
+
+jobs:
+  test-linux:
+    name: Tests (with real-engine duels)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Install engine build dependencies
+        run: sudo apt-get update && sudo apt-get install -y liblua5.4-dev libsqlite3-dev
+      - name: Fetch ygopro-core and ygopro-scripts
+        run: |
+          git clone --filter=blob:none https://github.com/Fluorohydride/ygopro-core.git engine/core
+          git -C engine/core checkout "$YGOPRO_CORE_REF"
+          git clone --filter=blob:none https://github.com/Fluorohydride/ygopro-scripts.git engine/scripts
+          git -C engine/scripts checkout "$YGOPRO_SCRIPTS_REF"
+      - name: Build engine harness
+        run: tools/engine-harness/build.sh engine/core engine/harness
+      - name: Test
+        env:
+          CARDCRAFTER_HARNESS: ${{ github.workspace }}/engine/harness
+          CARDCRAFTER_ENGINE_SCRIPTS: ${{ github.workspace }}/engine/scripts
+          CARDCRAFTER_SCREENSHOTS: ${{ github.workspace }}/screenshots
+        run: dotnet test --configuration Release
+      - name: Upload UI screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: screenshots/
+
+  build-windows:
+    name: Windows build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Test
+        run: dotnet test --configuration Release
+      - name: Publish single-file exe
+        run: >
+          dotnet publish src/CardCrafter.App -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true -p:DebugType=none -o publish
+      - uses: actions/upload-artifact@v4
+        with:
+          name: YGOCardCrafter-win-x64
+          path: publish/YGOCardCrafter.exe

@@ -5,3 +5,5 @@ publish/
 .vs/
 .idea/
 TestResults/
+engine/
+screenshots/

@@ -146,7 +146,7 @@ public sealed class SpecialSummonAction : CardGroupAction
     [
         .. base.BuildParams(),
         ParamSpec.Choice("position", "Position",
-            new("faceup", ""),
+            new("faceup", "", "face-up"),
             new("attack", "in Attack Position"),
             new("defense", "in Defense Position")),
     ];
@@ -323,7 +323,7 @@ public sealed class SpecialSummonSelfAction : ActionBlock
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Choice("position", "Position",
-            new("faceup", ""),
+            new("faceup", "", "face-up"),
             new("attack", "in Attack Position"),
             new("defense", "in Defense Position")),
     ];
@@ -363,7 +363,7 @@ public sealed class ChangeSelfStatsAction : ActionBlock
         ParamSpec.Choice("dir", "Gains/loses", new("gain", "gains"), new("lose", "loses")),
         ParamSpec.Int("amount", "Amount", 500, 1, 99999),
         ParamSpec.Choice("stat", "Stat", new("atk", "ATK"), new("def", "DEF"), new("both", "ATK/DEF")),
-        ParamSpec.Choice("duration", "Until", new("turn", "until the end of this turn"), new("always", "")),
+        ParamSpec.Choice("duration", "Until", new("turn", "until the end of this turn"), new("always", "", "while face-up")),
     ];
 
     public override void Compile(BlockContext ctx)

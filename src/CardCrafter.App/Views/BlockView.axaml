@@ -1,0 +1,58 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CardCrafter.App.ViewModels"
+             xmlns:blocks="using:CardCrafter.Core.Blocks"
+             xmlns:views="using:CardCrafter.App.Views"
+             x:Class="CardCrafter.App.Views.BlockView"
+             x:DataType="vm:BlockViewModel">
+  <StackPanel>
+    <ComboBox Classes="inline" IsVisible="{Binding ShowLink}" ItemsSource="{Binding LinkOptions}" SelectedItem="{Binding Link}"
+              FontSize="12" Margin="16,2,0,0" ToolTip.Tip="How this action connects to the one above it" />
+    <Border x:Name="Row" Classes="block" ToolTip.Tip="{Binding Help}">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <TextBlock Grid.Column="0" Text="{Binding KindLabel}" FontSize="10" FontWeight="Bold" Opacity="0.6"
+                   VerticalAlignment="Center" Margin="0,0,6,0" MinWidth="34" />
+        <ItemsControl Grid.Column="1" ItemsSource="{Binding Segments}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.DataTemplates>
+            <DataTemplate DataType="vm:TextSegmentViewModel">
+              <TextBlock Classes="sentence" Text="{Binding Text}" />
+            </DataTemplate>
+            <DataTemplate DataType="vm:IntSegmentViewModel">
+              <NumericUpDown Classes="inline" Value="{Binding Value}" Minimum="{Binding Minimum}" Maximum="{Binding Maximum}"
+                             Increment="{Binding Increment}" FormatString="0" Width="110" ToolTip.Tip="{Binding Label}" />
+            </DataTemplate>
+            <DataTemplate DataType="vm:ChoiceSegmentViewModel">
+              <ComboBox Classes="inline" ItemsSource="{Binding Choices}" SelectedItem="{Binding Selected}" ToolTip.Tip="{Binding Label}">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate DataType="blocks:ChoiceOption">
+                    <TextBlock Text="{Binding Display}" />
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+            </DataTemplate>
+            <DataTemplate DataType="vm:BoolSegmentViewModel">
+              <CheckBox Content="{Binding Label}" IsChecked="{Binding Value}" Margin="6,0" VerticalAlignment="Center" />
+            </DataTemplate>
+            <DataTemplate DataType="vm:CardsSegmentViewModel">
+              <Button Classes="chip" Content="{Binding Summary}" ToolTip.Tip="Click to choose which cards">
+                <Button.Flyout>
+                  <Flyout Placement="BottomEdgeAlignedLeft">
+                    <views:FilterEditorView DataContext="{Binding Editor}" />
+                  </Flyout>
+                </Button.Flyout>
+              </Button>
+            </DataTemplate>
+          </ItemsControl.DataTemplates>
+        </ItemsControl>
+        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+          <Button Classes="icon" Content="↑" Command="{Binding MoveUpCommand}" IsVisible="{Binding !IsTrigger}" ToolTip.Tip="Move up" />
+          <Button Classes="icon" Content="↓" Command="{Binding MoveDownCommand}" IsVisible="{Binding !IsTrigger}" ToolTip.Tip="Move down" />
+          <Button Classes="icon" Content="✕" Command="{Binding RemoveCommand}" ToolTip.Tip="Remove this block" />
+        </StackPanel>
+      </Grid>
+    </Border>
+  </StackPanel>
+</UserControl>

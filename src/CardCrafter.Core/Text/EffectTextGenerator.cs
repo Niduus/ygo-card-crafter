@@ -21,7 +21,7 @@ public static partial class EffectTextGenerator
         bool passive = trigger is WhileFaceUpTrigger;
         bool activation = trigger is ActivateTrigger;
         bool optional = trigger is not (FlipTrigger or ActivateTrigger or WhileFaceUpTrigger)
-                        && !(effect.When.Values.TryGetValue("optional", out var o) && o == "false");
+                        && !(effect.When.Values.TryGetValue("optional", out var o) && string.Equals(o, "false", StringComparison.OrdinalIgnoreCase));
 
         var head = Head(trigger, effect, pack, passive);
         if (effect.Limit == OncePerTurn.Soft && !passive)

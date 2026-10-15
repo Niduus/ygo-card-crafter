@@ -1,0 +1,96 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Styles.Resources>
+    <SolidColorBrush x:Key="WhenBrush" Color="#3B82F6" />
+    <SolidColorBrush x:Key="IfBrush" Color="#14B8A6" />
+    <SolidColorBrush x:Key="CostBrush" Color="#F59E0B" />
+    <SolidColorBrush x:Key="DoBrush" Color="#22C55E" />
+    <SolidColorBrush x:Key="AlwaysBrush" Color="#A855F7" />
+    <SolidColorBrush x:Key="SheetBrush" Color="#1E1F26" />
+    <SolidColorBrush x:Key="RowBrush" Color="#272934" />
+    <SolidColorBrush x:Key="ErrorBrush" Color="#F87171" />
+    <SolidColorBrush x:Key="MutedBrush" Color="#9CA3AF" />
+    <FontFamily x:Key="CodeFont">Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace</FontFamily>
+  </Styles.Resources>
+
+  <!-- Column headers on the event sheet -->
+  <Style Selector="TextBlock.column">
+    <Setter Property="FontWeight" Value="Bold" />
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="Margin" Value="2,8,0,4" />
+  </Style>
+  <Style Selector="TextBlock.column.when"><Setter Property="Foreground" Value="{StaticResource WhenBrush}" /></Style>
+  <Style Selector="TextBlock.column.if"><Setter Property="Foreground" Value="{StaticResource IfBrush}" /></Style>
+  <Style Selector="TextBlock.column.cost"><Setter Property="Foreground" Value="{StaticResource CostBrush}" /></Style>
+  <Style Selector="TextBlock.column.do"><Setter Property="Foreground" Value="{StaticResource DoBrush}" /></Style>
+
+  <!-- A placed block: coloured strip on the left like an event-sheet row -->
+  <Style Selector="Border.block">
+    <Setter Property="Background" Value="{StaticResource RowBrush}" />
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="BorderThickness" Value="4,0,0,0" />
+    <Setter Property="Padding" Value="8,4" />
+    <Setter Property="Margin" Value="0,2" />
+  </Style>
+  <Style Selector="Border.block.Trigger"><Setter Property="BorderBrush" Value="{StaticResource WhenBrush}" /></Style>
+  <Style Selector="Border.block.Condition"><Setter Property="BorderBrush" Value="{StaticResource IfBrush}" /></Style>
+  <Style Selector="Border.block.Cost"><Setter Property="BorderBrush" Value="{StaticResource CostBrush}" /></Style>
+  <Style Selector="Border.block.Action"><Setter Property="BorderBrush" Value="{StaticResource DoBrush}" /></Style>
+  <Style Selector="Border.block.Passive"><Setter Property="BorderBrush" Value="{StaticResource AlwaysBrush}" /></Style>
+
+  <Style Selector="Border.effect">
+    <Setter Property="Background" Value="{StaticResource SheetBrush}" />
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="Padding" Value="12" />
+    <Setter Property="Margin" Value="0,0,0,12" />
+    <Setter Property="BorderBrush" Value="#3A3D4C" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+
+  <!-- Small square icon buttons -->
+  <Style Selector="Button.icon">
+    <Setter Property="Padding" Value="6,2" />
+    <Setter Property="MinWidth" Value="28" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="FontSize" Value="13" />
+  </Style>
+
+  <!-- "+ Add ..." buttons under each column -->
+  <Style Selector="Button.add">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="#3A3D4C" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="Padding" Value="8,3" />
+    <Setter Property="Margin" Value="0,4,0,0" />
+    <Setter Property="FontSize" Value="12" />
+  </Style>
+
+  <!-- Card-filter chips: click to edit "which cards" -->
+  <Style Selector="Button.chip">
+    <Setter Property="Background" Value="#2F3A55" />
+    <Setter Property="Foreground" Value="#C7D7FE" />
+    <Setter Property="Padding" Value="8,2" />
+    <Setter Property="CornerRadius" Value="10" />
+    <Setter Property="Margin" Value="3,1" />
+  </Style>
+
+  <Style Selector="TextBlock.sentence">
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Margin" Value="3,0" />
+  </Style>
+  <Style Selector="TextBlock.label">
+    <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="Margin" Value="0,8,0,2" />
+  </Style>
+  <Style Selector="TextBlock.h2">
+    <Setter Property="FontSize" Value="16" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Margin" Value="0,12,0,4" />
+  </Style>
+  <Style Selector="ComboBox.inline, NumericUpDown.inline">
+    <Setter Property="Margin" Value="3,1" />
+    <Setter Property="MinHeight" Value="28" />
+    <Setter Property="Padding" Value="6,2" />
+  </Style>
+</Styles>

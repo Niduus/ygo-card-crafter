@@ -36,7 +36,7 @@ public sealed class BlockInstance
 
     public BlockInstance With(string key, object value)
     {
-        Values[key] = Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? "";
+        Values[key] = value is bool b ? (b ? "true" : "false") : Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? "";
         return this;
     }
 
