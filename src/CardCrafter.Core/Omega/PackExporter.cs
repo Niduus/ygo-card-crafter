@@ -55,7 +55,14 @@ public static class PackExporter
             var compiled = ScriptCompiler.Compile(card, pack);
             var export = new CardExport { Card = card, Compile = compiled };
             result.Cards.Add(export);
-            rows.Add(CdbEncoder.Encode(card.Card, compiled.Strings, pack.Ot));
+            // A card whose text was never written gets its suggested text, so it never shows up blank in the game.
+            var data = card.Card;
+            if (string.IsNullOrWhiteSpace(data.Text) && Text.EffectTextGenerator.Generate(card, pack) is { Length: > 0 } suggested)
+            {
+                data = PackSerializer.Clone(data);
+                data.Text = suggested;
+            }
+            rows.Add(CdbEncoder.Encode(data, compiled.Strings, pack.Ot));
 
             export.Checks.AddRange(ScriptChecker.Check(compiled.Lua));
             if (compiled.HasErrors || export.Checks.Any(c => c.Severity == Severity.Error))

@@ -13,11 +13,14 @@ public static partial class EffectTextGenerator
 {
     public static string Generate(CardProject project, CardPack? pack = null)
     {
-        var lines = new List<string>();
-        if (MaterialText.Describe(project, pack) is { Length: > 0 } materials) lines.Add(materials);
-        if (RuleText(project) is { Length: > 0 } rule) lines.Add(rule);
-        lines.AddRange(project.Effects.Select(e => Describe(e, project.Card, pack)).Where(s => s.Length > 0));
-        return string.Join("\n", lines);
+        // Printed cards keep the materials on their own line; everything else is one paragraph.
+        var paragraph = new List<string>();
+        if (RuleText(project) is { Length: > 0 } rule) paragraph.Add(rule);
+        paragraph.AddRange(project.Effects.Select(e => Describe(e, project.Card, pack)).Where(s => s.Length > 0));
+        var text = string.Join(" ", paragraph);
+        return MaterialText.Describe(project, pack) is { Length: > 0 } materials
+            ? (text.Length == 0 ? materials : materials + "\n" + text)
+            : text;
     }
 
     /// <summary>
@@ -199,7 +202,7 @@ public static class SentenceCase
     private static readonly HashSet<string> OrdinaryWords = new(StringComparer.Ordinal)
     {
         "Add", "Activate", "Banish", "Destroy", "Discard", "Draw", "During", "Gain", "Gains", "If", "Inflict", "It",
-        "Pay", "Return", "Send", "Shuffle", "There", "This", "Tribute", "While", "You", "Your", "When", "Once",
+        "Pay", "Return", "Send", "Shuffle", "There", "This", "While", "You", "Your", "When", "Once",
     };
 
     /// <summary>Lowercases the first letter only when the first word is an ordinary word.</summary>

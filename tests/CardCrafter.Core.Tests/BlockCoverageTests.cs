@@ -40,6 +40,7 @@ public class BlockCoverageTests
             "When your opponent Normal or Special Summons a monster(s) during their turn (Quick Effect): You can Special Summon this card from your hand. " +
             "You can only use this effect of \"Ambusher\" once per turn.",
             EffectTextGenerator.Generate(p));
+        Assert.DoesNotContain("\n", EffectTextGenerator.Generate(p));
         var r = ScriptCompiler.Compile(p);
         Assert.False(r.HasErrors, string.Join("\n", r.Diagnostics.Select(d => d.Message)));
         Assert.Contains("SetRange(LOCATION_HAND)", r.Lua);
@@ -92,7 +93,7 @@ public class BlockCoverageTests
                 new EffectEvent { When = Block("when.event", ("event", "opp_special"), ("zone", "graveyard")), Do = [Block("do.special_summon_self", ("position", "defense"))] },
             ],
         };
-        var lines = EffectTextGenerator.Generate(p).Split('\n');
+        var lines = p.Effects.Select(e => EffectTextGenerator.Describe(e, p.Card)).ToList();
         Assert.Equal("If this card is in your GY: You can draw 1 card.", lines[0]);
         Assert.Equal("You can banish this card from your GY; draw 1 card.", lines[1]);
         Assert.Equal("If your opponent Special Summons a monster(s): You can Special Summon this card from your GY in Defense Position.", lines[2]);
@@ -121,5 +122,32 @@ public class BlockCoverageTests
         var s = new EngineScenario([.. cards]);
         foreach (var c in cards) s.Card(c.Card.Id, 0, "hand");
         s.Card(Warrior, 0, "deck", 5).Card(Fiend, 1, "hand").Card(Warrior, 1, "deck", 5).Summon(Fiend).Turns(2).AssertPasses();
+    }
+}
+
+public class ZoneWordingTests
+{
+    [Theory]
+    [InlineData(Zone.Field, "Send 3 cards your opponent controls to the GY")]
+    [InlineData(Zone.MonsterZone, "Send 3 monsters your opponent controls to the GY")]
+    [InlineData(Zone.SpellTrapZone, "Send 3 Spell/Traps your opponent controls to the GY")]
+    public void PickingZones_ChangesTheWording(Zone zones, string expected)
+    {
+        var b = BlockRegistry.Find("do.send_to_gy")!.CreateInstance();
+        b.Values["count"] = "3";
+        b.Filters["cards"] = new CardFilter { Owner = CardOwner.Opponent, Zones = zones };
+        var text = BlockRegistry.Find("do.send_to_gy")!.Describe(new BlockArgs(BlockRegistry.Find("do.send_to_gy")!, b));
+        Assert.Equal(expected, System.Text.RegularExpressions.Regex.Replace(text, @"\s+", " ").Trim());
+    }
+
+    [Fact]
+    public void ACardWithNoText_IsSavedWithItsSuggestedText()
+    {
+        using var tmp = new TempDir();
+        var pack = new CardPack { Name = "P", Cards = [Samples.PotOfGreedClone()] };
+        pack.Cards[0].Card.Text = "";
+        var result = CardCrafter.Core.Omega.PackExporter.Export(pack, tmp.Path);
+        var row = CardCrafter.Core.Database.CdbFile.Read(result.DatabasePath).Single();
+        Assert.Equal("Draw 2 cards.", row.Desc);
     }
 }

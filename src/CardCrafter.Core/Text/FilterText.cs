@@ -37,6 +37,9 @@ public static class FilterText
                 FilterCardType.Monster => "monster",
                 FilterCardType.Spell => "Spell",
                 FilterCardType.Trap => "Trap",
+                // Only the Monster Zones hold only monsters; only the Spell & Trap Zones, only Spells and Traps.
+                _ when f.Zones == Zone.MonsterZone => "monster",
+                _ when f.Zones == Zone.SpellTrapZone => "Spell/Trap",
                 _ => (f.Race != CardRace.None || f.Attribute != CardAttribute.None || f.LevelMin is not null || f.LevelMax is not null
                       || f.MonsterKind != MonsterKind.Any) ? "monster" : "card",
             };
@@ -98,7 +101,7 @@ public static class FilterText
         if (IsFieldOnly(f))
         {
             // Monsters on the field are always in a Monster Zone, so only Spell & Trap Zones need naming.
-            if (f.Zones == Zone.SpellTrapZone)
+            if (f.Zones == Zone.SpellTrapZone && f.CardType == FilterCardType.Monster)
             {
                 return f.Owner switch
                 {

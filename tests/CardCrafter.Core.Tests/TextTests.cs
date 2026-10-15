@@ -9,7 +9,9 @@ public class TextTests
     public void DragonCommander_ReadsLikeCardText()
     {
         var p = Samples.DragonCommander();
-        var lines = EffectTextGenerator.Generate(p, Samples.Pack(p)).Split('\n');
+        var lines = p.Effects.Select(e => EffectTextGenerator.Describe(e, p.Card, Samples.Pack(p))).ToList();
+        // On the card the effects run together in one paragraph.
+        Assert.Equal(string.Join(" ", lines), EffectTextGenerator.Generate(p, Samples.Pack(p)));
         Assert.Equal(
             "If this card is Normal or Special Summoned: You can add 1 Level 4 or lower Dragon monster from your Deck to your hand. " +
             "You can only use this effect of \"Dragon Commander\" once per turn.", lines[0]);
