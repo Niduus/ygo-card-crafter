@@ -53,6 +53,23 @@ public class MainWindowTests
     }
 
     [AvaloniaFact]
+    public void EffectsTab_HandWrittenScript_OffersBlocks()
+    {
+        var (window, vm) = Open();
+        var card = vm.SelectedCard!;
+        var effects = card.Effects.Count;
+        card.EjectToLuaCommand.Execute(null);
+        SelectTab(window, "Effects");
+        var button = window.GetVisualDescendants().OfType<Button>().First(b => b.Name == "TranslateScriptButton");
+        Assert.True(button.IsEffectivelyVisible);
+        Shot(window, "18-effects-script-to-blocks");
+        card.TranslateScriptCommand.Execute(null);
+        // Either the script became blocks again, or it stays script and the report says which effects have none.
+        if (card.UsesBlocks) Assert.Equal(effects, card.Effects.Count);
+        else Assert.Contains("\u2022", card.TranslationReport);
+    }
+
+    [AvaloniaFact]
     public void CardTab_LinkPendulumAndSpellLayouts()
     {
         var (window, vm) = Open();

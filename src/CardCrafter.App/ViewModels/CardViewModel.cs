@@ -394,8 +394,8 @@ public sealed partial class CardViewModel : ObservableObject
     }
 
     // ---- summon procedure
-    public FilterEditorViewModel MaterialFilter { get; }
-    public FilterEditorViewModel TunerFilter { get; }
+    public FilterEditorViewModel MaterialFilter { get; private set; }
+    public FilterEditorViewModel TunerFilter { get; private set; }
     public decimal? MinMaterials { get => Project.Procedure.MinMaterials; set { if (Project.Procedure.MinMaterials == (int)(value ?? 1)) return; Project.Procedure.MinMaterials = (int)(value ?? 1); OnPropertyChanged(); Changed(); } }
     public decimal? MaxMaterials { get => Project.Procedure.MaxMaterials; set { if (Project.Procedure.MaxMaterials == (int)(value ?? 0)) return; Project.Procedure.MaxMaterials = (int)(value ?? 0); OnPropertyChanged(); Changed(); } }
 
@@ -535,6 +535,45 @@ public sealed partial class CardViewModel : ObservableObject
     [RelayCommand]
     private void BackToBlocks() => UseCustomLua = false;
 
+    /// <summary>Why the last "Turn the script into blocks" left the script as it is.</summary>
+    [ObservableProperty] private string _translationReport = "";
+    public bool HasTranslationReport => TranslationReport.Length > 0;
+    partial void OnTranslationReportChanged(string value) => OnPropertyChanged(nameof(HasTranslationReport));
+
+    /// <summary>
+    /// Reads the hand-written script effect by effect and, when every effect has exact blocks, switches the card
+    /// to those blocks. The script is kept on the Script tab. Otherwise nothing changes and the report says which
+    /// effects the blocks can't express.
+    /// </summary>
+    [RelayCommand]
+    private void TranslateScript()
+    {
+        var result = ScriptTranslator.ApplyTo(Project, _pack(), out var applied);
+        if (applied)
+        {
+            ReloadFromProject();
+            TranslationReport = "";
+            return;
+        }
+        TranslationReport = result.Pieces.Count == 0
+            ? "The script couldn't be read effect by effect, so it stays as script."
+            : result.Complete
+                ? "Every effect matched blocks, but the blocks didn't compile cleanly, so the script stays as it is."
+                : $"{result.TranslatedCount} of {result.Pieces.Count} parts have blocks; the card needs all of them, so it stays as script.\n"
+                  + string.Join("\n", ScriptTranslator.Untranslated(result).Select(r => "• " + r));
+    }
+
+    /// <summary>Shows the project's effects and procedure again after they were replaced as a whole.</summary>
+    public void ReloadFromProject()
+    {
+        Effects.Clear();
+        foreach (var e in Project.Effects) Effects.Add(new EffectViewModel(e, this, _pack, Changed));
+        MaterialFilter = new FilterEditorViewModel(Project.Procedure.MaterialFilter, Zone.None, true, _pack, Changed);
+        TunerFilter = new FilterEditorViewModel(Project.Procedure.TunerFilter, Zone.None, true, _pack, Changed);
+        OnPropertyChanged(string.Empty);
+        Changed();
+    }
+
     /// <summary>
     /// Adds one effect taken from another card's script. The card switches to its hand-written script first
     /// (keeping everything its blocks made), then the effect and the functions it needs are added to it.
@@ -543,5 +582,20 @@ public sealed partial class CardViewModel : ObservableObject
     {
         if (!UseCustomLua) EjectToLua();
         CustomLua = LuaPieces.Insert(CustomLua, piece);
+    }
+
+    /// <summary>
+    /// Adds an effect translated from another card's script as blocks. A card on its hand-written script gets the
+    /// script piece instead, since its blocks aren't used. Returns true when it was added as blocks.
+    /// </summary>
+    public bool AddTranslatedEffect(TranslatedPiece translated)
+    {
+        if (UseCustomLua || translated.Effect is null)
+        {
+            AddScriptPiece(translated.Piece);
+            return false;
+        }
+        AddEffectModel(PackSerializer.Clone(translated.Effect));
+        return true;
     }
 }

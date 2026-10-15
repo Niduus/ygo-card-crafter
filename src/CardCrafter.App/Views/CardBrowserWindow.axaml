@@ -2,7 +2,6 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:CardCrafter.App.ViewModels"
         xmlns:omega="using:CardCrafter.Core.Omega"
-        xmlns:compiler="using:CardCrafter.Core.Compiler"
         x:Class="CardCrafter.App.Views.CardBrowserWindow"
         x:DataType="vm:CardBrowserViewModel"
         Title="Card browser — YGO Card Crafter"
@@ -74,18 +73,19 @@
             <Button Content="Get the official script from ygopro-scripts (GitHub)" Command="{Binding FetchScriptCommand}"
                     IsVisible="{Binding CanFetchScript}" HorizontalAlignment="Left" />
             <TextBlock IsVisible="{Binding HasScript}" TextWrapping="Wrap" FontSize="12">
-              <Run Text="Each part is one effect with the functions it needs. " /><Run Text="Add to " /><Run Text="{Binding CurrentCardName}" FontWeight="SemiBold" /><Run Text=" puts it into that card's script, renamed so nothing clashes." />
+              <Run Text="Each part is one effect with the functions it needs. " /><Run Text="Add to " /><Run Text="{Binding CurrentCardName}" FontWeight="SemiBold" /><Run Text=" adds it as blocks when it has exact blocks, otherwise into that card's script, renamed so nothing clashes." />
             </TextBlock>
             <ItemsControl ItemsSource="{Binding Pieces}">
               <ItemsControl.ItemTemplate>
-                <DataTemplate DataType="compiler:ScriptPiece">
+                <DataTemplate DataType="vm:BrowserPiece">
                   <Border Background="#1A1B22" CornerRadius="6" Padding="10,8" Margin="0,0,0,8" BorderBrush="#2A2C36" BorderThickness="1">
                     <StackPanel Spacing="6">
                       <Grid ColumnDefinitions="*,Auto">
-                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" />
-                        <Button Grid.Column="1" Content="Add to the selected card"
+                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,10,0" />
+                        <Button Grid.Column="1" Content="{Binding AddLabel}" VerticalAlignment="Center"
                                 Command="{Binding $parent[Window].((vm:CardBrowserViewModel)DataContext).AddPieceCommand}" CommandParameter="{Binding}" />
                       </Grid>
+                      <TextBlock Text="{Binding Status}" Foreground="{Binding StatusColor}" FontSize="12" TextWrapping="Wrap" />
                       <Expander Header="Show the code" HorizontalAlignment="Stretch">
                         <SelectableTextBlock Text="{Binding Preview}" FontFamily="Cascadia Mono, Consolas, Menlo, monospace" FontSize="12" TextWrapping="NoWrap" />
                       </Expander>

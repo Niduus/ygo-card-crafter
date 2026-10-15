@@ -1,11 +1,28 @@
 using System.Collections.ObjectModel;
 using CardCrafter.Core.Compiler;
+using CardCrafter.Core.Database;
 using CardCrafter.Core.Model;
 using CardCrafter.Core.Omega;
+using CardCrafter.Core.Text;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
 namespace CardCrafter.App.ViewModels;
+
+/// <summary>One effect of a browsed card's script, and whether it has exact blocks.</summary>
+public sealed class BrowserPiece(TranslatedPiece translated, CardData card)
+{
+    public TranslatedPiece Translated { get; } = translated;
+    public string Title => Translated.Piece.Title;
+    public string Preview => Translated.Piece.Preview;
+    public bool AsBlocks => Translated.Effect is not null;
+    public string AddLabel => AsBlocks ? "Add as blocks" : "Add as script";
+    public string Status => Translated.Effect is { } e
+        ? "Becomes blocks: " + EffectTextGenerator.Describe(e, card)
+        : Translated.Translated ? "Needs no blocks: Card Crafter does this itself."
+        : "Stays script: " + Translated.Reason + ".";
+    public string StatusColor => AsBlocks || Translated.Translated ? "#8FD19E" : "#E0B872";
+}
 
 /// <summary>
 /// The card browser: searches every card in YGO Omega's databases by name and by words in its text, shows a card
@@ -36,7 +53,7 @@ public sealed partial class CardBrowserViewModel : ObservableObject
     [ObservableProperty] private string _scriptStatus = "";
     [ObservableProperty] private string? _script;
     [ObservableProperty] private string? _scriptSource;
-    public ObservableCollection<ScriptPiece> Pieces { get; } = [];
+    public ObservableCollection<BrowserPiece> Pieces { get; } = [];
 
     public bool HasSelection => Selected is not null;
     public bool HasScript => Script is not null;
@@ -121,10 +138,14 @@ public sealed partial class CardBrowserViewModel : ObservableObject
     {
         Script = lua;
         ScriptSource = from;
-        foreach (var piece in LuaPieces.Split(lua, Selected!.Id, Selected.Row.Strings)) Pieces.Add(piece);
+        var data = CdbEncoder.Decode(Selected!.Row);
+        var translation = ScriptTranslator.Translate(lua, Selected.Id, data, Selected.Row.Strings);
+        foreach (var piece in translation.Pieces) Pieces.Add(new BrowserPiece(piece, data));
         ScriptStatus = Pieces.Count == 0
             ? $"Script from {from}. It couldn't be split into effects, but \"Use as a new card\" copies it whole."
-            : $"Script from {from}: {Pieces.Count} part{(Pieces.Count == 1 ? "" : "s")}.";
+            : $"Script from {from}: {Pieces.Count} part{(Pieces.Count == 1 ? "" : "s")}, "
+              + (translation.Complete ? (Pieces.Count == 1 ? "which has" : "all with") + " exact blocks, so \"Use as a new card\" makes it with blocks."
+                 : $"{translation.TranslatedCount} with exact blocks. \"Use as a new card\" keeps it as script.");
     }
 
     /// <summary>Gets the official script from the ygopro-scripts repository on GitHub when Omega's folders don't have it.</summary>
@@ -148,7 +169,7 @@ public sealed partial class CardBrowserViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void AddPiece(ScriptPiece piece) => _main.AddScriptPieceToSelected(piece);
+    private void AddPiece(BrowserPiece piece) => _main.AddTranslatedPieceToSelected(piece.Translated);
 
     [RelayCommand]
     private void CopyText()

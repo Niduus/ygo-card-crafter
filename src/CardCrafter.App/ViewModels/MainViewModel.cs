@@ -842,10 +842,14 @@ public sealed partial class MainViewModel : ObservableObject
         data.DatabaseScript = null;
         var project = new CardProject { Card = data, ScriptStrings = source.Row.Strings.ToList() };
         while (project.ScriptStrings.Count > 0 && project.ScriptStrings[^1].Length == 0) project.ScriptStrings.RemoveAt(project.ScriptStrings.Count - 1);
+        TranslationResult? translation = null;
+        bool asBlocks = false;
         if (script is not null)
         {
             project.UseCustomLua = true;
             project.CustomLua = LuaPieces.Retarget(script, source.Id, newId);
+            // Established cards come in as blocks when every effect has exact blocks; the script is kept either way.
+            translation = ScriptTranslator.ApplyTo(project, _pack, out asBlocks);
         }
         if (Inventory?.BestImageFolder is { } arts)
             foreach (var ext in new[] { ".jpg", ".png" })
@@ -857,10 +861,38 @@ public sealed partial class MainViewModel : ObservableObject
         MarkDirty();
         Status = script is null
             ? $"Added a copy of \"{source.Name}\" with passcode {newId}. It had no script, so build its effects on the Effects tab."
-            : $"Added a copy of \"{source.Name}\" with passcode {newId}. Its script is on the Script tab; change anything you like.";
+            : asBlocks
+                ? $"Added a copy of \"{source.Name}\" with passcode {newId}. Every effect became blocks on the Effects tab; the original script is kept on the Script tab."
+                : $"Added a copy of \"{source.Name}\" with passcode {newId}. Its script is on the Script tab"
+                  + (translation is { Pieces.Count: > 0 } t ? $" ({t.TranslatedCount} of {t.Pieces.Count} parts have blocks, so it stays as script)" : "")
+                  + "; change anything you like.";
     }
 
     /// <summary>Adds one effect from another card's script to the selected card.</summary>
+    public void AddTranslatedPieceToSelected(TranslatedPiece translated)
+    {
+        if (SelectedCard is not { } card)
+        {
+            Status = "Select a card in your pack first.";
+            return;
+        }
+        if (translated.Effect is null)
+        {
+            AddScriptPieceToSelected(translated.Piece);
+            return;
+        }
+        try
+        {
+            Status = card.AddTranslatedEffect(translated)
+                ? $"Added \"{translated.Piece.Title}\" from {translated.Piece.SourceId} to \"{card.Name}\" as blocks (Effects tab)."
+                : $"Added \"{translated.Piece.Title}\" from {translated.Piece.SourceId} to \"{card.Name}\"'s hand-written script, since that card doesn't use blocks.";
+        }
+        catch (InvalidOperationException ex)
+        {
+            Status = $"Couldn't add it: {ex.Message}";
+        }
+    }
+
     public void AddScriptPieceToSelected(ScriptPiece piece)
     {
         if (SelectedCard is not { } card)

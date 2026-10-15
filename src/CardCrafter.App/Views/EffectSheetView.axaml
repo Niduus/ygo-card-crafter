@@ -16,7 +16,16 @@
     </Border>
 
     <Border DockPanel.Dock="Top" IsVisible="{Binding UseCustomLua}" Background="#3B2F12" CornerRadius="6" Padding="10" Margin="0,0,0,10">
-      <TextBlock TextWrapping="Wrap" Text="This card uses a hand-written script (Script tab), so the blocks below are not used. Choose &quot;Back to blocks&quot; on the Script tab to use them again." />
+      <StackPanel Spacing="8">
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,12,0"
+                     Text="This card uses a hand-written script (Script tab), so the blocks below are not used. Choose &quot;Back to blocks&quot; on the Script tab to use them again." />
+          <Button Grid.Column="1" Name="TranslateScriptButton" Content="Turn the script into blocks" VerticalAlignment="Center"
+                  Command="{Binding TranslateScriptCommand}"
+                  ToolTip.Tip="Reads the script effect by effect. When every effect has exact blocks, the card switches to them (the script stays on the Script tab). Nothing is guessed: if any effect has no exact blocks, nothing changes and you're told which." />
+        </Grid>
+        <SelectableTextBlock IsVisible="{Binding HasTranslationReport}" Text="{Binding TranslationReport}" TextWrapping="Wrap" FontSize="12" Foreground="#E8D9B0" />
+      </StackPanel>
     </Border>
 
     <ScrollViewer>

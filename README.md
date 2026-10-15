@@ -122,6 +122,12 @@ It looks for YGO Omega's texture names, with or without an export number (`Effec
 When a frame comes in a standard and a full-art version, the standard one is used. Everything is placed at positions
 measured from those textures. Without textures the preview is a plain placeholder.
 
+When no textures are chosen, Card Crafter looks for these files among the loose files in your YGO Omega folder and
+uses them if they are there. To have a copy of the app that always carries your textures, drag your texture zip onto
+`tools\build-my-exe.cmd` (needs the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)): it builds
+`publish-private\YGOCardCrafter.exe` with the zip inside. That exe is for you only; the zip stays in the git-ignored
+`private\` folder and is never part of the public download.
+
 **Card fonts.** Printed cards use Matrix Small Caps (names), ITC Stone Serif Small Caps Bold (type line, ATK/DEF),
 Matrix Book (card text) and Stone Serif Italic (Normal monster text). These are commercial fonts, so they aren't
 included: Card Crafter uses them when they are installed on your PC or are in the texture zip/folder (`.ttf`, `.otf`),
@@ -148,7 +154,14 @@ the tests.
 and by card text: every word must appear, "quoted phrases" match exactly, so `negate` lists every card whose text says
 negate. Pick a card to see its text and its script split into its effects, each with the functions it needs:
 **Use as a new card** copies the whole card (stats, text, art, script) into your pack with a new passcode, and
-**Add to the selected card** puts one effect into the card you're making, renamed so nothing clashes. When Omega's
+**Add as script** puts one effect into the card you're making, renamed so nothing clashes.
+
+Each effect is also read for blocks: when its trigger, limit, condition, cost, targets and actions match blocks exactly,
+the browser says **Becomes blocks** with the effect's wording, and **Add as blocks** adds it to the Effects tab as
+WHEN/IF/COST/DO blocks you can change. When every effect of a card has exact blocks, **Use as a new card** makes the
+copy with blocks (the original script is kept on the Script tab). Effects without exact blocks say why and stay script,
+so a translation never changes what a card does. A card on a hand-written script can try the same from the Effects
+tab with **Turn the script into blocks**. When Omega's
 folders have no script for a card, the official one can be fetched from
 [ygopro-scripts](https://github.com/Fluorohydride/ygopro-scripts). **Browse a database file…** searches any `.db`/`.cdb`.
 
