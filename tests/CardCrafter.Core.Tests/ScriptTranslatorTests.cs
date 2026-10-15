@@ -91,23 +91,30 @@ public class ScriptTranslatorTests
     public void TranslationsOfOfficialScriptsCompile()
     {
         int scripts = 0, complete = 0, pieces = 0, translated = 0;
+        // With a card database (CARDCRAFTER_CARDS_CDB), each script is read as its real card: Spell, Equip, Fusion...
+        var real = Environment.GetEnvironmentVariable("CARDCRAFTER_CARDS_CDB") is { } cdb && File.Exists(cdb)
+            ? CardCrafter.Core.Database.CdbFile.Read(cdb).GroupBy(r => r.Id).ToDictionary(g => g.Key, g => g.First())
+            : [];
         var reasons = new Dictionary<string, int>();
         var details = new Dictionary<string, int>();
+        var examples = new Dictionary<string, List<long>>();
         foreach (var file in Directory.EnumerateFiles(EngineScenario.EngineScripts!, "c*.lua"))
         {
             if (!long.TryParse(Path.GetFileNameWithoutExtension(file)[1..], out var id)) continue;
-            var card = new CardData { Id = 100002000, Name = "T", Level = 4 };
+            var card = real.TryGetValue(id, out var row) ? CardCrafter.Core.Database.CdbEncoder.Decode(row) : new CardData { Name = "T", Level = 4 };
+            card.Id = 100002000;
             var result = ScriptTranslator.Translate(File.ReadAllText(file), id, card);
             if (result.Pieces.Count == 0) continue;
             scripts++;
             pieces += result.Pieces.Count;
             translated += result.TranslatedCount;
-            foreach (var piece in result.Pieces.Where(p => p.Effect is not null))
+            foreach (var effect in result.Pieces.SelectMany(p => p.Effects))
             {
                 // Each translated effect compiles to a valid script on a card of a fitting kind.
-                foreach (var kind in new[] { CardKind.Monster, CardKind.Spell, CardKind.Trap })
+                foreach (var kind in new[] { card.Kind, CardKind.Monster, CardKind.Spell, CardKind.Trap })
                 {
-                    var p = new CardProject { Card = new CardData { Id = 100002000, Name = "T", Level = 4, Kind = kind }, Effects = [piece.Effect!] };
+                    var data = kind == card.Kind ? card : new CardData { Id = 100002000, Name = "T", Level = 4, Kind = kind };
+                    var p = new CardProject { Card = data, Effects = [effect] };
                     var r = ScriptCompiler.Compile(p);
                     if (r.HasErrors) continue;
                     Assert.DoesNotContain(ScriptChecker.Check(r.Lua), d => d.Severity == Severity.Error);
@@ -121,13 +128,15 @@ public class ScriptTranslatorTests
                 reasons[key] = reasons.GetValueOrDefault(key) + 1;
                 var detail = System.Text.RegularExpressions.Regex.Replace(r.Reason ?? "", @"\d{4,}", "N");
                 details[detail] = details.GetValueOrDefault(detail) + 1;
+                if (!examples.TryGetValue(detail, out var ids)) examples[detail] = ids = [];
+                if (ids.Count < 4 && !ids.Contains(id)) ids.Add(id);
             }
         }
         Console.WriteLine($"{complete} of {scripts} official scripts translate completely; {translated} of {pieces} effects.");
         if (Environment.GetEnvironmentVariable("CARDCRAFTER_TRANSLATION_REPORT") is { } report)
         {
             File.WriteAllLines(report, reasons.OrderByDescending(r => r.Value).Select(r => $"{r.Value}\t{r.Key}"));
-            File.WriteAllLines(Path.ChangeExtension(report, ".detail.txt"), details.OrderByDescending(r => r.Value).Take(400).Select(r => $"{r.Value}\t{r.Key}"));
+            File.WriteAllLines(Path.ChangeExtension(report, ".detail.txt"), details.OrderByDescending(r => r.Value).Take(5000).Select(r => $"{r.Value}\t{r.Key}\t{string.Join(",", examples[r.Key])}"));
         }
         Assert.True(complete > 250, $"{complete} of {scripts}");
     }

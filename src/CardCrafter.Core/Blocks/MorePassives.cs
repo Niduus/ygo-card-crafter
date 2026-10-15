@@ -324,7 +324,7 @@ public sealed class SummonedByCondition : ConditionBlock
         ParamSpec.Choice("how", "How",
             new("link", "Link Summoned"), new("synchro", "Synchro Summoned"), new("xyz", "Xyz Summoned"),
             new("fusion", "Fusion Summoned"), new("ritual", "Ritual Summoned"), new("pendulum", "Pendulum Summoned"),
-            new("normal", "Normal Summoned"), new("from_hand", "Special Summoned from the hand"),
+            new("normal", "Normal Summoned"), new("tribute", "Tribute Summoned"), new("from_hand", "Special Summoned from the hand"),
             new("from_gy", "Special Summoned from the GY"), new("from_extra", "Special Summoned from the Extra Deck")),
     ];
 
@@ -338,6 +338,7 @@ public sealed class SummonedByCondition : ConditionBlock
         "ritual" => "e:GetHandler():IsSummonType(SUMMON_TYPE_RITUAL)",
         "pendulum" => "e:GetHandler():IsSummonType(SUMMON_TYPE_PENDULUM)",
         "normal" => "e:GetHandler():IsSummonType(SUMMON_TYPE_NORMAL)",
+        "tribute" => "e:GetHandler():IsSummonType(SUMMON_TYPE_ADVANCE)",
         "from_hand" => "e:GetHandler():IsSummonType(SUMMON_TYPE_SPECIAL) and e:GetHandler():IsSummonLocation(LOCATION_HAND)",
         "from_gy" => "e:GetHandler():IsSummonType(SUMMON_TYPE_SPECIAL) and e:GetHandler():IsSummonLocation(LOCATION_GRAVE)",
         "from_extra" => "e:GetHandler():IsSummonType(SUMMON_TYPE_SPECIAL) and e:GetHandler():IsSummonLocation(LOCATION_EXTRA)",
@@ -348,5 +349,116 @@ public sealed class SummonedByCondition : ConditionBlock
     {
         Zones.RequireMonster(ctx, Name);
         ctx.Effect.Conditions.Add(Check(ctx.Args.Choice("how")));
+    }
+}
+
+/// <summary>
+/// The game's check that the turn player can still enter the Battle Phase, for effects like "this card can attack twice
+/// this turn". Card text never says it, so it adds no words.
+/// </summary>
+public sealed class CanBattleCondition : ConditionBlock
+{
+    public override string Id => "if.can_battle";
+    public override string Group => "Turn";
+    public override string Name => "The Battle Phase is still ahead";
+    public override string Sentence => "You can still enter the Battle Phase this turn";
+    public override string Help => "Only activates before the Battle Phase, when there will be one. Card text doesn't say this, so it adds no words.";
+    public override string Describe(BlockArgs args) => "";
+    public override void Compile(BlockContext ctx) => ctx.Effect.Conditions.Add("Duel.IsAbleToEnterBP()");
+}
+
+/// <summary>"Except the turn this card was sent to the GY", for effects used from the GY.</summary>
+public sealed class NotSentThisTurnCondition : ConditionBlock
+{
+    public override string Id => "if.not_sent_this_turn";
+    public override string Group => "This card";
+    public override string Name => "This card wasn't sent to the GY this turn";
+    public override string Sentence => "This card was not sent to the GY this turn";
+    public override string Help => "For GY effects that can't be used the turn the card got there.";
+
+    public override string Describe(BlockArgs args) => "this card was not sent to the GY this turn";
+
+    public override void Compile(BlockContext ctx) => ctx.Effect.Conditions.Add("aux.exccon(e,tp,eg,ep,ev,re,r,rp)");
+}
+
+/// <summary>"This card gains 300 ATK for each Dragon monster in your GY."</summary>
+public sealed class SelfStatsPerCardPassive : PassiveBlock
+{
+    public override string Id => "passive.self_stats_per";
+    public override string Group => "This card";
+    public override string Name => "This card gains ATK/DEF for each card";
+    public override string Sentence => "This card {dir} {amount} {stat} for each {cards}";
+    public override IReadOnlyList<ParamSpec> Params { get; } =
+    [
+        ParamSpec.Choice("dir", "Gains/loses", new("gain", "gains"), new("lose", "loses")),
+        ParamSpec.Int("amount", "Amount", 300, 1, 99999),
+        ParamSpec.Choice("stat", "Stat", new("atk", "ATK"), new("def", "DEF"), new("both", "ATK/DEF")),
+        ParamSpec.Cards("cards", "For each", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Graveyard, CardType = FilterCardType.Monster }),
+    ];
+
+    public override string Describe(BlockArgs args) =>
+        $"this card {args.Describe("dir")} {args.Int("amount")} {args.Describe("stat")} for each {Text.FilterText.Describe(args.Cards("cards"), args.Pack, preposition: "in", ownName: args.CardName)}";
+
+    public override void Compile(BlockContext ctx)
+    {
+        Zones.RequireMonster(ctx, Name);
+        var f = ctx.Script.Filter(ctx.Args.Cards("cards"));
+        var amount = ctx.Args.Int("amount") * (ctx.Args.Choice("dir") == "lose" ? -1 : 1);
+        var value = ctx.Script.AddFunction("perval", "e,c",
+            [$"return Duel.GetMatchingGroupCount({f.Function},e:GetHandlerPlayer(),{f.Self},{f.Opp},{(f.Exclude == "nil" ? "nil" : "e:GetHandler()")},e,e:GetHandlerPlayer())*{amount.ToString(System.Globalization.CultureInfo.InvariantCulture)}"]);
+        var codes = ctx.Args.Choice("stat") switch
+        {
+            "def" => new[] { "EFFECT_UPDATE_DEFENSE" },
+            "both" => ["EFFECT_UPDATE_ATTACK", "EFFECT_UPDATE_DEFENSE"],
+            _ => ["EFFECT_UPDATE_ATTACK"],
+        };
+        var range = RangeOf(ctx);
+        foreach (var code in codes) ctx.Effect.AddPassive(v => SelfEffect(v, range, code, value));
+    }
+}
+
+/// <summary>
+/// "You cannot Special Summon monsters the turn you activate this effect, except ...": put on the turn when the effect
+/// is activated, so it applies even if the effect is negated.
+/// </summary>
+public sealed class SummonRestrictionCost : CostBlock
+{
+    public override string Id => "cost.summon_restriction";
+    public override string Group => "Turn";
+    public override string Name => "You can't Special Summon this turn, except... (on activation)";
+    public override string Sentence => "You cannot Special Summon monsters {from} the turn you activate this, except {cards}";
+    public override string Help => "Starts when the effect is activated, so it still applies if the effect is negated. The card text puts it after the effect.";
+    public override IReadOnlyList<ParamSpec> Params { get; } =
+    [
+        ParamSpec.Choice("from", "From", new("anywhere", "", "from anywhere"), new("extra", "from the Extra Deck")),
+        ParamSpec.Cards("cards", "Except", () => new CardFilter { CardType = FilterCardType.Monster, Attribute = CardAttribute.Dark }, Zone.MonsterZone),
+    ];
+
+    public override string Describe(BlockArgs args) => "";
+
+    public override string Afterword(BlockArgs args)
+    {
+        var from = args.Describe("from");
+        var except = Text.FilterText.Describe(args.Cards("cards"), args.Pack, plural: true, withLocation: false, ownName: args.CardName);
+        return $"For the rest of this turn after this effect is activated, you cannot Special Summon monsters{(from.Length > 0 ? " " + from : "")}, except {except}.";
+    }
+
+    public override void Compile(BlockContext ctx)
+    {
+        var f = ctx.Script.MaterialFilter(ctx.Args.Cards("cards"), "sslimitfilter");
+        var extra = ctx.Args.Choice("from") == "extra";
+        var test = (extra ? "c:IsLocation(LOCATION_EXTRA) and " : "") + (f == "nil" ? "false" : $"not {f}(c)");
+        var target = ctx.Script.AddFunction("sslimit", "e,c,sump,sumtype,sumpos,targetp,se", [$"return {test}"]);
+        ctx.Effect.CostLines.AddRange(
+        [
+            "local sl=Effect.CreateEffect(e:GetHandler())",
+            "sl:SetType(EFFECT_TYPE_FIELD)",
+            "sl:SetProperty(EFFECT_FLAG_PLAYER_TARGET+EFFECT_FLAG_OATH)",
+            "sl:SetCode(EFFECT_CANNOT_SPECIAL_SUMMON)",
+            "sl:SetTargetRange(1,0)",
+            $"sl:SetTarget({target})",
+            "sl:SetReset(RESET_PHASE+PHASE_END)",
+            "Duel.RegisterEffect(sl,tp)",
+        ]);
     }
 }

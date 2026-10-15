@@ -16,9 +16,13 @@ public sealed class BrowserPiece(TranslatedPiece translated, CardData card)
     public string Title => Translated.Piece.Title;
     public string Preview => Translated.Piece.Preview;
     public bool AsBlocks => Translated.Effect is not null;
+    private int EffectCount => Translated.Effects.Count();
     public string AddLabel => AsBlocks ? "Add as blocks" : "Add as script";
     public string Status => Translated.Effect is { } e
-        ? "Becomes blocks: " + EffectTextGenerator.Describe(e, card)
+        ? "Becomes blocks: " + string.Join(" ", Translated.Effects.Select(x => EffectTextGenerator.Describe(x, card)))
+        : Translated.Rule is { } rule ? $"Becomes the summoning rule on the Card tab: {(rule == SummonRule.ProcedureOnly ? "only by its own procedure" : "cannot be Normal Summoned/Set")}."
+        : Translated.NoSpecialSummon ? "Becomes \"Cannot be Special Summoned\" on the Card tab."
+        : Translated.EquipTo is not null ? "Becomes the Equip Spell's \"Equip to\" on the Card tab."
         : Translated.Translated ? "Needs no blocks: Card Crafter does this itself."
         : "Stays script: " + Translated.Reason + ".";
     public string StatusColor => AsBlocks || Translated.Translated ? "#8FD19E" : "#E0B872";

@@ -63,7 +63,10 @@ internal static class Procedures
         var card = project.Card;
         var proc = project.Procedure;
         var lines = new List<string>();
+        // "You can only control 1 "Card Name"." works on any card; the rest is for monsters.
+        if (card.OnlyOneOnField) lines.Add("c:SetUniqueOnField(1,0,id)");
         if (!card.IsMonster) return lines;
+        if (card.SpecialSummonOncePerTurn) lines.Add("c:SetSPSummonOnce(id)");
 
         if (card.IsExtraDeck || card.Frame == MonsterFrame.Ritual || card.Abilities.HasFlag(MonsterAbility.SpecialSummonOnly))
             lines.Add("c:EnableReviveLimit()");
@@ -87,6 +90,16 @@ internal static class Procedures
             lines.Add("sc:SetCode(EFFECT_SPSUMMON_CONDITION)");
             if (limit is not null) lines.Add($"sc:SetValue({limit})");
             lines.Add("c:RegisterEffect(sc)");
+        }
+
+        if (card.CannotBeSpecialSummoned && !card.OnlyByOwnProcedure)
+        {
+            lines.Add("--Cannot be Special Summoned");
+            lines.Add("local nsc=Effect.CreateEffect(c)");
+            lines.Add("nsc:SetType(EFFECT_TYPE_SINGLE)");
+            lines.Add("nsc:SetProperty(EFFECT_FLAG_CANNOT_DISABLE+EFFECT_FLAG_UNCOPYABLE)");
+            lines.Add("nsc:SetCode(EFFECT_SPSUMMON_CONDITION)");
+            lines.Add("c:RegisterEffect(nsc)");
         }
 
         var expected = card.Frame switch

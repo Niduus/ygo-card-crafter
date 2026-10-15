@@ -117,13 +117,19 @@ public sealed class UsedAsMaterialTrigger : SelfTriggerBlock
             new("fusion", "Fusion"),
             new("synchro", "Synchro"),
             new("link", "Link")),
+        ParamSpec.Flag("gy", "only if sent to the GY", false),
         OptionalParam,
     ];
+
+    public override string Describe(BlockArgs args) => args.Bool("gy")
+        ? $"If this card is sent to the GY as material for a {args.Describe("kind")} Summon"
+        : $"If this card is used as material for a {args.Describe("kind")} Summon";
 
     public override void Compile(BlockContext ctx)
     {
         Zones.RequireMonster(ctx, Name);
         Setup(ctx, "EVENT_BE_MATERIAL");
+        if (ctx.Args.Bool("gy")) ctx.Effect.Conditions.Add("e:GetHandler():IsLocation(LOCATION_GRAVE)");
         var reason = ctx.Args.Choice("kind") switch
         {
             "fusion" => "REASON_FUSION",
@@ -168,6 +174,8 @@ public sealed class NegateAction : ActionBlock
         var r = ctx.Effect.NewLocal("r");
         var e = ctx.Effect;
         e.AddCategory(activation ? "CATEGORY_NEGATE" : "CATEGORY_DISABLE");
+        // A monster destroyed by battle can't respond any more.
+        if (ctx.Card.IsMonster) e.Conditions.Add("not e:GetHandler():IsStatus(STATUS_BATTLE_DESTROYED)");
         e.Conditions.Add(activation ? "Duel.IsChainNegatable(ev)" : "Duel.IsChainDisablable(ev)");
         e.TargetLines.Add($"Duel.SetOperationInfo(0,{(activation ? "CATEGORY_NEGATE" : "CATEGORY_DISABLE")},eg,1,0,0)");
         if (follow == "destroy")

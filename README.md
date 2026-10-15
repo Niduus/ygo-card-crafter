@@ -80,6 +80,15 @@ becoming half or 0, Level changes, attacking directly or twice, and "you cannot 
 effects include immunity, "cannot attack / be attacked / be Tributed", no battle or effect damage and what an Equip
 Spell gives the equipped monster. Equip Spells equip themselves to a monster you choose under **Equip to**.
 
+Card pickers can pick **this card itself** ("Special Summon this card from your hand", not "1 copy of this card"), and
+counts can be **exactly**, **up to** or **all** ("send up to 3 cards", "destroy all monsters your opponent controls").
+COST blocks can send, banish, shuffle or return any cards you pick, like the new Ra Fusion's "send X cards to the GY",
+and the amount can be **for each** card the cost used. Triggers can watch other cards: "If a Dragon monster(s) is
+Special Summoned to your field", "If a "Blue-Eyes" monster(s) you control is destroyed", "If a monster(s) is sent to
+your GY", Ritual/Fusion/Synchro/Xyz/Pendulum/Link Summons, and more activation timings ("when a Spell Card is
+activated", "when your opponent activates a monster effect"). The Card tab also has "You can only control 1 X" and
+"You can only Special Summon X once per turn".
+
 **Card text.** The suggested text reads like a printed card: the effects run together in one paragraph, a card with
 several once-per-turn effects ends with "You can only use each effect of "X" once per turn.", and the picked zones
 change the wording ("3 monsters your opponent controls"). A card saved with no text of its own gets its suggested text.
@@ -189,7 +198,8 @@ the browser says **Becomes blocks** with the effect's wording, and **Add as bloc
 WHEN/IF/COST/DO blocks you can change. When every effect of a card has exact blocks, **Use as a new card** makes the
 copy with blocks (the original script is kept on the Script tab). Effects without exact blocks say why and stay script,
 so a translation never changes what a card does. A card on a hand-written script can try the same from the Effects
-tab with **Turn the script into blocks**. When Omega's
+tab with **Turn the script into blocks**. Of the 13,571 official scripts, 717 become blocks completely and 11,119 of
+their 35,901 effects do, including Synchro, Xyz, Link and Fusion material lines. When Omega's
 folders have no script for a card, the official one can be fetched from
 [ygopro-scripts](https://github.com/Fluorohydride/ygopro-scripts). **Browse a database file…** searches any `.db`/`.cdb`.
 

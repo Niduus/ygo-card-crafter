@@ -338,6 +338,24 @@ public sealed partial class CardViewModel : ObservableObject
         }
     }
 
+    public bool CannotBeSpecialSummoned
+    {
+        get => C.CannotBeSpecialSummoned;
+        set { if (C.CannotBeSpecialSummoned == value) return; C.CannotBeSpecialSummoned = value; OnPropertyChanged(); Changed(); }
+    }
+
+    public bool OnlyOneOnField
+    {
+        get => C.OnlyOneOnField;
+        set { if (C.OnlyOneOnField == value) return; C.OnlyOneOnField = value; OnPropertyChanged(); Changed(); }
+    }
+
+    public bool SpecialSummonOncePerTurn
+    {
+        get => C.SpecialSummonOncePerTurn;
+        set { if (C.SpecialSummonOncePerTurn == value) return; C.SpecialSummonOncePerTurn = value; OnPropertyChanged(); Changed(); }
+    }
+
     public string SummonRuleHelp => (C.IsMainDeckNonRitual, C.SummonRule) switch
     {
         (true, SummonRule.Normal) => "To also let it Special Summon itself, like Cyber Dragon, add an effect with the WHEN block \"Special Summon procedure\".",
@@ -678,7 +696,7 @@ public sealed partial class CardViewModel : ObservableObject
             AddScriptPiece(translated.Piece);
             return false;
         }
-        AddEffectModel(PackSerializer.Clone(translated.Effect));
+        foreach (var effect in translated.Effects) AddEffectModel(PackSerializer.Clone(effect));
         return true;
     }
 }

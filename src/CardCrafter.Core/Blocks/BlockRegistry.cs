@@ -17,6 +17,7 @@ public static class BlockRegistry
         new ThisCardEventTrigger(),
         new FlipTrigger(),
         new EventTrigger(),
+        new CardsEventTrigger(),
         new PhaseTrigger(),
         new UsedAsMaterialTrigger(),
         new WhileFaceUpTrigger(),
@@ -34,6 +35,9 @@ public static class BlockRegistry
         new PositionCondition(),
         new HandCountCondition(),
         new SummonedByCondition(),
+        new NotSentThisTurnCondition(),
+        new CanBattleCondition(),
+        new CompareLifePointsCondition(),
         // COST
         new DiscardCost(),
         new PayLifePointsCost(),
@@ -41,6 +45,7 @@ public static class BlockRegistry
         new TributeCost(),
         new MoveCardsCost(),
         new DetachCost(),
+        new SummonRestrictionCost(),
         // DO
         new DrawAction(),
         new AddToHandAction(),
@@ -87,6 +92,7 @@ public static class BlockRegistry
         new CardsRulePassive(),
         new PlayerRulePassive(),
         new EquippedPassive(),
+        new SelfStatsPerCardPassive(),
     ];
 
     private static readonly Dictionary<string, BlockDefinition> ById = All.ToDictionary(b => b.Id);

@@ -16,6 +16,12 @@ public sealed class CardData
     public MonsterAbility Abilities { get; set; }
     /// <summary>The monster can only be Special Summoned by its own procedure, never by other effects.</summary>
     public bool OnlyByOwnProcedure { get; set; }
+    /// <summary>"Cannot be Special Summoned.", like the Egyptian Gods.</summary>
+    public bool CannotBeSpecialSummoned { get; set; }
+    /// <summary>"You can only control 1 "Card Name"."</summary>
+    public bool OnlyOneOnField { get; set; }
+    /// <summary>"You can only Special Summon "Card Name" once per turn."</summary>
+    public bool SpecialSummonOncePerTurn { get; set; }
     public CardAttribute Attribute { get; set; } = CardAttribute.Dark;
     public CardRace Race { get; set; } = CardRace.Warrior;
     public int Level { get; set; } = 4;

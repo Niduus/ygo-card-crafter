@@ -15,8 +15,11 @@ public static partial class EffectTextGenerator
     {
         // Printed cards keep the materials on their own line; everything else is one paragraph.
         var paragraph = new List<string>();
+        if (project.Card.OnlyOneOnField) paragraph.Add($"You can only control 1 \"{project.Card.Name}\".");
         if (EquipText(project, pack) is { Length: > 0 } equip) paragraph.Add(equip);
         if (RuleText(project) is { Length: > 0 } rule) paragraph.Add(rule);
+        if (project.Card.IsMonster && project.Card.CannotBeSpecialSummoned && !project.Card.OnlyByOwnProcedure) paragraph.Add("Cannot be Special Summoned.");
+        if (project.Card.IsMonster && project.Card.SpecialSummonOncePerTurn) paragraph.Add($"You can only Special Summon \"{project.Card.Name}\" once per turn.");
         var combined = CombinedLimit(project);
         paragraph.AddRange(project.Effects
             .Select(e => Describe(e, project.Card, pack, limitSentence: combined is null || !UsesCombinedLimit(e)))
@@ -93,8 +96,11 @@ public static partial class EffectTextGenerator
 
         bool passive = trigger is WhileFaceUpTrigger;
         bool activation = trigger is ActivateTrigger;
-        bool optional = trigger is not (FlipTrigger or ActivateTrigger or WhileFaceUpTrigger)
-                        && !(effect.When.Values.TryGetValue("optional", out var o) && string.Equals(o, "false", StringComparison.OrdinalIgnoreCase));
+        // FLIP effects are mandatory unless ticked optional; other triggers are optional unless unticked.
+        var optionalValue = effect.When.Values.GetValueOrDefault("optional");
+        bool optional = trigger is FlipTrigger
+            ? string.Equals(optionalValue, "true", StringComparison.OrdinalIgnoreCase)
+            : trigger is not (ActivateTrigger or WhileFaceUpTrigger) && !string.Equals(optionalValue, "false", StringComparison.OrdinalIgnoreCase);
 
         var head = Head(trigger, effect, pack, passive);
         if (effect.Limit == OncePerTurn.Soft && !passive)
@@ -115,6 +121,9 @@ public static partial class EffectTextGenerator
             text = head.Length == 0 ? body : $"{SentenceCase.Upper(head)}: {body}";
         }
         text = text.TrimEnd() + ".";
+        foreach (var b in effect.Cost.Concat(effect.Do))
+            if (BlockRegistry.Find(b.BlockId) is { } bd && bd.Afterword(new BlockArgs(bd, b, pack) { Effect = effect, CardName = card.Name }) is { Length: > 0 } after)
+                text += " " + after;
 
         if (effect.Limit == OncePerTurn.Hard && !passive && limitSentence)
             text += activation
@@ -180,7 +189,7 @@ public static partial class EffectTextGenerator
             cond = cond.Replace("during your opponent's turn", "during their turn", StringComparison.Ordinal);
 
         // Where this card must be, when no cost or action on this card says it: "If this card is in your GY".
-        if (trigger is QuickTrigger or IgnitionTrigger or EventTrigger or PhaseTrigger
+        if (trigger is QuickTrigger or IgnitionTrigger or EventTrigger or CardsEventTrigger or PhaseTrigger
             && effect.When!.Values.GetValueOrDefault("zone") is { } zone && Zones.Where(zone) is { } where && !SaysWhereThisCardIs(effect))
             cond = cond.Length == 0 ? $"this card is {where}" : $"this card is {where} and {cond}";
 

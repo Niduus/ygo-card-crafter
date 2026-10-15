@@ -135,6 +135,23 @@ public sealed class LifePointsCondition : ConditionBlock
     }
 }
 
+public sealed class CompareLifePointsCondition : ConditionBlock
+{
+    public override string Id => "if.lp_compare";
+    public override string Group => "Life Points";
+    public override string Name => "Your LP compared to your opponent's";
+    public override string Sentence => "You have {cmp} LP than your opponent";
+    public override IReadOnlyList<ParamSpec> Params { get; } =
+    [
+        ParamSpec.Choice("cmp", "Compare", new("less", "less"), new("more", "more")),
+    ];
+
+    public override string Describe(BlockArgs args) => $"you have {args.Describe("cmp")} LP than your opponent";
+
+    public override void Compile(BlockContext ctx) =>
+        ctx.Effect.Conditions.Add(ctx.Args.Choice("cmp") == "less" ? "Duel.GetLP(tp)<Duel.GetLP(1-tp)" : "Duel.GetLP(tp)>Duel.GetLP(1-tp)");
+}
+
 public sealed class TurnCondition : ConditionBlock
 {
     public override string Id => "if.turn";
@@ -162,6 +179,7 @@ public sealed class PhaseCondition : ConditionBlock
     [
         ParamSpec.Choice("phase", "Phase",
             new("main", "Main Phase"),
+            new("main1", "Main Phase 1"),
             new("battle", "Battle Phase"),
             new("standby", "Standby Phase"),
             new("end", "End Phase")),
@@ -174,6 +192,7 @@ public sealed class PhaseCondition : ConditionBlock
         "battle" => "(Duel.GetCurrentPhase()>=PHASE_BATTLE_START and Duel.GetCurrentPhase()<=PHASE_BATTLE)",
         "standby" => "Duel.GetCurrentPhase()==PHASE_STANDBY",
         "end" => "Duel.GetCurrentPhase()==PHASE_END",
+        "main1" => "Duel.GetCurrentPhase()==PHASE_MAIN1",
         _ => "(Duel.GetCurrentPhase()==PHASE_MAIN1 or Duel.GetCurrentPhase()==PHASE_MAIN2)",
     });
 }

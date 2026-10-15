@@ -79,6 +79,9 @@
           <TextBlock Text="{Binding PasscodeWarning}" TextWrapping="Wrap" Foreground="#FCD34D" />
         </Border>
 
+        <CheckBox Content="You can only control 1 of this card" IsChecked="{Binding OnlyOneOnField}" Margin="0,8,0,0"
+                  ToolTip.Tip="&quot;You can only control 1 &quot;Card Name&quot;.&quot;" />
+
         <!-- Monster -->
         <StackPanel IsVisible="{Binding IsMonster}">
           <Grid ColumnDefinitions="*,12,*,12,*">
@@ -130,9 +133,15 @@
           </WrapPanel>
 
           <TextBlock Classes="label" Text="Summoning" />
-          <ComboBox ItemsSource="{Binding SummonRuleOptions}" SelectedItem="{Binding SummonRuleChoice}" HorizontalAlignment="Stretch" />
+          <Grid ColumnDefinitions="*,12,Auto">
+            <ComboBox ItemsSource="{Binding SummonRuleOptions}" SelectedItem="{Binding SummonRuleChoice}" HorizontalAlignment="Stretch" />
+            <CheckBox Grid.Column="2" Content="Cannot be Special Summoned" IsChecked="{Binding CannotBeSpecialSummoned}" VerticalAlignment="Center"
+                      ToolTip.Tip="&quot;Cannot be Special Summoned.&quot;, like the Egyptian Gods" />
+          </Grid>
           <TextBlock Text="{Binding SummonRuleHelp}" IsVisible="{Binding SummonRuleHelp, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                      TextWrapping="Wrap" Opacity="0.7" FontSize="12" Margin="0,4,0,0" />
+          <CheckBox Content="Can only be Special Summoned once per turn" IsChecked="{Binding SpecialSummonOncePerTurn}" Margin="0,4,0,0"
+                    ToolTip.Tip="&quot;You can only Special Summon &quot;Card Name&quot; once per turn.&quot;" />
 
           <!-- same three columns as Level / ATK / DEF above, so the fields line up -->
           <Grid IsVisible="{Binding IsPendulum}" ColumnDefinitions="*,12,*,12,*">

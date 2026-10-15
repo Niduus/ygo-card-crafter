@@ -79,6 +79,9 @@ public abstract class BlockDefinition
     /// <summary>Card-text wording for this block with its values filled in.</summary>
     public virtual string Describe(BlockArgs args) => FillSentence(Sentence, args);
 
+    /// <summary>A sentence that goes after the effect's text, e.g. a restriction a cost puts on the turn. Usually empty.</summary>
+    public virtual string Afterword(BlockArgs args) => "";
+
     /// <summary>
     /// For targeting actions: the "target ..." clause that goes before the semicolon, and the action
     /// wording that follows it, e.g. ("target 1 monster your opponent controls", "destroy it").
