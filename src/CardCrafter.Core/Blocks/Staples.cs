@@ -198,11 +198,7 @@ public sealed class SummonedUsingCondition : ConditionBlock
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Int("count", "At least", 1, 1, 6),
-        ParamSpec.Choice("kind", "Material",
-            new("extra", "Fusion, Synchro, Xyz, or Link Monster"),
-            new("monster", "monster"), new("effect", "Effect Monster"), new("normal", "Normal Monster"), new("tuner", "Tuner"),
-            new("fusion", "Fusion Monster"), new("synchro", "Synchro Monster"), new("xyz", "Xyz Monster"), new("link", "Link Monster"),
-            new("ritual", "Ritual Monster"), new("token", "Token")),
+        ParamSpec.Choice("kind", "Material", Kinds),
     ];
 
     /// <summary>"using a Fusion, Synchro, Xyz, or Link Monster as material", "using 3 or more monsters as material".</summary>
@@ -219,7 +215,12 @@ public sealed class SummonedUsingCondition : ConditionBlock
 
     public override void Compile(BlockContext ctx)
     {
-        var check = ctx.Args.Choice("kind") switch
+        var f = ctx.Script.AddFunction("matfilter", "c", [$"return {Check(ctx.Args.Choice("kind"))}"]);
+        ctx.Effect.Conditions.Add($"e:GetHandler():GetMaterial():FilterCount({f},nil)>={ctx.Args.Int("count")}");
+    }
+
+    /// <summary>The check a material must pass for each kind.</summary>
+    public static string Check(string kind) => kind switch
         {
             "extra" => "c:IsType(TYPE_FUSION+TYPE_SYNCHRO+TYPE_XYZ+TYPE_LINK)",
             "effect" => "c:IsType(TYPE_EFFECT)",
@@ -233,8 +234,58 @@ public sealed class SummonedUsingCondition : ConditionBlock
             "token" => "c:IsType(TYPE_TOKEN)",
             _ => "c:IsType(TYPE_MONSTER)",
         };
-        var f = ctx.Script.AddFunction("matfilter", "c", [$"return {check}"]);
-        ctx.Effect.Conditions.Add($"e:GetHandler():GetMaterial():FilterCount({f},nil)>={ctx.Args.Int("count")}");
+
+    public static readonly ChoiceOption[] Kinds =
+    [
+        new("extra", "Fusion, Synchro, Xyz, or Link Monster"),
+        new("monster", "monster"), new("effect", "Effect Monster"), new("normal", "Normal Monster"), new("tuner", "Tuner"),
+        new("fusion", "Fusion Monster"), new("synchro", "Synchro Monster"), new("xyz", "Xyz Monster"), new("link", "Link Monster"),
+        new("ritual", "Ritual Monster"), new("token", "Token"),
+    ];
+}
+
+/// <summary>
+/// Red-Eyes Dark Dragoon's "You can use this effect a number of times per turn up to the number of Normal Monsters
+/// used as material for this card": how often the effect can be used comes from this card's materials.
+/// </summary>
+public sealed class UsesPerMaterialsCondition : ConditionBlock
+{
+    public const string BlockId = "if.uses_per_materials";
+    public override string Id => BlockId;
+    public override string Group => "This card";
+    public override string Name => "Usable as many times per turn as the materials of a kind";
+    public override string Sentence => "Usable a number of times per turn up to the number of {kind}s used as material for this card";
+    public override string Help => "Like Red-Eyes Dark Dragoon. Leave the effect's own once-per-turn limit off.";
+    public override IReadOnlyList<ParamSpec> Params { get; } = [ParamSpec.Choice("kind", "Material", SummonedUsingCondition.Kinds)];
+
+    /// <summary>It reads as a sentence after the effect, as the card prints it.</summary>
+    public override string Describe(BlockArgs args) => "";
+
+    public override string Afterword(BlockArgs args)
+    {
+        var kind = args.Describe("kind");
+        var plural = args.Choice("kind") switch { "extra" => "Fusion, Synchro, Xyz, or Link Monsters", "monster" => "monsters", _ => kind + "s" };
+        return $"You can use this effect a number of times per turn up to the number of {plural} used as material for this card.";
+    }
+
+    public override void Compile(BlockContext ctx)
+    {
+        var f = ctx.Script.AddFunction("upmfilter", "c", [$"return {SummonedUsingCondition.Check(ctx.Args.Choice("kind"))}"]);
+        // Materials only count when this card was Summoned with them, the way its frame is Summoned.
+        var summon = ctx.Card.Frame switch
+        {
+            MonsterFrame.Fusion => "SUMMON_TYPE_FUSION", MonsterFrame.Synchro => "SUMMON_TYPE_SYNCHRO", MonsterFrame.Xyz => "SUMMON_TYPE_XYZ",
+            MonsterFrame.Link => "SUMMON_TYPE_LINK", MonsterFrame.Ritual => "SUMMON_TYPE_RITUAL", _ => null,
+        };
+        var count = ctx.Script.AddFunction("upmcount", "c",
+        [
+            summon is null ? "if c:GetMaterial()==nil then return 0 end" : $"if not c:IsSummonType({summon}) then return 0 end",
+            $"return c:GetMaterial():FilterCount({f},nil)",
+        ]);
+        var flag = $"id+{7000 + ctx.Effect.Index}";
+        ctx.Effect.Conditions.Add($"e:GetHandler():GetFlagEffect({flag})<{count}(e:GetHandler())");
+        // Each use this turn is remembered on the card.
+        ctx.Effect.TargetLines.Add($"e:GetHandler():RegisterFlagEffect({flag},RESET_EVENT+RESETS_STANDARD+RESET_PHASE+PHASE_END,0,1)");
     }
 }
 

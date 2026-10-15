@@ -19,6 +19,32 @@ public abstract class ActionBlock : BlockDefinition
         new("per_previous", "for each of those cards", "for each card the action before affected"),
         new("per_cost", "for each card used for the cost", "for each card used for the cost"));
 
+    /// <summary>"equal to that monster's original ATK": an amount taken from the cards the DO block before affected.</summary>
+    public static ParamSpec EqualParam => ParamSpec.Choice("equal", "Amount",
+        new("amount", "", "a number"),
+        new("orig_atk", "equal to that monster's original ATK", "equal to the original ATK of the cards the action before affected"),
+        new("atk", "equal to that monster's ATK", "equal to the ATK those cards had on the field"),
+        new("orig_def", "equal to that monster's original DEF", "equal to the original DEF of the cards the action before affected"));
+
+    protected static bool UsesAmount(BlockInstance b) => b.Values.GetValueOrDefault("equal", "amount") == "amount";
+
+    /// <summary>Lines that total the chosen stat of the cards the step before affected into <paramref name="v"/>.</summary>
+    protected static List<string>? EqualLines(BlockContext ctx, string v)
+    {
+        if (ctx.Args.Definition.Param("equal") is null || ctx.Args.Choice("equal") == "amount") return null;
+        if (ctx.Effect.LastResult is null) { ctx.Effect.Error("\"Equal to that monster's ATK\" needs a DO block before it that destroys, banishes or sends cards."); return null; }
+        var stat = ctx.Args.Choice("equal") switch { "atk" => "GetPreviousAttackOnField", "orig_def" => "GetTextDefense", _ => "GetTextAttack" };
+        var og = ctx.Effect.NewLocal("og");
+        var tc = ctx.Effect.NewLocal("tc");
+        return
+        [
+            $"local {v}=0",
+            $"local {og}=Duel.GetOperatedGroup()",
+            $"local {tc}={og}:GetFirst()",
+            $"while {tc} do if {tc}:{stat}()>0 then {v}={v}+{tc}:{stat}() end {tc}={og}:GetNext() end",
+        ];
+    }
+
     /// <summary>The multiplier for an amount: "" for once, or "*n" for each card of the cost or the action before.</summary>
     protected static string Multiplier(BlockContext ctx, bool inTarget = false)
     {
@@ -481,16 +507,18 @@ public sealed class DamageAction : ActionBlock
     public override string Id => "do.damage";
     public override string Group => "Life Points";
     public override string Name => "Inflict damage";
-    public override string Sentence => "Inflict {amount} damage to {who}";
+    public override string Sentence => "Inflict {amount} damage to {who} {equal}";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
-        ParamSpec.Int("amount", "Amount", 500, 1, 99999),
+        ParamSpec.Int("amount", "Amount", 500, 1, 99999).ShowIf(UsesAmount),
         ParamSpec.Choice("who", "Who", new("opponent", "your opponent"), new("you", "you")),
-        PerParam,
+        EqualParam,
+        PerParam.ShowIf(UsesAmount),
     ];
 
     public override string Describe(BlockArgs args)
     {
+        if (args.Choice("equal") != "amount") return $"inflict damage to {args.Describe("who")} {args.Describe("equal")}";
         var text = $"inflict {args.Int("amount")} damage to {args.Describe("who")}";
         return args.Describe("per") is { Length: > 0 } per ? $"{text} {per}" : text;
     }
@@ -498,10 +526,17 @@ public sealed class DamageAction : ActionBlock
     public override void Compile(BlockContext ctx)
     {
         var p = PlayerOf(ctx.Args.Choice("who"));
-        var n = ctx.Args.Int("amount");
-        var per = Multiplier(ctx);
         var r = ctx.Effect.NewLocal("r");
         ctx.Effect.AddCategory("CATEGORY_DAMAGE");
+        var v = ctx.Effect.NewLocal("v");
+        if (EqualLines(ctx, v) is { } lines)
+        {
+            ctx.Effect.TargetLines.Add($"Duel.SetOperationInfo(0,CATEGORY_DAMAGE,nil,0,{p},0)");
+            ctx.Effect.AddStep([.. lines, $"local {r}=Duel.Damage({p},{v},REASON_EFFECT)"], r, ctx.Link);
+            return;
+        }
+        var n = ctx.Args.Int("amount");
+        var per = Multiplier(ctx);
         ctx.Effect.TargetLines.Add($"Duel.SetOperationInfo(0,CATEGORY_DAMAGE,nil,0,{p},{n}{Multiplier(ctx, inTarget: true)})");
         ctx.Effect.AddStep([$"local {r}=Duel.Damage({p},{n}{per},REASON_EFFECT)"], r, ctx.Link);
     }
@@ -512,16 +547,19 @@ public sealed class GainLifePointsAction : ActionBlock
     public override string Id => "do.gain_lp";
     public override string Group => "Life Points";
     public override string Name => "Gain Life Points";
-    public override string Sentence => "{who} gain(s) {amount} LP";
+    public override string Sentence => "{who} gain(s) {amount} LP {equal}";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Choice("who", "Who", new("you", "You"), new("opponent", "Your opponent")),
-        ParamSpec.Int("amount", "Amount", 1000, 1, 99999),
-        PerParam,
+        ParamSpec.Int("amount", "Amount", 1000, 1, 99999).ShowIf(UsesAmount),
+        EqualParam,
+        PerParam.ShowIf(UsesAmount),
     ];
 
     public override string Describe(BlockArgs args)
     {
+        if (args.Choice("equal") != "amount")
+            return (args.Choice("who") == "you" ? "gain LP " : "your opponent gains LP ") + args.Describe("equal");
         var text = args.Choice("who") == "you" ? $"gain {args.Int("amount")} LP" : $"your opponent gains {args.Int("amount")} LP";
         return args.Describe("per") is { Length: > 0 } per ? $"{text} {per}" : text;
     }
@@ -529,10 +567,17 @@ public sealed class GainLifePointsAction : ActionBlock
     public override void Compile(BlockContext ctx)
     {
         var p = PlayerOf(ctx.Args.Choice("who"));
-        var n = ctx.Args.Int("amount");
-        var per = Multiplier(ctx);
         var r = ctx.Effect.NewLocal("r");
         ctx.Effect.AddCategory("CATEGORY_RECOVER");
+        var v = ctx.Effect.NewLocal("v");
+        if (EqualLines(ctx, v) is { } lines)
+        {
+            ctx.Effect.TargetLines.Add($"Duel.SetOperationInfo(0,CATEGORY_RECOVER,nil,0,{p},0)");
+            ctx.Effect.AddStep([.. lines, $"local {r}=Duel.Recover({p},{v},REASON_EFFECT)"], r, ctx.Link);
+            return;
+        }
+        var n = ctx.Args.Int("amount");
+        var per = Multiplier(ctx);
         ctx.Effect.TargetLines.Add($"Duel.SetOperationInfo(0,CATEGORY_RECOVER,nil,0,{p},{n}{Multiplier(ctx, inTarget: true)})");
         ctx.Effect.AddStep([$"local {r}=Duel.Recover({p},{n}{per},REASON_EFFECT)"], r, ctx.Link);
     }

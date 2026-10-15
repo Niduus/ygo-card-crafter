@@ -59,9 +59,12 @@ public static class MaterialText
     private static string Count(int min, int max) =>
         max == min ? $"{min}" : $"{min}+";
 
-    private static string Slot(MaterialSlot m, CardPack? pack)
+    private static string Slot(MaterialSlot m, CardPack? pack) =>
+        m.Or is { } alt ? $"{One(m, m.Filter, pack)} or {One(m, alt, pack)}" : One(m, m.Filter, pack);
+
+    /// <summary>""Dark Magician"", "1 Dragon Effect Monster", "2+ Fiend monsters".</summary>
+    private static string One(MaterialSlot m, CardFilter f, CardPack? pack)
     {
-        var f = m.Filter;
         var onlyCode = f.CardCode != 0;
         var plural = m.Max != 1;
         var noun = FilterText.Describe(f, pack, plural, withLocation: false);

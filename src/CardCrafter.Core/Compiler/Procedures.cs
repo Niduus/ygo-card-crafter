@@ -16,8 +16,10 @@ internal static class Procedures
         if (proc.Materials.Count > 0)
         {
             var parts = new List<string>();
+            string Part(CardFilter f, string name) => OnlyCode(f) ? Lua.Num(f.CardCode) : Fn(script.MaterialFilter(f, name, SummonProcedureKind.Fusion));
+            // A slot with an "or" takes either: {74677422,s.fusfilter2b}.
             foreach (var (slot, i) in proc.Materials.Select((m, i) => (m, i)))
-                parts.Add(OnlyCode(slot.Filter) ? Lua.Num(slot.Filter.CardCode) : Fn(script.MaterialFilter(slot.Filter, $"fusfilter{i + 1}", SummonProcedureKind.Fusion)));
+                parts.Add(slot.Or is { } alt ? $"{{{Part(slot.Filter, $"fusfilter{i + 1}")},{Part(alt, $"fusfilter{i + 1}b")}}}" : Part(slot.Filter, $"fusfilter{i + 1}"));
             var repeating = proc.Materials.Select((m, i) => (m, i)).Where(x => x.m.Repeats).ToList();
             if (repeating.Count > 1)
             {

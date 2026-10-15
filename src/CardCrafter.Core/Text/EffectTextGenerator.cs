@@ -141,7 +141,7 @@ public static partial class EffectTextGenerator
             text = head.Length == 0 ? body : $"{SentenceCase.Upper(head)}: {body}";
         }
         text = text.TrimEnd() + ".";
-        foreach (var b in effect.Cost.Concat(effect.Do))
+        foreach (var b in effect.Cost.Concat(effect.Do).Concat(effect.If))
             if (BlockRegistry.Find(b.BlockId) is { } bd && bd.Afterword(new BlockArgs(bd, b, pack) { Effect = effect, CardName = card.Name }) is { Length: > 0 } after)
                 text += " " + after;
 

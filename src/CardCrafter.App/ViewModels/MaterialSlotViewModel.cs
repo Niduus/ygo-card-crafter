@@ -18,6 +18,34 @@ public sealed partial class MaterialSlotViewModel : ObservableObject
         _remove = remove;
         _pack = pack;
         Filter = new FilterEditorViewModel(slot.Filter, Zone.None, true, pack, () => { OnPropertyChanged(nameof(Count)); OnPropertyChanged(nameof(Summary)); changed(); });
+        if (slot.Or is { } alt) OrFilter = new FilterEditorViewModel(alt, Zone.None, true, pack, OrChanged);
+    }
+
+    private void OrChanged()
+    {
+        OnPropertyChanged(nameof(OrSummary));
+        _changed();
+    }
+
+    /// <summary>Dragoon's ""Red-Eyes Black Dragon" or 1 Dragon Effect Monster": another kind of card this material can be.</summary>
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasOr), nameof(OrSummary))] private FilterEditorViewModel? _orFilter;
+    public bool HasOr => OrFilter is not null;
+    public string OrSummary => Slot.Or is { } alt ? "or " + FilterText.Describe(alt, _pack(), plural: Slot.Max != 1, withLocation: false) : "";
+
+    [RelayCommand]
+    private void AddOr()
+    {
+        Slot.Or = new CardFilter { CardType = FilterCardType.Monster };
+        OrFilter = new FilterEditorViewModel(Slot.Or, Zone.None, true, _pack, OrChanged);
+        _changed();
+    }
+
+    [RelayCommand]
+    private void RemoveOr()
+    {
+        Slot.Or = null;
+        OrFilter = null;
+        _changed();
     }
 
     private readonly Func<CardPack> _pack;

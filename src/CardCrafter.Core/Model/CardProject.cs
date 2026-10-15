@@ -32,6 +32,8 @@ public sealed class SummonProcedure
 public sealed class MaterialSlot
 {
     public CardFilter Filter { get; set; } = new() { CardType = FilterCardType.Monster };
+    /// <summary>Another kind of card the slot also takes: ""Red-Eyes Black Dragon" or 1 Dragon Effect Monster" (Dragoon).</summary>
+    public CardFilter? Or { get; set; }
     public int Min { get; set; } = 1;
     /// <summary>0 means "or more" (1+).</summary>
     public int Max { get; set; } = 1;

@@ -256,7 +256,7 @@
               <ItemsControl Name="FusionSlotList" ItemsSource="{Binding FusionSlots}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate DataType="vm:MaterialSlotViewModel">
-                    <Grid ColumnDefinitions="40,*,80,80,40" Margin="0,0,0,6">
+                    <Grid ColumnDefinitions="40,*,80,80,40" RowDefinitions="Auto,Auto" Margin="0,0,0,6">
                       <TextBlock Text="{Binding Count}" VerticalAlignment="Center" HorizontalAlignment="Center" FontWeight="Bold" />
                       <Button Grid.Column="1" Classes="chip" Content="{Binding Summary}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" VerticalAlignment="Center">
                         <Button.Flyout><Flyout><views:FilterEditorView DataContext="{Binding Filter}" /></Flyout></Button.Flyout>
@@ -267,6 +267,15 @@
                                      ShowButtonSpinner="False" HorizontalContentAlignment="Center" ToolTip.Tip="0 means &quot;or more&quot;" />
                       <Button Grid.Column="4" Content="✕" Command="{Binding RemoveCommand}" Margin="8,0,0,0" HorizontalAlignment="Stretch"
                               HorizontalContentAlignment="Center" VerticalAlignment="Stretch" ToolTip.Tip="Remove this material" />
+                      <!-- "Red-Eyes Black Dragon" or 1 Dragon Effect Monster -->
+                      <StackPanel Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="4" Orientation="Horizontal" Spacing="6" Margin="0,4,0,0">
+                        <Button Classes="chip" Content="{Binding OrSummary}" IsVisible="{Binding HasOr}">
+                          <Button.Flyout><Flyout><views:FilterEditorView DataContext="{Binding OrFilter}" /></Flyout></Button.Flyout>
+                        </Button>
+                        <Button Content="✕" Command="{Binding RemoveOrCommand}" IsVisible="{Binding HasOr}" Padding="6,0" ToolTip.Tip="Remove the &quot;or&quot;" />
+                        <Button Content="+ or another kind" Command="{Binding AddOrCommand}" IsVisible="{Binding !HasOr}" Padding="8,2" FontSize="12"
+                                ToolTip.Tip="Let this material be another kind of card too, like Dragoon's &quot;Red-Eyes Black Dragon&quot; or 1 Dragon Effect Monster" />
+                      </StackPanel>
                     </Grid>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>

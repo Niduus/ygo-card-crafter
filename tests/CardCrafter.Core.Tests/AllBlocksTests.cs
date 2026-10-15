@@ -129,7 +129,8 @@ public class AllBlocksTests
         // "For each card used for the cost" needs a cost that counts; "for each of those cards" needs an action before.
         if (inst.Values.GetValueOrDefault("per") == "per_cost")
             project.Effects[0].Cost.Add(new BlockInstance("cost.move_cards").With("how", "banish"));
-        if (inst.Values.GetValueOrDefault("per") == "per_previous")
+        // So does "equal to that monster's ATK".
+        if (inst.Values.GetValueOrDefault("per") == "per_previous" || inst.Values.GetValueOrDefault("equal", "amount") != "amount")
             project.Effects[0].Do.Insert(0, BlockRegistry.Find("do.destroy")!.CreateInstance());
         // A card Special Summons itself from where it is, never from the field.
         if (def.Id == "do.special_summon_self") project.Effects[0].When = new BlockInstance("when.ignition").With("zone", "hand");

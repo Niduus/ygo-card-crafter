@@ -65,6 +65,9 @@ public static partial class ScriptTranslator
             ? string.Join(" ", fm.Groups[1].Value.Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0)) : null;
         // "Return it to the hand/Extra Deck": sending to the hand puts Extra Deck monsters back there.
         lua = lua.Replace("aux.OR(Card.IsAbleToHand,Card.IsAbleToExtra)", "Card.IsAbleToHand", StringComparison.Ordinal);
+        lua = lua.Replace("\r\n", "\n", StringComparison.Ordinal);
+        lua = UsesPerMaterials(lua);
+        lua = EqualToStat(lua);
         var pieces = LuaPieces.Split(lua, id, strings);
         foreach (var piece in pieces)
         {
@@ -80,6 +83,64 @@ public static partial class ScriptTranslator
         // One WHEN block per event, as the editor offers them.
         foreach (var e in result.Pieces.SelectMany(p => p.Effects)) TriggerSplit.Normalize(e);
         return result;
+    }
+
+    /// <summary>
+    /// Red-Eyes Dark Dragoon's "a number of times per turn up to the number of Normal Monsters used as material": a
+    /// material check counts the materials into a flag when the card is Summoned, the effect's condition reads the flag
+    /// and its target counts the uses. All of it becomes one IF block, so its pieces of script are taken out here and
+    /// the condition is replaced with a marker <see cref="Conditions"/> reads.
+    /// </summary>
+    private static string UsesPerMaterials(string lua)
+    {
+        var val = Regex.Match(lua, @"function ([\w.]+)\(e,c\)\s*local g=c:GetMaterial\(\)\s*local ct=g:FilterCount\(Card\.Is(?:Fusion)?Type,nil,(TYPE_\w+)\)\s*e:GetLabelObject\(\):SetLabel\(ct\)\s*end");
+        var mat = Regex.Match(lua, @"function ([\w.]+)\(e,tp,eg,ep,ev,re,r,rp\)\s*e:GetHandler\(\):RegisterFlagEffect\((\d+|id\+\d+),RESET_EVENT\+RESETS_STANDARD,0,1,e:GetLabel\(\)\)\s*end");
+        if (!val.Success || !mat.Success) return lua;
+        var kind = val.Groups[2].Value switch
+        {
+            "TYPE_NORMAL" => "normal", "TYPE_EFFECT" => "effect", "TYPE_TUNER" => "tuner", "TYPE_FUSION" => "fusion", "TYPE_SYNCHRO" => "synchro",
+            "TYPE_XYZ" => "xyz", "TYPE_LINK" => "link", "TYPE_RITUAL" => "ritual", "TYPE_MONSTER" => "monster", _ => null,
+        };
+        if (kind is null) return lua;
+        var label = Regex.Escape(mat.Groups[2].Value);
+        var con = Regex.Match(lua, $@"function ([\w.]+)\(e,tp,eg,ep,ev,re,r,rp\)\s*return e:GetHandler\(\):GetFlagEffectLabel\({label}\) and e:GetHandler\(\):GetFlagEffectLabel\({label}\)>0\s*end");
+        var use = Regex.Match(lua, $@"\s*and (?:c|e:GetHandler\(\)):GetFlagEffect\((\d+|id)\)<(?:c|e:GetHandler\(\)):GetFlagEffectLabel\({label}\)");
+        if (!con.Success || !use.Success) return lua;
+        var flag = Regex.Escape(use.Groups[1].Value);
+        var reg = Regex.Match(lua, $@"\n\s*(?:c|e:GetHandler\(\)):RegisterFlagEffect\({flag},RESET_EVENT\+RESETS_STANDARD\+RESET_PHASE\+PHASE_END,0,1\)");
+        // The two effects that count the materials: one on EVENT_SPSUMMON_SUCCESS, one EFFECT_MATERIAL_CHECK.
+        var effects = Regex.Matches(lua, @"\n[ \t]*(?:--[^\n]*\n[ \t]*)?local (\w+)=Effect\.CreateEffect\(c\)\n(?:(?![ \t]*c:RegisterEffect\(\1\)).*\n)*?[ \t]*c:RegisterEffect\(\1\)")
+            .Where(m => m.Value.Contains($"SetOperation({mat.Groups[1].Value})", StringComparison.Ordinal) || m.Value.Contains($"SetValue({val.Groups[1].Value})", StringComparison.Ordinal))
+            .ToList();
+        if (!reg.Success || effects.Count != 2) return lua;
+        foreach (var m in effects.OrderByDescending(m => m.Index)) lua = lua.Remove(m.Index, m.Length);
+        lua = lua.Replace(reg.Value, "", StringComparison.Ordinal).Replace(use.Value, "", StringComparison.Ordinal);
+        return Regex.Replace(lua, Regex.Escape(con.Value), $"function {con.Groups[1].Value}(e,tp,eg,ep,ev,re,r,rp)\n\treturn aux.CardCrafterUsesPerMaterials(\"{kind}\")\nend");
+    }
+
+    /// <summary>
+    /// "Destroy it, and if you do, inflict damage equal to its original ATK": the ATK kept in a local before the card
+    /// leaves becomes the damage block's "equal to that monster's original ATK", read from the cards just destroyed.
+    /// </summary>
+    private static string EqualToStat(string lua)
+    {
+        return Regex.Replace(lua, @"(?ms)^function ([\w.]+)\(e,tp,eg,ep,ev,re,r,rp\)\n(.*?)^end", fn =>
+        {
+            var body = fn.Groups[2].Value;
+            var local = Regex.Match(body, @"^[ \t]*local (\w+)=\w+(?::GetFirst\(\))?:(GetTextAttack|GetAttack|GetBaseAttack|GetTextDefense)\(\)[ \t]*\n", RegexOptions.Multiline);
+            if (!local.Success) return fn.Value;
+            var v = local.Groups[1].Value;
+            var kind = local.Groups[2].Value switch { "GetAttack" => "atk", "GetTextDefense" => "orig_def", _ => "orig_atk" };
+            var uses = Regex.Matches(body, $@"\b{v}\b").Count;
+            var clamp = Regex.Match(body, $@"^[ \t]*if {v}<0 then {v}=0 end[ \t]*\n", RegexOptions.Multiline);
+            var calls = Regex.Matches(body, $@"Duel\.(?:Damage|Recover)\((?:1-tp|tp),{v},REASON_EFFECT\)");
+            // Only when the local is used for nothing else.
+            if (calls.Count == 0 || uses != 1 + calls.Count + (clamp.Success ? 2 : 0)) return fn.Value;
+            body = body.Remove(local.Index, local.Length);
+            if (clamp.Success) body = body.Replace(clamp.Value, "", StringComparison.Ordinal);
+            body = Regex.Replace(body, $@"(Duel\.(?:Damage|Recover)\((?:1-tp|tp)),{v},REASON_EFFECT\)", $"$1,CCEQ_{kind},REASON_EFFECT)");
+            return $"function {fn.Groups[1].Value}(e,tp,eg,ep,ev,re,r,rp)\n{body}end";
+        });
     }
 
     /// <summary>
@@ -518,7 +579,17 @@ public static partial class ScriptTranslator
         var args = SplitArgs(m.Groups[2].Value);
         int Num(int i) => args.Count > i && Regex.IsMatch(args[i], @"^\d+$") ? Int(args[i]) : throw No("its material count is unusual");
         bool Absent(int i) => args.Count <= i || args[i] == "nil";
-        MaterialSlot Slot(string expr, int min = 1, int max = 1) => new() { Filter = Material(expr, fns), Min = min, Max = max };
+        MaterialSlot Slot(string expr, int min = 1, int max = 1)
+        {
+            // {74677422,s.mfilter}: "Red-Eyes Black Dragon" or a card the filter allows.
+            if (expr.StartsWith('{') && expr.EndsWith('}'))
+            {
+                var either = SplitArgs(expr[1..^1]);
+                if (either.Count != 2) throw No("one of its Fusion Materials can be any of more than 2 kinds");
+                return new() { Filter = Material(either[0], fns), Or = Material(either[1], fns), Min = min, Max = max };
+            }
+            return new() { Filter = Material(expr, fns), Min = min, Max = max };
+        }
         switch (m.Groups[1].Value)
         {
             case "AddSynchroProcedure" when args.Count is 3 or 4:
@@ -966,6 +1037,9 @@ public static partial class ScriptTranslator
     private static List<BlockInstance> Conditions(string condition, Functions fns)
     {
         if (condition == "aux.exccon") return [Block("if.not_sent_this_turn")];
+        // Dragoon: "up to the number of Normal Monsters used as material", read by UsesPerMaterials.
+        if (Regex.Match(Body(condition, fns), @"^return aux\.CardCrafterUsesPerMaterials\(""(\w+)""\)$") is { Success: true } upm)
+            return [Block(UsesPerMaterialsCondition.BlockId).With("kind", upm.Groups[1].Value)];
         var body = Body(condition, fns);
         if (body.StartsWith("return ", StringComparison.Ordinal) && !body.Contains(" or ", StringComparison.Ordinal) && !body.Contains('(' + "Duel.GetCurrentPhase", StringComparison.Ordinal))
         {
@@ -2093,6 +2167,9 @@ public static partial class ScriptTranslator
 
         if ((m = Regex.Match(line, @"^Duel\.Draw\((\w+|1-tp),(\w+),REASON_EFFECT\)$")).Success)
             return Block("do.draw").With("who", Who(m.Groups[1].Value)).With("count", Amount(m.Groups[2].Value));
+        // "equal to that monster's original ATK", from EqualToStat.
+        if ((m = Regex.Match(line, @"^Duel\.(Damage|Recover)\((\w+|1-tp),CCEQ_(\w+),REASON_EFFECT\)$")).Success)
+            return Block(m.Groups[1].Value == "Damage" ? "do.damage" : "do.gain_lp").With("who", Who(m.Groups[2].Value)).With("equal", m.Groups[3].Value);
         if ((m = Regex.Match(line, @"^Duel\.Damage\((\w+|1-tp),(\w+),REASON_EFFECT\)$")).Success)
             return Block("do.damage").With("who", Who(m.Groups[1].Value) == "you" ? "you" : "opponent").With("amount", Amount(m.Groups[2].Value));
         if ((m = Regex.Match(line, @"^Duel\.Recover\((\w+|1-tp),(\w+),REASON_EFFECT\)$")).Success)
@@ -2227,6 +2304,7 @@ public static partial class ScriptTranslator
                 case "EFFECT_DIRECT_ATTACK": effect.Do.Add(Block("passive.battle_ability").With("ability", "direct")); return effect;
                 case "EFFECT_EXTRA_ATTACK" when value == "1": effect.Do.Add(Block("passive.battle_ability").With("ability", "extra")); return effect;
                 case "EFFECT_CANNOT_BE_EFFECT_TARGET" when value == "aux.tgoval": effect.Do.Add(Block("passive.untargetable")); return effect;
+                case "EFFECT_CANNOT_BE_EFFECT_TARGET" when value == "1": effect.Do.Add(Block("passive.untargetable").With("who", "any")); return effect;
                 case "EFFECT_CANNOT_ATTACK": effect.Do.Add(Block("passive.self_rule").With("rule", "cannot_attack")); return effect;
                 case "EFFECT_CANNOT_DIRECT_ATTACK": effect.Do.Add(Block("passive.self_rule").With("rule", "cannot_direct")); return effect;
                 case "EFFECT_CANNOT_BE_BATTLE_TARGET" when value == "aux.imval1": effect.Do.Add(Block("passive.self_rule").With("rule", "not_attack_target")); return effect;

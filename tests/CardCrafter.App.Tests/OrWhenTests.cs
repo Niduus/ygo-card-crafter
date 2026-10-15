@@ -48,3 +48,24 @@ public class OrWhenTests
         Assert.True(from.IsShown);
     }
 }
+
+public class MaterialOrTests
+{
+    [Fact]
+    public void AFusionMaterialCanTakeAnotherKind()
+    {
+        var slot = new MaterialSlot { Filter = new CardFilter { CardType = FilterCardType.Monster, CardCode = 74677422 } };
+        var changed = 0;
+        var vm = new MaterialSlotViewModel(slot, () => new CardPack(), () => changed++, _ => { });
+        Assert.False(vm.HasOr);
+        vm.AddOrCommand.Execute(null);
+        Assert.True(vm.HasOr);
+        Assert.NotNull(slot.Or);
+        slot.Or!.Race = CardRace.Dragon;
+        slot.Or.MonsterKind = MonsterKind.Effect;
+        Assert.Equal("or Dragon Effect Monster", vm.OrSummary);
+        vm.RemoveOrCommand.Execute(null);
+        Assert.Null(slot.Or);
+        Assert.Equal(2, changed);
+    }
+}

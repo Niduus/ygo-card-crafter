@@ -160,6 +160,16 @@ Special", the old tick-several block), open already split into single WHENs.
 - **Banish ... until the End Phase**: the banished cards come back to the field in the End Phase.
 - Templates for each, in the "Extra Deck" group.
 
+**Red-Eyes Dark Dragoon, from its script.** The card browser now turns all of Dragoon into blocks, and the same
+pieces work on any card:
+- Fusion Materials where one slot takes either kind: ""Dark Magician" + "Red-Eyes Black Dragon" or 1 Dragon Effect
+  Monster" (**+ or another kind** on a material in the Card tab).
+- "This card cannot be targeted by card effects" (any player's) next to "cannot be destroyed by card effects".
+- "Inflict damage to your opponent equal to that monster's original ATK" (also its ATK on the field, or its original
+  DEF, and for gaining LP), read from the cards the DO block before destroyed or banished.
+- "You can use this effect a number of times per turn up to the number of Normal Monsters used as material for this
+  card" (any kind of material).
+
 **Placing and Setting.** **Place cards face-up** puts Spells/Traps from your hand, Deck, GY or banishment face-up in
 your Spell & Trap Zone, Field Zone or Pendulum Zone without activating them, or places a card (a monster too, like the
 Crystal Beasts) "as a Continuous Spell/Trap". **Set Spells/Traps** has "it can be activated this turn".

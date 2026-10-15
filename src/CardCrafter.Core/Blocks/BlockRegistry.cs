@@ -46,6 +46,7 @@ public static class BlockRegistry
         new MaterialGrantPassive(),
         new SummonedUsingCondition(),
         new PlaceAction(),
+        new UsesPerMaterialsCondition(),
         new AttackTargetsPassive(),
         new NotDestroyedOncePassive(),
         new NoTributeSummonPassive(),
