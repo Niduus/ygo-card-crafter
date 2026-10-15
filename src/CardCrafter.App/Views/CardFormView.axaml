@@ -75,8 +75,12 @@
             <CheckBox Content="Spirit" IsChecked="{Binding IsSpirit}" Margin="0,0,14,0" />
             <CheckBox Content="Toon" IsChecked="{Binding IsToon}" Margin="0,0,14,0" />
             <CheckBox Content="Union" IsChecked="{Binding IsUnion}" Margin="0,0,14,0" />
-            <CheckBox Content="Can't be Normal Summoned" IsChecked="{Binding IsSpecialSummonOnly}" Margin="0,0,14,0" />
           </WrapPanel>
+
+          <TextBlock Classes="label" Text="Summoning" />
+          <ComboBox ItemsSource="{Binding SummonRuleOptions}" SelectedItem="{Binding SummonRuleChoice}" HorizontalAlignment="Stretch" />
+          <TextBlock Text="{Binding SummonRuleHelp}" IsVisible="{Binding SummonRuleHelp, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                     TextWrapping="Wrap" Opacity="0.7" FontSize="12" />
 
           <StackPanel IsVisible="{Binding IsPendulum}" Orientation="Horizontal" Spacing="12">
             <StackPanel>

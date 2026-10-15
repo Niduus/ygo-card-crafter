@@ -1,3 +1,4 @@
+using CardCrafter.Core.Blocks;
 using CardCrafter.Core.Model;
 
 namespace CardCrafter.Core.Templates;
@@ -126,13 +127,33 @@ public static class EffectTemplates
         },
         new()
         {
-            Name = "Free summon from hand", LikeCard = "Cyber Dragon", For = CardKind.Monster, Group = "Monsters",
-            Description = "If your opponent controls more monsters: Special Summon this card from your hand.",
+            Name = "Free summon from hand", LikeCard = "Cyber Dragon", For = CardKind.Monster, Group = "Summon procedures",
+            Description = "If your opponent controls more monsters, you can Special Summon this card from your hand. It doesn't start a chain.",
             Create = () => new EffectEvent
             {
-                Label = "Summon itself", When = B("when.ignition").With("zone", "hand"), Limit = OncePerTurn.Hard,
+                Label = "Special Summon", When = B(SummonProcedureTrigger.BlockId),
                 If = [B("if.opponent_more_monsters")],
-                Do = [B("do.special_summon_self")],
+            },
+        },
+        new()
+        {
+            Name = "Banish from GY to summon", LikeCard = "Chaos Sorcerer", For = CardKind.Monster, Group = "Summon procedures",
+            Description = "Special Summon this card from your hand by banishing 2 monsters from your GY. Set the card to \"Can't be Normal Summoned\".",
+            Create = () => new EffectEvent
+            {
+                Label = "Special Summon", When = B(SummonProcedureTrigger.BlockId),
+                Cost = [B("cost.move_cards").With("how", "banish").With("count", 2)
+                    .With("cards", new CardFilter { Owner = CardOwner.You, Zones = Zone.Graveyard, CardType = FilterCardType.Monster })],
+            },
+        },
+        new()
+        {
+            Name = "Tribute to summon", LikeCard = "Gate Guardian", For = CardKind.Monster, Group = "Summon procedures",
+            Description = "Special Summon this card from your hand by Tributing 1 monster, once per turn.",
+            Create = () => new EffectEvent
+            {
+                Label = "Special Summon", When = B(SummonProcedureTrigger.BlockId), Limit = OncePerTurn.Hard,
+                Cost = [B("cost.tribute")],
             },
         },
         new()

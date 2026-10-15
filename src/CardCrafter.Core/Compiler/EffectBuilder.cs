@@ -38,6 +38,8 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
     public bool IsActivation { get; set; }
     /// <summary>True for "while face-up" effects that never activate.</summary>
     public bool IsPassive { get; set; }
+    /// <summary>True for a Special Summon procedure (EFFECT_SPSUMMON_PROC), which never starts a chain.</summary>
+    public bool IsSummonProcedure { get; set; }
 
     public List<string> Categories { get; } = [];
     public List<string> Properties { get; } = [];
@@ -80,7 +82,37 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
     /// <summary>Writes the lines that go inside initial_effect for this effect.</summary>
     public List<string> Build(string? countLimit)
     {
-        return IsPassive ? BuildPassives() : BuildActivated(countLimit);
+        return IsPassive ? BuildPassives() : IsSummonProcedure ? BuildProcedure(countLimit) : BuildActivated(countLimit);
+    }
+
+    /// <summary>
+    /// A Special Summon procedure: the condition gets the card being Summoned and checks the IF blocks and that
+    /// the costs can be paid; the operation pays them. Costs are paid "to Special Summon", not as an effect's cost.
+    /// </summary>
+    private List<string> BuildProcedure(string? countLimit)
+    {
+        var lines = new List<string> { $"--{Lua.Comment(Source.Label)}", $"local {Var}=Effect.CreateEffect(c)" };
+        if (Index <= 16) lines.Add($"{Var}:SetDescription(aux.Stringid(id,{Index - 1}))");
+        lines.Add($"{Var}:SetType({Lua.Join(Types)})");
+        lines.Add($"{Var}:SetCode({Code})");
+        if (Properties.Count > 0) lines.Add($"{Var}:SetProperty({Lua.Join(Properties)})");
+        if (Range is not null) lines.Add($"{Var}:SetRange({Range})");
+        if (countLimit is not null) lines.Add($"{Var}:SetCountLimit({countLimit})");
+
+        var payLines = CostLines.Select(l => l.Replace("REASON_COST", "REASON_SPSUMMON")).ToList();
+        // Tributing frees a zone, so only check for an empty one when nothing on the field is Tributed.
+        var checks = new List<string>();
+        if (!payLines.Any(l => l.Contains("Duel.Release(", StringComparison.Ordinal)))
+            checks.Add("Duel.GetLocationCount(tp,LOCATION_MZONE)>0");
+        checks.AddRange(Conditions);
+        checks.AddRange(CostChecks);
+        var con = new List<string> { "if c==nil then return true end", "local tp=c:GetControler()" };
+        con.AddRange(ReturnAll(checks));
+        lines.Add($"{Var}:SetCondition({Script.AddFunction(Var + "con", "e,c", con)})");
+        if (payLines.Count > 0)
+            lines.Add($"{Var}:SetOperation({Script.AddFunction(Var + "op", "e,tp,eg,ep,ev,re,r,rp,c", payLines)})");
+        lines.Add($"c:RegisterEffect({Var})");
+        return lines;
     }
 
     private List<string> BuildActivated(string? countLimit)

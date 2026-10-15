@@ -11,12 +11,32 @@ namespace CardCrafter.Core.Text;
 /// </summary>
 public static partial class EffectTextGenerator
 {
-    public static string Generate(CardProject project, CardPack? pack = null) =>
-        string.Join("\n", project.Effects.Select(e => Describe(e, project.Card, pack)).Where(s => s.Length > 0));
+    public static string Generate(CardProject project, CardPack? pack = null)
+    {
+        var lines = new List<string>();
+        if (RuleText(project) is { Length: > 0 } rule) lines.Add(rule);
+        lines.AddRange(project.Effects.Select(e => Describe(e, project.Card, pack)).Where(s => s.Length > 0));
+        return string.Join("\n", lines);
+    }
+
+    /// <summary>
+    /// The summoning rule line when no Summon procedure effect already says it: "Cannot be Normal Summoned/Set."
+    /// or, for Extra Deck and Ritual monsters, "Must be Fusion Summoned."
+    /// </summary>
+    private static string RuleText(CardProject project)
+    {
+        var card = project.Card;
+        if (!card.IsMonster || card.SummonRule == SummonRule.Normal) return "";
+        if (!card.IsMainDeckNonRitual)
+            return card.SummonRule == SummonRule.ProcedureOnly ? $"Must be {card.Frame} Summoned." : "";
+        bool hasProcedure = project.Effects.Any(e => e.When?.BlockId == SummonProcedureTrigger.BlockId);
+        return hasProcedure ? "" : "Cannot be Normal Summoned/Set.";
+    }
 
     public static string Describe(EffectEvent effect, CardData card, CardPack? pack = null)
     {
         if (effect.When is null || BlockRegistry.Find(effect.When.BlockId) is not { } trigger) return "";
+        if (trigger is SummonProcedureTrigger) return DescribeProcedure(effect, card, pack);
 
         bool passive = trigger is WhileFaceUpTrigger;
         bool activation = trigger is ActivateTrigger;
@@ -48,6 +68,51 @@ public static partial class EffectTextGenerator
                 ? $" You can only activate 1 \"{card.Name}\" per turn."
                 : $" You can only use this effect of \"{card.Name}\" once per turn.";
         return text;
+    }
+
+    /// <summary>
+    /// "Cannot be Normal Summoned/Set. Must first be Special Summoned (from your hand) by banishing 1 card from your GY."
+    /// or, for monsters that can also be Normal Summoned, "If ..., you can Special Summon this card (from your hand)."
+    /// </summary>
+    private static string DescribeProcedure(EffectEvent effect, CardData card, CardPack? pack)
+    {
+        var from = SummonProcedureTrigger.FromText(effect.When!.Values.GetValueOrDefault("zone") ?? "hand");
+        var costs = string.Join(" and ", effect.Cost.Select(b => Gerund(Text(b, pack))).Where(t => t.Length > 0));
+        var cond = string.Join(" and ", effect.If.Select(b => Text(b, pack)).Where(t => t.Length > 0));
+        var by = costs.Length == 0 ? "" : " by " + costs;
+
+        string text;
+        if (card.SummonRule == SummonRule.Normal)
+        {
+            var body = $"you can Special Summon this card {from}{by}";
+            text = cond.Length == 0 ? SentenceCase.Upper(body) : $"{SentenceCase.Upper(Clause(cond, "if"))}, {body}";
+            text += ".";
+        }
+        else
+        {
+            var must = card.SummonRule == SummonRule.ProcedureOnly ? "Must be" : "Must first be";
+            text = $"Cannot be Normal Summoned/Set. {must} Special Summoned {from}{by}";
+            if (cond.Length > 0) text += (by.Length > 0 ? ", " : " ") + Clause(cond, "while");
+            text += card.SummonRule == SummonRule.ProcedureOnly ? ", and cannot be Special Summoned by other ways." : ".";
+        }
+
+        if (effect.Limit == OncePerTurn.Hard)
+            text += $" You can only Special Summon \"{card.Name}\" once per turn this way.";
+        else if (effect.Limit == OncePerTurn.Soft)
+            text += " You can only Special Summon this card once per turn this way.";
+        return text;
+    }
+
+    /// <summary>"discard 1 card" becomes "discarding 1 card"; "Tribute 1 monster" becomes "Tributing 1 monster".</summary>
+    private static string Gerund(string phrase)
+    {
+        if (phrase.Length == 0) return phrase;
+        var space = phrase.IndexOf(' ');
+        var verb = space < 0 ? phrase : phrase[..space];
+        var rest = space < 0 ? "" : phrase[space..];
+        var ing = verb.EndsWith('e') && !verb.EndsWith("ee", StringComparison.Ordinal) ? verb[..^1] + "ing" : verb + "ing";
+        if (ing.Equals("tributing", StringComparison.OrdinalIgnoreCase)) ing = "Tributing";
+        return ing + rest;
     }
 
     /// <summary>The part before the colon: trigger wording plus IF conditions.</summary>

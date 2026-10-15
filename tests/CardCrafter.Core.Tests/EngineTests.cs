@@ -538,7 +538,22 @@ public class EngineTemplateTests
             case "Floater":
                 // Destroyed by battle on the opponent's turn is hard to script; check it registers and loads.
                 s.Card(id, 0, "mzone").ExpectActivations(0); break;
-            case "Free summon from hand": s.Card(id, 0, "hand").Card(Fiend, 1, "mzone", 2).ExpectActivations(1).Check($"Duel.IsExistingMatchingCard(Card.IsCode,0,LOCATION_MZONE,0,1,nil,{id})"); break;
+            case "Free summon from hand":
+                // A Summon procedure is not an activation: nothing goes on the chain.
+                s.Card(id, 0, "hand").Card(Fiend, 1, "mzone", 2).SpSummon(id).ExpectActivations(0)
+                    .Check($"Duel.IsExistingMatchingCard(Card.IsCode,0,LOCATION_MZONE,0,1,nil,{id})");
+                break;
+            case "Banish from GY to summon":
+                s.Card(id, 0, "hand").SpSummon(id).ExpectActivations(0)
+                    .Check($"Duel.IsExistingMatchingCard(Card.IsCode,0,LOCATION_MZONE,0,1,nil,{id})")
+                    .Check("Duel.GetFieldGroupCount(0,LOCATION_REMOVED,0)==2");
+                break;
+            case "Tribute to summon":
+                s.Card(id, 0, "hand").Card(Fiend, 0, "mzone").SpSummon(id).ExpectActivations(0)
+                    .Check($"Duel.IsExistingMatchingCard(Card.IsCode,0,LOCATION_MZONE,0,1,nil,{id})")
+                    .Check("Duel.GetFieldGroupCount(0,LOCATION_MZONE,0)==1")
+                    .Check("Duel.IsExistingMatchingCard(Card.IsCode,0,LOCATION_GRAVE,0,1,nil,1004)");
+                break;
             case "Revive itself from GY": s.Card(id, 0, "grave").ExpectActivations(1).Check($"Duel.IsExistingMatchingCard(Card.IsCode,0,LOCATION_MZONE,0,1,nil,{id})"); break;
             case "Discard to search": s.Card(id, 0, "hand").ExpectActivations(1).Check("Duel.IsExistingMatchingCard(Card.IsCode,0,LOCATION_HAND,0,1,nil,1003)"); break;
             case "Quick banish from GY": s.Card(id, 0, "mzone").ExpectActivations(1).Check("Duel.GetFieldGroupCount(1,LOCATION_REMOVED,0)==1"); break;
@@ -571,3 +586,119 @@ public class EngineTemplateTests
         s.AssertPasses();
     }
 }
+
+/// <summary>Summoning rules: "Cannot be Normal Summoned", "Must be Special Summoned by its own procedure".</summary>
+public class EngineSummonRuleTests
+{
+    private static CardProject Monster(SummonRule rule, bool withProcedure)
+    {
+        var p = new CardProject { Card = new CardData { Id = 100000700, Name = "Rule Monster", Level = 7, Atk = 2500, SummonRule = rule } };
+        if (withProcedure)
+            p.Effects.Add(new EffectEvent
+            {
+                Label = "Special Summon", When = new BlockInstance(SummonProcedureTrigger.BlockId).With("zone", "hand"),
+                Cost = [new BlockInstance("cost.move_cards").With("how", "banish").With("count", 1)
+                    .With("cards", new CardFilter { Owner = CardOwner.You, Zones = Zone.Graveyard, CardType = FilterCardType.Monster })],
+            });
+        return p;
+    }
+
+    /// <summary>A Spell: "Special Summon 1 monster from your hand."</summary>
+    private static CardProject SummonFromHand() => new()
+    {
+        Card = new CardData { Id = 100000710, Name = "Hand Summoner", Kind = CardKind.Spell },
+        Effects =
+        [
+            new EffectEvent
+            {
+                Label = "Summon", When = new BlockInstance("when.activate"),
+                Do = [new BlockInstance("do.special_summon").With("cards", new CardFilter { Owner = CardOwner.You, Zones = Zone.Hand, CardType = FilterCardType.Monster })],
+            },
+        ],
+    };
+
+    private const string OnField = "Duel.IsExistingMatchingCard(Card.IsCode,0,LOCATION_MZONE,0,1,nil,100000700)";
+
+    [EngineFact]
+    public void CannotBeNormalSummoned()
+    {
+        new EngineScenario(Monster(SummonRule.SpecialSummonOnly, withProcedure: true))
+            .Card(100000700, 0, "hand").Summon(100000700)
+            .Check("not " + OnField)
+            .Check("Duel.IsExistingMatchingCard(Card.IsCode,0,LOCATION_HAND,0,1,nil,100000700)")
+            .AssertPasses();
+    }
+
+    [EngineFact]
+    public void MustFirstBeSpecialSummoned_ByItsProcedure()
+    {
+        new EngineScenario(Monster(SummonRule.SpecialSummonOnly, withProcedure: true))
+            .Card(100000700, 0, "hand").Card(Dragon, 0, "grave", 2).SpSummon(100000700)
+            .ExpectActivations(0)
+            .Check(OnField)
+            .Check("Duel.GetFieldCard(0,LOCATION_MZONE,0):IsType(TYPE_SPSUMMON)")
+            .Check("Duel.GetFieldGroupCount(0,LOCATION_REMOVED,0)==1")
+            .AssertPasses();
+    }
+
+    [EngineFact]
+    public void ProcedureNeedsItsCost()
+    {
+        // No monster in the GY to banish: the procedure can't be used.
+        new EngineScenario(Monster(SummonRule.SpecialSummonOnly, withProcedure: true))
+            .Card(100000700, 0, "hand").Card(Spell, 0, "grave").SpSummon(100000700)
+            .Check("not " + OnField)
+            .AssertPasses();
+    }
+
+    [EngineTheory]
+    [InlineData(SummonRule.SpecialSummonOnly)]
+    [InlineData(SummonRule.ProcedureOnly)]
+    public void CannotBeSpecialSummonedFromHandByOtherEffects(SummonRule rule)
+    {
+        // Official rule, enforced by the engine: until it is properly Summoned, only its own procedure works.
+        var spell = SummonFromHand();
+        new EngineScenario(Monster(rule, withProcedure: true), spell)
+            .Card(100000700, 0, "hand").Card(spell.Card.Id, 0, "hand").Activate(spell.Card.Id)
+            .ExpectActivations(0)
+            .Check("not " + OnField)
+            .AssertPasses();
+    }
+
+    [EngineTheory]
+    [InlineData(SummonRule.SpecialSummonOnly, "==nil")]
+    [InlineData(SummonRule.ProcedureOnly, "~=nil")]
+    public void OnlyProcedureOnlyMonstersRefuseRevival(SummonRule rule, string condition)
+    {
+        // Once properly Summoned, a "must first be" monster can be revived later; a "must be" monster never can.
+        new EngineScenario(Monster(rule, withProcedure: true))
+            .Card(100000700, 0, "hand").Card(Dragon, 0, "grave").SpSummon(100000700)
+            .Check(OnField)
+            .Check("Duel.GetFieldCard(0,LOCATION_MZONE,0):IsStatus(STATUS_PROC_COMPLETE)")
+            .Check("Duel.GetFieldCard(0,LOCATION_MZONE,0):IsHasEffect(EFFECT_SPSUMMON_CONDITION)" + condition)
+            .AssertPasses();
+    }
+
+    [EngineFact]
+    public void ProcedureOnly_StillUsesItsOwnProcedure()
+    {
+        new EngineScenario(Monster(SummonRule.ProcedureOnly, withProcedure: true))
+            .Card(100000700, 0, "hand").Card(Dragon, 0, "grave").SpSummon(100000700)
+            .ExpectActivations(0)
+            .Check(OnField)
+            .AssertPasses();
+    }
+
+    [EngineFact]
+    public void HardOncePerTurn_LimitsTheProcedure()
+    {
+        var p = Monster(SummonRule.Normal, withProcedure: true);
+        p.Effects[0].Limit = OncePerTurn.Hard;
+        p.Effects[0].Cost.Clear();
+        new EngineScenario(p)
+            .Card(100000700, 0, "hand", 2).SpSummon(100000700).SpSummon(100000700)
+            .Check("Duel.GetMatchingGroupCount(Card.IsCode,0,LOCATION_MZONE,0,nil,100000700)==1")
+            .AssertPasses();
+    }
+}
+

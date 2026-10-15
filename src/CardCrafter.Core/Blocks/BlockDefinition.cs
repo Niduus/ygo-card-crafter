@@ -178,7 +178,8 @@ public sealed class BlockArgs(BlockDefinition def, BlockInstance inst, CardPack?
             ParamType.Integer => Int(key).ToString(CultureInfo.InvariantCulture),
             ParamType.Choice => spec.Choices.First(c => c.Value == Choice(key)).Label,
             ParamType.Bool => Bool(key) ? spec.Label : "",
-            ParamType.Cards => Text.FilterText.Describe(Cards(key), Pack),
+            // "Discard 2 cards": a block's "count" blank decides whether its cards are plural.
+            ParamType.Cards => Text.FilterText.Describe(Cards(key), Pack, plural: Definition.Param("count") is { Type: ParamType.Integer } && Int("count") != 1),
             _ => "",
         };
     }

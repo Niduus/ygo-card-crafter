@@ -7,6 +7,7 @@ public static class BlockRegistry
     [
         // WHEN
         new IgnitionTrigger(),
+        new SummonProcedureTrigger(),
         new ActivateTrigger(),
         new QuickTrigger(),
         new SummonedTrigger(),

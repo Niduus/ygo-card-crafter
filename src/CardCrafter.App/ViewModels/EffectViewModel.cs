@@ -37,6 +37,8 @@ public sealed partial class EffectViewModel : ObservableObject
 
     public bool HasTrigger => Trigger.Count > 0;
     public bool IsPassive => Model.When?.BlockId == "when.while_face_up";
+    /// <summary>A Special Summon procedure: the Summon is what it does, so it has no DO blocks.</summary>
+    public bool IsProcedure => Model.When?.BlockId == SummonProcedureTrigger.BlockId;
     public bool ShowCosts => !IsPassive;
     public bool ShowLimit => !IsPassive;
     public string DoHeader => IsPassive ? "ALWAYS (lasting effects)" : "DO";
@@ -85,6 +87,8 @@ public sealed partial class EffectViewModel : ObservableObject
             Model.Do.Clear();
             Model.Cost.Clear();
         }
+        // A Summon procedure keeps its IF and COST blocks but does nothing else.
+        if (IsProcedure) Model.Do.Clear();
         Rebuild();
         _changed();
     }
@@ -140,6 +144,7 @@ public sealed partial class EffectViewModel : ObservableObject
         for (int i = 0; i < Actions.Count; i++) Actions[i].ShowLink = i > 0 && !IsPassive;
         OnPropertyChanged(nameof(HasTrigger));
         OnPropertyChanged(nameof(IsPassive));
+        OnPropertyChanged(nameof(IsProcedure));
         OnPropertyChanged(nameof(ShowCosts));
         OnPropertyChanged(nameof(ShowLimit));
         OnPropertyChanged(nameof(DoHeader));

@@ -88,6 +88,14 @@ public static class ScriptCompiler
         else
             foreach (var b in src.Cost) Run(effect, b, BlockKind.Cost, pack);
 
+        if (effect.IsSummonProcedure)
+        {
+            if (src.Do.Count > 0)
+                effect.Error("A Special Summon procedure only Summons this card, so it has no DO blocks. " +
+                             "For something that happens after, add an effect with \"If this card is Special Summoned\".");
+            return;
+        }
+
         if (effect.IsMandatory && src.Cost.Count > 0)
             effect.Warn("Mandatory effects usually have no cost. If the cost can't be paid the effect still has to activate.");
 
@@ -163,8 +171,9 @@ public static class ScriptCompiler
                         if (!groups.Contains(group)) groups.Add(group);
                         var slot = groups.IndexOf(group);
                         var code = slot == 0 ? "id" : $"id+{Lua.Num(slot * card.CountCodeOffset)}";
-                        // For Spell/Trap activations, "you can only activate 1 per turn" ignores negated activations.
-                        limit = e.IsActivation ? $"1,{code}+EFFECT_COUNT_CODE_OATH" : $"1,{code}";
+                        // For Spell/Trap activations, "you can only activate 1 per turn" ignores negated activations,
+                        // and a Summon procedure only counts once it is used.
+                        limit = e.IsActivation || e.IsSummonProcedure ? $"1,{code}+EFFECT_COUNT_CODE_OATH" : $"1,{code}";
                         break;
                 }
             }
@@ -190,6 +199,13 @@ public static class ScriptCompiler
             d.Add(new(Severity.Warning, "Normal monsters have no effects. Change the frame to Effect so the game runs them."));
         if (card.IsLink && card.LinkMarkers == LinkMarker.None)
             d.Add(new(Severity.Error, "Link monsters need at least one Link Arrow."));
+        if (card.IsMonster && card.SummonRule != SummonRule.Normal && card.IsMainDeckNonRitual
+            && !project.Effects.Any(e => e.When?.BlockId == SummonProcedureTrigger.BlockId))
+        {
+            d.Add(new(Severity.Warning, card.SummonRule == SummonRule.ProcedureOnly
+                ? "This monster can only be Special Summoned by its own procedure, but it has none, so it can never be Summoned. Add an effect with the WHEN block \"Special Summon procedure\"."
+                : "This monster can't be Normal Summoned and has no Special Summon procedure, so only other cards can Special Summon it. Add an effect with the WHEN block \"Special Summon procedure\" if it should Summon itself."));
+        }
         if (card.IsExtraDeck && project.Procedure.Kind == SummonProcedureKind.None)
             d.Add(new(Severity.Warning, $"This {card.Frame} monster has no summon procedure, so it can't be summoned. Set one on the Card tab."));
     }

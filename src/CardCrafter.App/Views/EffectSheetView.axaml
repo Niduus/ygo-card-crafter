@@ -105,7 +105,17 @@
                           <Button Classes="add cost" Tag="Cost" Click="OnAddBlock" Content="+ Add cost" />
                         </StackPanel>
                       </Border>
-                      <Border Classes="section" Classes.do="{Binding !IsPassive}" Classes.always="{Binding IsPassive}">
+                      <Border Classes="section do" IsVisible="{Binding IsProcedure}">
+                        <StackPanel>
+                          <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                            <Border Classes="badge do"><StackPanel Orientation="Horizontal"><Path Data="{StaticResource DoIcon}" /><TextBlock Text="DO" /></StackPanel></Border>
+                            <TextBlock Classes="hint" Text="Special Summons this card" />
+                          </StackPanel>
+                          <TextBlock TextWrapping="Wrap" Opacity="0.8"
+                                     Text="A Summon procedure needs no DO blocks: it doesn't start a chain, so it can't be responded to. For something that happens after, add an effect with &quot;If this card is Special Summoned&quot;." />
+                        </StackPanel>
+                      </Border>
+                      <Border Classes="section" Classes.do="{Binding !IsPassive}" Classes.always="{Binding IsPassive}" IsVisible="{Binding !IsProcedure}">
                         <StackPanel>
                           <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
                             <Border Classes="badge do" IsVisible="{Binding !IsPassive}"><StackPanel Orientation="Horizontal"><Path Data="{StaticResource DoIcon}" /><TextBlock Text="DO" /></StackPanel></Border>

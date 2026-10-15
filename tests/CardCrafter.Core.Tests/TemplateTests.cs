@@ -22,6 +22,7 @@ public class TemplateTests
             CardKind.Trap => new CardData { Id = 100000601, Name = t.LikeCard, Kind = CardKind.Trap },
             _ => t.Name switch
             {
+                "Banish from GY to summon" => new CardData { Id = 100000605, Name = t.LikeCard, Level = 6, SummonRule = SummonRule.SpecialSummonOnly },
                 "Link support" => new CardData { Id = 100000603, Name = t.LikeCard, Frame = MonsterFrame.Link, LinkMarkers = LinkMarker.Left | LinkMarker.Right },
                 "Detach to destroy" => new CardData { Id = 100000604, Name = t.LikeCard, Frame = MonsterFrame.Xyz, Level = 4 },
                 _ => new CardData { Id = 100000602, Name = t.LikeCard },

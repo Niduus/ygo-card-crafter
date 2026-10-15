@@ -252,7 +252,38 @@ public sealed partial class CardViewModel : ObservableObject
     public bool IsUnion { get => Ability(MonsterAbility.Union); set => SetAbility(MonsterAbility.Union, value, nameof(IsUnion)); }
     public bool IsGemini { get => Ability(MonsterAbility.Gemini); set => SetAbility(MonsterAbility.Gemini, value, nameof(IsGemini)); }
     public bool IsPendulumAbility { get => Ability(MonsterAbility.Pendulum); set => SetAbility(MonsterAbility.Pendulum, value, nameof(IsPendulumAbility)); }
-    public bool IsSpecialSummonOnly { get => Ability(MonsterAbility.SpecialSummonOnly); set => SetAbility(MonsterAbility.SpecialSummonOnly, value, nameof(IsSpecialSummonOnly)); }
+
+    // ---- summoning rules
+    /// <summary>The choices that make sense for this frame. Extra Deck and Ritual monsters already can't be Normal Summoned.</summary>
+    public IReadOnlyList<Option<SummonRule>> SummonRuleOptions => C.IsMainDeckNonRitual
+        ? Options.Of(
+            (SummonRule.Normal, "Can be Normal Summoned"),
+            (SummonRule.SpecialSummonOnly, "Can't be Normal Summoned: must first be Special Summoned"),
+            (SummonRule.ProcedureOnly, "Can only be Special Summoned by its own procedure"))
+        : Options.Of(
+            (SummonRule.Normal, $"{C.Frame} Summon, can be revived once properly Summoned"),
+            (SummonRule.ProcedureOnly, $"Must be {C.Frame} Summoned: can't be Special Summoned other ways"));
+
+    public Option<SummonRule> SummonRuleChoice
+    {
+        get => Options.Find(SummonRuleOptions, C.IsMainDeckNonRitual || C.SummonRule == SummonRule.ProcedureOnly ? C.SummonRule : SummonRule.Normal);
+        set
+        {
+            if (value is null || value.Value == C.SummonRule) return;
+            C.SummonRule = value.Value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(SummonRuleHelp));
+            NotifyShape();
+            Changed();
+        }
+    }
+
+    public string SummonRuleHelp => (C.IsMainDeckNonRitual, C.SummonRule) switch
+    {
+        (true, SummonRule.Normal) => "To also let it Special Summon itself, like Cyber Dragon, add an effect with the WHEN block \"Special Summon procedure\".",
+        (true, _) => "Say how it is Special Summoned with an effect that uses the WHEN block \"Special Summon procedure\" (Effects tab, or the \"Summon procedure\" templates).",
+        _ => "",
+    };
 
     private bool Arrow(LinkMarker m) => C.LinkMarkers.HasFlag(m);
     private void SetArrow(LinkMarker m, bool on, string name)
@@ -306,6 +337,7 @@ public sealed partial class CardViewModel : ObservableObject
             nameof(Kind), nameof(Frame), nameof(IsMonster), nameof(IsSpell), nameof(IsTrap), nameof(IsLink), nameof(ShowLevel),
             nameof(ShowDef), nameof(IsPendulum), nameof(IsExtraDeck), nameof(IsFusion), nameof(IsSynchro), nameof(ShowMaterialFilter),
             nameof(ProcedureTitle), nameof(MinMaterialsLabel), nameof(LevelLabel), nameof(LinkRatingText),
+            nameof(SummonRuleOptions), nameof(SummonRuleChoice), nameof(SummonRuleHelp),
         }) OnPropertyChanged(n);
     }
 

@@ -9,6 +9,17 @@ public enum SpellKind { Normal, QuickPlay, Continuous, Equip, Field, Ritual }
 
 public enum TrapKind { Normal, Continuous, Counter }
 
+/// <summary>How a monster may be Summoned, as its card text states it.</summary>
+public enum SummonRule
+{
+    /// <summary>Normal Summon and Set as usual. Extra Deck and Ritual monsters use their usual procedure.</summary>
+    Normal,
+    /// <summary>"Cannot be Normal Summoned/Set. Must first be Special Summoned..." It can be revived once properly Summoned.</summary>
+    SpecialSummonOnly,
+    /// <summary>"Must be Special Summoned by its own procedure, and cannot be Special Summoned by other ways."</summary>
+    ProcedureOnly,
+}
+
 /// <summary>Extra monster abilities that map to card-type bits.</summary>
 [Flags]
 public enum MonsterAbility

@@ -88,7 +88,8 @@ public class AllBlocksTests
             case BlockKind.Trigger:
                 card = Samples.CardFor(def);
                 effect.When = inst;
-                effect.Do.Add(def.Id == "when.while_face_up" ? new BlockInstance("passive.untargetable") : new BlockInstance("do.draw"));
+                if (def.Id != SummonProcedureTrigger.BlockId)
+                    effect.Do.Add(def.Id == "when.while_face_up" ? new BlockInstance("passive.untargetable") : new BlockInstance("do.draw"));
                 break;
             case BlockKind.Passive:
                 card = new CardData { Id = 100000013, Name = "Test" };

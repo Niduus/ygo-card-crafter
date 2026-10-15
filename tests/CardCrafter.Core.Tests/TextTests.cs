@@ -63,3 +63,45 @@ public class TextTests
     public void SentenceCase_KeepsCardTerms(string input, string expected) =>
         Assert.Equal(expected, SentenceCase.Lower(input));
 }
+
+public class SummonRuleTextTests
+{
+    private static CardProject With(string template, SummonRule rule)
+    {
+        var p = TemplateTests.CardWith(CardCrafter.Core.Templates.EffectTemplates.All.Single(t => t.Name == template));
+        p.Card.Name = "Test Monster";
+        p.Card.SummonRule = rule;
+        return p;
+    }
+
+    [Fact]
+    public void FreeSummon_ReadsLikeCyberDragon() =>
+        Assert.Equal("If your opponent controls more monsters than you do, you can Special Summon this card (from your hand).",
+            EffectTextGenerator.Generate(With("Free summon from hand", SummonRule.Normal)));
+
+    [Fact]
+    public void SemiNomi_SaysMustFirstBe() =>
+        Assert.Equal("Cannot be Normal Summoned/Set. Must first be Special Summoned (from your hand) by banishing 2 monsters from your GY.",
+            EffectTextGenerator.Generate(With("Banish from GY to summon", SummonRule.SpecialSummonOnly)));
+
+    [Fact]
+    public void Nomi_SaysCannotBeSpecialSummonedByOtherWays() =>
+        Assert.Equal("Cannot be Normal Summoned/Set. Must be Special Summoned (from your hand) by Tributing 1 monster you control, " +
+            "and cannot be Special Summoned by other ways. You can only Special Summon \"Test Monster\" once per turn this way.",
+            EffectTextGenerator.Generate(With("Tribute to summon", SummonRule.ProcedureOnly)));
+
+    [Fact]
+    public void NoProcedure_StillSaysCannotBeNormalSummoned()
+    {
+        var p = new CardProject { Card = new CardData { Name = "Test Monster", SummonRule = SummonRule.SpecialSummonOnly } };
+        Assert.Equal("Cannot be Normal Summoned/Set.", EffectTextGenerator.Generate(p));
+    }
+
+    [Fact]
+    public void ExtraDeck_ProcedureOnly_SaysMustBeFusionSummoned()
+    {
+        var p = new CardProject { Card = new CardData { Name = "F", Frame = MonsterFrame.Fusion, SummonRule = SummonRule.ProcedureOnly } };
+        Assert.Equal("Must be Fusion Summoned.", EffectTextGenerator.Generate(p));
+        Assert.Contains("sc:SetValue(aux.fuslimit)", CardCrafter.Core.Compiler.ScriptCompiler.Compile(p).Lua);
+    }
+}

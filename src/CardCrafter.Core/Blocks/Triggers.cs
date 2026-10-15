@@ -214,6 +214,55 @@ public sealed class IgnitionTrigger : BlockDefinition
     }
 }
 
+/// <summary>
+/// A built-in way to Special Summon this card, like Cyber Dragon or Chaos Sorcerer. It is not an effect:
+/// it doesn't start a chain, so it has IF and COST blocks but no DO blocks.
+/// </summary>
+public sealed class SummonProcedureTrigger : BlockDefinition
+{
+    public const string BlockId = "when.summon_procedure";
+
+    public override string Id => BlockId;
+    public override BlockKind Kind => BlockKind.Trigger;
+    public override string Group => "This card";
+    public override string Name => "Special Summon procedure";
+    public override string Sentence => "You can Special Summon this card {zone} (Summon procedure)";
+    public override string Help =>
+        "A built-in way to Special Summon this card, like Cyber Dragon or Chaos Sorcerer. It doesn't start a chain, " +
+        "so it can't be responded to or negated. Add IF blocks for when it's allowed and COST blocks for what you pay. " +
+        "It has no DO blocks: the Summon is what it does.";
+    public override IReadOnlyList<ParamSpec> Params { get; } =
+    [
+        ParamSpec.Choice("zone", "From",
+            new("hand", "from your hand"),
+            new("graveyard", "from your GY"),
+            new("banished", "from your banishment")),
+    ];
+
+    public override string Describe(BlockArgs args) => "";
+
+    /// <summary>The "(from your hand)" part of the card text.</summary>
+    public static string FromText(string zone) => zone switch
+    {
+        "graveyard" => "(from your GY)",
+        "banished" => "(from your banishment)",
+        _ => "(from your hand)",
+    };
+
+    public override void Compile(BlockContext ctx)
+    {
+        Zones.RequireMonster(ctx, Name);
+        if (ctx.Card.IsExtraDeck)
+            ctx.Effect.Error($"{ctx.Card.Frame} monsters are Summoned by the procedure on the Card tab, not by a \"{Name}\" effect.");
+        ctx.Effect.IsSummonProcedure = true;
+        ctx.Effect.Types.Add("EFFECT_TYPE_FIELD");
+        ctx.Effect.Code = "EFFECT_SPSUMMON_PROC";
+        ctx.Effect.AddProperty("EFFECT_FLAG_UNCOPYABLE");
+        if (ctx.Card.SummonRule != SummonRule.Normal) ctx.Effect.AddProperty("EFFECT_FLAG_CANNOT_DISABLE");
+        ctx.Effect.Range = Zones.Resolve(ctx.Args.Choice("zone"), ctx.Card);
+    }
+}
+
 internal static class Timing
 {
     public static readonly ChoiceOption[] Choices =

@@ -14,6 +14,8 @@ public sealed class CardData
 
     public MonsterFrame Frame { get; set; } = MonsterFrame.Effect;
     public MonsterAbility Abilities { get; set; }
+    /// <summary>The monster can only be Special Summoned by its own procedure, never by other effects.</summary>
+    public bool OnlyByOwnProcedure { get; set; }
     public CardAttribute Attribute { get; set; } = CardAttribute.Dark;
     public CardRace Race { get; set; } = CardRace.Warrior;
     public int Level { get; set; } = 4;
@@ -37,6 +39,24 @@ public sealed class CardData
     public bool IsPendulum => IsMonster && Abilities.HasFlag(MonsterAbility.Pendulum);
     public bool IsExtraDeck => IsMonster && Frame is MonsterFrame.Fusion or MonsterFrame.Synchro or MonsterFrame.Xyz or MonsterFrame.Link;
     public bool IsEffectMonster => IsMonster && Frame != MonsterFrame.Normal;
+
+    /// <summary>How the monster may be Summoned. Stored as the "Special Summon" type bit plus <see cref="OnlyByOwnProcedure"/>.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public SummonRule SummonRule
+    {
+        get => OnlyByOwnProcedure ? SummonRule.ProcedureOnly
+            : Abilities.HasFlag(MonsterAbility.SpecialSummonOnly) ? SummonRule.SpecialSummonOnly : SummonRule.Normal;
+        set
+        {
+            OnlyByOwnProcedure = value == SummonRule.ProcedureOnly;
+            Abilities = value == SummonRule.Normal
+                ? Abilities & ~MonsterAbility.SpecialSummonOnly
+                : Abilities | MonsterAbility.SpecialSummonOnly;
+        }
+    }
+
+    /// <summary>A main-deck monster that isn't Ritual: the kind that needs its own Special Summon procedure when it can't be Normal Summoned.</summary>
+    public bool IsMainDeckNonRitual => IsMonster && !IsExtraDeck && Frame != MonsterFrame.Ritual;
 
     /// <summary>A Link monster's rating is its number of arrows.</summary>
     public int LinkRating => System.Numerics.BitOperations.PopCount((uint)LinkMarkers);

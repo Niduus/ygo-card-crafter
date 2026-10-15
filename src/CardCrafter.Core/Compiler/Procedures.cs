@@ -15,6 +15,27 @@ internal static class Procedures
         if (card.IsExtraDeck || card.Frame == MonsterFrame.Ritual || card.Abilities.HasFlag(MonsterAbility.SpecialSummonOnly))
             lines.Add("c:EnableReviveLimit()");
 
+        if (card.OnlyByOwnProcedure)
+        {
+            // Main-deck monsters: no value means "never", which their own procedure is exempt from.
+            var limit = card.Frame switch
+            {
+                MonsterFrame.Fusion => "aux.fuslimit",
+                MonsterFrame.Synchro => "aux.synlimit",
+                MonsterFrame.Xyz => "aux.xyzlimit",
+                MonsterFrame.Link => "aux.linklimit",
+                MonsterFrame.Ritual => "aux.ritlimit",
+                _ => null,
+            };
+            lines.Add("--Cannot be Special Summoned by other ways");
+            lines.Add("local sc=Effect.CreateEffect(c)");
+            lines.Add("sc:SetType(EFFECT_TYPE_SINGLE)");
+            lines.Add("sc:SetProperty(EFFECT_FLAG_CANNOT_DISABLE+EFFECT_FLAG_UNCOPYABLE)");
+            lines.Add("sc:SetCode(EFFECT_SPSUMMON_CONDITION)");
+            if (limit is not null) lines.Add($"sc:SetValue({limit})");
+            lines.Add("c:RegisterEffect(sc)");
+        }
+
         var expected = card.Frame switch
         {
             MonsterFrame.Fusion => SummonProcedureKind.Fusion,
