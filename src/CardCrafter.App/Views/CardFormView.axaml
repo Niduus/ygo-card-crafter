@@ -190,6 +190,26 @@
             </Button.Flyout>
           </Button>
         </StackPanel>
+        <Button Content="Save image…" Margin="0,6,0,0" HorizontalAlignment="Left" ToolTip.Tip="Save this preview as a PNG or JPG at any size">
+          <Button.Flyout>
+            <Flyout Placement="LeftEdgeAlignedTop">
+              <StackPanel Width="280" Spacing="6">
+                <TextBlock Text="Save the card preview as an image" FontWeight="SemiBold" />
+                <ComboBox ItemsSource="{Binding $parent[Window].((vm:MainViewModel)DataContext).ImageSizes}"
+                          SelectedItem="{Binding $parent[Window].((vm:MainViewModel)DataContext).SelectedImageSize}" HorizontalAlignment="Stretch" />
+                <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding $parent[Window].((vm:MainViewModel)DataContext).IsCustomImageSize}">
+                  <TextBlock Text="Width (px)" VerticalAlignment="Center" />
+                  <NumericUpDown Value="{Binding $parent[Window].((vm:MainViewModel)DataContext).CustomImageWidth}" Minimum="64" Maximum="8000"
+                                 Increment="50" FormatString="0" Width="130" />
+                </StackPanel>
+                <TextBlock Text="The height follows the card's shape. Type .jpg as the file name ending for JPG." FontSize="11"
+                           Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                <Button Content="Save this card…" HorizontalAlignment="Stretch" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).SaveCardImageCommand}" />
+                <Button Content="Save every card in the pack…" HorizontalAlignment="Stretch" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).SaveAllCardImagesCommand}" />
+              </StackPanel>
+            </Flyout>
+          </Button.Flyout>
+        </Button>
         <TextBlock Classes="label" Text="Card art: the picture inside the frame" />
         <StackPanel Orientation="Horizontal" Spacing="6">
           <Button Content="Choose art…" Click="OnPickArtwork" />

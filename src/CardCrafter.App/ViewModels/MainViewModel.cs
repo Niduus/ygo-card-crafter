@@ -560,6 +560,58 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
+    // ---------------------------------------------------------------- saving card images
+
+    public IReadOnlyList<Services.ImageSize> ImageSizes => Services.ImageSize.Presets;
+    [ObservableProperty] private Services.ImageSize _selectedImageSize = Services.ImageSize.Presets[2];
+    [ObservableProperty] private decimal? _customImageWidth = 1000;
+    public bool IsCustomImageSize => SelectedImageSize.Width == 0;
+    partial void OnSelectedImageSizeChanged(Services.ImageSize value) => OnPropertyChanged(nameof(IsCustomImageSize));
+
+    private int ImageWidth => SelectedImageSize.Width > 0 ? SelectedImageSize.Width : (int)Math.Clamp(CustomImageWidth ?? 813, 64, 8000);
+
+    private void SaveImage(CardViewModel card, string path) =>
+        Services.CardImageExporter.Save(card.Data, card.TypeLine, card.FaceText, card.ResolvedArtwork, ImageWidth, path);
+
+    [RelayCommand]
+    private async Task SaveCardImage()
+    {
+        if (SelectedCard is not { } card) return;
+        var path = await _dialogs.SaveFileAsync("Save card image", Services.CardImageExporter.FileName(card.Data, ".png"), "PNG or JPG image", "png");
+        if (path is null) return;
+        try
+        {
+            SaveImage(card, path);
+            Status = $"Saved {Path.GetFileName(path)} at {ImageWidth} px wide.";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Status = $"Couldn't save the image: {ex.Message}";
+        }
+    }
+
+    [RelayCommand]
+    private async Task SaveAllCardImages()
+    {
+        var folder = await _dialogs.PickFolderAsync("Save an image of every card into…");
+        if (folder is null) return;
+        int saved = 0;
+        foreach (var card in Cards)
+        {
+            try
+            {
+                SaveImage(card, Path.Combine(folder, Services.CardImageExporter.FileName(card.Data, ".png")));
+                saved++;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Status = $"Couldn't save {card.ListLabel}: {ex.Message}";
+            }
+        }
+        Status = $"Saved {saved} card images at {ImageWidth} px wide to {folder}.";
+        _dialogs.OpenFolder(folder);
+    }
+
     // ---------------------------------------------------------------- card frame images
 
     [ObservableProperty] private string _frameStatus = "Built-in frames";
