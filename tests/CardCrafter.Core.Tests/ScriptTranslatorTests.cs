@@ -92,6 +92,7 @@ public class ScriptTranslatorTests
     {
         int scripts = 0, complete = 0, pieces = 0, translated = 0;
         var reasons = new Dictionary<string, int>();
+        var details = new Dictionary<string, int>();
         foreach (var file in Directory.EnumerateFiles(EngineScenario.EngineScripts!, "c*.lua"))
         {
             if (!long.TryParse(Path.GetFileNameWithoutExtension(file)[1..], out var id)) continue;
@@ -118,11 +119,16 @@ public class ScriptTranslatorTests
             {
                 var key = System.Text.RegularExpressions.Regex.Replace(r.Reason ?? "", @"\(.*", "(…");
                 reasons[key] = reasons.GetValueOrDefault(key) + 1;
+                var detail = System.Text.RegularExpressions.Regex.Replace(r.Reason ?? "", @"\d{4,}", "N");
+                details[detail] = details.GetValueOrDefault(detail) + 1;
             }
         }
         Console.WriteLine($"{complete} of {scripts} official scripts translate completely; {translated} of {pieces} effects.");
         if (Environment.GetEnvironmentVariable("CARDCRAFTER_TRANSLATION_REPORT") is { } report)
+        {
             File.WriteAllLines(report, reasons.OrderByDescending(r => r.Value).Select(r => $"{r.Value}\t{r.Key}"));
+            File.WriteAllLines(Path.ChangeExtension(report, ".detail.txt"), details.OrderByDescending(r => r.Value).Take(400).Select(r => $"{r.Value}\t{r.Key}"));
+        }
         Assert.True(complete > 250, $"{complete} of {scripts}");
     }
 }

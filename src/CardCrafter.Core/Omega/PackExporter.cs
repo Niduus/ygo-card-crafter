@@ -33,6 +33,10 @@ public static class PackExporter
     /// Converts an image to JPEG (source path, destination path; false if it can't). YGO Omega keeps card art as .jpg,
     /// so PNG and other art is converted on export. Set by the app, which has an image library; null copies as is.
     /// </summary>
+    /// <summary>
+    /// Writes card art as YGO Omega accepts it (a 624 x 624 JPEG), from any picture. Set by the app, which has an image
+    /// library; without it .jpg art is copied as it is.
+    /// </summary>
     public static Func<string, string, bool>? ConvertToJpeg { get; set; }
 
     /// <param name="schema">The database layout to write; YGO Omega's own when installing into Omega, ygopro's otherwise.</param>
@@ -79,12 +83,19 @@ public static class PackExporter
                 Directory.CreateDirectory(picsDir);
                 var ext = Path.GetExtension(art).ToLowerInvariant();
                 var jpg = Path.Combine(picsDir, card.Card.Id + ".jpg");
-                if (ext is ".jpg" or ".jpeg") File.Copy(art, jpg, overwrite: true);
-                else if (ConvertToJpeg is null || !ConvertToJpeg(art, jpg))
+                // YGO Omega rejects art that isn't a 624 x 624 JPEG, so every picture is cropped, resized and re-encoded.
+                if (ConvertToJpeg is not null && ConvertToJpeg(art, jpg)) { }
+                else if (ext is ".jpg" or ".jpeg")
+                {
+                    File.Copy(art, jpg, overwrite: true);
+                    if (ConvertToJpeg is not null)
+                        export.Checks.Add(new Diagnostic(Severity.Warning, $"Art for \"{card.Card.Name}\" couldn't be resized to 624 x 624; YGO Omega may not show it."));
+                }
+                else
                 {
                     jpg = Path.Combine(picsDir, card.Card.Id + ext);
                     File.Copy(art, jpg, overwrite: true);
-                    export.Checks.Add(new Diagnostic(Severity.Warning, $"Art for \"{card.Card.Name}\" is {ext}; YGO Omega expects .jpg."));
+                    export.Checks.Add(new Diagnostic(Severity.Warning, $"Art for \"{card.Card.Name}\" is {ext}; YGO Omega expects a 624 x 624 .jpg."));
                 }
                 export.ImagePath = jpg;
             }

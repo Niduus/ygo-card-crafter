@@ -204,7 +204,10 @@ public static partial class ScriptTranslator
         if (parts[0] != "1") throw No("it can be used more than once per turn");
         if (parts.Length == 1) return OncePerTurn.Soft;
         var key = parts[1].Replace(id.ToString(CultureInfo.InvariantCulture), "id").Replace("+EFFECT_COUNT_CODE_OATH", "").Replace(" ", "");
-        group = key switch { "id" => 1, "id+1" or "id+o" or "id+100" => 2, "id+2" or "id+o*2" or "id+200" => 3, _ => throw No("its once-per-turn code is unusual") };
+        // The second and third codes are often written out: the passcode plus 1, 2, 100 or 200.
+        if (long.TryParse(key, NumberStyles.Integer, CultureInfo.InvariantCulture, out var literal) && (literal - id) is 1 or 2 or 100 or 200)
+            key = "id+" + (literal - id).ToString(CultureInfo.InvariantCulture);
+        group = key switch { "id" => 1, "id+1" or "id+o" or "id+100" => 2, "id+2" or "id+o*2" or "id+200" => 3, _ => throw No($"its once-per-turn code is unusual ({args})") };
         return OncePerTurn.Hard;
     }
 
@@ -218,6 +221,7 @@ public static partial class ScriptTranslator
         "LOCATION_FZONE" => "field_zone",
         "LOCATION_PZONE" => "pendulum_zone",
         "LOCATION_REMOVED" => "banished",
+        "LOCATION_HAND+LOCATION_GRAVE" or "LOCATION_GRAVE+LOCATION_HAND" => "hand_or_graveyard",
         _ => throw No($"it works from {range}"),
     };
 
@@ -227,13 +231,20 @@ public static partial class ScriptTranslator
     private static (BlockInstance When, bool UsedCondition) Trigger(HashSet<string> type, string code, string? range, string? condition, bool alsoSpecial, Functions fns)
     {
         string? body = condition is null || condition.StartsWith("aux.", StringComparison.Ordinal) ? condition : Body(condition, fns);
-        (string Timing, bool Used) Timing(string c) => c switch
+        (string Timing, bool Used) Timing(string c) => (c, body) switch
         {
-            "EVENT_FREE_CHAIN" => ("any", false),
-            "EVENT_ATTACK_ANNOUNCE" when body is "return Duel.GetAttacker():IsControler(1-tp)" or "return tp~=Duel.GetTurnPlayer()" => ("attack", true),
-            "EVENT_SUMMON_SUCCESS" => ("summon", false),
-            "EVENT_CHAINING" => ("chain_any", false),
-            _ => throw No($"it starts on {c}"),
+            ("EVENT_FREE_CHAIN", _) => ("any", false),
+            ("EVENT_ATTACK_ANNOUNCE", "return Duel.GetAttacker():IsControler(1-tp)" or "return tp~=Duel.GetTurnPlayer()" or "return Duel.GetTurnPlayer()~=tp") => ("attack", true),
+            ("EVENT_ATTACK_ANNOUNCE", "return Duel.GetAttacker():IsControler(1-tp) and Duel.GetAttackTarget()==nil") => ("attack_direct", true),
+            ("EVENT_ATTACK_ANNOUNCE", null) => ("attack_any", false),
+            ("EVENT_SUMMON_SUCCESS", "return eg:IsExists(Card.IsSummonPlayer,1,nil,1-tp)") => (alsoSpecial ? "summon" : "summon_normal", true),
+            ("EVENT_SPSUMMON_SUCCESS", "return eg:IsExists(Card.IsSummonPlayer,1,nil,1-tp)") => ("summon_special", true),
+            ("EVENT_FLIP_SUMMON_SUCCESS", "return eg:IsExists(Card.IsSummonPlayer,1,nil,1-tp)") => ("summon_flip", true),
+            ("EVENT_CHAINING", null) => ("chain_either", false),
+            ("EVENT_CHAINING", "return rp==1-tp") => ("chain_any", true),
+            ("EVENT_CHAINING", "return rp==1-tp and re:IsActiveType(TYPE_MONSTER)") => ("chain_monster", true),
+            ("EVENT_CHAINING", "return rp==1-tp and re:IsHasType(EFFECT_TYPE_ACTIVATE)") => ("chain_spelltrap", true),
+            _ => throw No($"it starts on {c}{(body is null ? "" : $" ({Short(body)})")}"),
         };
 
         if (type.SetEquals(["EFFECT_TYPE_ACTIVATE"]))
@@ -257,6 +268,8 @@ public static partial class ScriptTranslator
             switch (code)
             {
                 case "EVENT_SUMMON_SUCCESS": return (Block("when.summoned").With("how", alsoSpecial ? "normal_or_special" : "normal").With("optional", optional), false);
+                case "EVENT_SPSUMMON_SUCCESS" when body is not null && SummonTypes.TryGetValue(body, out var how):
+                    return (Block("when.summoned").With("how", how).With("optional", optional), true);
                 case "EVENT_SPSUMMON_SUCCESS": return (Block("when.summoned").With("how", "special").With("optional", optional), false);
                 case "EVENT_FLIP_SUMMON_SUCCESS": return (Block("when.summoned").With("how", "flip").With("optional", optional), false);
                 case "EVENT_TO_GRAVE":
@@ -265,7 +278,7 @@ public static partial class ScriptTranslator
                         null => "any",
                         "return e:GetHandler():IsPreviousLocation(LOCATION_ONFIELD)" => "field",
                         "return e:GetHandler():IsPreviousLocation(LOCATION_HAND)" => "hand",
-                        _ => throw No("its \"sent to the GY\" condition is unusual"),
+                        _ => throw No($"its \"sent to the GY\" condition is unusual ({Short(body)})"),
                     };
                     return (Block("when.sent_to_gy").With("from", from).With("optional", optional), body is not null);
                 case "EVENT_DESTROYED":
@@ -273,29 +286,164 @@ public static partial class ScriptTranslator
                     {
                         null => "any",
                         "return e:GetHandler():IsReason(REASON_BATTLE)" => "battle",
-                        "return e:GetHandler():IsReason(REASON_EFFECT)" => "effect",
-                        _ => throw No("its \"destroyed\" condition is unusual"),
+                        "return e:GetHandler():IsReason(REASON_EFFECT)" or "return bit.band(r,REASON_EFFECT)~=0" => "effect",
+                        "return bit.band(r,REASON_BATTLE)~=0" => "battle",
+                        "return bit.band(r,REASON_EFFECT+REASON_BATTLE)~=0" => "any",
+                        "return rp==1-tp and e:GetHandler():IsPreviousControler(tp)" or "return rp==1-tp and c:IsPreviousControler(tp)" => "opponent",
+                        _ => throw No($"its \"destroyed\" condition is unusual ({Short(body)})"),
                     };
                     return (Block("when.destroyed").With("by", by).With("optional", optional), body is not null);
                 case "EVENT_BATTLE_DESTROYING" when body == "aux.bdocon":
                     return (Block("when.destroys_by_battle").With("optional", optional), true);
+                case "EVENT_REMOVE" when body is null: return (Block("when.this_card").With("event", "banished").With("optional", optional), false);
+                case "EVENT_LEAVE_FIELD" when body is null: return (Block("when.this_card").With("event", "leaves_field").With("optional", optional), false);
+                case "EVENT_RELEASE" when body is null: return (Block("when.this_card").With("event", "tributed").With("optional", optional), false);
+                case "EVENT_BECOME_TARGET" when body is null: return (Block("when.this_card").With("event", "targeted").With("optional", optional), false);
+                case "EVENT_BATTLE_DAMAGE" when body is "return ep~=tp" or "return ep==1-tp":
+                    return (Block("when.this_card").With("event", "battle_damage").With("optional", optional), true);
+                case "EVENT_ATTACK_ANNOUNCE" when body is null: return (Block("when.this_card").With("event", "declares_attack").With("optional", optional), false);
+                case "EVENT_BE_BATTLE_TARGET" when body is null: return (Block("when.this_card").With("event", "attacked").With("optional", optional), false);
+                case "EVENT_BATTLE_START" when body is null: return (Block("when.this_card").With("event", "battle_start").With("optional", optional), false);
             }
         }
-        throw No("its trigger isn't one the blocks have");
+        if (type.SetEquals(["EFFECT_TYPE_FIELD", optional ? "EFFECT_TYPE_TRIGGER_O" : "EFFECT_TYPE_TRIGGER_F"]))
+        {
+            var phase = code switch
+            {
+                "EVENT_PHASE+PHASE_END" => "end",
+                "EVENT_PHASE+PHASE_STANDBY" => "standby",
+                "EVENT_PHASE+PHASE_BATTLE" => "battle_end",
+                "EVENT_PHASE+PHASE_BATTLE_START" => "battle_start",
+                "EVENT_PHASE+PHASE_DRAW" => "draw",
+                _ => null,
+            };
+            if (phase is not null)
+            {
+                var whose = body switch
+                {
+                    null => "each",
+                    "return Duel.GetTurnPlayer()==tp" or "return tp==Duel.GetTurnPlayer()" => "your",
+                    "return Duel.GetTurnPlayer()~=tp" or "return Duel.GetTurnPlayer()==1-tp" or "return tp~=Duel.GetTurnPlayer()" => "opponent",
+                    _ => throw No($"its phase condition isn't one the blocks have ({Short(body)})"),
+                };
+                return (Block("when.phase").With("phase", phase).With("whose", whose).With("zone", Zone(range)).With("optional", optional), body is not null);
+            }
+            var ev = (code, body) switch
+            {
+                ("EVENT_SPSUMMON_SUCCESS", "return eg:IsExists(Card.IsSummonPlayer,1,nil,1-tp)") => "opp_special",
+                ("EVENT_SUMMON_SUCCESS", "return eg:IsExists(Card.IsSummonPlayer,1,nil,1-tp)") => alsoSpecial ? "opp_summon" : "opp_normal",
+                ("EVENT_SPSUMMON_SUCCESS", "return eg:IsExists(Card.IsSummonPlayer,1,nil,tp)") => "you_special",
+                ("EVENT_ATTACK_ANNOUNCE", "return Duel.GetAttacker():IsControler(1-tp)" or "return tp~=Duel.GetTurnPlayer()" or "return Duel.GetTurnPlayer()~=tp") => "opp_attack",
+                ("EVENT_DRAW", "return ep==1-tp" or "return ep~=tp") => "opp_draw",
+                ("EVENT_DAMAGE", "return ep==tp") => "you_damage",
+                ("EVENT_BATTLE_DAMAGE", "return ep==tp") => "you_battle_damage",
+                ("EVENT_BATTLE_DAMAGE", "return ep==1-tp" or "return ep~=tp") => "opp_battle_damage",
+                ("EVENT_CHAINING", "return rp==1-tp") => "opp_activates",
+                ("EVENT_REMOVE", null) => "banished_any",
+                _ => null,
+            };
+            if (ev is not null)
+                return (Block("when.event").With("event", ev).With("zone", Zone(range)).With("optional", optional), body is not null);
+        }
+        throw No($"its trigger isn't one the blocks have ({string.Join("+", type.Select(t => t.Replace("EFFECT_TYPE_", "")).OrderBy(t => t))} {code})");
     }
 
-    private static List<BlockInstance> Conditions(string condition, Functions fns) => Body(condition, fns) switch
+    private static List<BlockInstance> Conditions(string condition, Functions fns)
     {
+        var body = Body(condition, fns);
+        if (body.StartsWith("return ", StringComparison.Ordinal) && !body.Contains(" or ", StringComparison.Ordinal) && !body.Contains('(' + "Duel.GetCurrentPhase", StringComparison.Ordinal))
+        {
+            // "A and B": each part on its own IF block, when every part is one the blocks have.
+            var parts = SplitTopLevelAnd(body["return ".Length..]);
+            if (parts.Count > 1)
+                return parts.SelectMany(p => ConditionBody("return " + p, fns)).ToList();
+        }
+        return ConditionBody(body, fns);
+    }
+
+    /// <summary>Splits on " and " outside brackets.</summary>
+    private static List<string> SplitTopLevelAnd(string expr)
+    {
+        var parts = new List<string>();
+        int depth = 0, start = 0;
+        for (int i = 0; i < expr.Length; i++)
+        {
+            if (expr[i] == '(') depth++;
+            else if (expr[i] == ')') depth--;
+            else if (depth == 0 && string.CompareOrdinal(expr, i, " and ", 0, 5) == 0)
+            {
+                parts.Add(expr[start..i].Trim());
+                start = i + 5;
+                i += 4;
+            }
+        }
+        parts.Add(expr[start..].Trim());
+        return parts;
+    }
+
+    private static List<BlockInstance> ConditionBody(string body, Functions fns)
+    {
+        Match m;
+        if ((m = Regex.Match(body, @"^return (not )?Duel\.IsExistingMatchingCard\(([\w.]+),tp,([\w+]+),([\w+]+),(\d+),(nil|e:GetHandler\(\))\)$")).Success)
+        {
+            var f = Filter(m.Groups[2].Value, fns);
+            Locate(f, m.Groups[3].Value, m.Groups[4].Value);
+            f.ExcludeThisCard = m.Groups[6].Value != "nil";
+            var n = Int(m.Groups[5].Value);
+            if (m.Groups[1].Success) return n == 1 ? [Block("if.no_cards").With("cards", f)] : throw No("its condition counts cards in a way the blocks don't");
+            return [Block("if.cards_exist").With("count", n).With("cards", f)];
+        }
+        if ((m = Regex.Match(body, @"^return Duel\.GetFieldGroupCount\(tp,(LOCATION_MZONE|0),(LOCATION_MZONE|0)\)(==0|>0)$")).Success && (m.Groups[1].Value == "0") != (m.Groups[2].Value == "0"))
+        {
+            var f = new CardFilter { CardType = FilterCardType.Monster, Zones = Model.Zone.MonsterZone, Owner = m.Groups[1].Value == "0" ? CardOwner.Opponent : CardOwner.You };
+            return [m.Groups[3].Value == "==0" ? Block("if.no_cards").With("cards", f) : Block("if.cards_exist").With("count", 1).With("cards", f)];
+        }
+        if ((m = Regex.Match(body, @"^return Duel\.GetFieldGroupCount\((tp|1-tp),LOCATION_HAND,0\)(==|<=|>=)(\d+)$")).Success)
+            return [Block("if.hand_count").With("who", m.Groups[1].Value == "tp" ? "you" : "opponent")
+                .With("cmp", m.Groups[2].Value switch { "==" => "eq", ">=" => "ge", _ => "le" }).With("count", Int(m.Groups[3].Value))];
+        return ConditionMatch(body);
+    }
+
+    private static List<BlockInstance> ConditionMatch(string body) => body switch
+    {
+        var b when b.Length == 0 => throw No("its condition is empty"),
+        "local ph=Duel.GetCurrentPhase() return ph==PHASE_MAIN1 or ph==PHASE_MAIN2" => [Block("if.phase").With("phase", "main")],
+        "local ph=Duel.GetCurrentPhase() return ph>=PHASE_BATTLE_START and ph<=PHASE_BATTLE" => [Block("if.phase").With("phase", "battle")],
+        "return e:GetHandler():IsPosition(POS_FACEUP_ATTACK)" => [Block("if.position").With("pos", "attack")],
+        "return e:GetHandler():IsPosition(POS_FACEUP_DEFENSE)" => [Block("if.position").With("pos", "faceup_defense")],
+        "return e:GetHandler():IsSummonType(SUMMON_TYPE_NORMAL)" => [Block("if.summoned_by").With("how", "normal")],
         "return Duel.GetTurnPlayer()~=tp" or "return Duel.GetTurnPlayer()==1-tp" => [Block("if.turn").With("whose", "opponent")],
         "return Duel.GetTurnPlayer()==tp" => [Block("if.turn").With("whose", "your")],
-        _ => throw No("its condition isn't one the blocks have"),
+        "return Duel.IsMainPhase()" or "return Duel.GetCurrentPhase()==PHASE_MAIN1 or Duel.GetCurrentPhase()==PHASE_MAIN2" => [Block("if.phase").With("phase", "main")],
+        "return Duel.IsBattlePhase()" or "return Duel.GetCurrentPhase()>=PHASE_BATTLE_START and Duel.GetCurrentPhase()<=PHASE_BATTLE" => [Block("if.phase").With("phase", "battle")],
+        "return Duel.GetCurrentPhase()==PHASE_STANDBY" => [Block("if.phase").With("phase", "standby")],
+        "return Duel.GetCurrentPhase()==PHASE_END" => [Block("if.phase").With("phase", "end")],
+        "return e:GetHandler():IsAttackPos()" => [Block("if.position").With("pos", "attack")],
+        "return e:GetHandler():IsDefensePos()" => [Block("if.position").With("pos", "defense")],
+        var b when SummonTypes.TryGetValue(b, out var how) => [Block("if.summoned_by").With("how", how)],
+        var other => throw No($"its condition isn't one the blocks have ({Short(other)})"),
     };
 
-    /// <summary>The one-line body of a function, e.g. "return Duel.GetTurnPlayer()~=tp".</summary>
+    /// <summary>"This card was Link Summoned" and the like, as condition bodies.</summary>
+    private static readonly Dictionary<string, string> SummonTypes = new()
+    {
+        ["return e:GetHandler():IsSummonType(SUMMON_TYPE_LINK)"] = "link",
+        ["return e:GetHandler():IsSummonType(SUMMON_TYPE_SYNCHRO)"] = "synchro",
+        ["return e:GetHandler():IsSummonType(SUMMON_TYPE_XYZ)"] = "xyz",
+        ["return e:GetHandler():IsSummonType(SUMMON_TYPE_FUSION)"] = "fusion",
+        ["return e:GetHandler():IsSummonType(SUMMON_TYPE_RITUAL)"] = "ritual",
+        ["return e:GetHandler():IsSummonType(SUMMON_TYPE_PENDULUM)"] = "pendulum",
+    };
+
+    /// <summary>
+    /// The one-line body of a function, e.g. "return Duel.GetTurnPlayer()~=tp". Lasting effects' conditions get the
+    /// player as e:GetHandlerPlayer(); that is written as tp, like activated effects.
+    /// </summary>
     private static string Body(string reference, Functions fns)
     {
         var (_, body) = fns.Get(reference);
-        return string.Join(" ", body.Select(l => l.Trim())).Trim();
+        var text = string.Join(" ", body.Select(l => l.Trim()).Where(l => l is not ("local tp=e:GetHandlerPlayer()" or "local c=e:GetHandler()"))).Trim();
+        return text.Replace("e:GetHandlerPlayer()", "tp", StringComparison.Ordinal);
     }
 
     private static readonly Regex ChkReturn = new(@"^if chk==0 then return .* end$");
@@ -434,6 +582,9 @@ public static partial class ScriptTranslator
         if ((m = Regex.Match(line, @"^Duel\.DiscardDeck\((tp|1-tp),(\d+),REASON_EFFECT\)$")).Success)
             return Block("do.mill").With("whose", m.Groups[1].Value == "tp" ? "you" : "opponent").With("count", Int(m.Groups[2].Value));
         if (line == "Duel.NegateActivation(ev)") return Block("do.negate").With("what", "activation");
+        if (line == "Duel.NegateAttack()") return Block("do.negate_attack");
+        if ((m = Regex.Match(line, @"^Duel\.DiscardHand\((tp|1-tp),nil,(\d+),\2,REASON_EFFECT\+REASON_DISCARD\)$")).Success)
+            return Block("do.discard").With("who", m.Groups[1].Value == "tp" ? "you" : "opponent").With("count", Int(m.Groups[2].Value));
         if (line == "Duel.NegateEffect(ev)") return Block("do.negate").With("what", "effect");
 
         // Actions on cards: a selected group, the target, or this card.
@@ -445,13 +596,17 @@ public static partial class ScriptTranslator
             (@"^Duel\.SendtoHand\((\w+),nil,REASON_EFFECT\)$", "hand"),
             (@"^Duel\.SendtoDeck\((\w+),nil,(?:2|SEQ_DECKSHUFFLE),REASON_EFFECT\)$", "do.shuffle_into_deck"),
             (@"^Duel\.SpecialSummon\((\w+),0,tp,tp,false,false,(POS_FACEUP|POS_FACEUP_ATTACK|POS_FACEUP_DEFENSE)\)$", "do.special_summon"),
+            (@"^Duel\.GetControl\((\w+),tp,PHASE_END,1\)$", "control_turn"),
+            (@"^Duel\.GetControl\((\w+),tp\)$", "control"),
+            (@"^Duel\.ChangePosition\((\w+),POS_FACEUP_DEFENSE,POS_FACEUP_DEFENSE,POS_FACEUP_ATTACK,POS_FACEUP_ATTACK\)$", "pos_toggle"),
+            (@"^Duel\.ChangePosition\((\w+),POS_FACEDOWN_DEFENSE\)$", "pos_facedown"),
         };
         foreach (var (pattern, blockId) in verbs)
         {
             m = Regex.Match(line, pattern);
             if (!m.Success) continue;
             var what = m.Groups[1].Value;
-            var position = m.Groups.Count > 2 && m.Groups[2].Success ? m.Groups[2].Value switch { "POS_FACEUP_ATTACK" => "attack", "POS_FACEUP_DEFENSE" => "defense", _ => "faceup" } : null;
+            var position = blockId == "do.special_summon" && m.Groups.Count > 2 && m.Groups[2].Success ? m.Groups[2].Value switch { "POS_FACEUP_ATTACK" => "attack", "POS_FACEUP_DEFENSE" => "defense", _ => "faceup" } : null;
             if (what is "c" && blockId == "do.special_summon")
             {
                 self = true;
@@ -464,10 +619,16 @@ public static partial class ScriptTranslator
             else if (what == "tc" && targetCard && target.Filter is not null) (filter, count, targeted) = (target.Filter, target.Count, true);
             else throw No($"it acts on {what}, which the blocks can't follow");
 
-            var id = blockId == "hand"
-                ? (filter.Zones & (Model.Zone.Deck | Model.Zone.Graveyard | Model.Zone.Banished)) != 0 && (filter.Zones & Model.Zone.Field) == 0 ? "do.add_to_hand" : "do.return_to_hand"
-                : blockId;
+            var id = blockId switch
+            {
+                "hand" => (filter.Zones & (Model.Zone.Deck | Model.Zone.Graveyard | Model.Zone.Banished)) != 0 && (filter.Zones & Model.Zone.Field) == 0 ? "do.add_to_hand" : "do.return_to_hand",
+                "control" or "control_turn" => "do.take_control",
+                "pos_toggle" or "pos_facedown" => "do.change_position",
+                _ => blockId,
+            };
             var block = Block(id).With("count", count).With("cards", filter);
+            if (blockId is "control" or "control_turn") block = block.With("duration", blockId == "control_turn" ? "turn" : "always");
+            if (blockId is "pos_toggle" or "pos_facedown") block = block.With("to", blockId == "pos_toggle" ? "toggle" : "facedown");
             if (BlockRegistry.Find(id)!.Param("target") is not null) block = block.With("target", targeted);
             else if (targeted) throw No("it targets in a way that block can't");
             if (position is not null && BlockRegistry.Find(id)!.Param("position") is not null) block = block.With("position", position);
@@ -480,11 +641,20 @@ public static partial class ScriptTranslator
 
     private static EffectEvent Passive(EffectEvent effect, HashSet<string> type, string code, Dictionary<string, string> set, string? range, HashSet<string> props, Functions fns, CardData card)
     {
+        var result = LastingEffect(effect, type, code, set, range, props, fns, card);
+        // "While ...": the same IF blocks, with the player being whoever controls this card.
+        if (set.GetValueOrDefault("Condition") is { } lastingCondition) result.If.AddRange(Conditions(lastingCondition, fns));
+        return result;
+    }
+
+    private static EffectEvent LastingEffect(EffectEvent effect, HashSet<string> type, string code, Dictionary<string, string> set, string? range, HashSet<string> props, Functions fns, CardData card)
+    {
         effect.Limit = OncePerTurn.None;
         effect.When = Block("when.while_face_up").With("zone", Zone(range ?? "LOCATION_MZONE"));
         var value = set.GetValueOrDefault("Value");
-        if (set.ContainsKey("Condition") || set.ContainsKey("Target") && !type.Contains("EFFECT_TYPE_FIELD"))
-            throw No("its lasting effect has a condition");
+        if (set.ContainsKey("Target") && !type.Contains("EFFECT_TYPE_FIELD"))
+            throw No("its lasting effect picks its cards in a way the blocks don't");
+
         if (type.SetEquals(["EFFECT_TYPE_SINGLE"]))
         {
             switch (code)
@@ -495,6 +665,15 @@ public static partial class ScriptTranslator
                 case "EFFECT_DIRECT_ATTACK": effect.Do.Add(Block("passive.battle_ability").With("ability", "direct")); return effect;
                 case "EFFECT_EXTRA_ATTACK" when value == "1": effect.Do.Add(Block("passive.battle_ability").With("ability", "extra")); return effect;
                 case "EFFECT_CANNOT_BE_EFFECT_TARGET" when value == "aux.tgoval": effect.Do.Add(Block("passive.untargetable")); return effect;
+                case "EFFECT_CANNOT_ATTACK": effect.Do.Add(Block("passive.self_rule").With("rule", "cannot_attack")); return effect;
+                case "EFFECT_CANNOT_DIRECT_ATTACK": effect.Do.Add(Block("passive.self_rule").With("rule", "cannot_direct")); return effect;
+                case "EFFECT_CANNOT_BE_BATTLE_TARGET" when value == "aux.imval1": effect.Do.Add(Block("passive.self_rule").With("rule", "not_attack_target")); return effect;
+                case "EFFECT_AVOID_BATTLE_DAMAGE" when value == "1": effect.Do.Add(Block("passive.self_rule").With("rule", "no_battle_damage")); return effect;
+                case "EFFECT_CANNOT_CHANGE_POSITION": effect.Do.Add(Block("passive.self_rule").With("rule", "cannot_change_position")); return effect;
+                case "EFFECT_ATTACK_ALL" when value == "1": effect.Do.Add(Block("passive.self_rule").With("rule", "attack_all")); return effect;
+                case "EFFECT_MUST_ATTACK": effect.Do.Add(Block("passive.self_rule").With("rule", "must_attack")); return effect;
+                case "EFFECT_IMMUNE_EFFECT" when value is not null && ImmuneValue(value, fns) is { } whose:
+                    effect.Do.Add(Block("passive.immune").With("whose", whose)); return effect;
                 case "EFFECT_UPDATE_ATTACK" or "EFFECT_UPDATE_DEFENSE" when value is not null && Regex.IsMatch(value, @"^-?\d+$") && range is not null:
                     var n = Int(value);
                     effect.Do.Add(Block("passive.self_stats").With("dir", n < 0 ? "lose" : "gain").With("amount", Math.Abs(n)).With("stat", code == "EFFECT_UPDATE_ATTACK" ? "atk" : "def"));
@@ -523,7 +702,35 @@ public static partial class ScriptTranslator
                 .With("stat", code == "EFFECT_UPDATE_ATTACK" ? "atk" : "def"));
             return effect;
         }
-        throw No("its lasting effect isn't one the blocks have");
+        if (type.SetEquals(["EFFECT_TYPE_EQUIP"]) && card.Kind == CardKind.Spell && card.SpellKind == SpellKind.Equip)
+        {
+            switch (code)
+            {
+                case "EFFECT_UPDATE_ATTACK" when value is not null && Regex.IsMatch(value, @"^-?\d+$"):
+                    var n = Int(value);
+                    effect.Do.Add(Block("passive.equipped").With("rule", n < 0 ? "lose_atk" : "gain_atk").With("amount", Math.Abs(n)));
+                    return effect;
+                case "EFFECT_INDESTRUCTABLE_BATTLE" when value == "1": effect.Do.Add(Block("passive.equipped").With("rule", "indestructible_battle")); return effect;
+                case "EFFECT_INDESTRUCTABLE_EFFECT" when value == "1": effect.Do.Add(Block("passive.equipped").With("rule", "indestructible_effect")); return effect;
+                case "EFFECT_PIERCE": effect.Do.Add(Block("passive.equipped").With("rule", "pierce")); return effect;
+                case "EFFECT_CANNOT_ATTACK": effect.Do.Add(Block("passive.equipped").With("rule", "cannot_attack")); return effect;
+            }
+        }
+        throw No($"its lasting effect isn't one the blocks have ({string.Join("+", type.Select(t => t.Replace("EFFECT_TYPE_", "")))} {code})");
+    }
+
+    /// <summary>The "unaffected by" choice for common EFFECT_IMMUNE_EFFECT value functions.</summary>
+    private static string? ImmuneValue(string value, Functions fns)
+    {
+        string body;
+        try { body = Body(value, fns); } catch (Untranslatable) { return null; }
+        return body switch
+        {
+            "return te:GetOwnerPlayer()~=e:GetHandlerPlayer()" or "return te:GetOwnerPlayer()~=e:GetOwnerPlayer()" => "opponent",
+            "return te:GetOwner()~=e:GetOwner()" => "other",
+            "return te:IsActiveType(TYPE_SPELL+TYPE_TRAP)" => "spelltrap",
+            _ => null,
+        };
     }
 
     // ---------------------------------------------------------------- filters
@@ -625,5 +832,5 @@ public static partial class ScriptTranslator
 
     private static int Int(string s) => int.Parse(s, CultureInfo.InvariantCulture);
 
-    private static string Short(string s) => s.Length > 60 ? s[..60] + "…" : s;
+    private static string Short(string s) => s.Length > 90 ? s[..90] + "…" : s;
 }

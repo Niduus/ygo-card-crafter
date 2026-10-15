@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <Version>0.5.2</Version>
+    <Version>0.6.0</Version>
     <Authors>Niduus</Authors>
     <Product>YGO Card Crafter</Product>
   </PropertyGroup>

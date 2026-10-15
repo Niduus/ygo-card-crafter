@@ -68,8 +68,26 @@ card, to build Ash Blossom- or Solemn-style cards. **Negate the effects of** fac
 **Lasting effects.** Pick the WHEN block "While this card is face-up" to make effects that are always on,
 such as "Dragon monsters you control gain 500 ATK" or "This card cannot be destroyed by battle".
 
-**Extra Deck monsters.** Fusion, Synchro, Xyz and Link monsters get their summoning procedure from the
-Card tab: materials by passcode or by "what a material must be", and how many.
+**Blocks from real cards.** The blocks were widened from a scan of every official script, adding what real cards use
+most: "If this card is banished / leaves the field / is Tributed / is Link Summoned / inflicts battle damage", "When this
+card declares an attack / is attacked", Damage Step and Battle Phase timings, "when your opponent would Summon" with
+**Negate the Summon**, effects from the hand or GY (**Special Summon this card** says "from your hand"), and "Something
+happens in the duel" triggers such as "If your opponent Special Summons a monster(s)". Actions include discarding,
+changing positions, taking control, attaching material, Tokens (make the Token as a card with the Token frame), ATK
+becoming half or 0, Level changes, attacking directly or twice, and "you cannot Special Summon except ...". Lasting
+effects include immunity, "cannot attack / be attacked / be Tributed", no battle or effect damage and what an Equip
+Spell gives the equipped monster. Equip Spells equip themselves to a monster you choose under **Equip to**.
+
+**Card text.** The suggested text reads like a printed card: the effects run together in one paragraph, a card with
+several once-per-turn effects ends with "You can only use each effect of "X" once per turn.", and the picked zones
+change the wording ("3 monsters your opponent controls"). A card saved with no text of its own gets its suggested text.
+
+**Summoning conditions.** Extra Deck monsters have a **Summoning conditions** section on the Card tab that shows the
+materials line exactly as it will be printed and edits it: "2 Effect Monsters" (S:P Little Knight), "2 Level 12
+monsters" (TY-PHON), "1 "Aleister" monster + 1 EARTH or LIGHT monster" (Invoked), "1 Tuner + 1+ non-Tuner monsters".
+Fusion Materials are listed one by one, each a specific card or a filter; Xyz Monsters can use a material Level other
+than their Rank; Link Monsters can require "including a ..." material. Filters can ask for Effect Monsters, Tuners,
+non-Tuners and other kinds, and several Attributes at once. Other ways to Summon a monster, like TY-PHON's, are effects.
 
 **Summoning rules.** "Cannot be Normal Summoned" is a rule about the card, not an ability, so it lives in the Card tab's
 **Summoning** choice:
@@ -103,7 +121,9 @@ shows a warning the next time Card Crafter scans Omega, and installing is refuse
 **Card face.** The Card tab shows a live preview laid out like a printed card: name, Attribute, Level/Rank stars or
 Link Arrows, Pendulum scales, the set number under the art, "[Type/Effect]", card text, ATK/DEF, the passcode with its
 edition, and the copyright line (left panel; it defaults to "©year author"). **Choose art…** sets the illustration.
-YGO Omega draws the frame itself, so only the art is exported, as `.jpg`.
+YGO Omega draws the frame itself, so only the art is exported, and Omega only accepts art as a 624 × 624 `.jpg`: any
+picture (JPEG, PNG, WebP...) is centre-cropped to a square, resized to 624 × 624 and saved as a JPEG when you export,
+install or save into a database.
 
 **Card textures.** Card Crafter includes no card artwork. The preview is assembled from card textures you provide:
 **Textures… → Use card textures from a .zip…** (unpacked into `%AppData%\YGO Card Crafter\Textures`) or **from a folder…**.
@@ -229,7 +249,7 @@ happens Card Crafter offers to restart itself as administrator and finish the in
 ```
 <pack name>.cdb        card database (SQLite: datas + texts tables)
 script/c<passcode>.lua one script per card
-pics/<passcode>.jpg    card artwork, if you added any
+pics/<passcode>.jpg    card artwork (624 × 624), if you added any
 ```
 
 Packs are saved as `.ycc` files: readable JSON you can share, keep in git, or post on Discord.

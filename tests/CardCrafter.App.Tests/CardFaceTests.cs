@@ -176,6 +176,22 @@ public class CardFaceTests
         Assert.Equal(jpg, result.Cards[0].ImagePath);
         var head = File.ReadAllBytes(jpg).Take(2).ToArray();
         Assert.Equal(new byte[] { 0xFF, 0xD8 }, head);
+        using (var exported = SkiaSharp.SKBitmap.Decode(jpg))
+        {
+            Assert.Equal(624, exported.Width);
+            Assert.Equal(624, exported.Height);
+        }
+
+        // A wide .jpg is cropped and resized too: Omega rejects art of any other size.
+        var wide = Path.Combine(tmp.Path, "wide.jpg");
+        using (var bmp = new SkiaSharp.SKBitmap(1200, 800))
+        using (var img = SkiaSharp.SKImage.FromBitmap(bmp))
+        using (var data = img.Encode(SkiaSharp.SKEncodedImageFormat.Jpeg, 90))
+        using (var f = File.Create(wide)) data.SaveTo(f);
+        pack.Cards[0].ArtworkPath = wide;
+        Core.Omega.PackExporter.Export(pack, tmp.Path);
+        using var resized = SkiaSharp.SKBitmap.Decode(jpg);
+        Assert.Equal((624, 624), (resized.Width, resized.Height));
     }
 
     [AvaloniaFact]
