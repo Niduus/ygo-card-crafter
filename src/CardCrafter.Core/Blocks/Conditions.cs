@@ -178,8 +178,9 @@ public sealed class PhaseCondition : ConditionBlock
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Choice("phase", "Phase",
-            new("main", "Main Phase"),
+            new("main", "Main Phase", "Main Phase (1 or 2)"),
             new("main1", "Main Phase 1"),
+            new("main2", "Main Phase 2"),
             new("battle", "Battle Phase"),
             new("standby", "Standby Phase"),
             new("end", "End Phase")),
@@ -193,6 +194,7 @@ public sealed class PhaseCondition : ConditionBlock
         "standby" => "Duel.GetCurrentPhase()==PHASE_STANDBY",
         "end" => "Duel.GetCurrentPhase()==PHASE_END",
         "main1" => "Duel.GetCurrentPhase()==PHASE_MAIN1",
+        "main2" => "Duel.GetCurrentPhase()==PHASE_MAIN2",
         _ => "(Duel.GetCurrentPhase()==PHASE_MAIN1 or Duel.GetCurrentPhase()==PHASE_MAIN2)",
     });
 }

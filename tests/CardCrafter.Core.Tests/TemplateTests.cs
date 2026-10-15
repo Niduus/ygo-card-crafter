@@ -19,8 +19,8 @@ public class TemplateTests
                 Id = 100000600, Name = t.LikeCard, Kind = CardKind.Spell,
                 SpellKind = t.Name switch
                 {
-                    "Type boost field" => SpellKind.Field, "Standby heal" or "Monsters banished instead" => SpellKind.Continuous,
-                    "Destroy a Spell/Trap" => SpellKind.QuickPlay, _ => SpellKind.Normal,
+                    "Type boost field" => SpellKind.Field, "Standby heal" or "Monsters banished instead" or "Reveal the opponent's hand" => SpellKind.Continuous,
+                    "Destroy a Spell/Trap" or "Freeze a monster" => SpellKind.QuickPlay, "Ritual Summon" => SpellKind.Ritual, _ => SpellKind.Normal,
                 },
             },
             CardKind.Trap => new CardData

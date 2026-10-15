@@ -630,21 +630,45 @@ public sealed class SummonRestrictionAction : ActionBlock
                                    "or \"your opponent cannot activate cards or effects\". It starts when the effect resolves. Leave \"except\" as plain monsters for no exception.";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
-        ParamSpec.Choice("duration", "For", new("turn", "For the rest of this turn"), new("next", "Until the end of the next turn")),
+        ParamSpec.Choice("duration", "For", new("turn", "For the rest of this turn"), new("next", "Until the end of the next turn"), new("duel", "For the rest of this Duel")),
         ParamSpec.Choice("who", "Who", new("you", "you"), new("opponent", "your opponent"), new("both", "neither player")),
         ParamSpec.Choice("what", "Cannot", Locks.What),
-        ParamSpec.Cards("cards", "Except (plain monsters for none)", () => new CardFilter { CardType = FilterCardType.Monster, Attribute = CardAttribute.Dark }, Zone.MonsterZone),
+        ParamSpec.Cards("cards", "Except / which (plain monsters for none)", () => new CardFilter { CardType = FilterCardType.Monster, Attribute = CardAttribute.Dark }, Zone.MonsterZone),
+        ParamSpec.Flag("from_hand", "only if this card was activated from the hand", false),
     ];
 
+    private static string Duration(BlockArgs args) => args.Choice("duration") switch
+    {
+        "next" => "until the end of the next turn",
+        "duel" => "for the rest of this Duel",
+        _ => "for the rest of this turn",
+    };
+
     public override string Describe(BlockArgs args) =>
-        $"{(args.Choice("duration") == "next" ? "until the end of the next turn" : "for the rest of this turn")}, {Locks.Sentence(args.Choice("who"), Locks.WhatOf(args), args.Cards("cards"), args)}";
+        args.Bool("from_hand") ? "" : $"{Duration(args)}, {Locks.Sentence(args.Choice("who"), Locks.WhatOf(args), args.Cards("cards"), args)}";
+
+    /// <summary>Dominus: "If you activated this card from your hand, you cannot activate the effects of LIGHT monsters for the rest of this Duel."</summary>
+    public override string Afterword(BlockArgs args) =>
+        args.Bool("from_hand")
+            ? $"If you activated this card from your hand, {Locks.Sentence(args.Choice("who"), Locks.WhatOf(args), args.Cards("cards"), args)} {Duration(args)}."
+            : "";
 
     public override void Compile(BlockContext ctx)
     {
         var lines = new List<string> { "local sl=Effect.CreateEffect(e:GetHandler())" };
         lines.AddRange(Locks.Lines(ctx, "sl", ctx.Args.Choice("who"), Locks.WhatOf(ctx.Args), ctx.Args.Cards("cards"), null));
-        lines.Add(ctx.Args.Choice("duration") == "next" ? "sl:SetReset(RESET_PHASE+PHASE_END,2)" : "sl:SetReset(RESET_PHASE+PHASE_END)");
+        switch (ctx.Args.Choice("duration"))
+        {
+            case "next": lines.Add("sl:SetReset(RESET_PHASE+PHASE_END,2)"); break;
+            case "duel": break;
+            default: lines.Add("sl:SetReset(RESET_PHASE+PHASE_END)"); break;
+        }
         lines.Add("Duel.RegisterEffect(sl,tp)");
+        if (ctx.Args.Bool("from_hand"))
+        {
+            if (ctx.Card.Kind != CardKind.Trap) ctx.Effect.Warn("\"Only if activated from the hand\" is for Trap Cards that can be activated from the hand.");
+            lines = ["if e:GetHandler():IsStatus(STATUS_ACT_FROM_HAND) then", .. lines.Select(l => "\t" + l), "end"];
+        }
         ctx.Effect.AddStep(lines, null, ctx.Link);
     }
 }

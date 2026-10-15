@@ -421,7 +421,9 @@ public class EngineTests
     // Negation needs an opponent's activation to respond to, so it has its own duel below; negating a Summon
     // and Tokens have theirs in ScanBlockEngineTests.
     public static IEnumerable<object[]> DoBlocks() =>
-        BlockRegistry.OfKind(BlockKind.Action).Where(b => b.Id is not ("do.negate" or "do.negate_summon" or "do.tokens")).Select(b => new object[] { b.Id, false })
+        // Responses to an activation, a Trap's column and Ritual Summons have their own duels in UniqueEngineTests.
+        BlockRegistry.OfKind(BlockKind.Action).Where(b => b.Id is not ("do.negate" or "do.negate_summon" or "do.tokens" or "do.negate_unless" or "do.that_card"
+            or "do.negate_column" or "do.ritual_summon")).Select(b => new object[] { b.Id, false })
             .Concat(BlockRegistry.OfKind(BlockKind.Action).Where(b => b.Param("target") is not null).Select(b => new object[] { b.Id, true }));
 
     /// <summary>Every DO block, with its default settings, activated from a monster on a well-stocked board.</summary>
@@ -473,7 +475,7 @@ public class EngineTests
         var inst = BlockRegistry.Find(blockId)!.CreateInstance();
         foreach (var kv in values.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(s => s.Split('='))) inst.With(kv[0], kv[1]);
         if (blockId == "cost.move_cards" && inst.Values["how"] == "grave") inst.Filters["cards"].Zones = Zone.Hand;
-        var discardSelf = inst.Values.GetValueOrDefault("how") == "discard";
+        var discardSelf = inst.Values.GetValueOrDefault("how") == "discard" || blockId == "cost.reveal_self";
         var card = new CardProject
         {
             Card = new CardData { Id = 100000400, Name = "Payer", Level = 4, Atk = 1000 },
@@ -497,7 +499,8 @@ public class EngineTests
     }
 
     public static IEnumerable<object[]> PassiveBlocks() =>
-        BlockRegistry.OfKind(BlockKind.Passive).SelectMany(def =>
+        // A Trap activated from the hand has its own duel in UniqueEngineTests.
+        BlockRegistry.OfKind(BlockKind.Passive).Where(b => b.Id != ActivateFromHandPassive.BlockId).SelectMany(def =>
             new[] { def.CreateInstance() }
                 .Concat(def.Params.Where(p => p.Type == ParamType.Choice).SelectMany(p => p.Choices.Skip(1).Select(c => def.CreateInstance().With(p.Key, c.Value))))
                 .Select(inst => new object[] { def.Id, string.Join(",", inst.Values.Select(kv => $"{kv.Key}={kv.Value}")) }));
@@ -513,6 +516,11 @@ public class EngineTests
             Card = new CardData { Id = 100000500, Name = "Aura", Level = 4, Atk = 1000, Def = 1000 },
             Effects = [new EffectEvent { When = new BlockInstance("when.while_face_up"), Do = [inst] }],
         };
+        if (blockId == ReplaceDestroyPassive.BlockId && inst.Values["how"] == "detach")
+        {
+            card.Card.Frame = MonsterFrame.Xyz;
+            card.Procedure.Kind = SummonProcedureKind.Xyz;
+        }
         if (blockId == "passive.equipped")
         {
             // An Equip Spell, activated from the hand onto a Warrior.
@@ -646,6 +654,22 @@ public class EngineTemplateTests
                     .Check($"Duel.IsExistingMatchingCard(Card.IsCode,0,LOCATION_MZONE,0,1,nil,{id})")
                     .Check("Duel.IsExistingMatchingCard(Card.IsCode,0,LOCATION_GRAVE,0,1,nil,1003)");
                 break;
+            // Archetype mechanics: played for real in UniqueEngineTests.
+            case "Tribute this card instead" or "Opponent discards, or it's negated": s.Card(id, 0, "mzone").ExpectActivations(0); break;
+            case "Ritual Summon":
+                s.Card(id, 0, "hand").ExpectActivations(0); break;
+            case "Negate a summoning effect": s.Card(id, 0, "szone").ExpectActivations(0); break;
+            case "Activate from the hand": s.Card(id, 0, "hand").ExpectActivations(0); break;
+            case "Summon to the center zone":
+                s.Card(id, 0, "hand").SpSummon(id).ExpectActivations(0)
+                    .Check($"Duel.GetFieldCard(0,LOCATION_MZONE,2)~=nil and Duel.GetFieldCard(0,LOCATION_MZONE,2):IsCode({id})");
+                break;
+            case "Freeze a monster":
+                s.Card(id, 0, "hand").Card(EffectFiller, 1, "mzone").ExpectActivations(1)
+                    .Check($"Duel.IsExistingMatchingCard(Card.IsCode,0,LOCATION_GRAVE,0,1,nil,{id})");
+                break;
+            case "Reveal the opponent's hand":
+                s.Card(id, 0, "hand").Card(Fiend, 1, "hand").ExpectActivations(1).Check("Duel.GetFieldGroup(1,LOCATION_HAND,0):GetFirst():IsPublic()"); break;
             case "Search, the turn you activate it": s.Card(id, 0, "hand").Summon(id).ExpectActivations(1).Check("Duel.GetFieldGroupCount(0,LOCATION_HAND,0)==1"); break;
             default: s.Card(id, 0, "hand").ExpectActivations(1); break;
         }

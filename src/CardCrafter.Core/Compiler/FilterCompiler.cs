@@ -82,6 +82,7 @@ public static class FilterCompiler
             case FilterCardType.Monster: parts.Add($"{card}:IsType(TYPE_MONSTER)"); break;
             case FilterCardType.Spell: parts.Add($"{card}:IsType(TYPE_SPELL)"); break;
             case FilterCardType.Trap: parts.Add($"{card}:IsType(TYPE_TRAP)"); break;
+            case FilterCardType.SpellTrap: parts.Add($"{card}:IsType(TYPE_SPELL+TYPE_TRAP)"); break;
         }
         if (KindType(f.MonsterKind) is { } kind)
             parts.Add(kind.Not ? $"not {card}:{isType}({kind.Type})" : $"{card}:{isType}({kind.Type})");
@@ -102,6 +103,7 @@ public static class FilterCompiler
         if (f.AtkMin is { } amin) parts.Add($"{card}:IsAttackAbove({amin})");
         if (f.AtkMax is { } amax) parts.Add($"{card}:IsAttackBelow({amax})");
         if (f.PointedToByThisCard) parts.Add($"e:GetHandler():GetLinkedGroup():IsContains({card})");
+        if (f.CenterZone) parts.Add($"{card}:IsLocation(LOCATION_MZONE) and {card}:GetSequence()==2");
         if (f.FaceUpOnly)
         {
             var onlyPublicZones = (f.Zones & ~(Zone.Field | Zone.Banished)) == Zone.None;

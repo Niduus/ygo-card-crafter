@@ -41,7 +41,8 @@ public sealed partial class EffectViewModel : ObservableObject
     public bool IsProcedure => Model.When?.BlockId == SummonProcedureTrigger.BlockId;
     public bool ShowCosts => !IsPassive;
     public string CostHint => IsProcedure ? "Paid to Summon it" : "Paid to activate it";
-    public bool ShowLimit => !IsPassive;
+    /// <summary>Lasting effects have no limit, except replacements like "Tribute this card instead".</summary>
+    public bool ShowLimit => !IsPassive || Model.Do.Any(b => b.BlockId == ReplaceDestroyPassive.BlockId);
     public string DoHeader => IsPassive ? "ALWAYS (lasting effects)" : "DO";
 
     public string Label
@@ -64,7 +65,7 @@ public sealed partial class EffectViewModel : ObservableObject
         }
     }
 
-    public bool ShowSharedGroup => Model.Limit == OncePerTurn.Hard;
+    public bool ShowSharedGroup => Model.Limit is OncePerTurn.Hard or OncePerTurn.Duel;
     public decimal? SharedGroup
     {
         get => Model.SharedLimitGroup;

@@ -103,6 +103,28 @@ reads "If Summoned this way, ..." like the Ryzeal monsters. Locks can also stop 
 declare attacks, except with Rank 4 Xyz Monsters"), and a DO lock can be put on your opponent. The templates include
 each of these cards.
 
+**Archetype mechanics.** Blocks for what makes newer archetypes unusual:
+- *Mitsurugi:* Tributing as an effect ("then Tribute 1 monster you control", "make your opponent Tribute 1 monster they
+  control (their choice)"), Tributing from your hand or field as a cost, "If another Reptile monster(s) you control
+  would be destroyed..., you can Tribute this card instead" (also detach, banish or send it), **Ritual Summon** as a DO
+  block (from the hand, Deck or GY; Levels equal or equal-or-exceeding), "your opponent can discard 1 card, or that
+  effect is negated", "reveal this card in your hand" and **once per Duel**.
+- *Dominus:* Traps you can activate from your hand (with IF blocks such as "your opponent controls a card", "you control
+  no cards" or "your opponent has activated a monster effect in the hand or GY this turn"), timings for "an effect that
+  Special Summons / adds from the Deck to the hand / destroys", "then if you have a Trap in your GY, destroy that card",
+  and locks "for the rest of this Duel" that only apply "if you activated this card from your hand".
+- *Zones (Elfnote, Infinite Impermanence):* "Special Summon this card (from your hand) to your center Main Monster
+  Zone", "this card is in the center Main Monster Zone", card pickers for "the monster in your center Main Monster
+  Zone", moving a monster to another zone or swapping with the center one, and Infinite Impermanence's "all other
+  Spell/Trap effects in this column are negated".
+- *Forbidden Crown:* **Apply these effects** to a monster with each effect ticked on its own (negated, can't attack,
+  can't be destroyed, unaffected by activated effects, can't be Tributed, can't be material), and "Neither player can
+  activate monster effects in response to this card's activation".
+- *Mind Scan:* "Your opponent must keep their hand revealed" and "declare 1 card name; negate the activated effects of
+  cards with that original name until the end of this turn".
+- "If this card battles a monster, neither can be destroyed by that battle", "ignoring its Summoning conditions",
+  Main Phase 1 / Main Phase 2 (plain "Main Phase" means either) and Spell/Trap as a card type in every picker.
+
 **Card text.** The suggested text reads like a printed card: the effects run together in one paragraph, a card with
 several once-per-turn effects ends with "You can only use each effect of "X" once per turn.", and the picked zones
 change the wording ("3 monsters your opponent controls"). A card saved with no text of its own gets its suggested text.
@@ -212,7 +234,7 @@ the browser says **Becomes blocks** with the effect's wording, and **Add as bloc
 WHEN/IF/COST/DO blocks you can change. When every effect of a card has exact blocks, **Use as a new card** makes the
 copy with blocks (the original script is kept on the Script tab). Effects without exact blocks say why and stay script,
 so a translation never changes what a card does. A card on a hand-written script can try the same from the Effects
-tab with **Turn the script into blocks**. Of the 13,571 official scripts, 785 become blocks completely and 11,522 of
+tab with **Turn the script into blocks**. Of the 13,571 official scripts, 812 become blocks completely and 11,693 of
 their 35,901 effects do, including Synchro, Xyz, Link and Fusion material lines. When Omega's
 folders have no script for a card, the official one can be fetched from
 [ygopro-scripts](https://github.com/Fluorohydride/ygopro-scripts). **Browse a database file…** searches any `.db`/`.cdb`.

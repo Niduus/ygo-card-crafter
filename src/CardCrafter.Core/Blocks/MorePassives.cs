@@ -56,13 +56,22 @@ public sealed class SelfRulePassive : PassiveBlock
             new("cannot_material", "This card cannot be used as material for a Fusion, Synchro, Xyz or Link Summon"),
             new("cannot_change_position", "This card's battle position cannot be changed"),
             new("attack_all", "This card can attack all monsters your opponent controls once each"),
-            new("must_attack", "This card must attack, if able")),
+            new("must_attack", "This card must attack, if able"),
+            new("battle_safe", "If this card battles a monster, neither can be destroyed by that battle")),
     ];
 
     public override void Compile(BlockContext ctx)
     {
         Zones.RequireMonster(ctx, Name);
         var range = RangeOf(ctx);
+        if (ctx.Args.Choice("rule") == "battle_safe")
+        {
+            // Dark-Eyes Illusionist Faceless Mage: this card and the monster it battles both survive the battle.
+            var tg = ctx.Script.AddFunction("indtg", "e,c", ["local h=e:GetHandler()", "return c==h or c==h:GetBattleTarget()"]);
+            ctx.Effect.AddPassive(v => [$"{v}:SetType(EFFECT_TYPE_FIELD)", $"{v}:SetCode(EFFECT_INDESTRUCTABLE_BATTLE)", $"{v}:SetRange({range})",
+                $"{v}:SetTargetRange(LOCATION_MZONE,LOCATION_MZONE)", $"{v}:SetTarget({tg})", $"{v}:SetValue(1)"]);
+            return;
+        }
         var codes = ctx.Args.Choice("rule") switch
         {
             "cannot_direct" => new[] { ("EFFECT_CANNOT_DIRECT_ATTACK", "1") },

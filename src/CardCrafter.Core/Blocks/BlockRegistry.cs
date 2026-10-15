@@ -38,6 +38,8 @@ public static class BlockRegistry
         new NotSentThisTurnCondition(),
         new CanBattleCondition(),
         new CompareLifePointsCondition(),
+        new OpponentActivatedCondition(),
+        new ZoneCondition(),
         // COST
         new DiscardCost(),
         new PayLifePointsCost(),
@@ -46,6 +48,8 @@ public static class BlockRegistry
         new MoveCardsCost(),
         new DetachCost(),
         new SummonRestrictionCost(),
+        new RevealSelfCost(),
+        new ChainLimitCost(),
         // DO
         new DrawAction(),
         new AddToHandAction(),
@@ -80,6 +84,16 @@ public static class BlockRegistry
         new SelfBattleRuleAction(),
         new SummonRestrictionAction(),
         new BanishInsteadAction(),
+        new TributeAction(),
+        new OpponentTributesAction(),
+        new RitualSummonAction(),
+        new NegateUnlessAction(),
+        new OnlyIfAction(),
+        new ThatCardAction(),
+        new MoveZoneAction(),
+        new NegateColumnAction(),
+        new ApplyEffectsAction(),
+        new DeclareNegateAction(),
         new ExtraNormalSummonAction(),
         // DO (lasting)
         new BoostCardsPassive(),
@@ -97,6 +111,9 @@ public static class BlockRegistry
         new LockPassive(),
         new BanishInsteadPassive(),
         new NegateAllPassive(),
+        new ReplaceDestroyPassive(),
+        new ActivateFromHandPassive(),
+        new RevealHandPassive(),
     ];
 
     private static readonly Dictionary<string, BlockDefinition> ById = All.ToDictionary(b => b.Id);

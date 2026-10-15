@@ -7,6 +7,8 @@ public enum OncePerTurn
     Soft,
     /// <summary>"You can only use this effect of X once per turn": shared by every copy.</summary>
     Hard,
+    /// <summary>"You can only use this effect of X once per Duel."</summary>
+    Duel,
 }
 
 /// <summary>How an action connects to the one before it, matching card-text wording.</summary>

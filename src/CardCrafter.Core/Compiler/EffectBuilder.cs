@@ -19,7 +19,7 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
 {
     private int _localCounter;
     private readonly List<OperationStep> _steps = [];
-    private readonly List<Func<string, IEnumerable<string>>> _passives = [];
+    private readonly List<(Func<string, IEnumerable<string>> Write, bool Limited)> _passives = [];
 
     public ScriptBuilder Script { get; } = script;
     public EffectEvent Source { get; } = source;
@@ -40,6 +40,8 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
     public bool IsPassive { get; set; }
     /// <summary>True for a Special Summon procedure (EFFECT_SPSUMMON_PROC), which never starts a chain.</summary>
     public bool IsSummonProcedure { get; set; }
+    /// <summary>For a Summon procedure: the zones it Summons to, as a mask ("0x4" is the center Main Monster Zone), or null for any.</summary>
+    public string? ProcedureZone { get; set; }
 
     public List<string> Categories { get; } = [];
     public List<string> Properties { get; } = [];
@@ -74,7 +76,10 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
         _steps.Add(new OperationStep { Lines = lines.ToList(), Result = result, Link = link });
 
     /// <summary>Adds a lasting effect. The callback writes the effect given its variable name.</summary>
-    public void AddPassive(Func<string, IEnumerable<string>> write) => _passives.Add(write);
+    public void AddPassive(Func<string, IEnumerable<string>> write, bool limited = false) => _passives.Add((write, limited));
+
+    /// <summary>True when a lasting effect takes the effect's "once per turn", like "Tribute this card instead".</summary>
+    public bool HasLimitedPassive => _passives.Any(p => p.Limited);
 
     public bool HasSteps => _steps.Count > 0;
 
@@ -88,7 +93,7 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
     /// <summary>Writes the lines that go inside initial_effect for this effect.</summary>
     public List<string> Build(string? countLimit)
     {
-        return IsPassive ? BuildPassives() : IsSummonProcedure ? BuildProcedure(countLimit) : BuildActivated(countLimit);
+        return IsPassive ? BuildPassives(countLimit) : IsSummonProcedure ? BuildProcedure(countLimit) : BuildActivated(countLimit);
     }
 
     /// <summary>
@@ -108,7 +113,9 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
         var payLines = CostLines.Select(l => l.Replace("REASON_COST", "REASON_SPSUMMON")).ToList();
         // Tributing frees a zone, so only check for an empty one when nothing on the field is Tributed.
         var checks = new List<string>();
-        if (!payLines.Any(l => l.Contains("Duel.Release(", StringComparison.Ordinal)))
+        if (ProcedureZone is not null)
+            checks.Add($"Duel.GetLocationCount(tp,LOCATION_MZONE,tp,LOCATION_REASON_TOFIELD,{ProcedureZone})>0");
+        else if (!payLines.Any(l => l.Contains("Duel.Release(", StringComparison.Ordinal)))
             checks.Add("Duel.GetLocationCount(tp,LOCATION_MZONE)>0");
         checks.AddRange(Conditions);
         checks.AddRange(CostChecks);
@@ -117,6 +124,8 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
         lines.Add($"{Var}:SetCondition({Script.AddFunction(Var + "con", "e,c", con)})");
         if (payLines.Count > 0)
             lines.Add($"{Var}:SetOperation({Script.AddFunction(Var + "op", "e,tp,eg,ep,ev,re,r,rp,c", payLines)})");
+        if (ProcedureZone is not null)
+            lines.Add($"{Var}:SetValue({Script.AddFunction(Var + "zone", "e,c", [$"return 0,{ProcedureZone}"])})");
         lines.Add($"c:RegisterEffect({Var})");
         return lines;
     }
@@ -175,7 +184,7 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
         return lines;
     }
 
-    private List<string> BuildPassives()
+    private List<string> BuildPassives(string? countLimit)
     {
         var lines = new List<string> { $"--{Lua.Comment(Source.Label)}" };
         string? con = null;
@@ -186,12 +195,13 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
             con = Script.AddFunction($"e{Index}con", "e", body);
         }
         char suffix = 'a';
-        foreach (var write in _passives)
+        foreach (var (write, limited) in _passives)
         {
             var v = _passives.Count == 1 ? Var : $"{Var}{suffix++}";
             var body = write(v).ToList();
             lines.Add($"local {v}=Effect.CreateEffect(c)");
             lines.AddRange(body);
+            if (limited && countLimit is not null) lines.Add($"{v}:SetCountLimit({countLimit})");
             if (con is not null) lines.Add($"{v}:SetCondition({con})");
             lines.Add($"c:RegisterEffect({v})");
         }

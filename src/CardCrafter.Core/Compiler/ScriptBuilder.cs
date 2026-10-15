@@ -39,6 +39,24 @@ public sealed class ScriptBuilder(CardProject project, CardPack? pack)
         return true;
     }
 
+    private readonly List<(string Activity, string Filter)> _extraCounters = [];
+
+    /// <summary>
+    /// A counter of what players did this turn for a condition ("your opponent has activated a monster effect this
+    /// turn"): its own counter code, so it never mixes with a lock's counter. Returns the code to read it with.
+    /// </summary>
+    public string ActivityCounter(string activity, string filter)
+    {
+        var i = _extraCounters.IndexOf((activity, filter));
+        if (i < 0)
+        {
+            _extraCounters.Add((activity, filter));
+            i = _extraCounters.Count - 1;
+            AddInitialLine($"Duel.AddCustomActivityCounter(id+{1000000000 + i * 10000000},{activity},{filter})");
+        }
+        return $"id+{1000000000 + i * 10000000}";
+    }
+
     /// <summary>
     /// Adds "function s.name(args) ... end" and returns "s.name".
     /// Identical functions are shared, so two blocks with the same filter reuse one function.

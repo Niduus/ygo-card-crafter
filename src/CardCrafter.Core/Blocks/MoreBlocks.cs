@@ -152,7 +152,7 @@ public sealed class NegateAction : ActionBlock
     public override string Help => "Use with a WHEN timing like \"when your opponent activates a card or effect\", like Ash Blossom or Solemn Judgment.";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
-        ParamSpec.Choice("what", "What", new("activation", "the activation"), new("effect", "the effect")),
+        ParamSpec.Choice("what", "What", new("activation", "the activation"), new("effect", "that effect")),
         ParamSpec.Choice("and", "And",
             new("nothing", "", "and nothing else"),
             new("destroy", "and if you do, destroy that card"),

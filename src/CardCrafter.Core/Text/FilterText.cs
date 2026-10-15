@@ -51,6 +51,7 @@ public static class FilterText
                 FilterCardType.Monster => "monster",
                 FilterCardType.Spell => "Spell",
                 FilterCardType.Trap => "Trap",
+                FilterCardType.SpellTrap => "Spell/Trap",
                 // Only the Monster Zones hold only monsters; only the Spell & Trap Zones, only Spells and Traps.
                 _ when f.Zones == Zone.MonsterZone => "monster",
                 _ when f.Zones == Zone.SpellTrapZone => "Spell/Trap",
@@ -105,6 +106,15 @@ public static class FilterText
     private static string Location(CardFilter f, string preposition)
     {
         if (f.Zones == Zone.None) return "";
+        if (f.CenterZone)
+        {
+            return f.Owner switch
+            {
+                CardOwner.You => "in your center Main Monster Zone",
+                CardOwner.Opponent => "in your opponent's center Main Monster Zone",
+                _ => "in a center Main Monster Zone",
+            };
+        }
         if (f.PointedToByThisCard)
         {
             return f.Owner switch

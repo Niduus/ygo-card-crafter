@@ -106,6 +106,25 @@ public class AllBlocksTests
             case "do.tokens":
                 inst.Values["token"] = TokenId.ToString(System.Globalization.CultureInfo.InvariantCulture);
                 break;
+            // Responses to an activation.
+            case "do.negate_unless" or "do.that_card":
+                project.Effects[0].When = new BlockInstance("when.quick").With("timing", "chain_any");
+                break;
+            case "cost.reveal_self":
+                project.Effects[0].When = new BlockInstance("when.ignition").With("zone", "hand");
+                break;
+            // A Set Trap's column; a Trap activated from the hand.
+            case "do.negate_column":
+                project.Card.Kind = CardKind.Trap;
+                project.Effects[0].When = new BlockInstance("when.activate");
+                break;
+            case "passive.activate_from_hand":
+                project.Card.Kind = CardKind.Trap;
+                break;
+            case "passive.replace_destroy" when inst.Values.GetValueOrDefault("how") == "detach":
+                project.Card.Frame = MonsterFrame.Xyz;
+                project.Procedure.Kind = SummonProcedureKind.Xyz;
+                break;
         }
         // "For each card used for the cost" needs a cost that counts; "for each of those cards" needs an action before.
         if (inst.Values.GetValueOrDefault("per") == "per_cost")

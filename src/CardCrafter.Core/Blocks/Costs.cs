@@ -95,12 +95,20 @@ public sealed class TributeCost : CostBlock
     public override string Id => "cost.tribute";
     public override string Group => "Cards";
     public override string Name => "Tribute monsters";
-    public override string Sentence => "Tribute {count} {cards}";
+    public override string Sentence => "Tribute {count} {cards} {from}";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Int("count", "How many", 1, 1, 5),
         ParamSpec.Cards("cards", "Which monsters", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster }, Zone.MonsterZone),
+        ParamSpec.Choice("from", "From", new("field", "", "you control"), new("hand_or_field", "from your hand or field")),
     ];
+
+    public override string Describe(BlockArgs args)
+    {
+        var n = args.Int("count");
+        var cards = Text.FilterText.Describe(args.Cards("cards"), args.Pack, n != 1, withLocation: args.Choice("from") != "hand_or_field");
+        return args.Choice("from") == "hand_or_field" ? $"Tribute {n} {cards} from your hand or field" : $"Tribute {n} {cards}";
+    }
 
     public override void Compile(BlockContext ctx)
     {
@@ -110,8 +118,17 @@ public sealed class TributeCost : CostBlock
         var f = ctx.Script.Filter(filter, null, "tributefilter");
         var n = ctx.Args.Int("count");
         var g = ctx.Effect.NewLocal("g");
-        ctx.Effect.CostChecks.Add($"Duel.CheckReleaseGroup(tp,{f.Function},{n},{f.Exclude},e,tp)");
-        ctx.Effect.CostLines.Add($"local {g}=Duel.SelectReleaseGroup(tp,{f.Function},{n},{n},{f.Exclude},e,tp)");
+        if (ctx.Args.Choice("from") == "hand_or_field")
+        {
+            // Mitsurugi: Tributing from the hand as well as the field.
+            ctx.Effect.CostChecks.Add($"Duel.CheckReleaseGroupEx(tp,{f.Function},{n},REASON_COST,true,{f.Exclude},e,tp)");
+            ctx.Effect.CostLines.Add($"local {g}=Duel.SelectReleaseGroupEx(tp,{f.Function},{n},{n},REASON_COST,true,{f.Exclude},e,tp)");
+        }
+        else
+        {
+            ctx.Effect.CostChecks.Add($"Duel.CheckReleaseGroup(tp,{f.Function},{n},{f.Exclude},e,tp)");
+            ctx.Effect.CostLines.Add($"local {g}=Duel.SelectReleaseGroup(tp,{f.Function},{n},{n},{f.Exclude},e,tp)");
+        }
         ctx.Effect.CostLines.Add($"Duel.Release({g},REASON_COST)");
     }
 }

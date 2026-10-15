@@ -14,6 +14,7 @@
 //   activate <code> [times]            whoever controls this card activates its effects whenever offered
 //   summon <code>                      its controller Normal Summons this card when it can
 //   spsummon <code>                    its controller uses this card's summon procedure when it can
+//   announce <code>                    the card name declared for "declare 1 card name" (default 1004)
 //   turns <n>                          how many turns to play before checking (default 1)
 //   check <lua expression>             must be true after the last turn; player 0 is "0"
 //   expect_activations <n>             how many activations must have happened (default: no check)
@@ -106,6 +107,7 @@ struct Scenario {
 	std::vector<Placement> cards;
 	std::map<uint32_t, int> activate;
 	std::vector<uint32_t> summon, spsummon;
+	uint32_t announce = 0;
 	std::vector<std::string> checks;
 	int turns = 1;
 	int expect_activations = -1;
@@ -146,6 +148,7 @@ static bool parse_scenario(const char* path, Scenario& sc) {
 		else if (cmd == "activate") { uint32_t c; int t = 1; in >> c >> t; if (t <= 0) t = 1; sc.activate[c] = t; }
 		else if (cmd == "summon") { uint32_t c; in >> c; sc.summon.push_back(c); }
 		else if (cmd == "spsummon") { uint32_t c; in >> c; sc.spsummon.push_back(c); }
+		else if (cmd == "announce") { in >> sc.announce; }
 		else if (cmd == "turns") in >> sc.turns;
 		else if (cmd == "expect_activations") in >> sc.expect_activations;
 		else if (cmd == "check") { std::string rest; std::getline(in, rest); sc.checks.push_back(rest); }
@@ -278,15 +281,21 @@ static void respond(intptr_t pd, Scenario& sc) {
 		set_responsei(pd, 1);
 		return;
 	}
+	case PROCESSOR_ANNOUNCE_CARD:
+		// "Declare 1 card name": the scenario's choice, or the opponent's Fiend.
+		set_responsei(pd, (int32_t)(sc.announce ? sc.announce : 1004));
+		return;
 	case PROCESSOR_SORT_CARD:
 		b[0] = 0xff;
 		set_responseb(pd, b);
 		return;
 	default:
-		// Pauses such as a revealed card (PROCESSOR_WAIT) need no real answer.
-		if (unit.type < PROCESSOR_ADD_CHAIN || unit.type >= 100)
+		// Pauses between steps (a prompt that was just answered, a revealed card) need no answer: answering would
+		// overwrite the value the prompt returned, such as a declared card name.
+		if (unit.type < PROCESSOR_ADD_CHAIN || unit.type >= 100) {
 			std::printf("HARNESS: no automatic answer for prompt type %u\n", (unsigned)unit.type);
-		set_responsei(pd, 0);
+			set_responsei(pd, 0);
+		}
 		return;
 	}
 }

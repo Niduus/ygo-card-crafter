@@ -54,7 +54,8 @@ public static class Lists
     public static readonly IReadOnlyList<Option<OncePerTurn>> Limits = Options.Of(
         (OncePerTurn.None, "No limit"),
         (OncePerTurn.Soft, "Once per turn (each copy)"),
-        (OncePerTurn.Hard, "Once per turn (by card name)"));
+        (OncePerTurn.Hard, "Once per turn (by card name)"),
+        (OncePerTurn.Duel, "Once per Duel (by card name)"));
 
     public static readonly IReadOnlyList<Option<ActionLink>> Links = Options.Of(
         (ActionLink.And, "and"),
@@ -74,5 +75,5 @@ public static class Lists
         (MonsterKind.Union, "Union monster"), (MonsterKind.Gemini, "Gemini monster"), (MonsterKind.Token, "Token"), (MonsterKind.NonToken, "non-Token"));
 
     public static readonly IReadOnlyList<Option<FilterCardType>> FilterTypes = Options.Of(
-        (FilterCardType.Any, "Any card"), (FilterCardType.Monster, "Monster"), (FilterCardType.Spell, "Spell"), (FilterCardType.Trap, "Trap"));
+        (FilterCardType.Any, "Any card"), (FilterCardType.Monster, "Monster"), (FilterCardType.Spell, "Spell"), (FilterCardType.Trap, "Trap"), (FilterCardType.SpellTrap, "Spell/Trap"));
 }

@@ -227,20 +227,21 @@ public static class ScriptCompiler
         foreach (var e in effects)
         {
             string? limit = null;
-            if (!e.IsPassive)
+            if (!e.IsPassive || e.HasLimitedPassive)
             {
                 switch (e.Source.Limit)
                 {
                     case OncePerTurn.Soft:
                         limit = "1";
                         break;
-                    case OncePerTurn.Hard:
+                    case OncePerTurn.Hard or OncePerTurn.Duel:
                         var group = e.Source.SharedLimitGroup > 0 ? e.Source.SharedLimitGroup : -e.Index;
                         if (!groups.Contains(group)) groups.Add(group);
                         var slot = groups.IndexOf(group);
                         var code = slot == 0 ? "id" : $"id+{Lua.Num(slot * card.CountCodeOffset)}";
                         // For Spell/Trap activations, "you can only activate 1 per turn" ignores negated activations,
                         // and a Summon procedure only counts once it is used.
+                        if (e.Source.Limit == OncePerTurn.Duel) code += "+EFFECT_COUNT_CODE_DUEL";
                         limit = e.IsActivation || e.IsSummonProcedure ? $"1,{code}+EFFECT_COUNT_CODE_OATH" : $"1,{code}";
                         break;
                 }

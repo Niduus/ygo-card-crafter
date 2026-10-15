@@ -16,7 +16,7 @@ public enum Zone
     Field = MonsterZone | SpellTrapZone,
 }
 
-public enum FilterCardType { Any, Monster, Spell, Trap }
+public enum FilterCardType { Any, Monster, Spell, Trap, SpellTrap }
 
 /// <summary>What kind of monster: Effect, Tuner, Fusion and so on. "Non-" kinds are the ones without it.</summary>
 public enum MonsterKind
@@ -58,6 +58,8 @@ public sealed class CardFilter
     public long ExceptCode { get; set; }
     /// <summary>Only cards in the zones this Link monster's arrows point to.</summary>
     public bool PointedToByThisCard { get; set; }
+    /// <summary>Only the monster in the center Main Monster Zone (Elfnote).</summary>
+    public bool CenterZone { get; set; }
 
     public CardFilter Clone() => (CardFilter)MemberwiseClone();
 

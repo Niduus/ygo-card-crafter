@@ -57,6 +57,7 @@ public sealed class EngineScenario
     public EngineScenario Activate(long code, int times = 1) { _lines.Add($"activate {code} {times}"); return this; }
     public EngineScenario Summon(long code) { _lines.Add($"summon {code}"); return this; }
     public EngineScenario SpSummon(long code) { _lines.Add($"spsummon {code}"); return this; }
+    public EngineScenario Announce(long code) { _lines.Add($"announce {code}"); return this; }
     public EngineScenario Turns(int n) { _lines.Add($"turns {n}"); return this; }
     public EngineScenario Check(string lua) { _lines.Add($"check {lua}"); return this; }
     public EngineScenario ExpectActivations(int n) { _lines.Add($"expect_activations {n}"); return this; }

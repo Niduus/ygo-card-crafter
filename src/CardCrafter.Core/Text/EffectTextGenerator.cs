@@ -126,10 +126,16 @@ public static partial class EffectTextGenerator
             if (BlockRegistry.Find(b.BlockId) is { } bd && bd.Afterword(new BlockArgs(bd, b, pack) { Effect = effect, CardName = card.Name }) is { Length: > 0 } after)
                 text += " " + after;
 
-        if (effect.Limit == OncePerTurn.Hard && !passive && limitSentence)
+        // "Tribute this card instead" is a lasting effect that still takes "once per turn".
+        var limited = !passive || effect.Do.Any(b => b.BlockId == ReplaceDestroyPassive.BlockId);
+        if (effect.Limit == OncePerTurn.Hard && limited && limitSentence)
             text += activation
                 ? $" You can only activate 1 \"{card.Name}\" per turn."
                 : $" You can only use this effect of \"{card.Name}\" once per turn.";
+        if (effect.Limit == OncePerTurn.Duel && limited)
+            text += activation
+                ? $" You can only activate 1 \"{card.Name}\" per Duel."
+                : $" You can only use this effect of \"{card.Name}\" once per Duel.";
         return text;
     }
 
@@ -140,6 +146,7 @@ public static partial class EffectTextGenerator
     private static string DescribeProcedure(EffectEvent effect, CardData card, CardPack? pack)
     {
         var from = SummonProcedureTrigger.FromText(effect.When!.Values.GetValueOrDefault("zone") ?? "hand");
+        if (effect.When!.Values.GetValueOrDefault("to") == "center") from += " to your center Main Monster Zone";
         var costs = string.Join(" and ", effect.Cost.Select(b => Gerund(Text(b, pack))).Where(t => t.Length > 0));
         var cond = string.Join(" and ", effect.If.Select(b => Text(b, pack)).Where(t => t.Length > 0));
         var by = costs.Length == 0 ? "" : " by " + costs;
@@ -164,7 +171,9 @@ public static partial class EffectTextGenerator
             if (BlockRegistry.Find(b.BlockId) is { } bd && bd.Afterword(new BlockArgs(bd, b, pack) { Effect = effect, CardName = card.Name }) is { Length: > 0 } after)
                 text += " " + after;
 
-        if (effect.Limit == OncePerTurn.Hard)
+        if (effect.Limit == OncePerTurn.Duel)
+            text += $" You can only Special Summon \"{card.Name}\" once per Duel this way.";
+        else if (effect.Limit == OncePerTurn.Hard)
             text += $" You can only Special Summon \"{card.Name}\" once per turn this way.";
         else if (effect.Limit == OncePerTurn.Soft)
             text += " You can only Special Summon this card once per turn this way.";
@@ -201,7 +210,8 @@ public static partial class EffectTextGenerator
 
         string head;
         if (cond.Length == 0) head = when;
-        else if (when.Length == 0) head = Clause(cond, passive ? "while" : "if");
+        // "If your opponent controls a card, you can activate this card from your hand": a rule, not a lasting "while".
+        else if (when.Length == 0) head = Clause(cond, passive && !effect.Do.All(b => b.BlockId == ActivateFromHandPassive.BlockId) ? "while" : "if");
         else head = $"{when} {Clause(cond, "while")}";
 
         if (trigger is QuickTrigger) head = head.Length == 0 ? "(Quick Effect)" : $"{head} (Quick Effect)";
@@ -210,7 +220,7 @@ public static partial class EffectTextGenerator
 
     /// <summary>Costs and actions on this card that already say where it is ("discard this card", "Special Summon this card from your hand").</summary>
     private static bool SaysWhereThisCardIs(EffectEvent effect) =>
-        effect.Cost.Concat(effect.Do).Any(b => b.BlockId is "cost.this_card" or "do.special_summon_self" or "do.this_card"
+        effect.Cost.Concat(effect.Do).Any(b => b.BlockId is "cost.this_card" or "cost.reveal_self" or "do.special_summon_self" or "do.this_card"
                                                || b.Filters.Values.Any(f => f.ThisCard));
 
     /// <summary>"during your turn" stays as is; anything else gets a joining word such as "if" or "while".</summary>
@@ -222,6 +232,7 @@ public static partial class EffectTextGenerator
         string? target = null;
         var sb = new System.Text.StringBuilder();
         BlockDefinition? previous = null;
+        var previousOnlyIf = false;
         foreach (var b in blocks)
         {
             if (BlockRegistry.Find(b.BlockId) is not { } def) continue;
@@ -238,6 +249,14 @@ public static partial class EffectTextGenerator
             var gate = def is LockPassive or NegateAllPassive or BanishInsteadPassive;
             var wasGate = previous is LockPassive or NegateAllPassive or BanishInsteadPassive;
             previous = def;
+            // "..., then if you have a Trap in your GY, destroy that card".
+            if (sb.Length > 0 && previousOnlyIf)
+            {
+                sb.Append(", ").Append(t);
+                previousOnlyIf = def is OnlyIfAction;
+                continue;
+            }
+            previousOnlyIf = def is OnlyIfAction;
             if (sb.Length > 0 && sentences && (gate || wasGate))
             {
                 sb.Append(". ").Append(SentenceCase.Upper(t));

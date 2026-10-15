@@ -88,6 +88,8 @@
         <TextBlock Text="Only cards this card points to (Link Arrows)" />
       </StackPanel>
     </CheckBox>
+    <CheckBox Content="Only the monster in the center Main Monster Zone" IsChecked="{Binding CenterZone}" IsVisible="{Binding !MaterialMode}"
+              ToolTip.Tip="Elfnote-style: the monster in the middle of the five Main Monster Zones" />
     </StackPanel>
   </StackPanel>
 </UserControl>

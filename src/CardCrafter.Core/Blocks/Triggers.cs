@@ -334,7 +334,7 @@ public sealed class SummonProcedureTrigger : BlockDefinition
     public override BlockKind Kind => BlockKind.Trigger;
     public override string Group => "This card";
     public override string Name => "Special Summon procedure";
-    public override string Sentence => "You can Special Summon this card {zone} (Summon procedure)";
+    public override string Sentence => "You can Special Summon this card {zone} {to} (Summon procedure)";
     public override string Help =>
         "A built-in way to Special Summon this card, like Cyber Dragon or Chaos Sorcerer. It doesn't start a chain, " +
         "so it can't be responded to or negated. Add IF blocks for when it's allowed and COST blocks for what you pay. " +
@@ -345,6 +345,7 @@ public sealed class SummonProcedureTrigger : BlockDefinition
             new("hand", "from your hand"),
             new("graveyard", "from your GY"),
             new("banished", "from your banishment")),
+        ParamSpec.Choice("to", "To", new("any", "", "to any zone"), new("center", "to your center Main Monster Zone")),
     ];
 
     public override string Describe(BlockArgs args) => "";
@@ -368,6 +369,8 @@ public sealed class SummonProcedureTrigger : BlockDefinition
         ctx.Effect.AddProperty("EFFECT_FLAG_UNCOPYABLE");
         if (ctx.Card.SummonRule != SummonRule.Normal) ctx.Effect.AddProperty("EFFECT_FLAG_CANNOT_DISABLE");
         ctx.Effect.Range = Zones.Resolve(ctx.Args.Choice("zone"), ctx.Card);
+        // Elfnote: "You can Special Summon this card (from your hand) to your center Main Monster Zone."
+        if (ctx.Args.Choice("to") == "center") ctx.Effect.ProcedureZone = "0x4";
     }
 }
 
@@ -395,6 +398,9 @@ internal static class Timing
         new("chain_spelltrap_any", "when a Spell/Trap Card is activated"),
         new("chain_spell_any", "when a Spell Card is activated"),
         new("chain_trap_any", "when a Trap Card is activated"),
+        new("chain_summons", "when a card or effect is activated that includes an effect that Special Summons a monster(s)"),
+        new("chain_searches", "when a card or effect is activated that includes an effect that adds a card(s) from the Deck to the hand"),
+        new("chain_destroys", "when a card or effect is activated that includes an effect that destroys a card(s)"),
         new("would_summon", "when your opponent would Normal or Special Summon a monster(s)"),
         new("would_special", "when your opponent would Special Summon a monster(s)"),
         new("damage_calc", "during damage calculation, if your monster battles"),
@@ -489,6 +495,18 @@ internal static class Timing
                 e.Code = "EVENT_CHAINING";
                 e.Conditions.Add("re:IsHasType(EFFECT_TYPE_ACTIVATE) and re:IsActiveType(TYPE_TRAP)");
                 break;
+            case "chain_summons":
+                e.Code = "EVENT_CHAINING";
+                e.Conditions.Add("re:IsHasCategory(CATEGORY_SPECIAL_SUMMON)");
+                break;
+            case "chain_searches":
+                e.Code = "EVENT_CHAINING";
+                e.Conditions.Add("re:IsHasCategory(CATEGORY_SEARCH)");
+                break;
+            case "chain_destroys":
+                e.Code = "EVENT_CHAINING";
+                e.Conditions.Add("re:IsHasCategory(CATEGORY_DESTROY)");
+                break;
             case "would_summon":
                 e.Code = "EVENT_SUMMON";
                 e.ExtraCodes.Add("EVENT_FLIP_SUMMON");
@@ -525,30 +543,9 @@ internal static class Timing
         }
     }
 
-    public static string Phrase(string timing) => timing switch
-    {
-        "attack" => "When an opponent's monster declares an attack",
-        "attack_direct" => "When an opponent's monster declares a direct attack",
-        "attack_any" => "When a monster declares an attack",
-        "summon" => "When your opponent Normal or Special Summons a monster(s)",
-        "summon_normal" => "When your opponent Normal Summons a monster",
-        "summon_special" => "When your opponent Special Summons a monster(s)",
-        "summon_flip" => "When your opponent Flip Summons a monster",
-        "summon_you" => "When you Normal or Special Summon a monster(s)",
-        "any_summon" => "When a monster(s) is Normal, Flip or Special Summoned",
-        "chain_any" => "When your opponent activates a card or effect",
-        "chain_monster" => "When your opponent activates a monster effect",
-        "chain_spelltrap" => "When your opponent activates a Spell/Trap Card",
-        "chain_spell" => "When your opponent activates a Spell Card",
-        "chain_trap" => "When your opponent activates a Trap Card",
-        "chain_either" => "When a card or effect is activated",
-        "would_summon" => "When your opponent would Normal or Special Summon a monster(s)",
-        "would_special" => "When your opponent would Special Summon a monster(s)",
-        "damage_calc" => "During damage calculation, if your monster battles",
-        "battle_phase" => "During the Battle Phase",
-        "end_phase" => "During the End Phase",
-        _ => "",
-    };
+    /// <summary>"When your opponent activates a monster effect": the timing's wording at the start of the card text.</summary>
+    public static string Phrase(string timing) =>
+        timing == "any" || Choices.FirstOrDefault(c => c.Value == timing) is not { } choice ? "" : char.ToUpperInvariant(choice.Label[0]) + choice.Label[1..];
 }
 
 public sealed class ActivateTrigger : BlockDefinition

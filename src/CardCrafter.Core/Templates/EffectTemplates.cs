@@ -579,6 +579,84 @@ public static class EffectTemplates
                 Do = [B("do.add_to_hand").With("cards", new CardFilter { Zones = Zone.Deck, CardType = FilterCardType.Monster })],
             },
         },
+        // Archetype mechanics
+        new()
+        {
+            Name = "Tribute this card instead", LikeCard = "Mitsurugi no Mikoto, Saji", For = CardKind.Monster, Group = "Archetype mechanics",
+            Description = "If another Reptile monster(s) you control would be destroyed by battle or card effect, you can Tribute this card instead.",
+            Create = () => new EffectEvent
+            {
+                Label = "Protect", When = B("when.while_face_up"), Limit = OncePerTurn.Hard,
+                Do = [B(ReplaceDestroyPassive.BlockId).With("cards", new CardFilter { Owner = CardOwner.You, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster, Race = CardRace.Reptile, FaceUpOnly = true, ExcludeThisCard = true })],
+            },
+        },
+        new()
+        {
+            Name = "Ritual Summon", LikeCard = "Mitsurugi Ritual", For = CardKind.Spell, Group = "Archetype mechanics",
+            Description = "A Ritual Spell: Ritual Summon 1 Ritual Monster from your hand by Tributing monsters whose total Levels equal its Level.",
+            Create = () => new EffectEvent { Label = "Ritual Summon", When = B("when.activate"), Do = [B("do.ritual_summon")] },
+        },
+        new()
+        {
+            Name = "Opponent discards, or it's negated", LikeCard = "Ame no Murakumo no Mitsurugi", For = CardKind.Monster, Group = "Archetype mechanics",
+            Description = "When your opponent activates a card or effect (Quick Effect): your opponent can discard 1 card, or that effect is negated.",
+            Create = () => new EffectEvent
+            {
+                Label = "Toll", When = B("when.quick").With("timing", "chain_any").With("zone", "monster_zone"), Limit = OncePerTurn.Hard,
+                Do = [B("do.negate_unless")],
+            },
+        },
+        new()
+        {
+            Name = "Negate a summoning effect", LikeCard = "Dominus Impulse", For = CardKind.Trap, Group = "Archetype mechanics",
+            Description = "When a card or effect is activated that includes an effect that Special Summons: negate that effect, then if you have a Trap in your GY, destroy that card. If activated from the hand, you cannot activate the effects of LIGHT, EARTH and WIND monsters for the rest of this Duel.",
+            Create = () => new EffectEvent
+            {
+                Label = "Impulse", When = B("when.activate").With("timing", "chain_summons"), Limit = OncePerTurn.Hard,
+                Do =
+                [
+                    B("do.negate").With("what", "effect"),
+                    B(OnlyIfAction.BlockId).With("cards", new CardFilter { Owner = CardOwner.You, Zones = Zone.Graveyard, CardType = FilterCardType.Trap }).Linked(ActionLink.Then),
+                    B("do.that_card"),
+                    B("do.summon_restriction").With("duration", "duel").With("what", "activate_monster_of").With("from_hand", true)
+                        .With("cards", new CardFilter { CardType = FilterCardType.Monster, Attribute = CardAttribute.Light | CardAttribute.Earth | CardAttribute.Wind }),
+                ],
+            },
+        },
+        new()
+        {
+            Name = "Activate from the hand", LikeCard = "Infinite Impermanence / Dominus", For = CardKind.Trap, Group = "Archetype mechanics",
+            Description = "If you control no cards, you can activate this card from your hand. Add it next to the Trap's own effect.",
+            Create = () => new EffectEvent
+            {
+                Label = "From the hand", When = B("when.while_face_up"),
+                If = [B("if.no_cards").With("cards", new CardFilter { Owner = CardOwner.You, Zones = Zone.Field, CardType = FilterCardType.Any })],
+                Do = [B(ActivateFromHandPassive.BlockId)],
+            },
+        },
+        new()
+        {
+            Name = "Summon to the center zone", LikeCard = "Elfnote Lucina", For = CardKind.Monster, Group = "Archetype mechanics",
+            Description = "You can Special Summon this card (from your hand) to your center Main Monster Zone. You can only do this once per turn.",
+            Create = () => new EffectEvent { Label = "To the center", When = B(SummonProcedureTrigger.BlockId).With("to", "center"), Limit = OncePerTurn.Hard },
+        },
+        new()
+        {
+            Name = "Freeze a monster", LikeCard = "Forbidden Crown", For = CardKind.Spell, Group = "Archetype mechanics",
+            Description = "Apply these effects to 1 face-up monster on the field until the end of this turn: negate its effects, it cannot attack, be destroyed, be Tributed or be used as material, and is unaffected by activated effects. Neither player can respond with monster effects. Untick any you don't want.",
+            Create = () => new EffectEvent
+            {
+                Label = "Freeze", When = B("when.activate"), Limit = OncePerTurn.Hard,
+                Cost = [B("cost.chain_limit")],
+                Do = [B("do.apply_effects")],
+            },
+        },
+        new()
+        {
+            Name = "Reveal the opponent's hand", LikeCard = "Mind Scan / Mind on Air", For = CardKind.Spell, Group = "Archetype mechanics",
+            Description = "A Continuous Spell: your opponent must keep their hand revealed.",
+            Create = () => new EffectEvent { Label = "Reveal", When = B("when.while_face_up"), Do = [B("passive.reveal_hand")] },
+        },
     ];
 
     private static CardFilter Narrow(CardFilter f)

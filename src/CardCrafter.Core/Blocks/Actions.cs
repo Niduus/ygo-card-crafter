@@ -249,6 +249,9 @@ public sealed class SpecialSummonAction : CardGroupAction
     public override string Id => "do.special_summon";
     public override string Name => "Special Summon monsters";
     public override string Sentence => "Special Summon {count} {cards} {target} {position} {zone}";
+
+    public override string Describe(BlockArgs args) =>
+        base.Describe(args) + (args.Bool("ignore") ? ", ignoring its Summoning conditions" : "");
     protected override string Category => "CATEGORY_SPECIAL_SUMMON";
     protected override string Hint => "HINTMSG_SPSUMMON";
     protected override int MaxCount => 5;
@@ -262,15 +265,19 @@ public sealed class SpecialSummonAction : CardGroupAction
             new("attack", "in Attack Position"),
             new("defense", "in Defense Position")),
         ParamSpec.Choice("zone", "Zone", new("any", "", "to any zone"), new("pointed", "to a zone this card points to")),
+        ParamSpec.Flag("ignore", "ignoring its Summoning conditions", false),
     ];
 
     protected override string TargetedAction(BlockArgs args, string pronoun, bool single)
     {
         var text = base.TargetedAction(args, pronoun, single);
-        return args.Describe("zone") is { Length: > 0 } z ? $"{text} {z}" : text;
+        if (args.Describe("zone") is { Length: > 0 } z) text = $"{text} {z}";
+        return args.Bool("ignore") ? $"{text}, ignoring its Summoning conditions" : text;
     }
 
-    protected override string? AbleCheck(BlockContext ctx) => "c:IsCanBeSpecialSummoned(e,0,tp,false,false)";
+    private static string Ignore(BlockContext ctx) => ctx.Args.Bool("ignore") ? "true" : "false";
+
+    protected override string? AbleCheck(BlockContext ctx) => $"c:IsCanBeSpecialSummoned(e,0,tp,{Ignore(ctx)},false)";
 
     protected override string Apply(string g, BlockContext ctx)
     {
@@ -281,8 +288,8 @@ public sealed class SpecialSummonAction : CardGroupAction
             _ => "POS_FACEUP",
         };
         return PointsTo(ctx)
-            ? $"Duel.SpecialSummon({g},0,tp,tp,false,false,{pos},e:GetHandler():GetLinkedZone(tp))"
-            : $"Duel.SpecialSummon({g},0,tp,tp,false,false,{pos})";
+            ? $"Duel.SpecialSummon({g},0,tp,tp,{Ignore(ctx)},false,{pos},e:GetHandler():GetLinkedZone(tp))"
+            : $"Duel.SpecialSummon({g},0,tp,tp,{Ignore(ctx)},false,{pos})";
     }
 
     protected override string? SpaceCheck(int count, CardFilter f, BlockContext ctx) =>
