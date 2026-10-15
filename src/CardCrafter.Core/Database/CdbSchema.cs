@@ -25,6 +25,17 @@ public sealed class CdbSchema
     /// <summary>How archetypes are written in a text "setid" column: separator and whether hex, learned from the data.</summary>
     public string SetidSeparator { get; init; } = ",";
     public bool SetidHex { get; init; } = true;
+    /// <summary>How the "setcode" column holds archetypes: ygopro's integer, or bytes or text in newer Omega databases.</summary>
+    public SetcodeFormat Setcode { get; init; } = SetcodeFormat.Integer;
+    /// <summary>STRICT tables refuse values of the wrong type, so values are written as the declared type.</summary>
+    public bool DatasStrict => IsStrict(DatasSql);
+    public bool TextsStrict => IsStrict(TextsSql);
+    public bool BandatasStrict => IsStrict(BandatasSql);
+
+    private static bool IsStrict(string? sql) =>
+        sql is not null && System.Text.RegularExpressions.Regex.IsMatch(sql, @"\)\s*(WITHOUT\s+ROWID\s*,\s*)?STRICT(\s*,\s*WITHOUT\s+ROWID)?\s*;?\s*$",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
     /// <summary>The most common "ot" values and how many cards use each, for the scan report.</summary>
     public List<(long Ot, int Count)> OtValues { get; init; } = [];
 
@@ -81,6 +92,8 @@ public sealed class CdbSchema
         if (datas.Any(c => c.Name == "setid") && !datas.Any(c => c.Name == "setcode"))
             (sep, hex) = LearnSetidFormat(conn);
 
+        var setcode = datas.FirstOrDefault(c => c.Name == "setcode") is { } sc ? SetcodeFormat.Learn(conn, sc) : SetcodeFormat.Integer;
+
         var ots = new List<(long, int)>();
         using (var cmd = conn.CreateCommand())
         {
@@ -97,7 +110,7 @@ public sealed class CdbSchema
         {
             Datas = datas, Texts = texts, Bandatas = bandatas,
             DatasSql = TableSql(conn, "datas"), TextsSql = TableSql(conn, "texts"), BandatasSql = bandatas.Count > 0 ? TableSql(conn, "bandatas") : null,
-            Banlists = banlists, SetidSeparator = sep, SetidHex = hex, OtValues = ots,
+            Banlists = banlists, SetidSeparator = sep, SetidHex = hex, OtValues = ots, Setcode = setcode,
         };
     }
 
@@ -164,6 +177,7 @@ public sealed class CdbSchema
         var sb = new System.Text.StringBuilder();
         sb.AppendLine($"  datas columns: {string.Join(", ", Datas.Select(c => c.Name))}");
         sb.AppendLine($"  texts columns: {string.Join(", ", Texts.Select(c => c.Name))}");
+        if (Has("setcode")) sb.AppendLine($"  archetypes (setcode): {Setcode.Describe()}{(DatasStrict ? "; STRICT table" : "")}");
         if (OtValues.Count > 0) sb.AppendLine($"  ot (card pool) values: {string.Join(", ", OtValues.Select(o => $"{o.Ot} ×{o.Count}"))}");
         if (Bandatas.Count > 0) sb.AppendLine($"  bandatas columns: {string.Join(", ", Bandatas.Select(c => c.Name))}");
         if (Banlists.Count > 0) sb.AppendLine($"  banlists: {string.Join(", ", Banlists.Take(12).Select(b => $"{b.Id} {b.Name}"))}{(Banlists.Count > 12 ? $" and {Banlists.Count - 12} more" : "")}");

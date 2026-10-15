@@ -36,9 +36,9 @@ public static class CdbFile
 
         foreach (var r in list)
         {
-            foreach (var c in datasCols) datas.Parameters["$" + c.Name].Value = DatasValue(c, r, schema) ?? DBNull.Value;
+            foreach (var c in datasCols) datas.Parameters["$" + c.Name].Value = As(c, DatasValue(c, r, schema), schema.DatasStrict) ?? DBNull.Value;
             datas.ExecuteNonQuery();
-            foreach (var c in textsCols) texts.Parameters["$" + c.Name].Value = TextsValue(c, r) ?? DBNull.Value;
+            foreach (var c in textsCols) texts.Parameters["$" + c.Name].Value = As(c, TextsValue(c, r), schema.TextsStrict) ?? DBNull.Value;
             texts.ExecuteNonQuery();
         }
 
@@ -61,10 +61,11 @@ public static class CdbFile
                     : r.Limits.Select(kv => (kv.Key, kv.Value));
                 foreach (var (banlist, limit) in entries)
                 {
-                    ins.Parameters["$" + card].Value = r.Id;
-                    ins.Parameters["$banlistid"].Value = banlist;
-                    ins.Parameters["$limits"].Value = limit;
-                    foreach (var c in extra) ins.Parameters["$" + c.Name].Value = c.Type.Contains("text") ? "" : 0;
+                    var strict = schema.BandatasStrict;
+                    ins.Parameters["$" + card].Value = As(Column(schema.Bandatas, card), r.Id, strict);
+                    ins.Parameters["$banlistid"].Value = As(Column(schema.Bandatas, "banlistid"), banlist, strict);
+                    ins.Parameters["$limits"].Value = As(Column(schema.Bandatas, "limits"), (long)limit, strict);
+                    foreach (var c in extra) ins.Parameters["$" + c.Name].Value = As(c, c.Type.Contains("text") ? "" : 0L, strict);
                     ins.ExecuteNonQuery();
                 }
             }
@@ -83,7 +84,7 @@ public static class CdbFile
         "id" => r.Id,
         "ot" => r.Ot,
         "alias" => r.Alias,
-        "setcode" => r.Setcode,
+        "setcode" => schema.Setcode.Encode(r.Setcode),
         "setid" => schema.FormatSetid(CdbEncoder.UnpackSetcodes(r.Setcode)),
         "type" => r.Type,
         "atk" => r.Atk,
@@ -100,6 +101,47 @@ public static class CdbFile
         _ when c.NotNull && c.Default is null => c.Type.Contains("text") || c.Type.Contains("char") ? "" : 0,
         _ => Skip.Value,
     };
+
+    private static CdbColumn Column(List<CdbColumn> columns, string name) =>
+        columns.FirstOrDefault(c => c.Name == name) ?? new CdbColumn(name, "", false, null);
+
+    /// <summary>
+    /// A value in the column's declared type. STRICT tables (newer YGO Omega databases) refuse anything else,
+    /// e.g. an integer in a BLOB column; other tables take the value as it is.
+    /// </summary>
+    private static object? As(CdbColumn c, object? value, bool strict)
+    {
+        if (!strict || value is null or Skip) return value;
+        var type = c.Type.ToLowerInvariant();
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        return type switch
+        {
+            _ when type.Contains("int") => value switch
+            {
+                long or int => Convert.ToInt64(value, ci),
+                bool b => b ? 1L : 0L,
+                string s => long.TryParse(s, System.Globalization.NumberStyles.Integer, ci, out var l) ? l : 0L,
+                byte[] => 0L,
+                _ => Convert.ToInt64(value, ci),
+            },
+            "text" => value switch
+            {
+                string => value,
+                byte[] b => System.Text.Encoding.UTF8.GetString(b),
+                _ => Convert.ToString(value, ci),
+            },
+            "blob" => value switch
+            {
+                byte[] => value,
+                string s => System.Text.Encoding.UTF8.GetBytes(s),
+                long l => BitConverter.GetBytes(l),
+                int n => BitConverter.GetBytes((long)n),
+                _ => value,
+            },
+            "real" => Convert.ToDouble(value, ci),
+            _ => value,
+        };
+    }
 
     private static object? TextsValue(CdbColumn c, CdbRow r) => c.Name switch
     {
@@ -196,7 +238,7 @@ public static class CdbFile
                 var row = new CdbRow
                 {
                     Id = Long(rd, 0), Ot = Long(rd, 1), Alias = Long(rd, 2),
-                    Setcode = schema.Has("setcode") ? Long(rd, 3) : CdbEncoder.PackSetcodes(CdbSchema.ParseSetid(Str(rd, 3))),
+                    Setcode = schema.Has("setcode") ? schema.Setcode.Decode(rd.IsDBNull(3) ? null : rd.GetValue(3)) : CdbEncoder.PackSetcodes(CdbSchema.ParseSetid(Str(rd, 3))),
                     Type = Long(rd, 4), Atk = Long(rd, 5), Def = Long(rd, 6), Level = Long(rd, 7),
                     Race = Long(rd, 8), Attribute = Long(rd, 9), Category = Long(rd, 10),
                     Name = Str(rd, 11),
