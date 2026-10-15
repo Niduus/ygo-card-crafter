@@ -137,6 +137,11 @@ public sealed class BlockArgs(BlockDefinition def, BlockInstance inst, CardPack?
     public BlockDefinition Definition { get; } = def;
     public BlockInstance Instance { get; } = inst;
     public CardPack? Pack { get; } = pack;
+    /// <summary>The effect the block is in, when the wording depends on it (e.g. "from your hand" after a hand trigger).</summary>
+    public EffectEvent? Effect { get; init; }
+
+    /// <summary>Where this card is while its effect is used, from the WHEN block's zone, or null.</summary>
+    public string? TriggerZone => Effect?.When is { } w && w.Values.TryGetValue("zone", out var z) ? z : null;
 
     public int Int(string key)
     {

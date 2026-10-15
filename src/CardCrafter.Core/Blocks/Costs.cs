@@ -64,11 +64,17 @@ public sealed class SelfCost : CostBlock
             new("discard", "Discard")),
     ];
 
-    public override string Describe(BlockArgs args) => args.Choice("how") switch
+    /// <summary>"banish this card from your GY", "send this card from your hand to the GY", from the WHEN block's zone.</summary>
+    public override string Describe(BlockArgs args)
     {
-        "grave" => "send this card to the GY",
-        _ => $"{args.Describe("how").ToLowerInvariant()} this card",
-    };
+        var from = args.TriggerZone is { } z ? Zones.From(z) : null;
+        return args.Choice("how") switch
+        {
+            "grave" => from is null || args.TriggerZone == "graveyard" ? "send this card to the GY" : $"send this card {from} to the GY",
+            "banish" => from is null ? "banish this card" : $"banish this card {from}",
+            _ => $"{args.Describe("how").ToLowerInvariant()} this card",
+        };
+    }
 
     public override void Compile(BlockContext ctx)
     {

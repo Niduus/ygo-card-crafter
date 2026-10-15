@@ -126,3 +126,38 @@ public class ScriptTranslatorTests
         Assert.True(complete > 250, $"{complete} of {scripts}");
     }
 }
+
+public class TranslatorRobustnessTests
+{
+    /// <summary>Every official script: translating, describing each effect and switching a card to blocks never throws.</summary>
+    [EngineFact]
+    public void EveryOfficialScript_TranslatesDescribesAndApplies_WithoutThrowing()
+    {
+        foreach (var file in Directory.EnumerateFiles(EngineScenario.EngineScripts!, "c*.lua"))
+        {
+            if (!long.TryParse(Path.GetFileNameWithoutExtension(file)[1..], out var id)) continue;
+            var lua = File.ReadAllText(file);
+            foreach (var kind in new[] { CardKind.Monster, CardKind.Spell })
+            {
+                var card = new CardData { Id = id, Name = "T", Level = 4, Kind = kind };
+                try
+                {
+                    var result = ScriptTranslator.Translate(lua, id, card);
+                    foreach (var p in result.Pieces)
+                    {
+                        if (p.Effect is { } e) CardCrafter.Core.Text.EffectTextGenerator.Describe(e, card);
+                        _ = p.Piece.Title;
+                    }
+                    _ = ScriptTranslator.Untranslated(result).ToList();
+                    var project = new CardProject { Card = card, UseCustomLua = true, CustomLua = lua };
+                    ScriptTranslator.ApplyTo(project, null, out _);
+                    CardCrafter.Core.Text.EffectTextGenerator.Generate(project);
+                }
+                catch (Exception ex)
+                {
+                    Assert.Fail($"c{id}.lua as {kind}: {ex}");
+                }
+            }
+        }
+    }
+}

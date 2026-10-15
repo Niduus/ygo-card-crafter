@@ -18,6 +18,13 @@ public enum Zone
 
 public enum FilterCardType { Any, Monster, Spell, Trap }
 
+/// <summary>What kind of monster: Effect, Tuner, Fusion and so on. "Non-" kinds are the ones without it.</summary>
+public enum MonsterKind
+{
+    Any, Effect, NonEffect, Normal, Tuner, NonTuner, Fusion, Synchro, Xyz, Link, Ritual, Pendulum,
+    Flip, Toon, Spirit, Union, Gemini, Token, NonToken,
+}
+
 /// <summary>
 /// "Which cards?" — the card-picking part of a block, like object picking in an event sheet.
 /// Describes where to look and what a card must be to count.
@@ -27,7 +34,11 @@ public sealed class CardFilter
     public CardOwner Owner { get; set; } = CardOwner.You;
     public Zone Zones { get; set; } = Zone.Deck;
     public FilterCardType CardType { get; set; } = FilterCardType.Any;
+    /// <summary>Effect Monster, Tuner, Link Monster... Any for every monster.</summary>
+    public MonsterKind MonsterKind { get; set; }
+    /// <summary>One Type, or several meaning "any of them" (Dragon or Wyrm).</summary>
     public CardRace Race { get; set; }
+    /// <summary>One Attribute, or several meaning "any of them" (LIGHT or EARTH).</summary>
     public CardAttribute Attribute { get; set; }
     /// <summary>Archetype code, 0 for any.</summary>
     public int Archetype { get; set; }

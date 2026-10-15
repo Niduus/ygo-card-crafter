@@ -15,6 +15,7 @@ public static class BlockRegistry
         new DestroyedTrigger(),
         new DestroysByBattleTrigger(),
         new FlipTrigger(),
+        new EventTrigger(),
         new PhaseTrigger(),
         new UsedAsMaterialTrigger(),
         new WhileFaceUpTrigger(),

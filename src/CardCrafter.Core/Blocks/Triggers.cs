@@ -15,7 +15,27 @@ internal static class Zones
         new("field_zone", "in the Field Zone"),
         new("pendulum_zone", "in the Pendulum Zone"),
         new("banished", "while banished"),
+        new("hand_or_graveyard", "in the hand or GY"),
     ];
+
+    /// <summary>Where this card is while the effect can be used, as card text, or null for the field.</summary>
+    public static string? Where(string choice) => choice switch
+    {
+        "hand" => "in your hand",
+        "graveyard" => "in your GY",
+        "banished" => "banished",
+        "hand_or_graveyard" => "in your hand or GY",
+        _ => null,
+    };
+
+    /// <summary>"from your hand" and the like, for actions on this card where the effect is used.</summary>
+    public static string? From(string choice) => choice switch
+    {
+        "hand" => "from your hand",
+        "graveyard" => "from your GY",
+        "hand_or_graveyard" => "from your hand or GY",
+        _ => null,
+    };
 
     public static string Resolve(string choice, CardData card) => choice switch
     {
@@ -26,6 +46,7 @@ internal static class Zones
         "field_zone" => "LOCATION_FZONE",
         "pendulum_zone" => "LOCATION_PZONE",
         "banished" => "LOCATION_REMOVED",
+        "hand_or_graveyard" => "LOCATION_HAND+LOCATION_GRAVE",
         _ => card.Kind switch
         {
             CardKind.Monster => "LOCATION_MZONE",
@@ -269,49 +290,98 @@ internal static class Timing
     [
         new("any", "at any time"),
         new("attack", "when an opponent's monster declares an attack"),
-        new("summon", "when your opponent Normal or Special Summons a monster"),
+        new("attack_direct", "when an opponent's monster declares a direct attack"),
+        new("attack_any", "when a monster declares an attack"),
+        new("summon", "when your opponent Normal or Special Summons a monster(s)"),
+        new("summon_normal", "when your opponent Normal Summons a monster"),
+        new("summon_special", "when your opponent Special Summons a monster(s)"),
+        new("summon_flip", "when your opponent Flip Summons a monster"),
+        new("summon_you", "when you Normal or Special Summon a monster(s)"),
         new("any_summon", "when any monster is Summoned"),
         new("chain_any", "when your opponent activates a card or effect"),
         new("chain_monster", "when your opponent activates a monster effect"),
         new("chain_spelltrap", "when your opponent activates a Spell/Trap Card"),
+        new("chain_spell", "when your opponent activates a Spell Card"),
+        new("chain_trap", "when your opponent activates a Trap Card"),
+        new("chain_either", "when a card or effect is activated"),
     ];
 
     /// <summary>True when the effect responds to an activation, so "negate" blocks can be used.</summary>
     public static bool IsChainTiming(string? code) => code == "EVENT_CHAINING";
 
+    /// <summary>True when the timing is something the opponent does, so "during their turn" reads naturally after it.</summary>
+    public static bool IsOpponents(string timing) => timing is "attack" or "attack_direct" or "summon" or "summon_normal" or "summon_special"
+        or "summon_flip" or "chain_any" or "chain_monster" or "chain_spelltrap" or "chain_spell" or "chain_trap";
+
     public static void Apply(BlockContext ctx, string timing)
     {
+        var e = ctx.Effect;
         switch (timing)
         {
             case "attack":
-                ctx.Effect.Code = "EVENT_ATTACK_ANNOUNCE";
-                ctx.Effect.Conditions.Add("Duel.GetAttacker():IsControler(1-tp)");
+                e.Code = "EVENT_ATTACK_ANNOUNCE";
+                e.Conditions.Add("Duel.GetAttacker():IsControler(1-tp)");
+                break;
+            case "attack_direct":
+                e.Code = "EVENT_ATTACK_ANNOUNCE";
+                e.Conditions.Add("Duel.GetAttacker():IsControler(1-tp) and Duel.GetAttackTarget()==nil");
+                break;
+            case "attack_any":
+                e.Code = "EVENT_ATTACK_ANNOUNCE";
                 break;
             case "summon":
-                ctx.Effect.Code = "EVENT_SUMMON_SUCCESS";
-                ctx.Effect.ExtraCodes.Add("EVENT_SPSUMMON_SUCCESS");
-                ctx.Effect.Conditions.Add("eg:IsExists(Card.IsSummonPlayer,1,nil,1-tp)");
+                e.Code = "EVENT_SUMMON_SUCCESS";
+                e.ExtraCodes.Add("EVENT_SPSUMMON_SUCCESS");
+                e.Conditions.Add("eg:IsExists(Card.IsSummonPlayer,1,nil,1-tp)");
+                break;
+            case "summon_normal":
+                e.Code = "EVENT_SUMMON_SUCCESS";
+                e.Conditions.Add("eg:IsExists(Card.IsSummonPlayer,1,nil,1-tp)");
+                break;
+            case "summon_special":
+                e.Code = "EVENT_SPSUMMON_SUCCESS";
+                e.Conditions.Add("eg:IsExists(Card.IsSummonPlayer,1,nil,1-tp)");
+                break;
+            case "summon_flip":
+                e.Code = "EVENT_FLIP_SUMMON_SUCCESS";
+                e.Conditions.Add("eg:IsExists(Card.IsSummonPlayer,1,nil,1-tp)");
+                break;
+            case "summon_you":
+                e.Code = "EVENT_SUMMON_SUCCESS";
+                e.ExtraCodes.Add("EVENT_SPSUMMON_SUCCESS");
+                e.Conditions.Add("eg:IsExists(Card.IsSummonPlayer,1,nil,tp)");
                 break;
             case "chain_any":
-                ctx.Effect.Code = "EVENT_CHAINING";
-                ctx.Effect.Conditions.Add("rp==1-tp");
+                e.Code = "EVENT_CHAINING";
+                e.Conditions.Add("rp==1-tp");
                 break;
             case "chain_monster":
-                ctx.Effect.Code = "EVENT_CHAINING";
-                ctx.Effect.Conditions.Add("rp==1-tp and re:IsActiveType(TYPE_MONSTER)");
+                e.Code = "EVENT_CHAINING";
+                e.Conditions.Add("rp==1-tp and re:IsActiveType(TYPE_MONSTER)");
                 break;
             case "chain_spelltrap":
-                ctx.Effect.Code = "EVENT_CHAINING";
-                ctx.Effect.Conditions.Add("rp==1-tp and re:IsHasType(EFFECT_TYPE_ACTIVATE)");
+                e.Code = "EVENT_CHAINING";
+                e.Conditions.Add("rp==1-tp and re:IsHasType(EFFECT_TYPE_ACTIVATE)");
+                break;
+            case "chain_spell":
+                e.Code = "EVENT_CHAINING";
+                e.Conditions.Add("rp==1-tp and re:IsHasType(EFFECT_TYPE_ACTIVATE) and re:IsActiveType(TYPE_SPELL)");
+                break;
+            case "chain_trap":
+                e.Code = "EVENT_CHAINING";
+                e.Conditions.Add("rp==1-tp and re:IsHasType(EFFECT_TYPE_ACTIVATE) and re:IsActiveType(TYPE_TRAP)");
+                break;
+            case "chain_either":
+                e.Code = "EVENT_CHAINING";
                 break;
             case "any_summon":
                 // Normal, Flip or Special Summons by either player, this card included.
-                ctx.Effect.Code = "EVENT_SUMMON_SUCCESS";
-                ctx.Effect.ExtraCodes.Add("EVENT_FLIP_SUMMON_SUCCESS");
-                ctx.Effect.ExtraCodes.Add("EVENT_SPSUMMON_SUCCESS");
+                e.Code = "EVENT_SUMMON_SUCCESS";
+                e.ExtraCodes.Add("EVENT_FLIP_SUMMON_SUCCESS");
+                e.ExtraCodes.Add("EVENT_SPSUMMON_SUCCESS");
                 break;
             default:
-                ctx.Effect.Code = "EVENT_FREE_CHAIN";
+                e.Code = "EVENT_FREE_CHAIN";
                 break;
         }
     }
@@ -319,11 +389,20 @@ internal static class Timing
     public static string Phrase(string timing) => timing switch
     {
         "attack" => "When an opponent's monster declares an attack",
-        "summon" => "When your opponent Normal or Special Summons a monster",
-        "any_summon" => "When a monster is Normal, Flip or Special Summoned",
+        "attack_direct" => "When an opponent's monster declares a direct attack",
+        "attack_any" => "When a monster declares an attack",
+        "summon" => "When your opponent Normal or Special Summons a monster(s)",
+        "summon_normal" => "When your opponent Normal Summons a monster",
+        "summon_special" => "When your opponent Special Summons a monster(s)",
+        "summon_flip" => "When your opponent Flip Summons a monster",
+        "summon_you" => "When you Normal or Special Summon a monster(s)",
+        "any_summon" => "When a monster(s) is Normal, Flip or Special Summoned",
         "chain_any" => "When your opponent activates a card or effect",
         "chain_monster" => "When your opponent activates a monster effect",
         "chain_spelltrap" => "When your opponent activates a Spell/Trap Card",
+        "chain_spell" => "When your opponent activates a Spell Card",
+        "chain_trap" => "When your opponent activates a Trap Card",
+        "chain_either" => "When a card or effect is activated",
         _ => "",
     };
 }
@@ -371,6 +450,97 @@ public sealed class QuickTrigger : BlockDefinition
         ctx.Effect.Types.Add("EFFECT_TYPE_QUICK_O");
         ctx.Effect.Range = Zones.Resolve(ctx.Args.Choice("zone"), ctx.Card);
         Timing.Apply(ctx, ctx.Args.Choice("timing"));
+    }
+}
+
+/// <summary>
+/// "If [something happens]: You can ...": a trigger effect that watches the duel rather than this card, used from
+/// the field, hand, GY or banishment. For example, "If your opponent Special Summons a monster(s): You can Special
+/// Summon this card from your hand".
+/// </summary>
+public sealed class EventTrigger : BlockDefinition
+{
+    public const string BlockId = "when.event";
+    public override string Id => BlockId;
+    public override BlockKind Kind => BlockKind.Trigger;
+    public override string Group => "Something happens";
+    public override string Name => "Something happens in the duel (trigger)";
+    public override string Sentence => "If {event}, {zone}";
+    public override string Help => "A trigger effect: it activates after the event, like \"If your opponent Special Summons a monster(s)\". " +
+                                   "For an effect used in response, during either player's turn, use \"Quick Effect\" instead.";
+    public override IReadOnlyList<ParamSpec> Params { get; } =
+    [
+        ParamSpec.Choice("event", "What happens",
+            new("opp_summon", "your opponent Normal or Special Summons a monster(s)"),
+            new("opp_normal", "your opponent Normal Summons a monster"),
+            new("opp_special", "your opponent Special Summons a monster(s)"),
+            new("you_summon", "you Normal or Special Summon a monster(s)"),
+            new("you_special", "you Special Summon a monster(s)"),
+            new("any_summon", "a monster(s) is Normal or Special Summoned"),
+            new("your_destroyed", "a monster(s) you control is destroyed"),
+            new("opp_destroyed", "a monster(s) your opponent controls is destroyed"),
+            new("your_battle_destroyed", "a monster(s) you control is destroyed by battle"),
+            new("opp_to_gy", "a card(s) is sent to your opponent's GY"),
+            new("your_to_gy", "a card(s) is sent to your GY"),
+            new("opp_search", "your opponent adds a card(s) from their Deck to their hand"),
+            new("opp_draw", "your opponent draws a card(s)"),
+            new("you_damage", "you take damage"),
+            new("you_battle_damage", "you take battle damage"),
+            new("opp_battle_damage", "your opponent takes battle damage")),
+        ParamSpec.Choice("zone", "This card is", Zones.RangeChoices),
+        ParamSpec.Flag("optional", "optional (\"You can\")", true),
+    ];
+
+    public override string Describe(BlockArgs args) => "If " + args.Describe("event");
+
+    public override void Compile(BlockContext ctx)
+    {
+        var e = ctx.Effect;
+        var optional = ctx.Args.Bool("optional");
+        e.Types.Add("EFFECT_TYPE_FIELD");
+        e.Types.Add(optional ? "EFFECT_TYPE_TRIGGER_O" : "EFFECT_TYPE_TRIGGER_F");
+        e.AddProperty("EFFECT_FLAG_DELAY"); // "If" wording: it can't miss its timing.
+        e.IsMandatory = !optional;
+        e.Range = Zones.Resolve(ctx.Args.Choice("zone"), ctx.Card);
+
+        string Filter(string name, string test) => ctx.Script.AddFunction(name, "c,tp", [$"return {test}"]);
+        switch (ctx.Args.Choice("event"))
+        {
+            case "opp_normal": e.Code = "EVENT_SUMMON_SUCCESS"; e.Conditions.Add("eg:IsExists(Card.IsSummonPlayer,1,nil,1-tp)"); break;
+            case "opp_special": e.Code = "EVENT_SPSUMMON_SUCCESS"; e.Conditions.Add("eg:IsExists(Card.IsSummonPlayer,1,nil,1-tp)"); break;
+            case "you_summon":
+                e.Code = "EVENT_SUMMON_SUCCESS"; e.ExtraCodes.Add("EVENT_SPSUMMON_SUCCESS");
+                e.Conditions.Add("eg:IsExists(Card.IsSummonPlayer,1,nil,tp)");
+                break;
+            case "you_special": e.Code = "EVENT_SPSUMMON_SUCCESS"; e.Conditions.Add("eg:IsExists(Card.IsSummonPlayer,1,nil,tp)"); break;
+            case "any_summon": e.Code = "EVENT_SUMMON_SUCCESS"; e.ExtraCodes.Add("EVENT_SPSUMMON_SUCCESS"); break;
+            case "your_destroyed":
+                e.Code = "EVENT_DESTROYED";
+                e.Conditions.Add($"eg:IsExists({Filter("desfilter", "c:IsPreviousControler(tp) and c:IsPreviousLocation(LOCATION_MZONE)")},1,nil,tp)");
+                break;
+            case "opp_destroyed":
+                e.Code = "EVENT_DESTROYED";
+                e.Conditions.Add($"eg:IsExists({Filter("desfilter", "c:IsPreviousControler(1-tp) and c:IsPreviousLocation(LOCATION_MZONE)")},1,nil,tp)");
+                break;
+            case "your_battle_destroyed":
+                e.Code = "EVENT_BATTLE_DESTROYED";
+                e.Conditions.Add($"eg:IsExists({Filter("desfilter", "c:IsPreviousControler(tp)")},1,nil,tp)");
+                break;
+            case "opp_to_gy": e.Code = "EVENT_TO_GRAVE"; e.Conditions.Add("eg:IsExists(Card.IsControler,1,nil,1-tp)"); break;
+            case "your_to_gy": e.Code = "EVENT_TO_GRAVE"; e.Conditions.Add("eg:IsExists(Card.IsControler,1,nil,tp)"); break;
+            case "opp_search":
+                e.Code = "EVENT_TO_HAND";
+                e.Conditions.Add($"eg:IsExists({Filter("thfilter", "c:IsControler(1-tp) and c:IsPreviousLocation(LOCATION_DECK) and not c:IsReason(REASON_DRAW)")},1,nil,tp)");
+                break;
+            case "opp_draw": e.Code = "EVENT_DRAW"; e.Conditions.Add("ep==1-tp"); break;
+            case "you_damage": e.Code = "EVENT_DAMAGE"; e.Conditions.Add("ep==tp"); break;
+            case "you_battle_damage": e.Code = "EVENT_BATTLE_DAMAGE"; e.Conditions.Add("ep==tp"); break;
+            case "opp_battle_damage": e.Code = "EVENT_BATTLE_DAMAGE"; e.Conditions.Add("ep==1-tp"); break;
+            default:
+                e.Code = "EVENT_SUMMON_SUCCESS"; e.ExtraCodes.Add("EVENT_SPSUMMON_SUCCESS");
+                e.Conditions.Add("eg:IsExists(Card.IsSummonPlayer,1,nil,1-tp)");
+                break;
+        }
     }
 }
 

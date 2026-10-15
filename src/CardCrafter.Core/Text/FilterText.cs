@@ -12,6 +12,8 @@ public static class FilterText
         var words = new List<string>();
         if (f.ExcludeThisCard) words.Add("other");
         if (f.FaceUpOnly) words.Add("face-up");
+        // "non-Tuner WIND monsters": a "non-" kind comes first, before the Level and Attribute.
+        if (f.CardCode == 0 && KindNoun(f.MonsterKind) is { Non: true } non) words.Add(non.Noun);
         if (f.LevelMin is { } lo && f.LevelMax is { } hi)
             words.Add(lo == hi ? $"Level {lo}" : $"Level {lo} to {hi}");
         else if (f.LevelMax is { } max) words.Add($"Level {max} or lower");
@@ -30,12 +32,13 @@ public static class FilterText
         }
         else
         {
-            noun = f.CardType switch
+            noun = KindNoun(f.MonsterKind) is { Non: false } kind ? kind.Noun : f.CardType switch
             {
                 FilterCardType.Monster => "monster",
                 FilterCardType.Spell => "Spell",
                 FilterCardType.Trap => "Trap",
-                _ => (f.Race != CardRace.None || f.Attribute != CardAttribute.None || f.LevelMin is not null || f.LevelMax is not null) ? "monster" : "card",
+                _ => (f.Race != CardRace.None || f.Attribute != CardAttribute.None || f.LevelMin is not null || f.LevelMax is not null
+                      || f.MonsterKind != MonsterKind.Any) ? "monster" : "card",
             };
             if (plural) noun += "s";
         }
@@ -52,6 +55,33 @@ public static class FilterText
         }
         return string.Join(" ", words);
     }
+
+    /// <summary>
+    /// The card-text name of a monster kind: "Effect Monster", "Tuner", "Flip monster". "Non-" kinds give the word
+    /// that goes before the rest ("non-Tuner") and the noun stays "monster".
+    /// </summary>
+    private static (string Noun, bool Non)? KindNoun(MonsterKind kind) => kind switch
+    {
+        MonsterKind.Effect => ("Effect Monster", false),
+        MonsterKind.NonEffect => ("non-Effect", true),
+        MonsterKind.Normal => ("Normal Monster", false),
+        MonsterKind.Tuner => ("Tuner", false),
+        MonsterKind.NonTuner => ("non-Tuner", true),
+        MonsterKind.Fusion => ("Fusion Monster", false),
+        MonsterKind.Synchro => ("Synchro Monster", false),
+        MonsterKind.Xyz => ("Xyz Monster", false),
+        MonsterKind.Link => ("Link Monster", false),
+        MonsterKind.Ritual => ("Ritual Monster", false),
+        MonsterKind.Pendulum => ("Pendulum Monster", false),
+        MonsterKind.Flip => ("Flip monster", false),
+        MonsterKind.Toon => ("Toon monster", false),
+        MonsterKind.Spirit => ("Spirit monster", false),
+        MonsterKind.Union => ("Union monster", false),
+        MonsterKind.Gemini => ("Gemini monster", false),
+        MonsterKind.Token => ("Token", false),
+        MonsterKind.NonToken => ("non-Token", true),
+        _ => null,
+    };
 
     private static string Location(CardFilter f, string preposition)
     {

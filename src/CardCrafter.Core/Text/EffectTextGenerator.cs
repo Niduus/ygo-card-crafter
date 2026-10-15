@@ -14,6 +14,7 @@ public static partial class EffectTextGenerator
     public static string Generate(CardProject project, CardPack? pack = null)
     {
         var lines = new List<string>();
+        if (MaterialText.Describe(project, pack) is { Length: > 0 } materials) lines.Add(materials);
         if (RuleText(project) is { Length: > 0 } rule) lines.Add(rule);
         lines.AddRange(project.Effects.Select(e => Describe(e, project.Card, pack)).Where(s => s.Length > 0));
         return string.Join("\n", lines);
@@ -47,7 +48,7 @@ public static partial class EffectTextGenerator
         if (effect.Limit == OncePerTurn.Soft && !passive)
             head = head.Length == 0 ? "Once per turn" : "Once per turn, " + SentenceCase.Lower(head);
 
-        var (targetClause, actions) = Actions(effect.Do, pack);
+        var (targetClause, actions) = Actions(effect.Do, pack, effect);
         string text;
         if (passive)
         {
@@ -55,7 +56,7 @@ public static partial class EffectTextGenerator
         }
         else
         {
-            var costs = string.Join(" and ", effect.Cost.Select(b => Text(b, pack)).Where(t => t.Length > 0));
+            var costs = string.Join(" and ", effect.Cost.Select(b => Text(b, pack, effect)).Where(t => t.Length > 0));
             var before = targetClause is null ? costs : costs.Length == 0 ? targetClause : $"{costs}, then {targetClause}";
             var body = before.Length == 0 ? actions : $"{before}; {actions}";
             body = optional ? "You can " + body : SentenceCase.Upper(body);
@@ -122,6 +123,15 @@ public static partial class EffectTextGenerator
         var conditions = effect.If.Select(b => Text(b, pack)).Where(t => t.Length > 0).ToList();
         var cond = string.Join(" and ", conditions);
 
+        // "When your opponent Normal Summons a monster during their turn", not "during your opponent's turn".
+        if (trigger is QuickTrigger or ActivateTrigger && Timing.IsOpponents(effect.When!.Values.GetValueOrDefault("timing") ?? ""))
+            cond = cond.Replace("during your opponent's turn", "during their turn", StringComparison.Ordinal);
+
+        // Where this card must be, when no cost or action on this card says it: "If this card is in your GY".
+        if (trigger is QuickTrigger or IgnitionTrigger or EventTrigger or PhaseTrigger
+            && effect.When!.Values.GetValueOrDefault("zone") is { } zone && Zones.Where(zone) is { } where && !SaysWhereThisCardIs(effect))
+            cond = cond.Length == 0 ? $"this card is {where}" : $"this card is {where} and {cond}";
+
         string head;
         if (cond.Length == 0) head = when;
         else if (when.Length == 0) head = Clause(cond, passive ? "while" : "if");
@@ -131,25 +141,29 @@ public static partial class EffectTextGenerator
         return head;
     }
 
+    /// <summary>Costs and actions on this card that already say where it is ("discard this card", "Special Summon this card from your hand").</summary>
+    private static bool SaysWhereThisCardIs(EffectEvent effect) =>
+        effect.Cost.Concat(effect.Do).Any(b => b.BlockId is "cost.this_card" or "do.special_summon_self" or "do.this_card");
+
     /// <summary>"during your turn" stays as is; anything else gets a joining word such as "if" or "while".</summary>
     private static string Clause(string cond, string joiner) =>
         cond.StartsWith("during ", StringComparison.Ordinal) ? cond : $"{joiner} {cond}";
 
-    private static (string? Target, string Text) Actions(List<BlockInstance> blocks, CardPack? pack)
+    private static (string? Target, string Text) Actions(List<BlockInstance> blocks, CardPack? pack, EffectEvent effect)
     {
         string? target = null;
         var sb = new System.Text.StringBuilder();
         foreach (var b in blocks)
         {
             if (BlockRegistry.Find(b.BlockId) is not { } def) continue;
-            var args = new BlockArgs(def, b, pack);
+            var args = new BlockArgs(def, b, pack) { Effect = effect };
             string t;
             if (target is null && def.DescribeTargeting(args) is { } targeted)
             {
                 target = Clean(targeted.Target);
                 t = Clean(targeted.Action);
             }
-            else t = Text(b, pack);
+            else t = Text(b, pack, effect);
             if (t.Length == 0) continue;
             if (sb.Length > 0)
             {
@@ -166,10 +180,10 @@ public static partial class EffectTextGenerator
         return (target, sb.ToString());
     }
 
-    private static string Text(BlockInstance b, CardPack? pack)
+    private static string Text(BlockInstance b, CardPack? pack, EffectEvent? effect = null)
     {
         var def = BlockRegistry.Find(b.BlockId);
-        return def is null ? "" : SentenceCase.Lower(Clean(def.Describe(new BlockArgs(def, b, pack))));
+        return def is null ? "" : SentenceCase.Lower(Clean(def.Describe(new BlockArgs(def, b, pack) { Effect = effect })));
     }
 
     /// <summary>Collapses the double spaces left by empty blanks.</summary>

@@ -1,0 +1,125 @@
+using CardCrafter.Core.Blocks;
+using CardCrafter.Core.Compiler;
+using CardCrafter.Core.Model;
+using CardCrafter.Core.Text;
+using static CardCrafter.Core.Tests.EngineScenario;
+
+namespace CardCrafter.Core.Tests;
+
+/// <summary>Block combinations that read and play like real cards.</summary>
+public class BlockCoverageTests
+{
+    private static BlockInstance Block(string id, params (string Key, string Value)[] values)
+    {
+        var b = BlockRegistry.Find(id)!.CreateInstance();
+        foreach (var (k, v) in values) b.Values[k] = v;
+        return b;
+    }
+
+    /// <summary>"When your opponent Normal or Special Summons a monster(s) during their turn (Quick Effect): You can Special Summon this card from your hand."</summary>
+    private static CardProject HandQuickSummon(string timing = "summon") => new()
+    {
+        Card = new CardData { Id = 100003001, Name = "Ambusher", Frame = MonsterFrame.Effect, Level = 7, Atk = 2500, Def = 2000 },
+        Effects =
+        [
+            new EffectEvent
+            {
+                Label = "Special Summon", Limit = OncePerTurn.Hard,
+                When = Block("when.quick", ("timing", timing), ("zone", "hand")),
+                If = [Block("if.turn", ("whose", "opponent"))],
+                Do = [Block("do.special_summon_self")],
+            },
+        ],
+    };
+
+    [Fact]
+    public void HandQuickEffect_ReadsLikeACard()
+    {
+        var p = HandQuickSummon();
+        Assert.Equal(
+            "When your opponent Normal or Special Summons a monster(s) during their turn (Quick Effect): You can Special Summon this card from your hand. " +
+            "You can only use this effect of \"Ambusher\" once per turn.",
+            EffectTextGenerator.Generate(p));
+        var r = ScriptCompiler.Compile(p);
+        Assert.False(r.HasErrors, string.Join("\n", r.Diagnostics.Select(d => d.Message)));
+        Assert.Contains("SetRange(LOCATION_HAND)", r.Lua);
+        Assert.Contains("EVENT_SPSUMMON_SUCCESS", r.Lua);
+    }
+
+    [EngineFact]
+    public void HandQuickEffect_SummonsItself_WhenTheOpponentSummonsOnTheirTurn()
+    {
+        var p = HandQuickSummon();
+        new EngineScenario(p)
+            .Card(p.Card.Id, 0, "hand").Card(Warrior, 0, "deck", 5)
+            .Card(Fiend, 1, "hand").Card(Warrior, 1, "deck", 5)
+            .Summon(Fiend).Activate(p.Card.Id).Turns(2)
+            .ExpectActivations(1)
+            .Check($"Duel.IsExistingMatchingCard(Card.IsCode,0,LOCATION_MZONE,0,1,nil,{p.Card.Id})")
+            .AssertPasses();
+    }
+
+    [EngineFact]
+    public void HandQuickEffect_DoesNothing_WhenYouSummon()
+    {
+        var p = HandQuickSummon();
+        new EngineScenario(p)
+            .Card(p.Card.Id, 0, "hand").Card(Fiend, 0, "hand").Card(Warrior, 0, "deck", 5)
+            .Summon(Fiend).Activate(p.Card.Id)
+            .ExpectActivations(0)
+            .Check($"Duel.IsExistingMatchingCard(Card.IsCode,0,LOCATION_HAND,0,1,nil,{p.Card.Id})")
+            .AssertPasses();
+    }
+
+    [Fact]
+    public void SpecialSummonThisCard_FromTheField_IsAnError()
+    {
+        var p = HandQuickSummon();
+        p.Effects[0].When!.Values["zone"] = "auto";
+        Assert.Contains(ScriptCompiler.Compile(p).Diagnostics, d => d.Severity == Severity.Error && d.Message.Contains("in the hand"));
+    }
+
+    [Fact]
+    public void GraveyardEffects_SayWhereThisCardIs()
+    {
+        var p = new CardProject
+        {
+            Card = new CardData { Id = 100003002, Name = "Spirit", Frame = MonsterFrame.Effect, Level = 4 },
+            Effects =
+            [
+                new EffectEvent { When = Block("when.ignition", ("zone", "graveyard")), Do = [Block("do.draw")] },
+                new EffectEvent { When = Block("when.ignition", ("zone", "graveyard")), Cost = [Block("cost.this_card", ("how", "banish"))], Do = [Block("do.draw")] },
+                new EffectEvent { When = Block("when.event", ("event", "opp_special"), ("zone", "graveyard")), Do = [Block("do.special_summon_self", ("position", "defense"))] },
+            ],
+        };
+        var lines = EffectTextGenerator.Generate(p).Split('\n');
+        Assert.Equal("If this card is in your GY: You can draw 1 card.", lines[0]);
+        Assert.Equal("You can banish this card from your GY; draw 1 card.", lines[1]);
+        Assert.Equal("If your opponent Special Summons a monster(s): You can Special Summon this card from your GY in Defense Position.", lines[2]);
+        Assert.False(ScriptCompiler.Compile(p).HasErrors);
+    }
+
+    /// <summary>Every timing of the Quick Effect and every event of the trigger compiles to a script the engine loads.</summary>
+    [EngineFact]
+    public void EveryTimingAndEvent_Loads()
+    {
+        var cards = new List<CardProject>();
+        long id = 100003100;
+        foreach (var t in BlockRegistry.Find("when.quick")!.Param("timing")!.Choices)
+            cards.Add(new CardProject
+            {
+                Card = new CardData { Id = id++, Name = "Q " + t.Value, Frame = MonsterFrame.Effect, Level = 4 },
+                Effects = [new EffectEvent { When = Block("when.quick", ("timing", t.Value), ("zone", "hand_or_graveyard")), Do = [Block("do.special_summon_self")] }],
+            });
+        foreach (var ev in BlockRegistry.Find("when.event")!.Param("event")!.Choices)
+            cards.Add(new CardProject
+            {
+                Card = new CardData { Id = id++, Name = "E " + ev.Value, Frame = MonsterFrame.Effect, Level = 4 },
+                Effects = [new EffectEvent { When = Block("when.event", ("event", ev.Value), ("zone", "hand")), Do = [Block("do.special_summon_self")] }],
+            });
+        foreach (var c in cards) Assert.False(ScriptCompiler.Compile(c).HasErrors, c.Card.Name);
+        var s = new EngineScenario([.. cards]);
+        foreach (var c in cards) s.Card(c.Card.Id, 0, "hand");
+        s.Card(Warrior, 0, "deck", 5).Card(Fiend, 1, "hand").Card(Warrior, 1, "deck", 5).Summon(Fiend).Turns(2).AssertPasses();
+    }
+}

@@ -76,6 +76,8 @@ public class AllBlocksTests
             project.Procedure.Kind = SummonProcedureKind.Link;
         }
         if (def.Id == "do.negate") project.Effects[0].When = new BlockInstance("when.quick").With("timing", "chain_any");
+        // A card Special Summons itself from where it is, never from the field.
+        if (def.Id == "do.special_summon_self") project.Effects[0].When = new BlockInstance("when.ignition").With("zone", "hand");
         return project;
     }
 

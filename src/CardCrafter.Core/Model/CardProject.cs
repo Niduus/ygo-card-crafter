@@ -12,9 +12,30 @@ public sealed class SummonProcedure
     public CardFilter MaterialFilter { get; set; } = new() { CardType = FilterCardType.Monster };
     /// <summary>Synchro only: what the Tuner must be.</summary>
     public CardFilter TunerFilter { get; set; } = new() { CardType = FilterCardType.Monster };
+    /// <summary>
+    /// Fusion materials one by one, e.g. 1 "Aleister" monster + 1 LIGHT or EARTH monster. Each slot is a specific card
+    /// (its filter's card code) or any card the filter allows. One slot may take more than one card ("2+ Fiend monsters").
+    /// When empty, <see cref="FusionMaterialCodes"/> or <see cref="MaterialFilter"/> is used.
+    /// </summary>
+    public List<MaterialSlot> Materials { get; set; } = [];
+    /// <summary>Xyz: the Level of the materials, 0 for the same as the Rank.</summary>
+    public int XyzMaterialLevel { get; set; }
+    /// <summary>Link: the materials must include at least one card <see cref="IncludeFilter"/> allows ("including a "Sky Striker" monster").</summary>
+    public bool Including { get; set; }
+    public CardFilter IncludeFilter { get; set; } = new() { CardType = FilterCardType.Monster };
     public int MinMaterials { get; set; } = 2;
     /// <summary>0 means "no maximum" (Synchro) or "Link Rating" (Link).</summary>
     public int MaxMaterials { get; set; }
+}
+
+/// <summary>One Fusion Material: a card, or any card that passes the filter, <see cref="Min"/> to <see cref="Max"/> of them.</summary>
+public sealed class MaterialSlot
+{
+    public CardFilter Filter { get; set; } = new() { CardType = FilterCardType.Monster };
+    public int Min { get; set; } = 1;
+    /// <summary>0 means "or more" (1+).</summary>
+    public int Max { get; set; } = 1;
+    public bool Repeats => Min != 1 || Max != 1;
 }
 
 /// <summary>A custom card: its database data, its effects, and how its script is produced.</summary>

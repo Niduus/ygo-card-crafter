@@ -44,7 +44,8 @@ public enum MonsterAbility
     SpecialSummonOnly = 1 << 7,
 }
 
-/// <summary>Monster attributes, using the engine's bit values.</summary>
+/// <summary>Monster attributes, using the engine's bit values. Filters can combine them: LIGHT or EARTH.</summary>
+[Flags]
 public enum CardAttribute
 {
     None = 0,
@@ -124,12 +125,28 @@ public static class EnumNames
     public static readonly long StandardRaceMask = Enum.GetValues<CardRace>().Aggregate(0L, (m, r) => m | (long)r);
 
     public static string Display(CardRace race) =>
-        RaceNames.TryGetValue(race, out var n) ? n : IsStandard(race) ? race.ToString() : $"Type 0x{(long)race:x}";
+        RaceNames.TryGetValue(race, out var n) ? n : IsStandard(race) ? race.ToString()
+        : Bits(race) is { Count: > 1 } bits ? string.Join(" or ", bits.Select(Display)) : $"Type 0x{(long)race:x}";
 
-    public static string Display(CardAttribute attribute) => attribute.ToString().ToUpperInvariant();
+    public static string Display(CardAttribute attribute) =>
+        string.Join(" or ", Bits(attribute).Select(a => a.ToString().ToUpperInvariant()));
+
+    /// <summary>The single Attributes in a combination such as LIGHT or EARTH.</summary>
+    public static IEnumerable<CardAttribute> Bits(CardAttribute attribute) =>
+        Enum.GetValues<CardAttribute>().Where(a => a != CardAttribute.None && attribute.HasFlag(a));
+
+    /// <summary>The standard Types in a combination such as Dragon or Wyrm, or null when it has a custom Type bit.</summary>
+    public static List<CardRace>? Bits(CardRace race)
+    {
+        if (IsStandard(race)) return [race];
+        if (((long)race & ~StandardRaceMask) != 0) return null;
+        return Enum.GetValues<CardRace>().Where(r => r != CardRace.None && ((long)race & (long)r) != 0).ToList();
+    }
 
     /// <summary>The Lua constant name for a race, e.g. RACE_WINDBEAST.</summary>
-    public static string LuaConstant(CardRace race) => !IsStandard(race) ? "0x" + ((long)race).ToString("x") : race switch
+    public static string LuaConstant(CardRace race) => !IsStandard(race)
+        ? (Bits(race) is { Count: > 1 } bits ? string.Join("+", bits.Select(LuaConstant)) : "0x" + ((long)race).ToString("x"))
+        : race switch
     {
         CardRace.WingedBeast => "RACE_WINDBEAST",
         CardRace.BeastWarrior => "RACE_BEASTWARRIOR",
@@ -140,5 +157,6 @@ public static class EnumNames
         _ => "RACE_" + race.ToString().ToUpperInvariant(),
     };
 
-    public static string LuaConstant(CardAttribute attribute) => "ATTRIBUTE_" + attribute.ToString().ToUpperInvariant();
+    public static string LuaConstant(CardAttribute attribute) =>
+        string.Join("+", Bits(attribute).Select(a => "ATTRIBUTE_" + a.ToString().ToUpperInvariant()));
 }

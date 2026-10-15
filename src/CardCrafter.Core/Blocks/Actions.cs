@@ -346,27 +346,41 @@ public sealed class SpecialSummonSelfAction : ActionBlock
     public override string Group => "This card";
     public override string Name => "Special Summon this card";
     public override string Sentence => "Special Summon this card {position}";
+    public override string Help => "Summons this card from wherever the effect is used: the WHEN block's \"in the hand\" or \"in the GY\".";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Choice("position", "Position",
             new("faceup", "", "face-up"),
             new("attack", "in Attack Position"),
-            new("defense", "in Defense Position")),
+            new("defense", "in Defense Position"),
+            new("defense_facedown", "in face-down Defense Position")),
     ];
+
+    /// <summary>"Special Summon this card from your hand", taking the place from the WHEN block.</summary>
+    public override string Describe(BlockArgs args)
+    {
+        var zone = args.TriggerZone;
+        var what = zone == "banished" ? "Special Summon this banished card" : "Special Summon this card";
+        if (zone is not null && Zones.From(zone) is { } from) what += " " + from;
+        return $"{what} {args.Describe("position")}".TrimEnd();
+    }
 
     public override void Compile(BlockContext ctx)
     {
         Zones.RequireMonster(ctx, Name);
+        if (ctx.Effect.Range == "LOCATION_MZONE")
+            ctx.Effect.Error("\"Special Summon this card\" needs the effect to be used where this card isn't on the field: set the WHEN block to \"in the hand\", \"in the GY\" or \"while banished\".");
         var pos = ctx.Args.Choice("position") switch
         {
             "attack" => "POS_FACEUP_ATTACK",
             "defense" => "POS_FACEUP_DEFENSE",
+            "defense_facedown" => "POS_FACEDOWN_DEFENSE",
             _ => "POS_FACEUP",
         };
         var r = ctx.Effect.NewLocal("r");
         ctx.Effect.AddCategory("CATEGORY_SPECIAL_SUMMON");
         ctx.Effect.TargetChecks.Add("Duel.GetLocationCount(tp,LOCATION_MZONE)>0");
-        ctx.Effect.TargetChecks.Add("e:GetHandler():IsCanBeSpecialSummoned(e,0,tp,false,false)");
+        ctx.Effect.TargetChecks.Add($"e:GetHandler():IsCanBeSpecialSummoned(e,0,tp,false,false,{pos})");
         ctx.Effect.TargetLines.Add("Duel.SetOperationInfo(0,CATEGORY_SPECIAL_SUMMON,e:GetHandler(),1,0,0)");
         ctx.Effect.AddStep(
         [

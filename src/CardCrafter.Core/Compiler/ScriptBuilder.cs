@@ -55,13 +55,13 @@ public sealed class ScriptBuilder(CardProject project, CardPack? pack)
     }
 
     /// <summary>A material filter for summon procedures: a function of (c), or "nil" when anything goes.</summary>
-    public string MaterialFilter(CardFilter f, string baseName = "matfilter")
+    public string MaterialFilter(CardFilter f, string baseName = "matfilter", SummonProcedureKind kind = SummonProcedureKind.None)
     {
         var parts = FilterCompiler.Conditions(new CardFilter
         {
-            CardType = f.CardType, Race = f.Race, Attribute = f.Attribute, Archetype = f.Archetype, CardCode = f.CardCode,
+            CardType = f.CardType, MonsterKind = f.MonsterKind, Race = f.Race, Attribute = f.Attribute, Archetype = f.Archetype, CardCode = f.CardCode,
             LevelMin = f.LevelMin, LevelMax = f.LevelMax, AtkMin = f.AtkMin, AtkMax = f.AtkMax,
-        });
+        }, "c", kind);
         parts.Remove("c:IsType(TYPE_MONSTER)");
         if (parts.Count == 0) return "nil";
         return AddFunction(baseName, "c", [$"return {string.Join(" and ", parts)}"]);
