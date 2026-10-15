@@ -80,6 +80,8 @@ public sealed partial class MainViewModel : ObservableObject
 
     [ObservableProperty] private CardViewModel? _selectedCard;
     [ObservableProperty] private string? _packPath;
+    /// <summary>The card database this pack was opened from; Save writes back into it.</summary>
+    [ObservableProperty] private string? _databasePath;
     [ObservableProperty] private bool _isDirty;
     [ObservableProperty] private string _status = "Ready.";
 
@@ -121,6 +123,7 @@ public sealed partial class MainViewModel : ObservableObject
     {
         _pack = pack;
         PackPath = path;
+        DatabasePath = null;
         Cards.Clear();
         foreach (var c in pack.Cards) Cards.Add(NewCardViewModel(c));
         Archetypes.Clear();
@@ -160,17 +163,21 @@ public sealed partial class MainViewModel : ObservableObject
     private async Task OpenPack()
     {
         if (!await ConfirmDiscardAsync()) return;
-        var path = await _dialogs.OpenFileAsync("Open a card pack", "Card Crafter pack", "ycc");
+        var path = await _dialogs.OpenFileAsync("Open a card pack or card database", "Card Crafter pack or card database", "ycc", "db", "cdb");
         if (path is not null) OpenPath(path);
     }
 
     public bool OpenPath(string path)
     {
+        if (DatabasePack.IsDatabasePath(path)) return OpenDatabase(path);
         try
         {
             LoadPack(PackSerializer.Load(path), path);
-            _settings.AddRecent(path);
-            _settings.Save();
+            if (!IsPendingPack(path))
+            {
+                _settings.AddRecent(path);
+                _settings.Save();
+            }
             Status = $"Opened {Path.GetFileName(path)}.";
             return true;
         }
@@ -181,18 +188,84 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
+    /// <summary>Opens a .db or .cdb as the pack, with scripts and art from the folders that go with it. Save writes back into it.</summary>
+    public bool OpenDatabase(string path)
+    {
+        try
+        {
+            var opened = DatabasePack.Open(path, Inventory);
+            LoadPack(opened.Pack, null);
+            DatabasePath = path;
+            foreach (var c in Cards) c.PackFolder = Path.GetDirectoryName(path);
+            _settings.AddRecent(path);
+            _settings.Save();
+            var n = opened.Pack.Cards.Count;
+            Status = opened.HadCardCrafterData
+                ? $"Opened {Path.GetFileName(path)}: {n} cards with their effects. Save writes back into it."
+                : $"Opened {Path.GetFileName(path)}: {n} cards, {opened.Scripts} scripts (as hand-written Lua, from {opened.ScriptFolder}), {opened.Arts} artworks. Save writes back into it.";
+            if (Inventory is not null) _ = ReloadCatalogAsync(Inventory);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Microsoft.Data.Sqlite.SqliteException or InvalidDataException)
+        {
+            Status = $"Couldn't open {Path.GetFileName(path)}: {ex.Message}";
+            return false;
+        }
+    }
+
+    /// <summary>Omega's custom card databases, for "Open from Omega".</summary>
+    public IReadOnlyList<OmegaDatabaseItem> OmegaDatabases =>
+        Inventory?.CardDatabases.Where(d => d.Cards < OmegaInventory.OfficialDatabaseMinCards)
+            .OrderBy(d => Path.GetFileName(d.Path), StringComparer.OrdinalIgnoreCase)
+            .Select(d => new OmegaDatabaseItem(d.Path, $"{Path.GetFileName(d.Path)}  ({d.Cards} card{(d.Cards == 1 ? "" : "s")})"))
+            .ToList() ?? [];
+    public bool HasOmegaDatabases => OmegaDatabases.Count > 0;
+
+    [RelayCommand]
+    private async Task OpenOmegaDatabase(string path)
+    {
+        if (!await ConfirmDiscardAsync()) return;
+        OpenDatabase(path);
+    }
+
+    /// <summary>Where Save writes, for the Save button's tooltip.</summary>
+    public string SaveTip => DatabasePath is { } db ? $"Save into {db} (Ctrl+S)"
+        : PackPath is { } p ? $"Save {p} (Ctrl+S)" : "Save (Ctrl+S)";
+    partial void OnPackPathChanged(string? value) => OnPropertyChanged(nameof(SaveTip));
+    partial void OnDatabasePathChanged(string? value) => OnPropertyChanged(nameof(SaveTip));
+
+    /// <summary>The folder relative card art is resolved against.</summary>
+    private string? PackFolder => (PackPath ?? DatabasePath) is { } f ? Path.GetDirectoryName(f) : null;
+
     [RelayCommand]
     public async Task<bool> SavePack()
     {
-        if (PackPath is null) return await SavePackAs();
-        return SaveTo(PackPath);
+        bool ok;
+        if (DatabasePath is not null) ok = await SaveDatabaseTo(DatabasePath);
+        else if (PackPath is null) return await SavePackAs();
+        else ok = SaveTo(PackPath);
+        if (ok) await InstallAfterSaveAsync();
+        return ok;
     }
 
     [RelayCommand]
     public async Task<bool> SavePackAs()
     {
         var path = await _dialogs.SaveFileAsync("Save card pack", PackExporter.SafeFileName(_pack.Name) + PackSerializer.Extension, "Card Crafter pack", "ycc");
-        return path is not null && SaveTo(path);
+        if (path is null || !SaveTo(path)) return false;
+        DatabasePath = null;
+        await InstallAfterSaveAsync();
+        return true;
+    }
+
+    [RelayCommand]
+    public async Task<bool> SaveAsDatabase()
+    {
+        var ext = Inventory?.DatabaseExtension ?? ".cdb";
+        var path = await _dialogs.SaveFileAsync("Save as a card database", PackExporter.SafeFileName(_pack.Name) + ext, "Card database", ext.TrimStart('.'));
+        if (path is null || !await SaveDatabaseTo(path)) return false;
+        await InstallAfterSaveAsync();
+        return true;
     }
 
     private bool SaveTo(string path)
@@ -213,6 +286,69 @@ public sealed partial class MainViewModel : ObservableObject
             Status = $"Couldn't save: {ex.Message}";
             return false;
         }
+    }
+
+    /// <summary>Saves into a card database, with scripts and art in its folders. Replaced files are backed up first.</summary>
+    private async Task<bool> SaveDatabaseTo(string path)
+    {
+        // Art paths relative to the old pack file wouldn't resolve from the database's folder, so make them absolute.
+        var folder = PackFolder;
+        foreach (var c in _pack.Cards) c.ArtworkPath = PackExporter.ResolveArtwork(c.ArtworkPath, folder) ?? c.ArtworkPath;
+        var result = await Task.Run(() => DatabasePack.Save(_pack, path, folder, AppSettings.BackupFolder, Inventory));
+        if (result.NeedsAdmin)
+        {
+            if (await _dialogs.ConfirmAsync("Administrator needed",
+                    $"Windows needs administrator permission to write to {Path.GetDirectoryName(path)}.\n\nRestart Card Crafter as administrator and save?",
+                    "Restart as admin", "Cancel"))
+                RestartElevated("--save-db", path);
+            return false;
+        }
+        if (!result.Success)
+        {
+            await _dialogs.ShowAsync("Couldn't save the database", result.Error ?? "Unknown error.");
+            return false;
+        }
+        DatabasePath = path;
+        PackPath = null;
+        foreach (var c in Cards) c.PackFolder = Path.GetDirectoryName(path);
+        IsDirty = false;
+        _settings.AddRecent(path);
+        _settings.Save();
+        var skipped = result.Skipped.Count > 0 ? $" {result.Skipped.Count} card(s) have errors, so their scripts were not written." : "";
+        var backups = result.BackedUp.Count > 0 ? $" Replaced files were backed up to {result.BackupFolder}." : "";
+        Status = $"Saved {Path.GetFileName(path)}, scripts in {result.ScriptFolder}" +
+                 (result.ArtFolder is { } art ? $", art in {art}." : ".") + skipped + backups;
+        if (Inventory is not null && DatabasePack.IsInOmega(path, Inventory)) _ = ReloadCatalogAsync(Inventory);
+        return true;
+    }
+
+    // ---------------------------------------------------------------- install on save
+
+    public bool InstallOnSave
+    {
+        get => _settings.InstallOnSave;
+        set
+        {
+            if (_settings.InstallOnSave == value) return;
+            _settings.InstallOnSave = value;
+            _settings.Save();
+            OnPropertyChanged();
+            Status = value ? "Saving now installs the pack into YGO Omega too." : "Saving no longer installs into YGO Omega.";
+        }
+    }
+
+    private bool _installing;
+
+    /// <summary>With "Install on save", every save also puts the database, scripts and art into Omega's folders.</summary>
+    private async Task InstallAfterSaveAsync()
+    {
+        if (!InstallOnSave || !CanInstall || _installing) return;
+        // A database inside Omega's own folder was just saved in place: it is installed already.
+        if (DatabasePath is { } db && DatabasePack.IsInOmega(db, Inventory)) return;
+        var status = Status;
+        await Install();
+        if (!Status.StartsWith("Installed", StringComparison.Ordinal)) return;
+        Status = status + " " + Status;
     }
 
     // ---------------------------------------------------------------- cards
@@ -265,34 +401,35 @@ public sealed partial class MainViewModel : ObservableObject
         MarkDirty();
     }
 
-    /// <summary>Imports cards from an existing .cdb. Scripts found next to it come in as hand-written Lua.</summary>
+    /// <summary>Adds the cards of another database to this pack, with their scripts (as hand-written Lua) and art.</summary>
     [RelayCommand]
     private async Task ImportCdb()
     {
-        var path = await _dialogs.OpenFileAsync("Import cards from a database", "Card database", "cdb");
+        var path = await _dialogs.OpenFileAsync("Import cards from a database", "Card database", "cdb", "db");
         if (path is null) return;
         try
         {
-            var rows = CdbFile.Read(path);
-            var scriptDir = Path.Combine(Path.GetDirectoryName(path)!, "script");
-            int added = 0, scripts = 0;
-            foreach (var row in rows)
+            var opened = await Task.Run(() => DatabasePack.Open(path, Inventory));
+            int added = 0;
+            foreach (var project in opened.Pack.Cards)
             {
-                if (_pack.Cards.Any(c => c.Card.Id == row.Id)) continue;
-                var project = new CardProject { Card = CdbEncoder.Decode(row) };
-                var lua = Path.Combine(scriptDir, $"c{row.Id}.lua");
-                if (File.Exists(lua))
-                {
-                    project.UseCustomLua = true;
-                    project.CustomLua = await File.ReadAllTextAsync(lua);
-                    scripts++;
-                }
+                if (_pack.Cards.Any(c => c.Card.Id == project.Card.Id)) continue;
                 _pack.Cards.Add(project);
                 Cards.Add(NewCardViewModel(project));
                 added++;
             }
+            foreach (var a in opened.Pack.Archetypes.Where(a => _pack.Archetypes.All(x => x.Code != a.Code)))
+            {
+                _pack.Archetypes.Add(a);
+                Archetypes.Add(new ArchetypeViewModel(a, OnArchetypesChanged));
+            }
+            foreach (var t in opened.Pack.CustomTypes.Where(t => _pack.CustomTypes.All(x => x.Value != t.Value)))
+            {
+                _pack.CustomTypes.Add(t);
+                CustomTypes.Add(new CustomTypeViewModel(t, OnTypesChanged));
+            }
             MarkDirty();
-            Status = $"Imported {added} cards ({scripts} with scripts). Cards already in the pack were skipped.";
+            Status = $"Imported {added} cards ({opened.Scripts} scripts, {opened.Arts} artworks). Cards already in the pack were skipped.";
         }
         catch (Exception ex) when (ex is IOException or Microsoft.Data.Sqlite.SqliteException or UnauthorizedAccessException)
         {
@@ -698,7 +835,12 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _scanReport = "";
 
     public bool CanInstall => OmegaFound && Inventory?.SupportsLooseFiles == true;
-    partial void OnInventoryChanged(OmegaInventory? value) => OnPropertyChanged(nameof(CanInstall));
+    partial void OnInventoryChanged(OmegaInventory? value)
+    {
+        OnPropertyChanged(nameof(CanInstall));
+        OnPropertyChanged(nameof(OmegaDatabases));
+        OnPropertyChanged(nameof(HasOmegaDatabases));
+    }
     partial void OnOmegaFoundChanged(bool value) => OnPropertyChanged(nameof(CanInstall));
 
     /// <summary>Finds Omega on its own: saved setting, registry, standard folders, then a drive search.</summary>
@@ -757,8 +899,22 @@ public sealed partial class MainViewModel : ObservableObject
         }
         ScanReport = Inventory.Report();
         UseOmegaTexturesIfPresent();
-        var inventory = Inventory;
-        var ownDb = PackExporter.SafeFileName(_pack.Name);
+        await ReloadCatalogAsync(Inventory);
+        foreach (var p in Catalog.Problems) ScanReport += $"\nCouldn't read {p}";
+        ScanReport += $"\nIn the game: {Catalog.Passcodes.Count} passcodes in use, {Catalog.Archetypes.Count} archetypes, {Catalog.UnknownTypes.Count} non-standard monster Types.\n";
+        foreach (var t in Catalog.UnknownTypes) ScanReport += $"  Type {t.Label}\n";
+        OmegaStatus = Inventory.SupportsLooseFiles
+            ? $"YGO Omega: {root} — ready to install cards."
+            : $"YGO Omega: {root} — cards will be exported to a folder (see the Omega tab).";
+    }
+
+    /// <summary>
+    /// Reads what Omega already uses: passcodes, archetypes, Types. This pack's own database is left out,
+    /// so its cards don't warn that their passcodes are taken by themselves.
+    /// </summary>
+    private async Task ReloadCatalogAsync(OmegaInventory inventory)
+    {
+        var ownDb = DatabasePath is { } db ? Path.GetFileNameWithoutExtension(db) : PackExporter.SafeFileName(_pack.Name);
         try
         {
             Catalog = await Task.Run(() => OmegaCatalog.Load(inventory, ownDb));
@@ -769,14 +925,8 @@ public sealed partial class MainViewModel : ObservableObject
             Catalog = OmegaCatalog.Empty;
             ScanReport += $"\nCouldn't read Omega's card databases: {ex.Message}\n";
         }
-        foreach (var p in Catalog.Problems) ScanReport += $"\nCouldn't read {p}";
         RefreshCatalogLists();
         foreach (var c in Cards) c.Refresh();
-        ScanReport += $"\nIn the game: {Catalog.Passcodes.Count} passcodes in use, {Catalog.Archetypes.Count} archetypes, {Catalog.UnknownTypes.Count} non-standard monster Types.\n";
-        foreach (var t in Catalog.UnknownTypes) ScanReport += $"  Type {t.Label}\n";
-        OmegaStatus = Inventory.SupportsLooseFiles
-            ? $"YGO Omega: {root} — ready to install cards."
-            : $"YGO Omega: {root} — cards will be exported to a folder (see the Omega tab).";
     }
 
     [RelayCommand]
@@ -806,23 +956,38 @@ public sealed partial class MainViewModel : ObservableObject
             await _dialogs.ShowAsync("YGO Omega not found", "Card Crafter couldn't find YGO Omega. Use \"Browse…\" on the Omega tab first.");
             return;
         }
-        var export = await Task.Run(() => PackExporter.Export(_pack, ExportFolder, PackPath is null ? null : Path.GetDirectoryName(PackPath)));
-        var result = OmegaInstaller.Install(export, Inventory, AppSettings.BackupFolder);
-        if (result.NeedsAdmin)
+        // A database opened from Omega's own folder is installed by saving it where it is.
+        if (DatabasePath is { } db && DatabasePack.IsInOmega(db, Inventory))
         {
-            var restart = await _dialogs.ConfirmAsync("Administrator needed",
-                "YGO Omega is in a protected folder (like Program Files), so Windows needs administrator permission to copy cards there.\n\n" +
-                "Restart Card Crafter as administrator and install?", "Restart as admin", "Cancel");
-            if (restart && await SavePack()) RestartElevated();
+            await SaveDatabaseTo(db);
             return;
         }
-        if (!result.Success)
+        _installing = true;
+        try
         {
-            await _dialogs.ShowAsync("Install didn't finish", result.Error ?? "Unknown error.");
-            return;
+            var folder = PackFolder;
+            var export = await Task.Run(() => PackExporter.Export(_pack, ExportFolder, folder));
+            var result = OmegaInstaller.Install(export, Inventory, AppSettings.BackupFolder, PackSerializer.ToJson(_pack));
+            if (result.NeedsAdmin)
+            {
+                var restart = await _dialogs.ConfirmAsync("Administrator needed",
+                    "YGO Omega is in a protected folder (like Program Files), so Windows needs administrator permission to copy cards there.\n\n" +
+                    "Restart Card Crafter as administrator and install?", "Restart as admin", "Cancel");
+                if (restart) RestartElevated("--install");
+                return;
+            }
+            if (!result.Success)
+            {
+                await _dialogs.ShowAsync("Install didn't finish", result.Error ?? "Unknown error.");
+                return;
+            }
+            var backups = result.BackedUp.Count > 0 ? $" Replaced files were backed up to {result.BackupFolder}." : "";
+            Status = Summary(export, $"Installed into YGO Omega") + backups;
         }
-        var backups = result.BackedUp.Count > 0 ? $" Replaced files were backed up to {result.BackupFolder}." : "";
-        Status = Summary(export, $"Installed into YGO Omega") + backups;
+        finally
+        {
+            _installing = false;
+        }
     }
 
     private static string Summary(ExportResult r, string what)
@@ -833,12 +998,28 @@ public sealed partial class MainViewModel : ObservableObject
             : $"{what}: {r.Written} card scripts. {skipped} card(s) have errors and were not written; fix them on the Script tab.";
     }
 
-    private void RestartElevated()
+    /// <summary>
+    /// Restarts as administrator and repeats the action there ("--install", or "--save-db" with the database).
+    /// The pack goes along as a file, so unsaved changes aren't lost.
+    /// </summary>
+    private void RestartElevated(string action, string? database = null)
     {
-        if (!OperatingSystem.IsWindows() || Environment.ProcessPath is null || PackPath is null) return;
+        if (!OperatingSystem.IsWindows() || Environment.ProcessPath is null) return;
+        string pack;
+        try
+        {
+            // Unsaved changes go along too.
+            pack = PackPath is { } saved && !IsDirty ? saved : PendingPack();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Status = $"Couldn't prepare the restart: {ex.Message}";
+            return;
+        }
         var psi = new ProcessStartInfo(Environment.ProcessPath) { UseShellExecute = true, Verb = "runas" };
-        psi.ArgumentList.Add(PackPath);
-        psi.ArgumentList.Add("--install");
+        psi.ArgumentList.Add(pack);
+        psi.ArgumentList.Add(action);
+        if (database is not null) psi.ArgumentList.Add(database);
         try
         {
             Process.Start(psi);
@@ -846,9 +1027,22 @@ public sealed partial class MainViewModel : ObservableObject
         }
         catch (System.ComponentModel.Win32Exception)
         {
-            Status = "Administrator permission was not given, so nothing was installed.";
+            Status = "Administrator permission was not given, so nothing was written.";
         }
     }
+
+    /// <summary>Writes the pack to a temporary file, with art paths made absolute so they still resolve.</summary>
+    private string PendingPack()
+    {
+        var copy = PackSerializer.Clone(_pack);
+        foreach (var c in copy.Cards) c.ArtworkPath = PackExporter.ResolveArtwork(c.ArtworkPath, PackFolder) ?? c.ArtworkPath;
+        var path = Path.Combine(AppSettings.Folder, PendingPackName);
+        PackSerializer.Save(copy, path);
+        return path;
+    }
+
+    private const string PendingPackName = "pending" + PackSerializer.Extension;
+    private static bool IsPendingPack(string path) => Path.GetFileName(path).Equals(PendingPackName, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Where unexpected errors are reported (the app's crash log). Null in tests.</summary>
     public static Action<string, Exception>? CrashLogHook { get; set; }
@@ -859,15 +1053,23 @@ public sealed partial class MainViewModel : ObservableObject
     /// <summary>Handles command-line arguments: a pack to open, and --install to install it straight away.</summary>
     public async Task StartAsync(string[] args)
     {
-        var path = args.FirstOrDefault(a => a.EndsWith(PackSerializer.Extension, StringComparison.OrdinalIgnoreCase) && File.Exists(a));
+        var path = args.FirstOrDefault(a => (a.EndsWith(PackSerializer.Extension, StringComparison.OrdinalIgnoreCase) || DatabasePack.IsDatabasePath(a)) && File.Exists(a));
         path ??= _settings.LastPackPath is { } last && File.Exists(last) ? last : null;
         LoadSavedFrames();
         if (path is not null) OpenPath(path);
+        var pending = path is not null && IsPendingPack(path);
+        if (pending) PackPath = null;
         if (InstalledExe is { } exe) SelfUpdater.CleanupOld(exe);
         // Checking for updates runs alongside everything else and never blocks or fails startup.
         if (_settings.CheckForUpdates) _ = CheckForUpdatesAsync(userAsked: false);
         await DetectOmega();
-        if (args.Contains("--install") && CanInstall) await Install();
+        var saveDb = Array.IndexOf(args, "--save-db");
+        if (saveDb >= 0 && saveDb + 1 < args.Length)
+        {
+            if (await SaveDatabaseTo(args[saveDb + 1])) await InstallAfterSaveAsync();
+        }
+        else if (args.Contains("--install") && CanInstall) await Install();
+        if (pending) IsDirty = PackPath is null && DatabasePath is null;
     }
 
     public void OpenExportFolder() => _dialogs.OpenFolder(ExportFolder);

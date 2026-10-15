@@ -11,6 +11,7 @@ Each effect has exactly one.
 | Block | Reads as | Options |
 |---|---|---|
 | You activate it (Main Phase)<br><sub>An Ignition effect: the player activates it during their own Main Phase.</sub> | You activate it during your Main Phase, {zone} | **From**: on the field, in the Monster Zone, in the hand, in the GY, in the Spell & Trap Zone, in the Field Zone, in the Pendulum Zone, while banished |
+| Special Summon procedure<br><sub>A built-in way to Special Summon this card, like Cyber Dragon or Chaos Sorcerer. It doesn't start a chain, so it can't be responded to or negated. Add IF blocks for when it's allowed and COST blocks for what you pay. It has no DO blocks: the Summon is what it does.</sub> | You can Special Summon this card {zone} (Summon procedure) | **From**: from your hand, from your GY, from your banishment |
 | Activate this Spell/Trap<br><sub>The effect a Spell or Trap card has when it is activated.</sub> | Activate this card {timing} | **Timing**: at any time, when an opponent's monster declares an attack, when your opponent Normal or Special Summons a monster, when any monster is Summoned, when your opponent activates a card or effect, when your opponent activates a monster effect, when your opponent activates a Spell/Trap Card |
 | Quick Effect<br><sub>Can be activated during either player's turn, like a Quick-Play Spell.</sub> | (Quick Effect) You activate it {timing}, {zone} | **Timing**: at any time, when an opponent's monster declares an attack, when your opponent Normal or Special Summons a monster, when any monster is Summoned, when your opponent activates a card or effect, when your opponent activates a monster effect, when your opponent activates a Spell/Trap Card; **From**: on the field, in the Monster Zone, in the hand, in the GY, in the Spell & Trap Zone, in the Field Zone, in the Pendulum Zone, while banished |
 | This card is Summoned | If this card is {how} Summoned | **How**: Normal, Special, Normal or Special, Flip, Normal, Flip or Special; **optional ("You can")** on/off |
@@ -106,7 +107,9 @@ Ready-made effects modelled on well-known cards. They are inserted as normal blo
 | Banish on summon | Bottomless Trap Hole | Trap | When your opponent summons a monster: banish 1 monster they control. |
 | Search on summon | Elemental HERO Stratos | Monster | If this card is Normal or Special Summoned: add 1 monster from your Deck to your hand. |
 | Floater | Sangan / floaters | Monster | If this card is destroyed: Special Summon 1 Level 4 or lower monster from your Deck. |
-| Free summon from hand | Cyber Dragon | Monster | If your opponent controls more monsters: Special Summon this card from your hand. |
+| Free summon from hand | Cyber Dragon | Monster | If your opponent controls more monsters, you can Special Summon this card from your hand. It doesn't start a chain. |
+| Banish from GY to summon | Chaos Sorcerer | Monster | Special Summon this card from your hand by banishing 2 monsters from your GY. Set the card to "Can't be Normal Summoned". |
+| Tribute to summon | Gate Guardian | Monster | Special Summon this card from your hand by Tributing 1 monster, once per turn. |
 | Revive itself from GY | GY self-revivers | Monster | Banish 1 other card from your GY; Special Summon this card from your GY. |
 | Discard to search | hand-starter monsters | Monster | Discard this card; add 1 Spell from your Deck to your hand. |
 | Quick banish from GY | Crossout-style disruption | Monster | (Quick Effect) Target 1 card in your opponent's GY; banish it. |

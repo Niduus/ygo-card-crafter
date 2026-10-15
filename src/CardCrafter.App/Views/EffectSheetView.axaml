@@ -95,7 +95,7 @@
                         <StackPanel>
                           <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
                             <Border Classes="badge cost"><StackPanel Orientation="Horizontal"><Path Data="{StaticResource CostIcon}" /><TextBlock Text="COST" /></StackPanel></Border>
-                            <TextBlock Classes="hint" Text="Paid to activate it" />
+                            <TextBlock Classes="hint" Text="{Binding CostHint}" />
                           </StackPanel>
                           <ItemsControl ItemsSource="{Binding Costs}">
                             <ItemsControl.ItemTemplate>

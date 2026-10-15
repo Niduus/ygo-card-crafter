@@ -82,6 +82,37 @@ public static class CdbFile
         Write(path, rows);
     }
 
+    /// <summary>
+    /// Card Crafter keeps the pack it saved (event sheets, archetype names, custom Types) in its own table inside
+    /// the database, so opening the database again gives back the whole pack. Games only read datas and texts.
+    /// </summary>
+    private const string PackTable = "cardcrafter_pack";
+
+    public static void WritePackJson(string path, string json)
+    {
+        using var conn = Open(path, SqliteOpenMode.ReadWrite);
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"""
+            CREATE TABLE IF NOT EXISTS {PackTable}(key text primary key, value text);
+            INSERT OR REPLACE INTO {PackTable} VALUES('pack', $json);
+            """;
+        cmd.Parameters.AddWithValue("$json", json);
+        cmd.ExecuteNonQuery();
+    }
+
+    /// <summary>The pack Card Crafter stored in this database, or null for databases made elsewhere.</summary>
+    public static string? ReadPackJson(string path)
+    {
+        using var conn = Open(path, SqliteOpenMode.ReadOnly);
+        using var check = conn.CreateCommand();
+        check.CommandText = "SELECT count(*) FROM sqlite_master WHERE type='table' AND name=$t";
+        check.Parameters.AddWithValue("$t", PackTable);
+        if (Convert.ToInt64(check.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture) == 0) return null;
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"SELECT value FROM {PackTable} WHERE key='pack'";
+        return cmd.ExecuteScalar() as string;
+    }
+
     public static List<CdbRow> Read(string path)
     {
         using var conn = Open(path, SqliteOpenMode.ReadOnly);

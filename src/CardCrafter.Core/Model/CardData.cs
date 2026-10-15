@@ -33,6 +33,14 @@ public sealed class CardData
     /// <summary>Archetype codes (setcodes), up to four.</summary>
     public List<int> Archetypes { get; set; } = [];
 
+    // Database values Card Crafter doesn't edit, kept so opening and saving a database never loses them.
+    /// <summary>The "ot" value for this card when it differs from the pack's.</summary>
+    public long? Ot { get; set; }
+    /// <summary>The database's search categories.</summary>
+    public long Category { get; set; }
+    /// <summary>Card-type bits the editor has no setting for, such as Token or Trap Monster.</summary>
+    public long ExtraTypeBits { get; set; }
+
     public bool IsMonster => Kind == CardKind.Monster;
     public bool IsLink => IsMonster && Frame == MonsterFrame.Link;
     public bool IsXyz => IsMonster && Frame == MonsterFrame.Xyz;

@@ -40,6 +40,7 @@ public sealed partial class EffectViewModel : ObservableObject
     /// <summary>A Special Summon procedure: the Summon is what it does, so it has no DO blocks.</summary>
     public bool IsProcedure => Model.When?.BlockId == SummonProcedureTrigger.BlockId;
     public bool ShowCosts => !IsPassive;
+    public string CostHint => IsProcedure ? "Paid to Summon it" : "Paid to activate it";
     public bool ShowLimit => !IsPassive;
     public string DoHeader => IsPassive ? "ALWAYS (lasting effects)" : "DO";
 
@@ -145,6 +146,7 @@ public sealed partial class EffectViewModel : ObservableObject
         OnPropertyChanged(nameof(HasTrigger));
         OnPropertyChanged(nameof(IsPassive));
         OnPropertyChanged(nameof(IsProcedure));
+        OnPropertyChanged(nameof(CostHint));
         OnPropertyChanged(nameof(ShowCosts));
         OnPropertyChanged(nameof(ShowLimit));
         OnPropertyChanged(nameof(DoHeader));

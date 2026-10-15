@@ -28,7 +28,9 @@ public class UpdateTests
     {
         Assert.True(UpdateChecker.IsNewer(new Version(0, 3, 0), new Version(0, 2, 0, 0)));
         Assert.False(UpdateChecker.IsNewer(new Version(0, 2, 0), new Version(0, 2, 0, 0)));
-        Assert.Equal(new Version(0, 2, 0), UpdateChecker.CurrentVersion);
+        // The build version (Directory.Build.props), as three parts so it compares with release tags.
+        Assert.True(UpdateChecker.CurrentVersion >= new Version(0, 2, 0));
+        Assert.Equal(-1, UpdateChecker.CurrentVersion.Revision);
     }
 
     [Fact]

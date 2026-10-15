@@ -7,12 +7,11 @@
   <ScrollViewer>
     <Grid ColumnDefinitions="*,24,300" Margin="0,0,12,12">
       <StackPanel Grid.Column="0">
-        <Grid ColumnDefinitions="*,12,250,12,170">
+        <!-- name on its own row, so it never gets squeezed in narrow windows -->
+        <TextBlock Classes="label" Text="Card name" />
+        <TextBox Text="{Binding Name}" />
+        <Grid ColumnDefinitions="3*,12,2*" Margin="0,4,0,0">
           <StackPanel Grid.Column="0">
-            <TextBlock Classes="label" Text="Card name" />
-            <TextBox Text="{Binding Name}" />
-          </StackPanel>
-          <StackPanel Grid.Column="2">
             <TextBlock Classes="label" Text="Passcode (card ID)" />
             <Grid ColumnDefinitions="*,Auto">
               <NumericUpDown Value="{Binding Id}" Minimum="1" Maximum="4294967295" FormatString="0" ShowButtonSpinner="False"
@@ -21,7 +20,7 @@
                       ToolTip.Tip="Pick a free passcode that no card in this pack or in Omega uses" />
             </Grid>
           </StackPanel>
-          <StackPanel Grid.Column="4">
+          <StackPanel Grid.Column="2">
             <TextBlock Classes="label" Text="Card kind" />
             <ComboBox ItemsSource="{Binding KindOptions}" SelectedItem="{Binding Kind}" HorizontalAlignment="Stretch" />
           </StackPanel>
@@ -57,12 +56,12 @@
               <TextBlock Text="{Binding LinkRatingText}" FontWeight="Bold" Margin="0,6,0,0" ToolTip.Tip="Set by the number of Link Arrows" />
             </StackPanel>
             <StackPanel Grid.Column="2">
-              <TextBlock Classes="label" Text="ATK (type ? for unknown)" />
-              <TextBox Text="{Binding Atk}" />
+              <TextBlock Classes="label" Text="ATK" />
+              <TextBox Text="{Binding Atk}" ToolTip.Tip="Type ? for an unknown ATK, like on official cards" />
             </StackPanel>
             <StackPanel Grid.Column="4" IsVisible="{Binding ShowDef}">
-              <TextBlock Classes="label" Text="DEF (type ? for unknown)" />
-              <TextBox Text="{Binding Def}" />
+              <TextBlock Classes="label" Text="DEF" />
+              <TextBox Text="{Binding Def}" ToolTip.Tip="Type ? for an unknown DEF, like on official cards" />
             </StackPanel>
           </Grid>
 

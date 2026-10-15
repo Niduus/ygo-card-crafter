@@ -19,7 +19,9 @@ public static class ScriptCompiler
     {
         var script = new ScriptBuilder(project, pack);
         var card = project.Card;
-        var strings = project.Effects.Take(16).Select(e => e.Label).ToList();
+        var strings = project.UseCustomLua && project.ScriptStrings.Count > 0
+            ? project.ScriptStrings.Take(16).ToList()
+            : project.Effects.Take(16).Select(e => e.Label).ToList();
 
         CheckCard(project, script.Diagnostics);
 

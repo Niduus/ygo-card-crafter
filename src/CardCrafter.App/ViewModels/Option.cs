@@ -14,3 +14,6 @@ public static class Options
     public static Option<T> Find<T>(IReadOnlyList<Option<T>> list, T value) =>
         list.FirstOrDefault(o => EqualityComparer<T>.Default.Equals(o.Value, value)) ?? list[0];
 }
+
+/// <summary>One of Omega's custom card databases, for "Open from Omega".</summary>
+public sealed record OmegaDatabaseItem(string Path, string Label);

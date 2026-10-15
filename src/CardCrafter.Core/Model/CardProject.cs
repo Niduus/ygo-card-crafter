@@ -27,6 +27,11 @@ public sealed class CardProject
     /// <summary>When true the hand-written <see cref="CustomLua"/> is used instead of the generated script.</summary>
     public bool UseCustomLua { get; set; }
     public string CustomLua { get; set; } = "";
+    /// <summary>
+    /// The database's str1..str16 for a hand-written script, which refers to them with aux.Stringid.
+    /// Generated scripts use their effect labels instead.
+    /// </summary>
+    public List<string> ScriptStrings { get; set; } = [];
 
     /// <summary>Path to the card's artwork image, relative to the pack file or absolute.</summary>
     public string? ArtworkPath { get; set; }

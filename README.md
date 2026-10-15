@@ -24,7 +24,8 @@ reuse existing card features on their own cards and see exactly what each part d
 2. Run it. It looks for YGO Omega on its own and shows what it found in the top-right corner.
 3. You start with **My First Card**, which already has a working effect. Open the **Effects** tab to see how it is built.
 4. Change anything: click a blank to edit it, use **+ Add condition / cost / action**, or **+ From a template…**.
-5. Click **Install into Omega** (or **Export** to get the files in a folder).
+5. Click **Install into Omega** (or **Export** to get the files in a folder). Tick **Install on save** and every
+   save puts the database, scripts and art into Omega's folders for you.
 
 ### Updates
 
@@ -68,6 +69,23 @@ such as "Dragon monsters you control gain 500 ATK" or "This card cannot be destr
 **Extra Deck monsters.** Fusion, Synchro, Xyz and Link monsters get their summoning procedure from the
 Card tab: materials by passcode or by "what a material must be", and how many.
 
+**Summoning rules.** "Cannot be Normal Summoned" is a rule about the card, not an ability, so it lives in the Card tab's
+**Summoning** choice:
+
+| Choice | On the card | What the engine does |
+|---|---|---|
+| Can be Normal Summoned | | Normal Summon and Set as usual |
+| Can't be Normal Summoned: must first be Special Summoned | "Cannot be Normal Summoned/Set. Must first be Special Summoned…" | Can't be Normal Summoned, and until it is properly Summoned it can't be Special Summoned by other effects. After that it can be revived. |
+| Can only be Special Summoned by its own procedure | "…Must be Special Summoned… and cannot be Special Summoned by other ways." | It can only ever be Summoned by its own procedure. |
+
+Extra Deck and Ritual monsters can choose "Must be Fusion Summoned" (or Synchro, Xyz, Link, Ritual) instead.
+
+How it is Special Summoned is an effect with the WHEN block **Special Summon procedure**, like Cyber Dragon or Chaos Sorcerer:
+IF blocks say when it's allowed ("if your opponent controls more monsters") and COST blocks what you pay ("banish 2 monsters
+from your GY", "Tribute 1 monster"). It doesn't start a chain, so it has no DO blocks, and "once per turn" reads
+"You can only Special Summon *X* once per turn this way." Monsters that can be Normal Summoned can have one too.
+The templates **Free summon from hand**, **Banish from GY to summon** and **Tribute to summon** are ready-made ones.
+
 **Passcodes.** Every card needs a unique passcode. Click **Generate** and Card Crafter picks one that no card in your
 pack or anywhere in Omega uses. Each generated passcode starts its own block of 10,000 numbers, so once-per-turn
 limits never collide between cards. If a passcode is ever taken later, for example by a new official card, the card
@@ -77,12 +95,18 @@ shows a warning the next time Card Crafter scans Omega, and installing is refuse
 Link Arrows, Pendulum scales, type line, card text and ATK/DEF. **Choose art…** sets the illustration inside the frame.
 YGO Omega draws the frame itself, so only the art is exported, as `.jpg`.
 
-**Card frame images.** Card Crafter doesn't include Konami's card frame artwork. To preview with real-looking frames,
-click **Frames… → Use frame images from a folder…** under the preview and pick a folder of full-card templates you have.
+**Card frame images.** Card Crafter doesn't include card frame artwork itself. Click **Frames… → Download OmegaCustom
+card textures** under the preview to use the frames from [zeak6464/OmegaCustom](https://github.com/zeak6464/OmegaCustom);
+they are downloaded once into `%AppData%\YGO Card Crafter\Frames\OmegaCustom` and the text, stars and art are placed to match each
+frame. If your Omega folder already has those textures, they are used automatically.
+Or click **Frames… → Use frame images from a folder…** and pick a folder of full-card templates you have.
 Name them `normal`, `effect`, `ritual`, `fusion`, `synchro`, `xyz`, `link`, `token`, `spell`, `trap`, and
 `pendulum-normal`, `pendulum-effect` and so on (`.png` or `.jpg`). Optional extras replace single parts:
 `attribute-dark` … `attribute-divine`, `attribute-spell`, `attribute-trap`, `level`, `rank`. Templates should use
 the standard card proportions (59 × 86); the name, stars, art, text and ATK/DEF are drawn on top in the standard places.
+
+**Card images.** **Save image…** under the preview saves the card as you see it, as PNG, JPG or WebP, at a standard size
+(from 177 pixels wide for ygopro pics up to 1626, print sizes at 300 and 600 DPI, or any width you type). **Save every card in the pack…** does them all at once.
 
 **If something goes wrong.** Unexpected errors are shown in a message and saved to
 `%AppData%\YGO Card Crafter\crash.log` instead of closing the app. Please attach that file when reporting a problem.
@@ -126,6 +150,26 @@ It never writes next to Omega's own card database (`Files\Bundles\db`), never ov
 and refuses to install cards whose passcodes are already used. Anything it replaces is backed up first to
 `%AppData%\YGO Card Crafter\Backups`.
 
+**Install on save** (next to **Install into Omega**) does this automatically every time you save.
+
+### Opening and saving card databases
+
+**Open…** opens a Card Crafter pack (`.ycc`) or any card database (`.db` or `.cdb`), and **Open from Omega** lists the
+custom databases in Omega's `Databases` folder. A database opens as a pack with everything that goes with it:
+
+| Database in | Scripts read from | Art read from |
+|---|---|---|
+| Omega's `Files\Databases` | `Files\Scripts` | `Files\Arts` |
+| anywhere else | `script` next to it | `pics` next to it |
+
+**Save** then writes back into that same database, and puts each card's script and art into those folders, backing up
+every file it replaces. **Save as → Card database…** saves the pack as a new database the same way.
+
+Card Crafter also stores the pack itself in the database, in a table of its own (`cardcrafter_pack`) that games ignore,
+so a database it saved or installed opens again with its event sheets, archetype names and custom Types. Cards from
+databases made elsewhere open with their scripts as hand-written Lua (Script tab), and keep every database value
+Card Crafter has no setting for, so saving never loses anything. Omega's own card database is never written to.
+
 Omega is often installed under `C:\Program Files (x86)`, where Windows only lets administrators write. When that
 happens Card Crafter offers to restart itself as administrator and finish the install.
 
@@ -143,7 +187,7 @@ pics/<passcode>.jpg    card artwork, if you added any
 ```
 
 Packs are saved as `.ycc` files: readable JSON you can share, keep in git, or post on Discord.
-**Import .cdb…** brings existing custom cards in, including any scripts in a `script` folder next to the database.
+**Import cards…** adds the cards of another database to the current pack, with their scripts and art.
 
 ## Are the scripts correct?
 
@@ -185,8 +229,9 @@ tools/engine-harness/build.sh engine/core engine/harness
 CARDCRAFTER_HARNESS=$PWD/engine/harness CARDCRAFTER_ENGINE_SCRIPTS=$PWD/engine/scripts dotnet test
 ```
 
-CI runs all of this on every push and builds the Windows exe. Pushing a tag such as `v0.3.0` publishes a release
-with `YGOCardCrafter.exe` attached; the tag becomes the app's version, and installed copies offer it as an update.
+CI runs all of this on every push and builds the Windows exe. Running the **Release** workflow from the Actions tab with a
+version such as `0.3.0` (or pushing a tag such as `v0.3.0`) publishes a release with `YGOCardCrafter.exe` attached;
+that becomes the app's version, and installed copies offer it as an update.
 
 ### Layout
 

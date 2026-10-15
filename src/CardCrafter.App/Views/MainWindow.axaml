@@ -19,21 +19,57 @@
   <DockPanel>
     <!-- toolbar -->
     <Border DockPanel.Dock="Top" Background="#15161B" Padding="10,8" BorderBrush="#2A2C36" BorderThickness="0,0,0,1">
-      <Grid ColumnDefinitions="Auto,*,Auto">
-        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6">
-          <Image Source="avares://YGOCardCrafter/Assets/icon.png" Width="26" Height="26" Margin="0,0,6,0" />
+      <Grid ColumnDefinitions="*,Auto">
+        <!-- wraps onto a second row in narrow windows instead of running off the edge -->
+        <WrapPanel Grid.Column="0" Orientation="Horizontal" Margin="0,0,8,-4">
+          <WrapPanel.Styles>
+            <Style Selector="WrapPanel > Button, WrapPanel > CheckBox, WrapPanel > Border">
+              <Setter Property="Margin" Value="0,0,6,4" />
+            </Style>
+          </WrapPanel.Styles>
+          <Image Source="avares://YGOCardCrafter/Assets/icon.png" Width="26" Height="26" Margin="0,0,12,4" />
           <Button Content="New" Command="{Binding NewPackCommand}" ToolTip.Tip="New pack (Ctrl+N)" />
-          <Button Content="Open…" Command="{Binding OpenPackCommand}" ToolTip.Tip="Open a .ycc pack (Ctrl+O)" />
-          <Button Content="Save" Command="{Binding SavePackCommand}" ToolTip.Tip="Save (Ctrl+S)" />
-          <Button Content="Save as…" Command="{Binding SavePackAsCommand}" />
-          <Border Width="1" Background="#2A2C36" Margin="6,2" />
-          <Button Content="Import .cdb…" Command="{Binding ImportCdbCommand}" ToolTip.Tip="Bring in cards from an existing custom card database" />
+          <Button Content="Open…" Command="{Binding OpenPackCommand}" ToolTip.Tip="Open a pack (.ycc) or a card database (.db, .cdb) (Ctrl+O)" />
+          <Button Content="Open from Omega ▾" IsEnabled="{Binding HasOmegaDatabases}"
+                  ToolTip.Tip="Open one of YGO Omega's custom card databases, with its scripts and art">
+            <Button.Flyout>
+              <Flyout Placement="BottomEdgeAlignedLeft">
+                <StackPanel Spacing="4" MinWidth="260">
+                  <TextBlock Text="Custom databases in YGO Omega" FontWeight="SemiBold" Margin="0,0,0,2" />
+                  <ScrollViewer MaxHeight="360">
+                    <ItemsControl ItemsSource="{Binding OmegaDatabases}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="vm:OmegaDatabaseItem">
+                          <Button Content="{Binding Label}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Margin="0,1"
+                                  Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).OpenOmegaDatabaseCommand}" CommandParameter="{Binding Path}" />
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </ScrollViewer>
+                </StackPanel>
+              </Flyout>
+            </Button.Flyout>
+          </Button>
+          <Button Content="Save" Command="{Binding SavePackCommand}" ToolTip.Tip="{Binding SaveTip}" />
+          <Button Content="Save as ▾">
+            <Button.Flyout>
+              <MenuFlyout>
+                <MenuItem Header="Card Crafter pack (.ycc)…" Command="{Binding SavePackAsCommand}" InputGesture="Ctrl+Shift+S" />
+                <MenuItem Header="Card database (.db / .cdb), with scripts and art…" Command="{Binding SaveAsDatabaseCommand}" />
+              </MenuFlyout>
+            </Button.Flyout>
+          </Button>
+          <Border Width="1" Height="24" Background="#2A2C36" />
+          <Button Content="Import cards…" Command="{Binding ImportCdbCommand}" ToolTip.Tip="Add the cards of another database (.db, .cdb) to this pack" />
           <Button Content="Export" Command="{Binding ExportCommand}" ToolTip.Tip="Write the .cdb, scripts and pics to a folder" />
-          <Button Content="Install into Omega" Command="{Binding InstallCommand}" IsEnabled="{Binding CanInstall}" Classes="accent" />
-        </StackPanel>
-        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+          <Button Content="Install into Omega" Command="{Binding InstallCommand}" IsEnabled="{Binding CanInstall}" Classes="accent"
+                  ToolTip.Tip="Put the database, scripts and art into YGO Omega's folders" />
+          <CheckBox Content="Install on save" IsChecked="{Binding InstallOnSave}" IsEnabled="{Binding CanInstall}" VerticalAlignment="Center"
+                    ToolTip.Tip="Every save also installs the database, scripts and art into YGO Omega" />
+        </WrapPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Top">
           <TextBlock Text="{Binding OmegaStatus}" VerticalAlignment="Center" FontSize="12"
-                     Foreground="{StaticResource MutedBrush}" MaxWidth="460" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding OmegaStatus}" />
+                     Foreground="{StaticResource MutedBrush}" MaxWidth="320" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding OmegaStatus}" />
           <Button Content="{Binding VersionText}" Command="{Binding CheckForUpdatesCommand}" FontSize="11" Padding="8,2"
                   ToolTip.Tip="Check GitHub for a newer version" />
         </StackPanel>

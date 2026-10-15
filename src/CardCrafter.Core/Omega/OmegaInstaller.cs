@@ -16,7 +16,8 @@ public sealed class InstallResult
 /// <summary>Copies an exported pack into the Omega folders the scan found, backing up anything it replaces.</summary>
 public static class OmegaInstaller
 {
-    public static InstallResult Install(ExportResult export, OmegaInventory inventory, string backupRoot)
+    /// <param name="packJson">The pack, stored inside the installed database so opening it gives back the event sheets.</param>
+    public static InstallResult Install(ExportResult export, OmegaInventory inventory, string backupRoot, string? packJson = null)
     {
         var result = new InstallResult();
         if (!inventory.SupportsLooseFiles)
@@ -74,12 +75,17 @@ public static class OmegaInstaller
                 File.Copy(from, to, overwrite: true);
                 result.Copied.Add(to);
             }
+            if (packJson is not null) Database.CdbFile.WritePackJson(dbTarget, packJson);
         }
         catch (UnauthorizedAccessException)
         {
             result.NeedsAdmin = true;
         }
         catch (IOException ex)
+        {
+            result.Error = ex.Message;
+        }
+        catch (Microsoft.Data.Sqlite.SqliteException ex)
         {
             result.Error = ex.Message;
         }

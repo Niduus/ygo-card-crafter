@@ -11,10 +11,11 @@ public static class CdbEncoder
         var row = new CdbRow
         {
             Id = card.Id,
-            Ot = ot,
+            Ot = card.Ot ?? ot,
             Alias = card.Alias,
             Setcode = PackSetcodes(card.Archetypes),
-            Type = TypeOf(card),
+            Type = TypeOf(card) | card.ExtraTypeBits,
+            Category = card.Category,
             Name = card.Name,
             Desc = Description(card),
         };
@@ -116,6 +117,16 @@ public static class CdbEncoder
 
     /// <summary>Rebuilds a card model from a database row, e.g. to import cards from an existing .cdb.</summary>
     public static CardData Decode(CdbRow row)
+    {
+        var card = DecodeKnown(row);
+        card.Category = row.Category;
+        card.Ot = row.Ot;
+        // Whatever type bits the editor can't show are kept as they are.
+        card.ExtraTypeBits = row.Type & ~TypeOf(card);
+        return card;
+    }
+
+    private static CardData DecodeKnown(CdbRow row)
     {
         var card = new CardData
         {

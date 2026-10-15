@@ -53,6 +53,23 @@ public class MainWindowTests
     }
 
     [AvaloniaFact]
+    public void SummonProcedure_HasNoDoBlocks_AndSetsTheCardText()
+    {
+        var (window, vm) = Open();
+        var card = vm.SelectedCard!;
+        card.SummonRuleChoice = card.SummonRuleOptions.First(o => o.Value == SummonRule.SpecialSummonOnly);
+        card.AddTemplate(EffectTemplates.All.First(t => t.Name == "Banish from GY to summon"));
+        var effect = card.Effects.Last();
+        Assert.True(effect.IsProcedure);
+        Assert.Empty(effect.Actions);
+        Assert.False(card.HasErrors, string.Join("\n", card.Diagnostics.Select(d => d.Text)));
+        Assert.StartsWith("Cannot be Normal Summoned/Set. Must first be Special Summoned (from your hand) by banishing 2 monsters", effect.PreviewText);
+        Assert.Contains("EFFECT_SPSUMMON_PROC", card.Lua);
+        SelectTab(window, "Effects");
+        Shot(window, "12-summon-procedure");
+    }
+
+    [AvaloniaFact]
     public void EventSheetRendersAndEditsCompileLive()
     {
         var (window, vm) = Open();

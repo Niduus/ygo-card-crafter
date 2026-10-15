@@ -11,6 +11,8 @@ public sealed class AppSettings
     public string? FrameFolder { get; set; }
     /// <summary>Look for a newer release on GitHub at startup.</summary>
     public bool CheckForUpdates { get; set; } = true;
+    /// <summary>Install the pack into YGO Omega every time it is saved.</summary>
+    public bool InstallOnSave { get; set; }
     /// <summary>A release the user chose to skip ("Later"); it isn't offered again at startup.</summary>
     public string? SkippedVersion { get; set; }
     /// <summary>"owner/repo" whose public GitHub Releases provide updates. Null uses Card Crafter's own.</summary>
