@@ -62,6 +62,19 @@
           </StackPanel>
         </Grid>
 
+        <!-- printed on the card face only -->
+        <Grid ColumnDefinitions="3*,12,2*">
+          <StackPanel Grid.Column="0">
+            <TextBlock Classes="label" Text="Set number" />
+            <TextBox Text="{Binding SetNumber}" Watermark="e.g. LDK2-ENY04" ToolTip.Tip="Printed under the art, right-aligned" />
+          </StackPanel>
+          <StackPanel Grid.Column="2">
+            <TextBlock Classes="label" Text="Edition" />
+            <ComboBox ItemsSource="{Binding EditionOptions}" SelectedItem="{Binding Edition}" HorizontalAlignment="Stretch"
+                      ToolTip.Tip="Printed after the passcode, like 1st Edition" />
+          </StackPanel>
+        </Grid>
+
         <Border IsVisible="{Binding HasPasscodeWarning}" Background="#3B2F12" CornerRadius="6" Padding="10,6" Margin="0,8,0,0">
           <TextBlock Text="{Binding PasscodeWarning}" TextWrapping="Wrap" Foreground="#FCD34D" />
         </Border>

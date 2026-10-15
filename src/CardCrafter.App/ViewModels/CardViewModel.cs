@@ -154,7 +154,12 @@ public sealed partial class CardViewModel : ObservableObject
     public string TypeLine => CardFaceText.TypeLine(C, _pack());
     public string FaceText => string.IsNullOrWhiteSpace(C.Text) ? SuggestedText : C.Text;
     /// <summary>The copyright line at the bottom right of the card face, from the pack's author.</summary>
-    public string Copyright => string.IsNullOrWhiteSpace(_pack().Author) ? "" : $"©{DateTime.Now.Year} {_pack().Author.Trim()}";
+    public string Copyright => _pack().Copyright is { Length: > 0 } line ? line
+        : string.IsNullOrWhiteSpace(_pack().Author) ? "" : $"©{DateTime.Now.Year} {_pack().Author.Trim()}";
+
+    public string SetNumber { get => C.SetNumber; set { if (C.SetNumber == value) return; C.SetNumber = value; OnPropertyChanged(); Changed(); } }
+    public IReadOnlyList<string> EditionOptions { get; } = ["", "1st Edition", "Limited Edition", "Unlimited"];
+    public string Edition { get => C.Edition; set { if (C.Edition == (value ?? "")) return; C.Edition = value ?? ""; OnPropertyChanged(); Changed(); } }
     public CardData Data => C;
 
     // ---- card data

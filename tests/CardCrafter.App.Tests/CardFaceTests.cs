@@ -35,7 +35,7 @@ public class CardFaceTests
         var vm = Vm(new CardData
         {
             Name = "Emberveil, Painter of Flames", Attribute = CardAttribute.Fire, Race = CardRace.Spellcaster, Abilities = MonsterAbility.Tuner,
-            Level = 7, Atk = 2500, Def = 2500, Id = 3000000,
+            Level = 7, Atk = 2500, Def = 2500, Id = 3000000, SetNumber = "CCRA-EN001", Edition = "1st Edition",
             Text = "You can reveal this card in your hand and send 1 Level 7 or higher Spellcaster monster from your Extra Deck to the GY; " +
                    "Special Summon this card from your hand. If this card is Normal or Special Summoned: You can add 1 Level 7 Spellcaster " +
                    "monster from your Deck to your hand. You can only use each effect of \"Emberveil, Painter of Flames\" once per turn.",

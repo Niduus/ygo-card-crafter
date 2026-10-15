@@ -51,11 +51,14 @@ public sealed class CardFace : Control
     // ---------------------------------------------------------------- layout (texture pixels)
 
     private static readonly Rect NameBand = new(44, 51, 727, 84);
-    private const double NameLeft = 66;
-    private static readonly Point AttributeCenter = new(697, 93);
-    private const double AttributeSize = 68;
-    private const double StarY = 167, StarSize = 42, StarStep = 55, LevelRight = 720, RankLeft = 93;
-    private const double SpellLineRight = 721, SpellLineBaseline = 183;
+    // Sizes follow a printed card (a 421 × 614 scan scaled by 813 / 421) inside the textures' boxes.
+    private const double NameLeft = 62, NameSize = 60;
+    private static readonly Point AttributeCenter = new(723, 93);
+    private const double AttributeSize = 72;
+    private const double StarY = 167, StarSize = 48, StarStep = 54, LevelRight = 759, RankLeft = 54;
+    private const double SpellLineRight = 759, SpellLineBaseline = 184;
+    private const double TypeSize = 29, BodySize = 24.5, StatSize = 29, FooterSize = 21;
+    private const double SetNumberBaseline = 873, SetNumberRight = 714;
     private static readonly Rect Art = new(99, 218, 616, 615);
     private static readonly Rect PendulumArt = new(54, 212, 706, 525);
     private static readonly Rect TextBox = new(56, 890, 702, 225);
@@ -198,7 +201,7 @@ public sealed class CardFace : Control
     {
         IBrush ink = WhiteName(c) ? Brushes.White : Brushes.Black;
         var name = string.IsNullOrWhiteSpace(c.Name) ? "Card Name" : c.Name;
-        const double size = 58;
+        const double size = NameSize;
         var text = Text(name, CardFonts.Name, size, ink);
         // Capitals centred in the name band; long names squeezed to stop short of the Attribute.
         var baseline = NameBand.Center.Y + CapHeight(CardFonts.Name, size) / 2;
@@ -287,15 +290,15 @@ public sealed class CardFace : Control
         var bottom = inner.Bottom;
         if (c.IsMonster)
         {
-            // "[Spellcaster / Tuner / Effect]", spaced like current cards.
-            const double typeSize = 31;
-            var line = Text(_typeLine.Replace("/", " / "), CardFonts.TypeLine, typeSize, ink);
+            // "[Spellcaster/Effect]" as printed.
+            const double typeSize = TypeSize;
+            var line = Text(_typeLine, CardFonts.TypeLine, typeSize, ink);
             var cap = CapHeight(CardFonts.TypeLine, typeSize);
             DrawLine(ctx, line, inner.X, top + 4 + cap, inner.Width);
             top += cap + 13;
 
             // The rule is printed on the frame; the stats sit under it, right-aligned.
-            const double statSize = 31;
+            const double statSize = StatSize;
             var stats = c.IsLink
                 ? $"ATK/{CardFaceText.Stat(c.Atk)}  LINK-{c.LinkRating}"
                 : $"ATK/{CardFaceText.Stat(c.Atk)}  DEF/{CardFaceText.Stat(c.Def)}";
@@ -305,15 +308,29 @@ public sealed class CardFace : Control
             bottom = RuleY - 5;
         }
         var normal = c.IsMonster && c.Frame == MonsterFrame.Normal;
-        DrawFitted(ctx, _text, normal ? CardFonts.Flavor : CardFonts.Body, new Rect(inner.X, top, inner.Width, bottom - top), 25, ink);
+        DrawFitted(ctx, _text, normal ? CardFonts.Flavor : CardFonts.Body, new Rect(inner.X, top, inner.Width, bottom - top), BodySize, ink);
     }
 
+    /// <summary>
+    /// The printed details around the text box: the set number under the art (right-aligned to it), and at the
+    /// bottom the passcode, the edition in bold after it, and the copyright line on the right.
+    /// </summary>
     private void DrawFooter(DrawingContext ctx, CardData c)
     {
         IBrush ink = c.IsXyz ? Brushes.White : Brushes.Black;
-        DrawLine(ctx, Text(c.Id.ToString("D8", CultureInfo.InvariantCulture), CardFonts.Footer, 22, ink), FooterLeft, FooterBaseline, 300);
+        if (c.SetNumber.Trim() is { Length: > 0 } set && !c.IsPendulum)
+        {
+            // Link cards keep it clear of the bottom-right arrow.
+            var right = c.IsLink ? SetNumberRight - 70 : SetNumberRight;
+            DrawLine(ctx, Text(set, CardFonts.Footer, 23, ink), right, SetNumberBaseline, 300, alignRight: true);
+        }
+        var pass = Text(c.Id.ToString("D8", CultureInfo.InvariantCulture), CardFonts.Footer, FooterSize, ink);
+        DrawLine(ctx, pass, FooterLeft, FooterBaseline, 300);
+        if (c.Edition.Trim() is { Length: > 0 } edition)
+            DrawLine(ctx, Text(edition, new Typeface(CardFonts.Footer.FontFamily, FontStyle.Normal, FontWeight.Bold), FooterSize, ink),
+                FooterLeft + pass.Width + 14, FooterBaseline, 260);
         if (_copyright.Length > 0)
-            DrawLine(ctx, Text(_copyright, CardFonts.Footer, 21, ink), FooterRight, FooterBaseline, 380, alignRight: true);
+            DrawLine(ctx, Text(_copyright, CardFonts.Footer, FooterSize - 1, ink), FooterRight, FooterBaseline, 380, alignRight: true);
     }
 
     /// <summary>Shown until card textures are loaded: the card's details on a plain card, and how to load textures.</summary>

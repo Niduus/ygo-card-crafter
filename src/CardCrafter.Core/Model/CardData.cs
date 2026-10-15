@@ -30,6 +30,11 @@ public sealed class CardData
     public SpellKind SpellKind { get; set; }
     public TrapKind TrapKind { get; set; }
 
+    /// <summary>Printed under the art, like "LDK2-ENY04". Only on the card face.</summary>
+    public string SetNumber { get; set; } = "";
+    /// <summary>Printed after the passcode, like "1st Edition". Only on the card face.</summary>
+    public string Edition { get; set; } = "";
+
     /// <summary>Archetype codes (setcodes), up to four.</summary>
     public List<int> Archetypes { get; set; } = [];
 

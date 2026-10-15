@@ -55,21 +55,26 @@ public static partial class LuaPieces
         if (start < 0 || end < 0) return [];
         var top = TopLevelDefinitions(lines, prefix);
 
-        // Group the body into statements: an effect from CreateEffect to its RegisterEffect, or a single line.
+        // Group the body into statements: an effect from CreateEffect to its RegisterEffect, a whole block
+        // (if ... end, for ... end), or a single line.
         var chunks = new List<List<string>>();
         var comments = new List<string>();
         List<string>? open = null;
+        int depth = 0;
         for (int i = start + 1; i < end; i++)
         {
             var line = lines[i];
             var trimmed = line.Trim();
             if (trimmed.Length == 0) continue;
-            if (open is null && trimmed.StartsWith("--", StringComparison.Ordinal)) { comments.Add(line); continue; }
+            if (open is null && depth == 0 && trimmed.StartsWith("--", StringComparison.Ordinal)) { comments.Add(line); continue; }
+            var wasDepth = depth;
+            depth = Math.Max(0, depth + BlockDelta(trimmed));
             if (open is null)
             {
                 open = [.. comments, line];
                 comments.Clear();
-                if (!CreateEffect().IsMatch(line) && !CloneEffect().IsMatch(line))
+                var isEffect = CreateEffect().IsMatch(line) || CloneEffect().IsMatch(line);
+                if (!isEffect && depth == 0)
                 {
                     chunks.Add(open); // a single statement, such as a summon procedure
                     open = null;
@@ -77,7 +82,10 @@ public static partial class LuaPieces
                 continue;
             }
             open.Add(line);
-            if (trimmed.Contains("RegisterEffect(", StringComparison.Ordinal))
+            // An effect ends at its RegisterEffect; a block ends where its nesting closes.
+            var effect = CreateEffect().IsMatch(open[comments.Count > 0 ? 0 : 0].Trim().StartsWith("--", StringComparison.Ordinal) ? open.First(l => !l.Trim().StartsWith("--", StringComparison.Ordinal)) : open[0])
+                         || CloneEffect().IsMatch(open.First(l => !l.Trim().StartsWith("--", StringComparison.Ordinal)));
+            if (depth == 0 && (!effect && wasDepth > 0 || effect && trimmed.Contains("RegisterEffect(", StringComparison.Ordinal)))
             {
                 chunks.Add(open);
                 open = null;
@@ -125,6 +133,17 @@ public static partial class LuaPieces
         if (Regex.Match(code, @"aux\.(Add\w+Proc\w*)") is { Success: true } p) return p.Groups[1].Value;
         if (code.Contains("EnableReviveLimit", StringComparison.Ordinal)) return "Revive limit (must be properly Summoned first)";
         return $"Effect {number}";
+    }
+
+    /// <summary>How a line changes Lua block nesting: if/function/do/repeat open a block, end/until close one.</summary>
+    private static int BlockDelta(string line)
+    {
+        var code = Regex.Replace(line, "\"(?:\\\\.|[^\"\\\\])*\"|'(?:\\\\.|[^'\\\\])*'", "\"\"");
+        var comment = code.IndexOf("--", StringComparison.Ordinal);
+        if (comment >= 0) code = code[..comment];
+        int opens = Regex.Matches(code, @"\b(if|function|do|repeat)\b").Count;
+        int closes = Regex.Matches(code, @"\b(end|until)\b").Count;
+        return opens - closes;
     }
 
     /// <summary>The line of the "end" that closes the top-level function starting at <paramref name="start"/>.</summary>

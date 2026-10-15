@@ -104,6 +104,8 @@
           <TextBox Text="{Binding PackName}" />
           <TextBlock Classes="label" Text="Author" />
           <TextBox Text="{Binding PackAuthor}" Watermark="your name" />
+          <TextBlock Classes="label" Text="Copyright line on the cards" />
+          <TextBox Text="{Binding PackCopyright}" Watermark="©year and the author" ToolTip.Tip="Printed bottom right of each card, like ©1996 KAZUKI TAKAHASHI" />
           <TextBlock Classes="label" Text="Card pool in YGO Omega" />
           <ComboBox ItemsSource="{Binding PoolOptions}" SelectedItem="{Binding PackPool}" HorizontalAlignment="Stretch"
                     ToolTip.Tip="Omega's deck editor lists cards by card pool. Custom cards belong in Custom (Filter → Card Pool → Custom)." />

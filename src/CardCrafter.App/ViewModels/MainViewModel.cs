@@ -99,7 +99,14 @@ public sealed partial class MainViewModel : ObservableObject
     public string PackAuthor
     {
         get => _pack.Author;
-        set { if (_pack.Author == value) return; _pack.Author = value; OnPropertyChanged(); MarkDirty(); }
+        set { if (_pack.Author == value) return; _pack.Author = value; OnPropertyChanged(); MarkDirty(); SelectedCard?.Refresh(); }
+    }
+
+    /// <summary>The copyright line printed on the cards, e.g. "©2026 Studio★Dice". Empty uses "©year author".</summary>
+    public string PackCopyright
+    {
+        get => _pack.Copyright;
+        set { if (_pack.Copyright == value) return; _pack.Copyright = value; OnPropertyChanged(); MarkDirty(); SelectedCard?.Refresh(); }
     }
 
     /// <summary>The card pool ("ot") of the pack's cards. YGO Omega lists custom cards under Card Pool → Custom.</summary>
@@ -150,6 +157,7 @@ public sealed partial class MainViewModel : ObservableObject
         IsDirty = false;
         OnPropertyChanged(nameof(PackName));
         OnPropertyChanged(nameof(PackAuthor));
+        OnPropertyChanged(nameof(PackCopyright));
         OnPropertyChanged(nameof(PackPool));
         OnPropertyChanged(nameof(Title));
     }

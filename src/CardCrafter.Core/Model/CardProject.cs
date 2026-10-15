@@ -58,6 +58,8 @@ public sealed class CardPack
     public const int CurrentFormat = 2;
     public string Name { get; set; } = "My Custom Cards";
     public string Author { get; set; } = "";
+    /// <summary>The copyright line printed bottom right, like "©1996 KAZUKI TAKAHASHI". Empty uses "©year author".</summary>
+    public string Copyright { get; set; } = "";
     /// <summary>
     /// The card pool ("ot") for the pack's cards. Custom (4) by default: YGO Omega lists custom cards under
     /// Card Pool → Custom and treats lower values as official cards.
