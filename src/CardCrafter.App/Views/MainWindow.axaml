@@ -31,8 +31,27 @@
           <Button Content="Export" Command="{Binding ExportCommand}" ToolTip.Tip="Write the .cdb, scripts and pics to a folder" />
           <Button Content="Install into Omega" Command="{Binding InstallCommand}" IsEnabled="{Binding CanInstall}" Classes="accent" />
         </StackPanel>
-        <TextBlock Grid.Column="2" Text="{Binding OmegaStatus}" VerticalAlignment="Center" FontSize="12"
-                   Foreground="{StaticResource MutedBrush}" MaxWidth="520" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding OmegaStatus}" />
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+          <TextBlock Text="{Binding OmegaStatus}" VerticalAlignment="Center" FontSize="12"
+                     Foreground="{StaticResource MutedBrush}" MaxWidth="460" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding OmegaStatus}" />
+          <Button Content="{Binding VersionText}" Command="{Binding CheckForUpdatesCommand}" FontSize="11" Padding="8,2"
+                  ToolTip.Tip="Check GitHub for a newer version" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- update banner -->
+    <Border DockPanel.Dock="Top" IsVisible="{Binding ShowUpdateBanner}" Background="#1E3A8A" Padding="12,6">
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+          <TextBlock Text="{Binding UpdateBannerText}" VerticalAlignment="Center" FontWeight="SemiBold" />
+          <ProgressBar IsVisible="{Binding IsUpdating}" Value="{Binding UpdateProgress}" Width="160" Minimum="0" Maximum="100" />
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+          <Button Content="What's new" Command="{Binding WhatsNewCommand}" />
+          <Button Content="Update now" Command="{Binding UpdateNowCommand}" IsEnabled="{Binding !IsUpdating}" Classes="accent" />
+          <Button Content="Later" Command="{Binding UpdateLaterCommand}" IsEnabled="{Binding !IsUpdating}" />
+        </StackPanel>
       </Grid>
     </Border>
 

@@ -63,6 +63,13 @@ public sealed class DialogService(Window owner) : IDialogService
         }
     }
 
+    public void OpenUrl(string url)
+    {
+        if (!url.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) return;
+        try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or IOException) { }
+    }
+
     private static Window MessageWindow(string title, string message, string yes, string? no)
     {
         var window = new Window

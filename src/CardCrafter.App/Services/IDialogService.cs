@@ -10,4 +10,5 @@ public interface IDialogService
     Task ShowAsync(string title, string message);
     Task CopyToClipboardAsync(string text);
     void OpenFolder(string path);
+    void OpenUrl(string url);
 }

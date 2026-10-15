@@ -26,6 +26,13 @@ reuse existing card features on their own cards and see exactly what each part d
 4. Change anything: click a blank to edit it, use **+ Add condition / cost / action**, or **+ From a template…**.
 5. Click **Install into Omega** (or **Export** to get the files in a folder).
 
+### Updates
+
+Card Crafter checks GitHub for a newer release when it starts. When one exists, a banner offers **Update now**:
+it downloads the new exe, checks its size and SHA-256 checksum, swaps it in for the running one, and restarts with
+your pack open. The version button in the top-right corner checks on demand. Updates come from the public
+[Releases](../../releases) of this repository, so the repository has to be public for updating to work.
+
 ## How effects work
 
 | Column | Meaning | Examples |
@@ -178,7 +185,8 @@ tools/engine-harness/build.sh engine/core engine/harness
 CARDCRAFTER_HARNESS=$PWD/engine/harness CARDCRAFTER_ENGINE_SCRIPTS=$PWD/engine/scripts dotnet test
 ```
 
-CI runs all of this on every push and builds the Windows exe. Pushing a tag such as `v0.1.0` publishes a release.
+CI runs all of this on every push and builds the Windows exe. Pushing a tag such as `v0.3.0` publishes a release
+with `YGOCardCrafter.exe` attached; the tag becomes the app's version, and installed copies offer it as an update.
 
 ### Layout
 

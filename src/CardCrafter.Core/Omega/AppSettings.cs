@@ -9,6 +9,12 @@ public sealed class AppSettings
     public string? LastPackPath { get; set; }
     /// <summary>Folder of card-frame images for the preview, or null for the built-in drawing.</summary>
     public string? FrameFolder { get; set; }
+    /// <summary>Look for a newer release on GitHub at startup.</summary>
+    public bool CheckForUpdates { get; set; } = true;
+    /// <summary>A release the user chose to skip ("Later"); it isn't offered again at startup.</summary>
+    public string? SkippedVersion { get; set; }
+    /// <summary>"owner/repo" whose public GitHub Releases provide updates. Null uses Card Crafter's own.</summary>
+    public string? UpdateRepository { get; set; }
     public List<string> RecentPacks { get; set; } = [];
 
     public static string Folder

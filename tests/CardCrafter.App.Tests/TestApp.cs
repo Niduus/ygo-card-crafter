@@ -29,4 +29,6 @@ public sealed class FakeDialogs : IDialogService
     public Task ShowAsync(string title, string message) { Shown.Add(message); return Task.CompletedTask; }
     public Task CopyToClipboardAsync(string text) => Task.CompletedTask;
     public void OpenFolder(string path) { }
+    public List<string> OpenedUrls { get; } = [];
+    public void OpenUrl(string url) => OpenedUrls.Add(url);
 }

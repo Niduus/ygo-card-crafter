@@ -6,6 +6,7 @@ using CardCrafter.Core.Database;
 using CardCrafter.Core.Model;
 using CardCrafter.Core.Omega;
 using CardCrafter.Core.Templates;
+using CardCrafter.Core.Updates;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -429,6 +430,133 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
+    // ---------------------------------------------------------------- updates
+
+    [ObservableProperty] private ReleaseInfo? _availableUpdate;
+    [ObservableProperty] private bool _isUpdating;
+    [ObservableProperty] private double _updateProgress;
+    public bool ShowUpdateBanner => AvailableUpdate is not null;
+    public string UpdateBannerText => AvailableUpdate is { } r
+        ? $"YGO Card Crafter {r.Version} is available (you have {UpdateChecker.CurrentVersion})."
+        : "";
+    public string VersionText => $"v{UpdateChecker.CurrentVersion}";
+    partial void OnAvailableUpdateChanged(ReleaseInfo? value)
+    {
+        OnPropertyChanged(nameof(ShowUpdateBanner));
+        OnPropertyChanged(nameof(UpdateBannerText));
+    }
+
+    private string UpdateRepository => _settings.UpdateRepository ?? UpdateChecker.DefaultRepository;
+
+    /// <summary>The installed exe when running as the published single file; null when run from source.</summary>
+    private static string? InstalledExe =>
+        OperatingSystem.IsWindows() && Environment.ProcessPath is { } p && p.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+        && !Path.GetFileNameWithoutExtension(p).Equals("dotnet", StringComparison.OrdinalIgnoreCase) ? p : null;
+
+    /// <summary>Looks for a newer release. Quiet at startup; tells the user the result when they asked.</summary>
+    public async Task CheckForUpdatesAsync(bool userAsked)
+    {
+        try
+        {
+            using var http = UpdateChecker.CreateClient();
+            var latest = await UpdateChecker.GetLatestAsync(http, UpdateRepository);
+            if (latest is null)
+            {
+                if (userAsked)
+                    Status = $"No releases found at github.com/{UpdateRepository}. Updates need a public repository with a published release.";
+                return;
+            }
+            if (!UpdateChecker.IsNewer(latest.Version, UpdateChecker.CurrentVersion))
+            {
+                if (userAsked) Status = $"You have the latest version ({UpdateChecker.CurrentVersion}).";
+                return;
+            }
+            if (!userAsked && _settings.SkippedVersion == latest.Version.ToString()) return;
+            AvailableUpdate = latest;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException or InvalidOperationException)
+        {
+            if (userAsked) Status = $"Couldn't check for updates: {ex.Message}";
+        }
+    }
+
+    [RelayCommand]
+    private Task CheckForUpdates() => CheckForUpdatesAsync(userAsked: true);
+
+    [RelayCommand]
+    private void UpdateLater()
+    {
+        if (AvailableUpdate is { } r)
+        {
+            _settings.SkippedVersion = r.Version.ToString();
+            _settings.Save();
+        }
+        AvailableUpdate = null;
+    }
+
+    [RelayCommand]
+    private void WhatsNew()
+    {
+        if (AvailableUpdate is { PageUrl.Length: > 0 } r) _dialogs.OpenUrl(r.PageUrl);
+    }
+
+    /// <summary>Downloads the new exe, swaps it in for the running one, and restarts into it.</summary>
+    [RelayCommand]
+    private async Task UpdateNow()
+    {
+        if (AvailableUpdate is not { } release || IsUpdating) return;
+        var exe = InstalledExe;
+        if (exe is null)
+        {
+            await _dialogs.ShowAsync("Update", "Updating in place only works in the Windows exe. Opening the download page instead.");
+            _dialogs.OpenUrl(release.PageUrl);
+            return;
+        }
+        if (IsDirty)
+        {
+            var save = await _dialogs.ConfirmAsync("Save first?", $"Save \"{_pack.Name}\" before updating? Card Crafter restarts after the update.", "Save", "Cancel");
+            if (!save || !await SavePack()) return;
+        }
+
+        IsUpdating = true;
+        try
+        {
+            using var http = UpdateChecker.CreateClient();
+            var progress = new Progress<double>(p =>
+            {
+                UpdateProgress = p * 100;
+                Status = $"Downloading {release.Version}… {p:P0}";
+            });
+            var download = await UpdateChecker.DownloadAsync(http, release, Path.Combine(AppSettings.Folder, "Updates"), progress);
+            try
+            {
+                SelfUpdater.Swap(exe, download);
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+            {
+                await _dialogs.ShowAsync("Couldn't replace the program",
+                    $"Windows didn't allow replacing {exe} ({ex.Message}). This usually means Card Crafter is in a protected folder. " +
+                    "The release page will open so you can download the new version yourself.");
+                _dialogs.OpenUrl(release.PageUrl);
+                return;
+            }
+            var psi = new ProcessStartInfo(exe) { UseShellExecute = false };
+            if (PackPath is not null) psi.ArgumentList.Add(PackPath);
+            Process.Start(psi);
+            IsDirty = false;
+            RequestClose?.Invoke();
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidDataException or IOException or UnauthorizedAccessException)
+        {
+            Status = $"Update failed: {ex.Message}";
+            await _dialogs.ShowAsync("Update failed", ex.Message);
+        }
+        finally
+        {
+            IsUpdating = false;
+        }
+    }
+
     // ---------------------------------------------------------------- card frame images
 
     [ObservableProperty] private string _frameStatus = "Built-in frames";
@@ -640,6 +768,9 @@ public sealed partial class MainViewModel : ObservableObject
         path ??= _settings.LastPackPath is { } last && File.Exists(last) ? last : null;
         LoadSavedFrames();
         if (path is not null) OpenPath(path);
+        if (InstalledExe is { } exe) SelfUpdater.CleanupOld(exe);
+        // Checking for updates runs alongside everything else and never blocks or fails startup.
+        if (_settings.CheckForUpdates) _ = CheckForUpdatesAsync(userAsked: false);
         await DetectOmega();
         if (args.Contains("--install") && CanInstall) await Install();
     }
