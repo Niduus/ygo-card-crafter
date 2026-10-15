@@ -180,20 +180,58 @@
             </Grid>
           </StackPanel>
 
-          <!-- Extra Deck summoning -->
-          <StackPanel IsVisible="{Binding IsExtraDeck}">
-            <TextBlock Classes="h2" Text="{Binding ProcedureTitle}" />
-            <StackPanel IsVisible="{Binding IsFusion}">
-              <TextBlock Classes="label" Text="Exact materials by passcode (comma separated). Leave empty to use &quot;what a material must be&quot; below." />
-              <TextBox Text="{Binding FusionCodes}" Watermark="e.g. 89631139, 46986414" />
+          <!-- Summoning conditions: the materials of Extra Deck monsters -->
+          <StackPanel IsVisible="{Binding IsExtraDeck}" Spacing="6">
+            <TextBlock Classes="h2" Text="Summoning conditions" />
+            <TextBlock Classes="label" TextWrapping="Wrap"
+                       Text="What this card needs to be Summoned from the Extra Deck. Other ways to Summon it (like TY-PHON's) are effects: add them on the Effects tab." />
+            <Border Name="MaterialsPreview" IsVisible="{Binding HasMaterialsText}" Background="#1A1B22" CornerRadius="6" Padding="10,6" BorderBrush="#2A2C36" BorderThickness="1">
+              <StackPanel>
+                <TextBlock Classes="label" Text="Printed first on the card" />
+                <TextBlock Text="{Binding MaterialsText}" FontWeight="SemiBold" TextWrapping="Wrap" />
+              </StackPanel>
+            </Border>
+
+            <!-- Fusion: materials one by one -->
+            <StackPanel IsVisible="{Binding IsFusion}" Spacing="4">
+              <Grid ColumnDefinitions="40,*,80,80,40" Margin="0,4,0,0">
+                <TextBlock Grid.Column="1" Classes="label" Text="Material (a card, or what it must be)" />
+                <TextBlock Grid.Column="2" Classes="label" Text="At least" Margin="8,0,0,0" />
+                <TextBlock Grid.Column="3" Classes="label" Text="At most" Margin="8,0,0,0" ToolTip.Tip="0 means &quot;or more&quot;" />
+              </Grid>
+              <ItemsControl Name="FusionSlotList" ItemsSource="{Binding FusionSlots}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate DataType="vm:MaterialSlotViewModel">
+                    <Grid ColumnDefinitions="40,*,80,80,40" Margin="0,0,0,6">
+                      <TextBlock Text="{Binding Count}" VerticalAlignment="Center" HorizontalAlignment="Center" FontWeight="Bold" />
+                      <Button Grid.Column="1" Classes="chip" Content="{Binding Summary}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" VerticalAlignment="Center">
+                        <Button.Flyout><Flyout><views:FilterEditorView DataContext="{Binding Filter}" /></Flyout></Button.Flyout>
+                      </Button>
+                      <NumericUpDown Grid.Column="2" Value="{Binding Min}" Minimum="1" Maximum="10" FormatString="0" Margin="8,0,0,0"
+                                     ShowButtonSpinner="False" HorizontalContentAlignment="Center" />
+                      <NumericUpDown Grid.Column="3" Value="{Binding Max}" Minimum="0" Maximum="10" FormatString="0" Margin="8,0,0,0"
+                                     ShowButtonSpinner="False" HorizontalContentAlignment="Center" ToolTip.Tip="0 means &quot;or more&quot;" />
+                      <Button Grid.Column="4" Content="✕" Command="{Binding RemoveCommand}" Margin="8,0,0,0" HorizontalAlignment="Stretch"
+                              HorizontalContentAlignment="Center" VerticalAlignment="Stretch" ToolTip.Tip="Remove this material" />
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <Button Name="AddFusionSlotButton" Content="+ Add a material" Command="{Binding AddFusionSlotCommand}" />
+              <TextBlock Classes="label" TextWrapping="Wrap"
+                         Text="For a specific card, enter its passcode in &quot;Only this card&quot;. One material may take more than 1 card (e.g. at most 0 = &quot;1+ Fiend monsters&quot;)." />
             </StackPanel>
+
+            <!-- Synchro: the Tuner -->
             <StackPanel IsVisible="{Binding IsSynchro}">
-              <TextBlock Classes="label" Text="The Tuner must be" />
+              <TextBlock Classes="label" Text="1 Tuner, which must be" />
               <Button Classes="chip" Content="{Binding TunerFilter.Summary}">
                 <Button.Flyout><Flyout><views:FilterEditorView DataContext="{Binding TunerFilter}" /></Flyout></Button.Flyout>
               </Button>
             </StackPanel>
-            <StackPanel IsVisible="{Binding ShowMaterialFilter}">
+
+            <!-- Synchro non-Tuners, Xyz and Link materials -->
+            <StackPanel IsVisible="{Binding ShowMaterialFilter}" Spacing="4">
               <TextBlock Classes="label" Text="Each material must be" />
               <Button Classes="chip" Content="{Binding MaterialFilter.Summary}">
                 <Button.Flyout><Flyout><views:FilterEditorView DataContext="{Binding MaterialFilter}" /></Flyout></Button.Flyout>
@@ -207,16 +245,33 @@
                   <TextBlock Classes="label" Text="At most (0 = no limit)" />
                   <NumericUpDown Value="{Binding MaxMaterials}" Minimum="0" Maximum="10" FormatString="0" Width="120" />
                 </StackPanel>
+                <StackPanel IsVisible="{Binding IsXyz}">
+                  <TextBlock Classes="label" Text="Their Level (0 = the Rank)" />
+                  <NumericUpDown Name="XyzLevelBox" Value="{Binding XyzMaterialLevel}" Minimum="0" Maximum="13" FormatString="0" Width="120" />
+                </StackPanel>
+              </StackPanel>
+              <StackPanel IsVisible="{Binding IsLinkProcedure}" Orientation="Horizontal" Spacing="8">
+                <CheckBox Name="LinkIncludingBox" Content="including a" IsChecked="{Binding Including}" VerticalAlignment="Center" />
+                <Button Classes="chip" Content="{Binding IncludeFilter.Summary}" IsEnabled="{Binding Including}" VerticalAlignment="Center">
+                  <Button.Flyout><Flyout><views:FilterEditorView DataContext="{Binding IncludeFilter}" /></Flyout></Button.Flyout>
+                </Button>
               </StackPanel>
             </StackPanel>
           </StackPanel>
         </StackPanel>
 
         <!-- Spell / Trap -->
-        <Grid IsVisible="{Binding IsSpell}" ColumnDefinitions="*,12,*,12,*">
+        <Grid IsVisible="{Binding IsSpell}" ColumnDefinitions="*,12,2*">
           <StackPanel Grid.Column="0">
             <TextBlock Classes="label" Text="Spell kind" />
             <ComboBox ItemsSource="{Binding SpellKindOptions}" SelectedItem="{Binding SpellKind}" HorizontalAlignment="Stretch" />
+          </StackPanel>
+          <StackPanel Grid.Column="2" IsVisible="{Binding IsEquipSpell}">
+            <TextBlock Classes="label" Text="Equip to" />
+            <Button Name="EquipFilterButton" Classes="chip" Content="{Binding EquipFilter.Summary}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                    ToolTip.Tip="The monsters this card can be equipped to. What it gives them: Effects tab, &quot;While face-up&quot; with &quot;The equipped monster ...&quot;.">
+              <Button.Flyout><Flyout><views:FilterEditorView DataContext="{Binding EquipFilter}" /></Flyout></Button.Flyout>
+            </Button>
           </StackPanel>
         </Grid>
         <Grid IsVisible="{Binding IsTrap}" ColumnDefinitions="*,12,*,12,*">

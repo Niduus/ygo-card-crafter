@@ -65,6 +65,14 @@ public static class Lists
     public static readonly IReadOnlyList<Option<CardOwner>> Owners = Options.Of(
         (CardOwner.You, "Yours"), (CardOwner.Opponent, "Your opponent's"), (CardOwner.Either, "Either player's"));
 
+    public static readonly IReadOnlyList<Option<MonsterKind>> MonsterKinds = Options.Of(
+        (MonsterKind.Any, "Any kind"), (MonsterKind.Effect, "Effect Monster"), (MonsterKind.NonEffect, "non-Effect"),
+        (MonsterKind.Normal, "Normal Monster"), (MonsterKind.Tuner, "Tuner"), (MonsterKind.NonTuner, "non-Tuner"),
+        (MonsterKind.Fusion, "Fusion Monster"), (MonsterKind.Synchro, "Synchro Monster"), (MonsterKind.Xyz, "Xyz Monster"),
+        (MonsterKind.Link, "Link Monster"), (MonsterKind.Ritual, "Ritual Monster"), (MonsterKind.Pendulum, "Pendulum Monster"),
+        (MonsterKind.Flip, "Flip monster"), (MonsterKind.Toon, "Toon monster"), (MonsterKind.Spirit, "Spirit monster"),
+        (MonsterKind.Union, "Union monster"), (MonsterKind.Gemini, "Gemini monster"), (MonsterKind.Token, "Token"), (MonsterKind.NonToken, "non-Token"));
+
     public static readonly IReadOnlyList<Option<FilterCardType>> FilterTypes = Options.Of(
         (FilterCardType.Any, "Any card"), (FilterCardType.Monster, "Monster"), (FilterCardType.Spell, "Spell"), (FilterCardType.Trap, "Trap"));
 }

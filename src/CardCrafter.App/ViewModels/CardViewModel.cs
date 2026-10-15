@@ -50,6 +50,9 @@ public sealed partial class CardViewModel : ObservableObject
         foreach (var e in project.Effects) Effects.Add(new EffectViewModel(e, this, pack, Changed));
         MaterialFilter = new FilterEditorViewModel(project.Procedure.MaterialFilter, Zone.None, true, pack, Changed);
         TunerFilter = new FilterEditorViewModel(project.Procedure.TunerFilter, Zone.None, true, pack, Changed);
+        IncludeFilter = new FilterEditorViewModel(project.Procedure.IncludeFilter, Zone.None, true, pack, Changed);
+        EquipFilter = new FilterEditorViewModel(project.EquipFilter, Zone.MonsterZone, true, pack, Changed, ownerChoice: true);
+        LoadFusionSlots();
         RebuildArchetypes();
         Refresh();
     }
@@ -111,6 +114,8 @@ public sealed partial class CardViewModel : ObservableObject
                 vm.Problems = string.Join("\n", result.Diagnostics.Where(d => d.EffectIndex == i + 1).Select(d => (d.Severity == Severity.Error ? "✖ " : "⚠ ") + d.Message));
             }
             SuggestedText = EffectTextGenerator.Generate(Project, pack);
+            OnPropertyChanged(nameof(MaterialsText));
+            OnPropertyChanged(nameof(HasMaterialsText));
             OnPropertyChanged(nameof(HasErrors));
             OnPropertyChanged(nameof(NoProblems));
             OnPropertyChanged(nameof(StatusIcon));
@@ -195,6 +200,7 @@ public sealed partial class CardViewModel : ObservableObject
                 _ => SummonProcedureKind.None,
             };
             if (value.Value == MonsterFrame.Synchro && Project.Procedure.MinMaterials > 1) Project.Procedure.MinMaterials = 1;
+            LoadFusionSlots();
             NotifyShape();
             Changed();
         }
@@ -204,8 +210,13 @@ public sealed partial class CardViewModel : ObservableObject
     public Option<SpellKind> SpellKind
     {
         get => Options.Find(Lists.SpellKinds, C.SpellKind);
-        set { if (value is null || Equals(C.SpellKind, value.Value)) return; C.SpellKind = value.Value; OnPropertyChanged(); Changed(); }
+        set { if (value is null || Equals(C.SpellKind, value.Value)) return; C.SpellKind = value.Value; OnPropertyChanged(); OnPropertyChanged(nameof(IsEquipSpell)); Changed(); }
     }
+
+    // ---- Equip Spells
+    public bool IsEquipSpell => C.Kind == CardKind.Spell && C.SpellKind == Core.Model.SpellKind.Equip;
+    /// <summary>The monsters this Equip Spell can be equipped to.</summary>
+    public FilterEditorViewModel EquipFilter { get; private set; }
 
     public IReadOnlyList<Option<TrapKind>> TrapKindOptions => Lists.TrapKinds;
     public Option<TrapKind> TrapKind
@@ -371,10 +382,10 @@ public sealed partial class CardViewModel : ObservableObject
     public bool IsExtraDeck => C.IsExtraDeck;
     public bool IsFusion => C.IsMonster && C.Frame == MonsterFrame.Fusion;
     public bool IsSynchro => C.IsMonster && C.Frame == MonsterFrame.Synchro;
-    public bool ShowMaterialFilter => C.IsExtraDeck && !(IsFusion && Project.Procedure.FusionMaterialCodes.Count >= 2);
+    public bool ShowMaterialFilter => C.IsExtraDeck && !IsFusion;
     public string ProcedureTitle => C.Frame switch
     {
-        MonsterFrame.Fusion => "Fusion materials",
+        MonsterFrame.Fusion => "Fusion Materials",
         MonsterFrame.Synchro => "Synchro materials (1 Tuner + non-Tuners)",
         MonsterFrame.Xyz => $"Xyz materials (Level {C.Level} monsters)",
         MonsterFrame.Link => "Link materials",
@@ -390,6 +401,7 @@ public sealed partial class CardViewModel : ObservableObject
             nameof(ShowDef), nameof(IsPendulum), nameof(IsExtraDeck), nameof(IsFusion), nameof(IsSynchro), nameof(ShowMaterialFilter),
             nameof(ProcedureTitle), nameof(MinMaterialsLabel), nameof(LevelLabel), nameof(LinkRatingText),
             nameof(SummonRuleOptions), nameof(SummonRuleChoice), nameof(SummonRuleHelp),
+            nameof(IsXyz), nameof(IsLinkProcedure), nameof(IsEquipSpell), nameof(MaterialsText), nameof(HasMaterialsText),
         }) OnPropertyChanged(n);
     }
 
@@ -398,6 +410,69 @@ public sealed partial class CardViewModel : ObservableObject
     public FilterEditorViewModel TunerFilter { get; private set; }
     public decimal? MinMaterials { get => Project.Procedure.MinMaterials; set { if (Project.Procedure.MinMaterials == (int)(value ?? 1)) return; Project.Procedure.MinMaterials = (int)(value ?? 1); OnPropertyChanged(); Changed(); } }
     public decimal? MaxMaterials { get => Project.Procedure.MaxMaterials; set { if (Project.Procedure.MaxMaterials == (int)(value ?? 0)) return; Project.Procedure.MaxMaterials = (int)(value ?? 0); OnPropertyChanged(); Changed(); } }
+
+    public FilterEditorViewModel IncludeFilter { get; private set; }
+    public bool IsXyz => C.IsMonster && C.Frame == MonsterFrame.Xyz;
+    public bool IsLinkProcedure => C.IsMonster && C.Frame == MonsterFrame.Link;
+
+    /// <summary>The materials line as it will be printed first in the card text, e.g. "2 Effect Monsters".</summary>
+    public string MaterialsText => MaterialText.Describe(Project, _pack());
+    public bool HasMaterialsText => MaterialsText.Length > 0;
+
+    /// <summary>Xyz: the Level of the materials (0 = the same as this card's Rank).</summary>
+    public decimal? XyzMaterialLevel
+    {
+        get => Project.Procedure.XyzMaterialLevel;
+        set { var v = Math.Max(0, (int)(value ?? 0)); if (Project.Procedure.XyzMaterialLevel == v) return; Project.Procedure.XyzMaterialLevel = v; OnPropertyChanged(); Changed(); }
+    }
+
+    /// <summary>Link: the materials must include a card the include filter allows.</summary>
+    public bool Including
+    {
+        get => Project.Procedure.Including;
+        set { if (Project.Procedure.Including == value) return; Project.Procedure.Including = value; OnPropertyChanged(); Changed(); }
+    }
+
+    /// <summary>Fusion Materials one by one: 1 "Aleister" monster + 1 EARTH or LIGHT monster.</summary>
+    public ObservableCollection<MaterialSlotViewModel> FusionSlots { get; } = [];
+
+    /// <summary>
+    /// Shows the Fusion Materials as slots. Older packs listed exact passcodes or one filter with a count; both become
+    /// slots that compile to the same script.
+    /// </summary>
+    private void LoadFusionSlots()
+    {
+        var proc = Project.Procedure;
+        if (proc.Kind == SummonProcedureKind.Fusion && proc.Materials.Count == 0)
+        {
+            if (proc.FusionMaterialCodes.Count >= 2)
+                proc.Materials.AddRange(proc.FusionMaterialCodes.Select(code => new MaterialSlot { Filter = new CardFilter { CardType = FilterCardType.Monster, CardCode = code } }));
+            else
+            {
+                var n = Math.Max(2, proc.MinMaterials);
+                proc.Materials.Add(new MaterialSlot { Filter = proc.MaterialFilter.Clone(), Min = n, Max = n });
+            }
+            proc.FusionMaterialCodes.Clear();
+        }
+        FusionSlots.Clear();
+        foreach (var slot in proc.Materials) FusionSlots.Add(new MaterialSlotViewModel(slot, _pack, Changed, RemoveFusionSlot));
+    }
+
+    [RelayCommand]
+    private void AddFusionSlot()
+    {
+        var slot = new MaterialSlot();
+        Project.Procedure.Materials.Add(slot);
+        FusionSlots.Add(new MaterialSlotViewModel(slot, _pack, Changed, RemoveFusionSlot));
+        Changed();
+    }
+
+    private void RemoveFusionSlot(MaterialSlotViewModel vm)
+    {
+        Project.Procedure.Materials.Remove(vm.Slot);
+        FusionSlots.Remove(vm);
+        Changed();
+    }
 
     /// <summary>Fusion materials by passcode, comma separated.</summary>
     public string FusionCodes
@@ -426,6 +501,9 @@ public sealed partial class CardViewModel : ObservableObject
         foreach (var e in Effects) e.RefreshFilters();
         MaterialFilter.RefreshArchetypes();
         TunerFilter.RefreshArchetypes();
+        IncludeFilter.RefreshArchetypes();
+        EquipFilter.RefreshArchetypes();
+        foreach (var slot in FusionSlots) slot.Filter.RefreshArchetypes();
     }
 
     public void RebuildArchetypes()
@@ -437,6 +515,9 @@ public sealed partial class CardViewModel : ObservableObject
         foreach (var e in Effects) e.RefreshFilters();
         MaterialFilter.RefreshArchetypes();
         TunerFilter.RefreshArchetypes();
+        IncludeFilter?.RefreshArchetypes();
+        EquipFilter?.RefreshArchetypes();
+        foreach (var slot in FusionSlots) slot.Filter.RefreshArchetypes();
     }
 
     private void OnArchetypeToggled(ArchetypeChoice choice)
@@ -570,6 +651,8 @@ public sealed partial class CardViewModel : ObservableObject
         foreach (var e in Project.Effects) Effects.Add(new EffectViewModel(e, this, _pack, Changed));
         MaterialFilter = new FilterEditorViewModel(Project.Procedure.MaterialFilter, Zone.None, true, _pack, Changed);
         TunerFilter = new FilterEditorViewModel(Project.Procedure.TunerFilter, Zone.None, true, _pack, Changed);
+        IncludeFilter = new FilterEditorViewModel(Project.Procedure.IncludeFilter, Zone.None, true, _pack, Changed);
+        LoadFusionSlots();
         OnPropertyChanged(string.Empty);
         Changed();
     }

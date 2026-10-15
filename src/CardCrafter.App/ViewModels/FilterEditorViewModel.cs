@@ -17,20 +17,23 @@ public sealed partial class FilterEditorViewModel : ObservableObject
     private readonly Action _changed;
     private readonly Func<CardPack> _pack;
 
-    public FilterEditorViewModel(CardFilter filter, Zone allowedZones, bool materialMode, Func<CardPack> pack, Action changed)
+    public FilterEditorViewModel(CardFilter filter, Zone allowedZones, bool materialMode, Func<CardPack> pack, Action changed, bool ownerChoice = false)
     {
         _f = filter;
         _pack = pack;
         _changed = changed;
         AllowedZones = allowedZones;
         MaterialMode = materialMode;
+        _ownerChoice = ownerChoice;
     }
+
+    private readonly bool _ownerChoice;
 
     public Zone AllowedZones { get; }
     /// <summary>Summon materials: only "what the card is" matters, not where it is.</summary>
     public bool MaterialMode { get; }
     public bool ShowWhere => !MaterialMode && (AllowedZones == Zone.None || System.Numerics.BitOperations.PopCount((uint)AllowedZones) > 1);
-    public bool ShowOwner => !MaterialMode && AllowedZones == Zone.None;
+    public bool ShowOwner => _ownerChoice || (!MaterialMode && AllowedZones == Zone.None);
 
     public string Summary => MaterialMode
         ? FilterText.Describe(_f, _pack(), plural: true, withLocation: false)
@@ -90,12 +93,28 @@ public sealed partial class FilterEditorViewModel : ObservableObject
         set { if (value is null || Equals(_f.Race, value.Value)) return; _f.Race = value.Value; Changed(); }
     }
 
-    public IReadOnlyList<Option<CardAttribute>> AttributeOptions => Lists.AttributesOrAny;
-    public Option<CardAttribute> Attribute
+    public IReadOnlyList<Option<MonsterKind>> MonsterKindOptions => Lists.MonsterKinds;
+    public Option<MonsterKind> MonsterKind
     {
-        get => Options.Find(Lists.AttributesOrAny, _f.Attribute);
-        set { if (value is null || Equals(_f.Attribute, value.Value)) return; _f.Attribute = value.Value; Changed(); }
+        get => Options.Find(Lists.MonsterKinds, _f.MonsterKind);
+        set { if (value is null || Equals(_f.MonsterKind, value.Value)) return; _f.MonsterKind = value.Value; Changed(); }
     }
+
+    // Attributes: any of the ticked ones ("LIGHT or EARTH"); none ticked means any Attribute.
+    private bool HasAttr(CardAttribute a) => _f.Attribute.HasFlag(a);
+    private void SetAttr(CardAttribute a, bool on, string name)
+    {
+        if (HasAttr(a) == on) return;
+        _f.Attribute = on ? _f.Attribute | a : _f.Attribute & ~a;
+        Changed(name);
+    }
+    public bool AttrDark { get => HasAttr(CardAttribute.Dark); set => SetAttr(CardAttribute.Dark, value, nameof(AttrDark)); }
+    public bool AttrLight { get => HasAttr(CardAttribute.Light); set => SetAttr(CardAttribute.Light, value, nameof(AttrLight)); }
+    public bool AttrEarth { get => HasAttr(CardAttribute.Earth); set => SetAttr(CardAttribute.Earth, value, nameof(AttrEarth)); }
+    public bool AttrWater { get => HasAttr(CardAttribute.Water); set => SetAttr(CardAttribute.Water, value, nameof(AttrWater)); }
+    public bool AttrFire { get => HasAttr(CardAttribute.Fire); set => SetAttr(CardAttribute.Fire, value, nameof(AttrFire)); }
+    public bool AttrWind { get => HasAttr(CardAttribute.Wind); set => SetAttr(CardAttribute.Wind, value, nameof(AttrWind)); }
+    public bool AttrDivine { get => HasAttr(CardAttribute.Divine); set => SetAttr(CardAttribute.Divine, value, nameof(AttrDivine)); }
 
     private IReadOnlyList<ArchetypeOption>? _archetypeOptions;
     public IReadOnlyList<ArchetypeOption> ArchetypeOptions => _archetypeOptions ??=

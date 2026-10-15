@@ -70,6 +70,48 @@ public class MainWindowTests
     }
 
     [AvaloniaFact]
+    public void CardTab_SummoningConditions_FusionLinkAndEquip()
+    {
+        var (window, vm) = Open();
+        var card = vm.SelectedCard!;
+        vm.Pack.Archetypes.Add(new Archetype { Code = 0x10f4, Name = "Aleister" });
+        card.RebuildArchetypes();
+
+        card.Frame = card.FrameOptions.First(o => o.Value == MonsterFrame.Fusion);
+        // An older-style single filter becomes one slot; make it Invoked's two materials.
+        Assert.Single(card.FusionSlots);
+        card.FusionSlots[0].Min = 1;
+        card.FusionSlots[0].Max = 1;
+        card.FusionSlots[0].Filter.Archetype = card.FusionSlots[0].Filter.ArchetypeOptions.First(a => a.Code == 0x10f4);
+        card.AddFusionSlotCommand.Execute(null);
+        card.FusionSlots[1].Filter.AttrLight = true;
+        card.FusionSlots[1].Filter.AttrEarth = true;
+        Assert.Equal("1 \"Aleister\" monster + 1 EARTH or LIGHT monster", card.MaterialsText);
+        Assert.False(card.HasErrors, string.Join("\n", card.Diagnostics.Select(d => d.Text)));
+        Shot(window, "19-card-fusion-materials");
+
+        card.Frame = card.FrameOptions.First(o => o.Value == MonsterFrame.Link);
+        card.ArrowLeft = card.ArrowRight = true;
+        card.MaterialFilter.MonsterKind = card.MaterialFilter.MonsterKindOptions.First(o => o.Value == MonsterKind.Effect);
+        card.MinMaterials = 2;
+        Assert.Equal("2 Effect Monsters", card.MaterialsText);
+        Assert.StartsWith("2 Effect Monsters", card.SuggestedText);
+        Shot(window, "20-card-link-materials");
+
+        card.Kind = card.KindOptions.First(o => o.Value == CardKind.Spell);
+        card.SpellKind = card.SpellKindOptions.First(o => o.Value == SpellKind.Equip);
+        Assert.True(card.IsEquipSpell);
+        card.EquipFilter.Race = card.EquipFilter.RaceOptions.First(o => o.Value == CardRace.Warrior);
+        Assert.Contains("Equip only to a Warrior monster.", card.SuggestedText);
+        Shot(window, "21-card-equip");
+
+        // The filter pop-up with its new Monster kind and Attribute boxes.
+        var chip = window.GetVisualDescendants().OfType<Button>().First(b => b.Name == "EquipFilterButton");
+        chip.Flyout!.ShowAt(chip);
+        Shot(window, "22-filter-editor");
+    }
+
+    [AvaloniaFact]
     public void CardTab_LinkPendulumAndSpellLayouts()
     {
         var (window, vm) = Open();

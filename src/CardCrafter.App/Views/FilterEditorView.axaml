@@ -3,7 +3,7 @@
              xmlns:vm="using:CardCrafter.App.ViewModels"
              x:Class="CardCrafter.App.Views.FilterEditorView"
              x:DataType="vm:FilterEditorViewModel"
-             Width="360">
+             Width="380">
   <StackPanel Spacing="2">
     <TextBlock Text="Which cards?" FontWeight="SemiBold" />
     <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" Foreground="#C7D7FE" Margin="0,0,0,6" />
@@ -22,38 +22,51 @@
       <CheckBox Content="Banished" IsChecked="{Binding InBanished}" IsVisible="{Binding ShowBanished}" Margin="0,0,10,0" />
     </WrapPanel>
 
-    <Grid ColumnDefinitions="*,8,*" RowDefinitions="Auto,Auto,Auto,Auto">
+    <Grid ColumnDefinitions="*,8,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
       <StackPanel Grid.Row="0" Grid.Column="0">
         <TextBlock Classes="label" Text="Card type" />
         <ComboBox ItemsSource="{Binding TypeOptions}" SelectedItem="{Binding CardType}" HorizontalAlignment="Stretch" />
       </StackPanel>
       <StackPanel Grid.Row="0" Grid.Column="2">
+        <TextBlock Classes="label" Text="Monster kind" />
+        <ComboBox Name="MonsterKindBox" ItemsSource="{Binding MonsterKindOptions}" SelectedItem="{Binding MonsterKind}" HorizontalAlignment="Stretch" MaxDropDownHeight="320"
+                  ToolTip.Tip="Effect Monster, Tuner, non-Tuner, Link Monster... For example S:P Little Knight's &quot;2 Effect Monsters&quot;." />
+      </StackPanel>
+      <StackPanel Grid.Row="1" Grid.Column="0">
         <TextBlock Classes="label" Text="Archetype" />
         <ComboBox ItemsSource="{Binding ArchetypeOptions}" SelectedItem="{Binding Archetype}" HorizontalAlignment="Stretch" />
       </StackPanel>
-      <StackPanel Grid.Row="1" Grid.Column="0">
+      <StackPanel Grid.Row="1" Grid.Column="2">
         <TextBlock Classes="label" Text="Monster Type" />
         <ComboBox ItemsSource="{Binding RaceOptions}" SelectedItem="{Binding Race}" HorizontalAlignment="Stretch" MaxDropDownHeight="320" />
       </StackPanel>
-      <StackPanel Grid.Row="1" Grid.Column="2">
-        <TextBlock Classes="label" Text="Attribute" />
-        <ComboBox ItemsSource="{Binding AttributeOptions}" SelectedItem="{Binding Attribute}" HorizontalAlignment="Stretch" />
+      <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3">
+        <TextBlock Classes="label" Text="Attribute (any of the ticked ones; none = any)" />
+        <WrapPanel>
+          <CheckBox Content="DARK" IsChecked="{Binding AttrDark}" Margin="0,0,8,0" MinWidth="0" />
+          <CheckBox Content="LIGHT" IsChecked="{Binding AttrLight}" Margin="0,0,8,0" MinWidth="0" />
+          <CheckBox Content="EARTH" IsChecked="{Binding AttrEarth}" Margin="0,0,8,0" MinWidth="0" />
+          <CheckBox Content="WATER" IsChecked="{Binding AttrWater}" Margin="0,0,8,0" MinWidth="0" />
+          <CheckBox Content="FIRE" IsChecked="{Binding AttrFire}" Margin="0,0,8,0" MinWidth="0" />
+          <CheckBox Content="WIND" IsChecked="{Binding AttrWind}" Margin="0,0,8,0" MinWidth="0" />
+          <CheckBox Content="DIVINE" IsChecked="{Binding AttrDivine}" Margin="0,0,8,0" MinWidth="0" />
+        </WrapPanel>
       </StackPanel>
-      <StackPanel Grid.Row="2" Grid.Column="0">
+      <StackPanel Grid.Row="3" Grid.Column="0">
         <TextBlock Classes="label" Text="Level from / to" />
         <StackPanel Orientation="Horizontal" Spacing="4">
           <NumericUpDown Value="{Binding LevelMin}" Minimum="0" Maximum="13" FormatString="0" Width="84" ShowButtonSpinner="False" Watermark="any" />
           <NumericUpDown Value="{Binding LevelMax}" Minimum="0" Maximum="13" FormatString="0" Width="84" ShowButtonSpinner="False" Watermark="any" />
         </StackPanel>
       </StackPanel>
-      <StackPanel Grid.Row="2" Grid.Column="2">
+      <StackPanel Grid.Row="3" Grid.Column="2">
         <TextBlock Classes="label" Text="ATK from / to" />
         <StackPanel Orientation="Horizontal" Spacing="4">
           <NumericUpDown Value="{Binding AtkMin}" Minimum="0" Maximum="99999" Increment="100" FormatString="0" Width="84" ShowButtonSpinner="False" Watermark="any" />
           <NumericUpDown Value="{Binding AtkMax}" Minimum="0" Maximum="99999" Increment="100" FormatString="0" Width="84" ShowButtonSpinner="False" Watermark="any" />
         </StackPanel>
       </StackPanel>
-      <StackPanel Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="3">
+      <StackPanel Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="3">
         <TextBlock Classes="label" Text="Only this card (passcode)" />
         <TextBox Text="{Binding CardCode}" Watermark="any card" />
       </StackPanel>
