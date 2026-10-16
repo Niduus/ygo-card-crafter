@@ -276,4 +276,80 @@ public class AssistantTests
         Assert.Null(body["fallbacks"]);
         Assert.Equal("low", (string)body["output_config"]!["effort"]!);
     }
+
+    // ---------------------------------------------------------------- OpenAI-compatible services
+
+    private static string Completion(string message, string finish = "stop") => $$$$"""
+        {"id":"chatcmpl-1","object":"chat.completion","model":"test-model","choices":[{"index":0,"message":{{{{message}}}},"finish_reason":"{{{{finish}}}}"}],
+         "usage":{"prompt_tokens":200,"completion_tokens":40,"prompt_tokens_details":{"cached_tokens":150}}}
+        """;
+
+    [Fact]
+    public async Task AnOpenAiCompatibleService_GetsTheSameGuideAndTools()
+    {
+        var (ws, _) = Monster();
+        var api = new FakeApi(
+            (HttpStatusCode.OK, Completion("""
+                {"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"add_effect",
+                 "arguments":"{\"effect\":{\"when\":{\"blockId\":\"when.summoned\"},\"do\":[{\"blockId\":\"do.draw\",\"values\":{\"count\":1}}]}}"}},
+                 {"id":"call_2","type":"function","function":{"name":"get_card","arguments":"not json"}}]}
+                """, "tool_calls")),
+            (HttpStatusCode.OK, Completion("""{"role":"assistant","content":"Added: it draws 1 card when Summoned."}""")));
+        var provider = AssistantProvider.Find("openai");
+        var chat = new OpenAiCompatibleSession(provider, "https://example.test/v1/", "sk-test", ws, new HttpClient(api)) { Model = "test-model" };
+        var updates = new List<AssistantUpdate>();
+        await chat.Send("Make it draw 1 card when it is Summoned.", updates.Add);
+
+        Assert.Single(ws.Card!.Effects);
+        Assert.Contains(updates, u => u.Kind == AssistantUpdateKind.Activity);
+        Assert.Equal("Added: it draws 1 card when Summoned.", updates.Last().Text);
+        Assert.Equal((400, 80, 300), (chat.InputTokens, chat.OutputTokens, chat.CachedTokens));
+
+        var first = api.Requests[0];
+        Assert.Equal("https://example.test/v1/chat/completions", first.Request.RequestUri!.ToString());
+        Assert.Equal("Bearer sk-test", first.Request.Headers.Authorization!.ToString());
+        var body = JsonNode.Parse(first.Body)!;
+        Assert.Equal("test-model", (string)body["model"]!);
+        Assert.Equal(("system", AssistantGuide.SystemPrompt), ((string)body["messages"]![0]!["role"]!, (string)body["messages"]![0]!["content"]!));
+        var tools = body["tools"]!.AsArray();
+        Assert.Equal(AssistantTools.All.Count, tools.Count);
+        Assert.Equal("object", (string)tools[0]!["function"]!["parameters"]!["type"]!);
+
+        // Both calls are answered as tool messages; the one with broken arguments as an error the model can fix.
+        var messages = JsonNode.Parse(api.Requests[1].Body)!["messages"]!.AsArray();
+        Assert.Equal(5, messages.Count);
+        Assert.Equal(("tool", "call_1"), ((string)messages[3]!["role"]!, (string)messages[3]!["tool_call_id"]!));
+        Assert.StartsWith("Error:", (string)messages[4]!["content"]!);
+    }
+
+    [Fact]
+    public async Task AServiceError_IsExplainedAndForgotten()
+    {
+        var (ws, _) = Monster();
+        var api = new FakeApi((HttpStatusCode.BadRequest, """{"error":{"message":"tools are not supported by this model"}}"""));
+        var chat = new OpenAiCompatibleSession(AssistantProvider.Find("ollama"), "http://localhost:11434/v1", "", ws, new HttpClient(api)) { Model = "tiny" };
+        var updates = new List<AssistantUpdate>();
+        await chat.Send("Hello", updates.Add);
+        var problem = Assert.Single(updates);
+        Assert.Contains("tools are not supported", problem.Text);
+        Assert.True(chat.IsEmpty);
+        Assert.Null(api.Requests[0].Request.Headers.Authorization);
+    }
+
+    [Fact]
+    public async Task Models_AreListedWithoutGeminisPrefix()
+    {
+        var api = new FakeApi((HttpStatusCode.OK, """{"object":"list","data":[{"id":"models/gemini-test"},{"id":"another-model"}]}"""));
+        var models = await OpenAiCompatibleSession.ListModels("https://example.test/v1", "k", new HttpClient(api));
+        Assert.Equal(["another-model", "gemini-test"], models);
+        Assert.EndsWith("/v1/models", api.Requests[0].Request.RequestUri!.ToString());
+    }
+
+    [Fact]
+    public void EveryProvider_HasAnAddressOrLetsOneBeTyped()
+    {
+        Assert.Equal(AssistantProvider.All.Count, AssistantProvider.All.Select(p => p.Id).Distinct().Count());
+        Assert.All(AssistantProvider.All, p => Assert.True(p.EditableUrl || Uri.IsWellFormedUriString(p.BaseUrl, UriKind.Absolute), p.Id));
+        Assert.True(AssistantProvider.Default.IsClaude);
+    }
 }

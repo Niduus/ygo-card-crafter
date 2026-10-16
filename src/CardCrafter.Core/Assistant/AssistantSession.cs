@@ -34,7 +34,7 @@ public enum AssistantUpdateKind { Reply, Activity, Problem }
 /// tools; whenever Claude calls a tool, the tool runs on the open pack and its answer goes back, until Claude replies.
 /// The history only ever grows (nothing earlier is edited), which keeps the cached prompt and Claude's reasoning valid.
 /// </summary>
-public sealed class AssistantSession
+public sealed class AssistantSession : IAssistantChat
 {
     /// <summary>How many tool rounds one message may take before the assistant stops and reports back.</summary>
     public const int MaxRounds = 40;
@@ -84,7 +84,7 @@ public sealed class AssistantSession
     public async Task Send(string text, Action<AssistantUpdate> update, CancellationToken cancel = default)
     {
         var start = _messages.Count;
-        _messages.Add(new BetaMessageParam { Role = Role.User, Content = Context() + text });
+        _messages.Add(new BetaMessageParam { Role = Role.User, Content = AssistantGuide.Context(_workspace) + text });
         try
         {
             for (var round = 0; round < MaxRounds; round++)
@@ -133,20 +133,10 @@ public sealed class AssistantSession
         }
     }
 
-    /// <summary>Forgets the conversation, keeping the key and settings.</summary>
     public void Clear()
     {
         _messages.Clear();
         InputTokens = OutputTokens = CachedTokens = 0;
-    }
-
-    /// <summary>A one-line reminder of what is open, so Claude knows which card "this card" is.</summary>
-    private string Context()
-    {
-        var card = _workspace.Card;
-        return card is null
-            ? "[The pack has no card selected.]\n\n"
-            : $"[Selected card: \"{card.Card.Name}\" ({card.Card.Kind}, passcode {card.Card.Id}), card {_workspace.Pack.Cards.IndexOf(card)} of the pack \"{_workspace.Pack.Name}\".]\n\n";
     }
 
     private MessageCreateParams Request() => new()

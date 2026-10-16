@@ -29,6 +29,15 @@ public static class AssistantGuide
         return sb.ToString();
     }
 
+    /// <summary>A one-line reminder put before each user message, so the model knows which card "this card" is.</summary>
+    public static string Context(IAssistantWorkspace workspace)
+    {
+        var card = workspace.Card;
+        return card is null
+            ? "[The pack has no card selected.]\n\n"
+            : $"[Selected card: \"{card.Card.Name}\" ({card.Card.Kind}, passcode {card.Card.Id}), card {workspace.Pack.Cards.IndexOf(card)} of the pack \"{workspace.Pack.Name}\".]\n\n";
+    }
+
     private static string Heading(BlockKind kind) => kind switch
     {
         BlockKind.Trigger => "WHEN (when) - what starts the effect",

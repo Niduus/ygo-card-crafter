@@ -53,4 +53,39 @@ public class AssistantTabTests
         window.UpdateLayout();
         window.CaptureRenderedFrame()?.Save(Path.Combine(dir, "assistant-tab.png"));
     }
+
+    [AvaloniaFact]
+    public void OtherServices_ShowTheirOwnSettings()
+    {
+        var window = new MainWindow { Width = 1360, Height = 900 };
+        var vm = new MainViewModel(new FakeDialogs(), new AppSettings());
+        window.DataContext = vm;
+        window.Show();
+        var a = vm.Assistant;
+
+        a.SelectedProvider = AssistantProvider.Find("ollama");
+        Assert.True(a.IsOther);
+        Assert.True(a.UrlEditable);
+        Assert.Equal("http://localhost:11434/v1", a.BaseUrl);
+        Assert.True(a.HasKey);
+        Assert.Contains("own computer", a.HowItWorks);
+
+        a.SelectedProvider = AssistantProvider.Find("gemini");
+        Assert.False(a.UrlEditable);
+        Assert.Equal(Environment.GetEnvironmentVariable("GEMINI_API_KEY") is { Length: > 0 }, a.HasKey);
+        a.ModelName = "gemini-test";
+        Assert.Equal("gemini-test", a.AssistantName);
+        Assert.Contains("generativelanguage.googleapis.com", a.HowItWorks);
+
+        var tabs = window.FindControl<TabControl>("Tabs")!;
+        tabs.SelectedItem = tabs.Items.Cast<TabItem>().First(t => (string?)t.Header == "Assistant");
+        Dispatcher.UIThread.RunJobs();
+        var dir = Environment.GetEnvironmentVariable("CARDCRAFTER_SCREENSHOTS") ?? Path.Combine(Path.GetTempPath(), "cardcrafter-shots");
+        Directory.CreateDirectory(dir);
+        window.UpdateLayout();
+        window.CaptureRenderedFrame()?.Save(Path.Combine(dir, "assistant-other.png"));
+
+        a.SelectedProvider = AssistantProvider.Default;
+        Assert.True(a.IsClaude);
+    }
 }
