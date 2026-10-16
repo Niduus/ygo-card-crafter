@@ -102,6 +102,10 @@ public sealed class CardsSegmentViewModel : SegmentViewModel
     public string Label { get; }
     public FilterEditorViewModel Editor { get; }
 
+    /// <summary>False while the picker doesn't apply, like "which cards" for a value that isn't a count.</summary>
+    public bool IsShown => _spec.ShownWhen?.Invoke(_inst) ?? true;
+    public void RefreshShown() => OnPropertyChanged(nameof(IsShown));
+
     /// <summary>"cards your opponent controls" when the block takes more than one card, as the card text says it.</summary>
     public string Summary
     {

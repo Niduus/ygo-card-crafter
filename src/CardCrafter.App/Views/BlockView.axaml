@@ -42,7 +42,7 @@
               <CheckBox Content="{Binding Label}" IsChecked="{Binding Value}" Margin="6,0" VerticalAlignment="Center" />
             </DataTemplate>
             <DataTemplate DataType="vm:CardsSegmentViewModel">
-              <Button Classes="chip" Content="{Binding Summary}" ToolTip.Tip="Click to choose which cards">
+              <Button Classes="chip" Content="{Binding Summary}" ToolTip.Tip="Click to choose which cards" IsVisible="{Binding IsShown}">
                 <Button.Flyout>
                   <Flyout Placement="BottomEdgeAlignedLeft">
                     <views:FilterEditorView DataContext="{Binding Editor}" />
