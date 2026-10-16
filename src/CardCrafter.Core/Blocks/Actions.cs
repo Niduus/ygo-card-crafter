@@ -305,10 +305,13 @@ public sealed class SpecialSummonAction : CardGroupAction
     protected override string TargetedWording => "Special Summon {0}";
     public override string Id => "do.special_summon";
     public override string Name => "Special Summon monsters";
-    public override string Sentence => "Special Summon {count} {cards} {target} {position} {zone}";
+    public override string Sentence => "Special Summon {count} {cards} {target} {position} {zone} {as}";
 
     public override string Describe(BlockArgs args) =>
         base.Describe(args) + (args.Bool("ignore") ? ", ignoring its Summoning conditions" : "");
+
+    /// <summary>"(This is treated as a Fusion Summon.)"</summary>
+    public override string Afterword(BlockArgs args) => TreatedAsSummon.Afterword(args.Choice("as"));
     protected override string Category => "CATEGORY_SPECIAL_SUMMON";
     protected override string Hint => "HINTMSG_SPSUMMON";
     protected override int MaxCount => 5;
@@ -324,6 +327,7 @@ public sealed class SpecialSummonAction : CardGroupAction
             new("facedown", "in face-down Defense Position")),
         ParamSpec.Choice("zone", "Zone", new("any", "", "to any zone"), new("pointed", "to a zone this card points to")),
         ParamSpec.Flag("ignore", "ignoring its Summoning conditions", false),
+        TreatedAsSummon.Param,
     ];
 
     protected override string TargetedAction(BlockArgs args, string pronoun, bool single)
@@ -337,11 +341,22 @@ public sealed class SpecialSummonAction : CardGroupAction
 
     private static bool FaceDown(BlockContext ctx) => ctx.Args.Choice("position") == "facedown";
 
-    protected override string? AbleCheck(BlockContext ctx) =>
-        FaceDown(ctx) ? $"c:IsCanBeSpecialSummoned(e,0,tp,{Ignore(ctx)},false,POS_FACEDOWN_DEFENSE)" : $"c:IsCanBeSpecialSummoned(e,0,tp,{Ignore(ctx)},false)";
+    /// <summary>"ritual", "fusion"...: the Summon is treated as that Summon; "none" for a plain Special Summon.</summary>
+    private static string As(BlockContext ctx) => ctx.Args.Choice("as");
+
+    protected override string? AbleCheck(BlockContext ctx)
+    {
+        if (As(ctx) != "none") return TreatedAsSummon.AbleCheck(ctx, As(ctx), Ignore(ctx), ctx.Args.Cards("cards").Zones);
+        return FaceDown(ctx) ? $"c:IsCanBeSpecialSummoned(e,0,tp,{Ignore(ctx)},false,POS_FACEDOWN_DEFENSE)" : $"c:IsCanBeSpecialSummoned(e,0,tp,{Ignore(ctx)},false)";
+    }
 
     protected override string Apply(string g, BlockContext ctx)
     {
+        if (As(ctx) != "none")
+        {
+            var position = ctx.Args.Choice("position") switch { "attack" => "POS_FACEUP_ATTACK", "defense" => "POS_FACEUP_DEFENSE", _ => "POS_FACEUP" };
+            return TreatedAsSummon.Apply(ctx, g, As(ctx), Ignore(ctx), position, PointsTo(ctx) ? "e:GetHandler():GetLinkedZone(tp)" : null);
+        }
         // Face-down: the opponent is shown the Summoned cards, as official cards do.
         if (FaceDown(ctx))
             return ctx.Script.AddFunction("spfacedown", "g,e,tp",
@@ -364,12 +379,16 @@ public sealed class SpecialSummonAction : CardGroupAction
             : $"Duel.SpecialSummon({g},{value},tp,tp,{Ignore(ctx)},false,{pos})";
     }
 
-    protected override string? SpaceCheck(int count, CardFilter f, BlockContext ctx) =>
-        PointsTo(ctx)
-            ? $"Duel.GetLocationCount(tp,LOCATION_MZONE,tp,LOCATION_REASON_TOFIELD,e:GetHandler():GetLinkedZone(tp))>={count}"
-            : f.Zones == Zone.ExtraDeck
-                ? $"Duel.GetLocationCountFromEx(tp)>={count}"
-                : $"Duel.GetLocationCount(tp,LOCATION_MZONE)>={count}";
+    protected override string? SpaceCheck(int count, CardFilter f, BlockContext ctx)
+    {
+        if (PointsTo(ctx)) return $"Duel.GetLocationCount(tp,LOCATION_MZONE,tp,LOCATION_REASON_TOFIELD,e:GetHandler():GetLinkedZone(tp))>={count}";
+        if (As(ctx) != "none") return TreatedAsSummon.SpaceCheck(ctx, As(ctx), f.Zones);
+        // "Tribute this card; Special Summon ...": the zone this card leaves for the cost counts, as official scripts check.
+        var leaving = TreatedAsSummon.CostFreesThisCard(ctx) ? "e:GetHandler()" : null;
+        return f.Zones == Zone.ExtraDeck
+            ? leaving is null ? $"Duel.GetLocationCountFromEx(tp)>={count}" : $"Duel.GetLocationCountFromEx(tp,tp,{leaving})>={count}"
+            : leaving is null ? $"Duel.GetLocationCount(tp,LOCATION_MZONE)>={count}" : $"Duel.GetMZoneCount(tp,{leaving})>={count}";
+    }
 
     private static bool PointsTo(BlockContext ctx) => ctx.Args.Choice("zone") == "pointed";
 
@@ -377,6 +396,7 @@ public sealed class SpecialSummonAction : CardGroupAction
     {
         if (PointsTo(ctx) && !ctx.Card.IsLink)
             ctx.Effect.Error("\"To a zone this card points to\" needs this card to be a Link monster.");
+        if (As(ctx) != "none" && !TreatedAsSummon.Check(ctx, Name, ctx.Args.Cards("cards").ThisCard ? 1 : ctx.Args.Int("count"), FaceDown(ctx))) return;
         base.Compile(ctx);
     }
 }
@@ -634,7 +654,7 @@ public sealed class SpecialSummonSelfAction : ActionBlock
     public override string Id => "do.special_summon_self";
     public override string Group => "This card";
     public override string Name => "Special Summon this card";
-    public override string Sentence => "Special Summon this card {position}";
+    public override string Sentence => "Special Summon this card {position} {as}";
     public override string Help => "Summons this card from wherever the effect is used: the WHEN block's \"in the hand\" or \"in the GY\".";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
@@ -645,7 +665,11 @@ public sealed class SpecialSummonSelfAction : ActionBlock
             new("defense_facedown", "in face-down Defense Position")),
         ParamSpec.Flag("ignore", "ignoring its Summoning conditions", false),
         ParamSpec.Flag("banish", "but banish it when it leaves the field", false),
+        TreatedAsSummon.Param,
     ];
+
+    /// <summary>"(This is treated as a Synchro Summon.)"</summary>
+    public override string Afterword(BlockArgs args) => TreatedAsSummon.Afterword(args.Choice("as"));
 
     /// <summary>"Special Summon this card from your hand", taking the place from the WHEN block.</summary>
     public override string Describe(BlockArgs args)
@@ -685,25 +709,34 @@ public sealed class SpecialSummonSelfAction : ActionBlock
             _ => "POS_FACEUP",
         };
         var ignore = ctx.Args.Bool("ignore") ? "true" : "false";
+        var treated = ctx.Args.Choice("as");
+        if (treated != "none" && !TreatedAsSummon.Check(ctx, Name, 1, pos == "POS_FACEDOWN_DEFENSE")) return;
         // Ritual and Extra Deck Monsters (and "must be Special Summoned" ones) must be properly Summoned before they can
-        // come back from the GY or banishment, unless the effect ignores their Summoning conditions.
+        // come back from the GY or banishment, unless the effect ignores their Summoning conditions (or, treated as a
+        // Ritual Summon, lifts that limit as official cards do).
         var c = ctx.Card;
-        if (ignore == "false" && ctx.Effect.Range is "LOCATION_GRAVE" or "LOCATION_REMOVED" or "LOCATION_GRAVE+LOCATION_REMOVED"
+        if (ignore == "false" && treated != "ritual" && ctx.Effect.Range is "LOCATION_GRAVE" or "LOCATION_REMOVED" or "LOCATION_GRAVE+LOCATION_REMOVED"
             && (c.IsExtraDeck || c.Frame == MonsterFrame.Ritual || c.Abilities.HasFlag(MonsterAbility.SpecialSummonOnly)))
             ctx.Effect.Warn($"A {(c.Frame == MonsterFrame.Ritual ? "Ritual" : c.IsExtraDeck ? c.Frame.ToString() : "\"must be Special Summoned\"")} Monster can only be Special Summoned from the GY or banishment " +
                             "after it was properly Summoned first. Tick \"ignoring its Summoning conditions\" if this effect should work anyway.");
         var r = ctx.Effect.NewLocal("r");
         ctx.Effect.AddCategory("CATEGORY_SPECIAL_SUMMON");
-        ctx.Effect.TargetChecks.Add("Duel.GetLocationCount(tp,LOCATION_MZONE)>0");
+        var room = treated == "none" ? "Duel.GetLocationCount(tp,LOCATION_MZONE)>0" : TreatedAsSummon.SpaceCheck(ctx, treated, Zone.Hand)!;
+        ctx.Effect.TargetChecks.Add(room);
         // The second switch also lifts "must first be properly Summoned" (the engine's revive limit).
-        ctx.Effect.TargetChecks.Add($"e:GetHandler():IsCanBeSpecialSummoned(e,0,tp,{ignore},{ignore},{pos})");
+        ctx.Effect.TargetChecks.Add(treated == "none"
+            ? $"e:GetHandler():IsCanBeSpecialSummoned(e,0,tp,{ignore},{ignore},{pos})"
+            : $"e:GetHandler():IsCanBeSpecialSummoned(e,{TreatedAsSummon.SummonType(treated)},tp,{ignore},{TreatedAsSummon.NoLimit(treated, ignore)},{pos})");
         ctx.Effect.TargetLines.Add("Duel.SetOperationInfo(0,CATEGORY_SPECIAL_SUMMON,e:GetHandler(),1,0,0)");
-        var lines = new List<string>
+        var lines = new List<string> { $"local {r}=0", $"if c:IsRelateToEffect(e) and {room} then" };
+        if (treated == "none") lines.Add($"\t{r}=Duel.SpecialSummon(c,SUMMON_VALUE_SELF,tp,tp,{ignore},{ignore},{pos})");
+        else
         {
-            $"local {r}=0",
-            "if c:IsRelateToEffect(e) and Duel.GetLocationCount(tp,LOCATION_MZONE)>0 then",
-            $"\t{r}=Duel.SpecialSummon(c,SUMMON_VALUE_SELF,tp,tp,{ignore},{ignore},{pos})",
-        };
+            // Treated as a Fusion Summon...: it counts as properly Summoned afterwards, though it had no materials.
+            lines.Add("\tc:SetMaterial(nil)");
+            lines.Add($"\t{r}=Duel.SpecialSummon(c,{TreatedAsSummon.SummonType(treated)},tp,tp,{ignore},{TreatedAsSummon.NoLimit(treated, ignore)},{pos})");
+            lines.Add($"\tif {r}>0 then c:CompleteProcedure() end");
+        }
         if (ctx.Args.Bool("banish"))
         {
             lines.Add($"\tif {r}>0 then");

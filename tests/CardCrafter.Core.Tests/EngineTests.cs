@@ -704,6 +704,16 @@ public class EngineTemplateTests
             case "Reveal the opponent's hand":
                 s.Card(id, 0, "hand").Card(Fiend, 1, "hand").ExpectActivations(1).Check("Duel.GetFieldGroup(1,LOCATION_HAND,0):GetFirst():IsPublic()"); break;
             case "Search, the turn you activate it": s.Card(id, 0, "hand").Summon(id).ExpectActivations(1).Check("Duel.GetFieldGroupCount(0,LOCATION_HAND,0)==1"); break;
+            // Treated as: no monster to Summon here; played for real in TreatedAsSummonTests and TreatedAsPassiveTests.
+            case "Banish from the GY: Fusion Summon treated as": s.Card(id, 0, "grave").ExpectActivations(0); break;
+            case "Tribute this card: Synchro Summon treated as": s.Card(id, 0, "mzone").ExpectActivations(0); break;
+            case "Banish from the hand or GY: Ritual Summon treated as" or "Another Ritual Monster treated as a Ritual Summon": s.Card(id, 0, "hand").ExpectActivations(0); break;
+            case "Treated as a Normal Monster in the hand and GY":
+                s.Card(id, 0, "hand").ExpectActivations(0).Check($"Duel.GetFirstMatchingCard(Card.IsCode,0,LOCATION_HAND,0,nil,{id}):IsType(TYPE_NORMAL)"); break;
+            case "Always treated as an archetype":
+                s.Card(id, 0, "hand").ExpectActivations(0).Check($"Duel.GetFirstMatchingCard(Card.IsCode,0,LOCATION_HAND,0,nil,{id}):IsOriginalSetCard(0x8)"); break;
+            case "Xyz Level 3 or 5": s.Card(id, 0, "mzone").ExpectActivations(0).Check("Duel.GetFieldCard(0,LOCATION_MZONE,0):IsHasEffect(EFFECT_XYZ_LEVEL)~=nil"); break;
+            case "Fusion substitute": s.Card(id, 0, "mzone").ExpectActivations(0).Check("Duel.GetFieldCard(0,LOCATION_MZONE,0):IsHasEffect(EFFECT_FUSION_SUBSTITUTE)~=nil"); break;
             default: s.Card(id, 0, "hand").ExpectActivations(1); break;
         }
         s.AssertPasses();

@@ -201,7 +201,9 @@ public static partial class EffectTextGenerator
             body = optional ? "You can " + body : SentenceCase.Upper(body);
             text = head.Length == 0 ? body : $"{SentenceCase.Upper(head)}: {body}";
         }
-        text = DeclarePolish(effect, text.TrimEnd() + ".");
+        // "(This card is always treated as a "HERO" card.)" already ends its sentence.
+        text = text.TrimEnd();
+        text = DeclarePolish(effect, text.EndsWith(".)", StringComparison.Ordinal) ? text : text + ".");
         foreach (var b in effect.Cost.Concat(effect.Do).Concat(effect.If))
             if (BlockRegistry.Find(b.BlockId) is { } bd && bd.Afterword(new BlockArgs(bd, b, pack) { Effect = effect, CardName = card.Name }) is { Length: > 0 } after)
                 text += " " + after;

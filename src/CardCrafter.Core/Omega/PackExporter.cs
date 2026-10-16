@@ -79,6 +79,8 @@ public static class PackExporter
             var row = CdbEncoder.Encode(data, compiled.Strings, pack.Ot);
             // A Trap Monster's stats live in its database row, as official ones do.
             Blocks.TrapMonsterAction.WriteStats(card, row);
+            // "(This card is always treated as a "HERO" card.)": the archetype is in the database entry, as official cards have it.
+            Blocks.TreatedAsPassive.WriteSetcodes(card, row);
             rows.Add(row);
 
             export.Checks.AddRange(ScriptChecker.Check(compiled.Lua));
