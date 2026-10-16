@@ -505,7 +505,7 @@ public class EngineTests
 
     public static IEnumerable<object[]> PassiveBlocks() =>
         // A Trap activated from the hand has its own duel in UniqueEngineTests.
-        BlockRegistry.OfKind(BlockKind.Passive).Where(b => b.Id != ActivateFromHandPassive.BlockId).SelectMany(def =>
+        BlockRegistry.OfKind(BlockKind.Passive).Where(b => b.Id is not (ActivateFromHandPassive.BlockId or ActivateSetTurnPassive.BlockId)).SelectMany(def =>
             new[] { def.CreateInstance() }
                 .Concat(def.Params.Where(p => p.Type == ParamType.Choice).SelectMany(p => p.Choices.Skip(1).Select(c => def.CreateInstance().With(p.Key, c.Value))))
                 .Select(inst => new object[] { def.Id, string.Join(",", inst.Values.Select(kv => $"{kv.Key}={kv.Value}")) }));
@@ -535,6 +535,8 @@ public class EngineTests
                 .Check("Duel.GetFieldCard(0,LOCATION_MZONE,0):GetEquipCount()==1");
             if (inst.Values["rule"] == "gain_atk") equip.Check("Duel.GetFieldCard(0,LOCATION_MZONE,0):GetAttack()==2000");
             if (inst.Values["rule"] == "lose_atk") equip.Check("Duel.GetFieldCard(0,LOCATION_MZONE,0):GetAttack()==1000");
+            if (inst.Values["rule"] == "gain_def") equip.Check("Duel.GetFieldCard(0,LOCATION_MZONE,0):GetDefense()==1500");
+            if (inst.Values["rule"] == "lose_def") equip.Check("Duel.GetFieldCard(0,LOCATION_MZONE,0):GetDefense()==500");
             equip.AssertPasses();
             return;
         }

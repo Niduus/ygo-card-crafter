@@ -121,7 +121,7 @@ public sealed class IndestructiblePassive : PassiveBlock
     public override string Id => "passive.indestructible";
     public override string Group => "This card";
     public override string Name => "This card can't be destroyed";
-    public override string Sentence => "This card cannot be destroyed {by}";
+    public override string Sentence => "This card cannot be destroyed {by} {with}";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Choice("by", "By",
@@ -130,13 +130,35 @@ public sealed class IndestructiblePassive : PassiveBlock
             new("both", "by battle or card effects"),
             new("opponent_effect", "by your opponent's card effects"),
             new("spelltrap_effect", "by Spell/Trap effects"),
-            new("monster_effect", "by monster effects")),
+            new("monster_effect", "by monster effects"),
+            new("battle_with", "by battle with", "by battle with some monsters (picked below)")),
+        ParamSpec.Cards("with", "By battle with", () => new CardFilter { CardType = FilterCardType.Monster, Summoned = FilterSummoned.FromExtra }, Zone.MonsterZone)
+            .ShowIf(b => b.Values.GetValueOrDefault("by") == "battle_with"),
     ];
+
+    public override string Describe(BlockArgs args)
+    {
+        if (args.Choice("by") != "battle_with") return $"this card cannot be destroyed {args.Describe("by")}";
+        var noun = Text.FilterText.Describe(args.Cards("with"), args.Pack, withLocation: false, ownName: args.CardName);
+        return $"this card cannot be destroyed by battle with {DoubleTributePassive.Article(noun)}";
+    }
 
     public override void Compile(BlockContext ctx)
     {
         var range = RangeOf(ctx);
         var by = ctx.Args.Choice("by");
+        if (by == "battle_with")
+        {
+            // The value gets the monster this card battles.
+            Zones.RequireMonster(ctx, "Cannot be destroyed by battle");
+            var with = ctx.Args.Cards("with").Clone();
+            with.Zones = Zone.None;
+            with.Owner = CardOwner.Either;
+            var tests = FilterCompiler.Conditions(with).Where(c => c != "c:IsType(TYPE_MONSTER)").DefaultIfEmpty("true");
+            var fn = ctx.Script.AddFunction("indbval", "e,c", [$"return {string.Join(" and ", tests)}"]);
+            ctx.Effect.AddPassive(v => SelfEffect(v, range, "EFFECT_INDESTRUCTABLE_BATTLE", fn));
+            return;
+        }
         if (by is "spelltrap_effect" or "monster_effect")
         {
             var test = by == "monster_effect" ? "re:IsActiveType(TYPE_MONSTER)" : "re:IsActiveType(TYPE_SPELL+TYPE_TRAP)";
@@ -187,7 +209,12 @@ public sealed class BattleAbilityPassive : PassiveBlock
         ParamSpec.Choice("ability", "Ability",
             new("direct", "can attack directly"),
             new("pierce", "inflicts piercing battle damage"),
-            new("extra", "can make a second attack during each Battle Phase")),
+            new("extra", "can make a second attack during each Battle Phase"),
+            new("extra2", "can make up to 3 attacks during each Battle Phase"),
+            new("extra_monster", "can make up to 2 attacks on monsters during each Battle Phase"),
+            new("extra_monster2", "can make up to 3 attacks on monsters during each Battle Phase"),
+            new("defense_attack", "can attack while in face-up Defense Position. If it does, apply its DEF for damage calculation"),
+            new("defense_attack_atk", "can attack while in face-up Defense Position. If it does, apply its ATK for damage calculation")),
     ];
 
     public override void Compile(BlockContext ctx)
@@ -198,6 +225,12 @@ public sealed class BattleAbilityPassive : PassiveBlock
         {
             "pierce" => ("EFFECT_PIERCE", "1"),
             "extra" => ("EFFECT_EXTRA_ATTACK", "1"),
+            "extra2" => ("EFFECT_EXTRA_ATTACK", "2"),
+            "extra_monster" => ("EFFECT_EXTRA_ATTACK_MONSTER", "1"),
+            "extra_monster2" => ("EFFECT_EXTRA_ATTACK_MONSTER", "2"),
+            // A value of 1 makes the damage calculation use its DEF; 0 keeps its ATK.
+            "defense_attack" => ("EFFECT_DEFENSE_ATTACK", "1"),
+            "defense_attack_atk" => ("EFFECT_DEFENSE_ATTACK", "0"),
             _ => ("EFFECT_DIRECT_ATTACK", "1"),
         };
         ctx.Effect.AddPassive(v => SelfEffect(v, range, code, value));
@@ -469,20 +502,29 @@ public sealed class SelfDestroyPassive : PassiveBlock
     public const string BlockId = "passive.self_destroy";
     public override string Id => BlockId;
     public override string Group => "This card";
-    public override string Name => "Destroy this card (when its IF blocks hold)";
-    public override string Sentence => "Destroy this card";
+    public override string Name => "Destroy this card / send it to the GY (when its IF blocks hold)";
+    public override string Sentence => "{how} this card";
     public override string Help => "Add IF blocks for when, like \"you control no other Dragon monsters\". It isn't an effect that activates.";
+    public override IReadOnlyList<ParamSpec> Params { get; } =
+    [
+        ParamSpec.Choice("how", "What", new("destroy", "Destroy"), new("grave", "Send to the GY:")),
+    ];
+
+    public override string Describe(BlockArgs args) => args.Choice("how") == "grave" ? "send this card to the GY" : "destroy this card";
 
     public override void Compile(BlockContext ctx)
     {
-        if (ctx.Effect.Conditions.Count == 0) ctx.Effect.Warn("\"Destroy this card\" with no IF blocks destroys it as soon as it is on the field.");
+        if (ctx.Effect.Conditions.Count == 0) ctx.Effect.Warn($"\"{Describe(ctx.Args)}\" with no IF blocks happens as soon as it is on the field.");
         var range = RangeOf(ctx);
+        var code = ctx.Args.Choice("how") == "grave" ? "EFFECT_SELF_TOGRAVE" : "EFFECT_SELF_DESTROY";
+        // The engine only checks "send itself to the GY" effects once a card has asked it to.
+        if (code == "EFFECT_SELF_TOGRAVE") ctx.Script.AddInitialLine("Duel.EnableGlobalFlag(GLOBALFLAG_SELF_TOGRAVE)");
         ctx.Effect.AddPassive(v =>
         [
             $"{v}:SetType(EFFECT_TYPE_SINGLE)",
             $"{v}:SetProperty(EFFECT_FLAG_SINGLE_RANGE)",
             $"{v}:SetRange({range})",
-            $"{v}:SetCode(EFFECT_SELF_DESTROY)",
+            $"{v}:SetCode({code})",
         ]);
     }
 }

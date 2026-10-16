@@ -7,6 +7,9 @@ namespace CardCrafter.Core.Blocks;
 public abstract class ConditionBlock : BlockDefinition
 {
     public override BlockKind Kind => BlockKind.Condition;
+
+    /// <summary>For lasting effects: how long the condition holds, said after the effect ("until the end of the Damage Step"). Usually empty.</summary>
+    public virtual string Until(BlockArgs args) => "";
 }
 
 public sealed class CardsExistCondition : ConditionBlock

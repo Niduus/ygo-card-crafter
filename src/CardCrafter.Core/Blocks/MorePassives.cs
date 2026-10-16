@@ -24,7 +24,10 @@ public sealed class ImmunePassive : PassiveBlock
             new("trap", "Trap effects"),
             new("opp_spell", "your opponent's Spell effects"),
             new("opp_trap", "your opponent's Trap effects"),
-            new("opp_activated", "your opponent's activated effects")),
+            new("opp_activated", "your opponent's activated effects"),
+            new("opp_activated_monster", "your opponent's activated monster effects"),
+            new("other_activated", "other cards' activated effects"),
+            new("opp_spelltrap", "your opponent's Spell/Trap effects")),
     ];
 
     public override void Compile(BlockContext ctx)
@@ -40,6 +43,9 @@ public sealed class ImmunePassive : PassiveBlock
             "opp_spell" => "te:IsActiveType(TYPE_SPELL) and te:GetOwnerPlayer()~=e:GetHandlerPlayer()",
             "opp_trap" => "te:IsActiveType(TYPE_TRAP) and te:GetOwnerPlayer()~=e:GetHandlerPlayer()",
             "opp_activated" => "te:GetOwnerPlayer()~=e:GetHandlerPlayer() and te:IsActivated()",
+            "opp_activated_monster" => "te:GetOwnerPlayer()~=e:GetHandlerPlayer() and te:IsActivated() and te:IsActiveType(TYPE_MONSTER)",
+            "other_activated" => "te:GetOwner()~=e:GetOwner() and te:IsActivated()",
+            "opp_spelltrap" => "te:IsActiveType(TYPE_SPELL+TYPE_TRAP) and te:GetOwnerPlayer()~=e:GetHandlerPlayer()",
             _ => "te:GetOwnerPlayer()~=e:GetHandlerPlayer()",
         };
         var fn = ctx.Script.AddFunction("immval", "e,te", [$"return {test}"]);
@@ -67,7 +73,9 @@ public sealed class SelfRulePassive : PassiveBlock
             new("cannot_change_position", "This card's battle position cannot be changed"),
             new("attack_all", "This card can attack all monsters your opponent controls once each"),
             new("must_attack", "This card must attack, if able"),
-            new("battle_safe", "If this card battles a monster, neither can be destroyed by that battle")),
+            new("battle_safe", "If this card battles a monster, neither can be destroyed by that battle"),
+            new("opp_no_battle_damage", "Your opponent takes no battle damage from attacks involving this card"),
+            new("reflect_battle", "Your opponent takes any battle damage you would have taken from battles involving this card")),
     ];
 
     public override void Compile(BlockContext ctx)
@@ -92,6 +100,8 @@ public sealed class SelfRulePassive : PassiveBlock
             "cannot_change_position" => [("EFFECT_CANNOT_CHANGE_POSITION", "1")],
             "attack_all" => [("EFFECT_ATTACK_ALL", "1")],
             "must_attack" => [("EFFECT_MUST_ATTACK", "1")],
+            "opp_no_battle_damage" => [("EFFECT_NO_BATTLE_DAMAGE", "1")],
+            "reflect_battle" => [("EFFECT_REFLECT_BATTLE_DAMAGE", "1")],
             _ => [("EFFECT_CANNOT_ATTACK", "1")],
         };
         foreach (var (code, value) in codes) ctx.Effect.AddPassive(v => SelfEffect(v, range, code, value));
@@ -115,7 +125,10 @@ public sealed class CardsRulePassive : PassiveBlock
             new("untargetable_any", "cannot be targeted by card effects"),
             new("not_attack_target", "cannot be targeted for attacks"),
             new("unaffected", "are unaffected by your opponent's card effects"),
-            new("pierce", "inflict piercing battle damage")),
+            new("pierce", "inflict piercing battle damage"),
+            new("must_attack", "must attack, if able"),
+            new("direct", "can attack directly"),
+            new("cannot_direct", "cannot attack directly")),
     ];
 
     public override string Describe(BlockArgs args)
@@ -148,6 +161,9 @@ public sealed class CardsRulePassive : PassiveBlock
                 "not_attack_target" => (["EFFECT_CANNOT_BE_BATTLE_TARGET"], "aux.imval1"),
                 "unaffected" => (["EFFECT_IMMUNE_EFFECT"], ctx.Script.AddFunction("immval", "e,te", ["return te:GetOwnerPlayer()~=e:GetHandlerPlayer()"])),
                 "pierce" => (["EFFECT_PIERCE"], "1"),
+                "must_attack" => (["EFFECT_MUST_ATTACK"], "1"),
+                "direct" => (["EFFECT_DIRECT_ATTACK"], "1"),
+                "cannot_direct" => (["EFFECT_CANNOT_DIRECT_ATTACK"], "1"),
                 _ => (["EFFECT_CANNOT_ATTACK"], "1"),
             };
             OnThisCard(ctx, selfCodes, selfValue);
@@ -165,6 +181,9 @@ public sealed class CardsRulePassive : PassiveBlock
             "not_attack_target" => (["EFFECT_CANNOT_BE_BATTLE_TARGET"], "aux.imval1"),
             "unaffected" => (["EFFECT_IMMUNE_EFFECT"], ctx.Script.AddFunction("immval", "e,te", ["return te:GetOwnerPlayer()~=e:GetHandlerPlayer()"])),
             "pierce" => (["EFFECT_PIERCE"], "1"),
+            "must_attack" => (["EFFECT_MUST_ATTACK"], "1"),
+            "direct" => (["EFFECT_DIRECT_ATTACK"], "1"),
+            "cannot_direct" => (["EFFECT_CANNOT_DIRECT_ATTACK"], "1"),
             _ => (["EFFECT_CANNOT_ATTACK"], "1"),
         };
         foreach (var code in codes)
@@ -303,8 +322,14 @@ public sealed class EquippedPassive : PassiveBlock
             new("cannot_attack", "cannot attack"),
             new("negated", "has its effects negated"),
             new("pierce", "inflicts piercing battle damage"),
-            new("untargetable", "cannot be targeted by your opponent's card effects")),
-        ParamSpec.Int("amount", "ATK amount", 500, 0, 99999),
+            new("untargetable", "cannot be targeted by your opponent's card effects"),
+            new("gain_def", "gains", "gains DEF"),
+            new("lose_def", "loses", "loses DEF"),
+            new("direct", "can attack directly"),
+            new("cannot_direct", "cannot attack directly"),
+            new("substitute", "would be destroyed, destroy this card instead", "is destroyed: destroy this card instead"),
+            new("substitute_battle", "would be destroyed by battle, destroy this card instead", "is destroyed by battle: destroy this card instead")),
+        ParamSpec.Int("amount", "ATK/DEF amount", 500, 0, 99999),
     ];
 
     public override string Describe(BlockArgs args) => args.Choice("rule") switch
@@ -312,6 +337,9 @@ public sealed class EquippedPassive : PassiveBlock
         "gain_atk" => $"the equipped monster gains {args.Int("amount")} ATK",
         "lose_atk" => $"the equipped monster loses {args.Int("amount")} ATK",
         "gain_both" => $"the equipped monster gains {args.Int("amount")} ATK/DEF",
+        "gain_def" => $"the equipped monster gains {args.Int("amount")} DEF",
+        "lose_def" => $"the equipped monster loses {args.Int("amount")} DEF",
+        "substitute" or "substitute_battle" => $"if the equipped monster {args.Describe("rule")}",
         _ => $"the equipped monster {args.Describe("rule")}",
     };
 
@@ -321,6 +349,13 @@ public sealed class EquippedPassive : PassiveBlock
         if (ctx.Card.Kind == CardKind.Spell && ctx.Card.SpellKind != SpellKind.Equip)
             ctx.Effect.Error("\"The equipped monster ...\" needs an Equip Spell: set the Spell kind to Equip on the Card tab.");
         var n = ctx.Args.Int("amount");
+        // "If the equipped monster would be destroyed, destroy this card instead": it works even against effects the monster is immune to.
+        if (ctx.Args.Choice("rule") is "substitute" or "substitute_battle")
+        {
+            var value = ctx.Args.Choice("rule") == "substitute" ? "1" : ctx.Script.AddFunction("substval", "e,re,r,rp", ["return bit.band(r,REASON_BATTLE)~=0"]);
+            ctx.Effect.AddPassive(v => [$"{v}:SetType(EFFECT_TYPE_EQUIP)", $"{v}:SetProperty(EFFECT_FLAG_IGNORE_IMMUNE)", $"{v}:SetCode(EFFECT_DESTROY_SUBSTITUTE)", $"{v}:SetValue({value})"]);
+            return;
+        }
         var codes = ctx.Args.Choice("rule") switch
         {
             "gain_atk" => new[] { ("EFFECT_UPDATE_ATTACK", n.ToString(System.Globalization.CultureInfo.InvariantCulture)) },
@@ -331,6 +366,10 @@ public sealed class EquippedPassive : PassiveBlock
             "cannot_attack" => [("EFFECT_CANNOT_ATTACK", "1")],
             "negated" => [("EFFECT_DISABLE", "1"), ("EFFECT_DISABLE_EFFECT", "1")],
             "pierce" => [("EFFECT_PIERCE", "1")],
+            "gain_def" => [("EFFECT_UPDATE_DEFENSE", n.ToString(System.Globalization.CultureInfo.InvariantCulture))],
+            "lose_def" => [("EFFECT_UPDATE_DEFENSE", (-n).ToString(System.Globalization.CultureInfo.InvariantCulture))],
+            "direct" => [("EFFECT_DIRECT_ATTACK", "1")],
+            "cannot_direct" => [("EFFECT_CANNOT_DIRECT_ATTACK", "1")],
             _ => [("EFFECT_CANNOT_BE_EFFECT_TARGET", "aux.tgoval")],
         };
         foreach (var (code, value) in codes)
@@ -578,9 +617,14 @@ public sealed class SummonRestrictionCost : CostBlock
         var except = ctx.Args.Cards("cards");
         if (ctx.Args.Choice("when") == "whole_turn" && Locks.TurnCheck(ctx, what, except) is { } check)
             ctx.Effect.CostChecks.Add(check);
-        ctx.Effect.CostLines.Add("local sl=Effect.CreateEffect(e:GetHandler())");
-        ctx.Effect.CostLines.AddRange(Locks.Lines(ctx, "sl", "you", what, except, null, "EFFECT_FLAG_OATH"));
-        ctx.Effect.CostLines.Add("sl:SetReset(RESET_PHASE+PHASE_END)");
-        ctx.Effect.CostLines.Add("Duel.RegisterEffect(sl,tp)");
+        // "Normal or Special Summon" is one engine effect for each kind of Summon.
+        for (var part = 0; part < Locks.Parts(what); part++)
+        {
+            var v = part == 0 ? "sl" : $"sl{part + 1}";
+            ctx.Effect.CostLines.Add($"local {v}=Effect.CreateEffect(e:GetHandler())");
+            ctx.Effect.CostLines.AddRange(Locks.Lines(ctx, v, "you", what, except, null, "EFFECT_FLAG_OATH", part));
+            ctx.Effect.CostLines.Add($"{v}:SetReset(RESET_PHASE+PHASE_END)");
+            ctx.Effect.CostLines.Add($"Duel.RegisterEffect({v},tp)");
+        }
     }
 }

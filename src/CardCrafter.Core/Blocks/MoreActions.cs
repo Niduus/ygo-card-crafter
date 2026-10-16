@@ -537,16 +537,30 @@ public sealed class BattleRuleAction : CardGroupAction
             new("direct", "can attack directly"),
             new("twice", "can make a second attack during each Battle Phase"),
             new("pierce", "inflicts piercing battle damage"),
-            new("cannot_be_targeted", "cannot be targeted by your opponent's card effects")),
+            new("cannot_be_targeted", "cannot be targeted by your opponent's card effects"),
+            new("cannot_be_destroyed", "cannot be destroyed by battle"),
+            new("cannot_be_destroyed_both", "cannot be destroyed by battle or card effects"),
+            new("cannot_declare", "cannot declare an attack"),
+            new("cannot_be_targeted_any", "cannot be targeted by card effects"),
+            new("unaffected_other", "is unaffected by other cards' effects"),
+            new("tuner", "is treated as a Tuner")),
     ];
 
-    private static (string Code, string Value) Rule(string rule) => rule switch
+    /// <summary>The effects each monster gets: one per code.</summary>
+    public static (string Code, string Value)[] Rule(string rule) => rule switch
     {
-        "direct" => ("EFFECT_DIRECT_ATTACK", "1"),
-        "twice" => ("EFFECT_EXTRA_ATTACK", "1"),
-        "pierce" => ("EFFECT_PIERCE", "1"),
-        "cannot_be_targeted" => ("EFFECT_CANNOT_BE_EFFECT_TARGET", "aux.tgoval"),
-        _ => ("EFFECT_CANNOT_ATTACK", "1"),
+        "direct" => [("EFFECT_DIRECT_ATTACK", "1")],
+        "twice" => [("EFFECT_EXTRA_ATTACK", "1")],
+        "pierce" => [("EFFECT_PIERCE", "1")],
+        "cannot_be_targeted" => [("EFFECT_CANNOT_BE_EFFECT_TARGET", "aux.tgoval")],
+        "cannot_be_destroyed" => [("EFFECT_INDESTRUCTABLE_BATTLE", "1")],
+        "cannot_be_destroyed_both" => [("EFFECT_INDESTRUCTABLE_BATTLE", "1"), ("EFFECT_INDESTRUCTABLE_EFFECT", "1")],
+        "cannot_declare" => [("EFFECT_CANNOT_ATTACK_ANNOUNCE", "1")],
+        "cannot_be_targeted_any" => [("EFFECT_CANNOT_BE_EFFECT_TARGET", "1")],
+        // "Unaffected by card effects, except its own": the value function is written per script.
+        "unaffected_other" => [("EFFECT_IMMUNE_EFFECT", "@unaffected")],
+        "tuner" => [("EFFECT_ADD_TYPE", "TYPE_TUNER")],
+        _ => [("EFFECT_CANNOT_ATTACK", "1")],
     };
 
     public override string Describe(BlockArgs args)
@@ -567,14 +581,17 @@ public sealed class BattleRuleAction : CardGroupAction
 
     protected override string Apply(string g, BlockContext ctx)
     {
-        var (code, value) = Rule(ctx.Args.Choice("rule"));
-        var fn = ctx.Script.AddFunction("battlerule", "g,e",
-        [
-            "local n=0", "local tc=g:GetFirst()", "while tc do", "\tif tc:IsFaceup() then",
-            "\t\tlocal e1=Effect.CreateEffect(e:GetHandler())", "\t\te1:SetType(EFFECT_TYPE_SINGLE)", $"\t\te1:SetCode({code})",
-            $"\t\te1:SetValue({value})", $"\t\te1:SetReset({Resets.EndOfTurn})", "\t\ttc:RegisterEffect(e1)", "\t\tn=n+1",
-            "\tend", "\ttc=g:GetNext()", "end", "return n",
-        ]);
+        var body = new List<string> { "local n=0", "local tc=g:GetFirst()", "while tc do", "\tif tc:IsFaceup() then" };
+        var i = 0;
+        foreach (var (code, rawValue) in Rule(ctx.Args.Choice("rule")))
+        {
+            var value = rawValue == "@unaffected" ? ctx.Script.AddFunction("unaffval", "e,re", ["return e:GetHandler()~=re:GetOwner()"]) : rawValue;
+            var v = $"e{++i}";
+            body.AddRange([$"\t\tlocal {v}=Effect.CreateEffect(e:GetHandler())", $"\t\t{v}:SetType(EFFECT_TYPE_SINGLE)", $"\t\t{v}:SetCode({code})",
+                $"\t\t{v}:SetValue({value})", $"\t\t{v}:SetReset({Resets.EndOfTurn})", $"\t\ttc:RegisterEffect({v})"]);
+        }
+        body.AddRange(["\t\tn=n+1", "\tend", "\ttc=g:GetNext()", "end", "return n"]);
+        var fn = ctx.Script.AddFunction("battlerule", "g,e", body);
         return $"{fn}({g},e)";
     }
 }

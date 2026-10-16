@@ -613,6 +613,7 @@ public sealed class SpecialSummonSelfAction : ActionBlock
             new("defense", "in Defense Position"),
             new("defense_facedown", "in face-down Defense Position")),
         ParamSpec.Flag("ignore", "ignoring its Summoning conditions", false),
+        ParamSpec.Flag("banish", "but banish it when it leaves the field", false),
     ];
 
     /// <summary>"Special Summon this card from your hand", taking the place from the WHEN block.</summary>
@@ -622,8 +623,21 @@ public sealed class SpecialSummonSelfAction : ActionBlock
         var what = zone == "banished" ? "Special Summon this banished card" : "Special Summon this card";
         if (zone is not null && Zones.From(zone) is { } from) what += " " + from;
         what = $"{what} {args.Describe("position")}".TrimEnd();
-        return args.Bool("ignore") ? what + ", ignoring its Summoning conditions" : what;
+        if (args.Bool("ignore")) what += ", ignoring its Summoning conditions";
+        return args.Bool("banish") ? what + ", but banish it when it leaves the field" : what;
     }
+
+    /// <summary>"..., but banish it when it leaves the field": the Summoned card goes to banishment instead of anywhere else.</summary>
+    public static IEnumerable<string> BanishWhenLeaves(string card, string v) =>
+    [
+        $"local {v}=Effect.CreateEffect(e:GetHandler())",
+        $"{v}:SetType(EFFECT_TYPE_SINGLE)",
+        $"{v}:SetCode(EFFECT_LEAVE_FIELD_REDIRECT)",
+        $"{v}:SetProperty(EFFECT_FLAG_CANNOT_DISABLE)",
+        $"{v}:SetReset(RESET_EVENT+RESETS_REDIRECT)",
+        $"{v}:SetValue(LOCATION_REMOVED)",
+        $"{card}:RegisterEffect({v},true)",
+    ];
 
     public override void Compile(BlockContext ctx)
     {
@@ -651,13 +665,20 @@ public sealed class SpecialSummonSelfAction : ActionBlock
         // The second switch also lifts "must first be properly Summoned" (the engine's revive limit).
         ctx.Effect.TargetChecks.Add($"e:GetHandler():IsCanBeSpecialSummoned(e,0,tp,{ignore},{ignore},{pos})");
         ctx.Effect.TargetLines.Add("Duel.SetOperationInfo(0,CATEGORY_SPECIAL_SUMMON,e:GetHandler(),1,0,0)");
-        ctx.Effect.AddStep(
-        [
+        var lines = new List<string>
+        {
             $"local {r}=0",
             "if c:IsRelateToEffect(e) and Duel.GetLocationCount(tp,LOCATION_MZONE)>0 then",
             $"\t{r}=Duel.SpecialSummon(c,SUMMON_VALUE_SELF,tp,tp,{ignore},{ignore},{pos})",
-            "end",
-        ], r, ctx.Link);
+        };
+        if (ctx.Args.Bool("banish"))
+        {
+            lines.Add($"\tif {r}>0 then");
+            lines.AddRange(BanishWhenLeaves("c", "rd").Select(l => "\t\t" + l));
+            lines.Add("\tend");
+        }
+        lines.Add("end");
+        ctx.Effect.AddStep(lines, r, ctx.Link);
     }
 }
 
