@@ -562,7 +562,7 @@ public sealed class SummonRestrictionCost : CostBlock
         var what = Locks.WhatOf(args);
         var (head, except) = Locks.Split(what, args.Cards("cards"), args);
         var procedure = args.Effect?.When?.BlockId == SummonProcedureTrigger.BlockId;
-        var thing = args.Effect?.When?.BlockId == "when.activate" ? "card" : "effect";
+        var thing = DetailedTriggers.ActivatesThisCard(args.Effect) ? "card" : "effect";
         if (args.Choice("when") == "whole_turn")
             return procedure
                 ? $"{Text.SentenceCase.Upper(head)} the turn you Special Summon this card this way{except}."
