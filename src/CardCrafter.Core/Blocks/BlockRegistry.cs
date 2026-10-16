@@ -30,6 +30,8 @@ public static class BlockRegistry
         new TotalCondition(),
         new TwoCardsCondition(),
         new TreatedAsPassive(),
+        new ActivationTrigger(),
+        new AttackDeclaredTrigger(),
         new LifeThisTurnCondition(),
         new LifeDifferenceCondition(),
         new StatsFromValuePassive(),
