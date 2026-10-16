@@ -66,7 +66,8 @@ public static class FilterCompiler
     /// the engine's material checks (IsLinkType, IsFusionSetCard...) count effects that change a material's Type,
     /// Attribute or name for that Summon.
     /// </summary>
-    public static List<string> Conditions(CardFilter f, string card = "c", SummonProcedureKind material = SummonProcedureKind.None)
+    /// <param name="hasEffect">The function has the effect and its player (e, tp), for requirements that need them.</param>
+    public static List<string> Conditions(CardFilter f, string card = "c", SummonProcedureKind material = SummonProcedureKind.None, bool hasEffect = true)
     {
         var parts = new List<string>();
         var (isType, isAttr, isRace, isSet, isCode) = material switch
@@ -137,6 +138,10 @@ public static class FilterCompiler
         if (f.AtkMax is { } amax) parts.Add($"{card}:IsAttackBelow({amax})");
         if (f.PointedToByThisCard) parts.Add($"e:GetHandler():GetLinkedGroup():IsContains({card})");
         if (f.CenterZone) parts.Add($"{card}:IsLocation(LOCATION_MZONE) and {card}:GetSequence()==2");
+        // The filter's further requirements, from the property catalog: "original ATK 2000 or more", "not DARK".
+        foreach (var r in f.Requirements)
+            if (CardProperties.Lua(r, hasEffect) is { } test)
+                parts.Add(card == "c" ? test : System.Text.RegularExpressions.Regex.Replace(test, @"\bc:", card + ":"));
         if (f.FaceDownOnly) parts.Add($"{card}:IsFacedown()");
         else if (f.FaceUpOnly)
         {

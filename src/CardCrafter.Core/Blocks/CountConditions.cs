@@ -233,3 +233,48 @@ public sealed class TotalCondition : ConditionBlock
         ctx.Effect.Conditions.Add($"{g}:GetSum({by}){CardCounts.Op(ctx.Args.Choice("cmp"))}{ctx.Args.Int("amount").ToString(CultureInfo.InvariantCulture)}");
     }
 }
+
+/// <summary>
+/// "If you control a DARK monster and a different monster with 2000 ATK": two cards, each meeting its own requirements,
+/// that must not be the same card. (Two separate IF blocks would let one card meet both.)
+/// </summary>
+public sealed class TwoCardsCondition : ConditionBlock
+{
+    public const string BlockId = "if.two_cards";
+    public override string Id => BlockId;
+    public override string Group => "Cards";
+    public override string Name => "There is a card like this and a different card like that";
+    public override string Sentence => "There is {cards} and a different {other}";
+    public override string Help => "The two must be different cards. For \"a DARK monster with 2000 ATK\" (one card meeting both), put both in one picker instead.";
+    public override IReadOnlyList<ParamSpec> Params { get; } =
+    [
+        ParamSpec.Cards("cards", "One card", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster, FaceUpOnly = true, Attribute = CardAttribute.Dark }),
+        ParamSpec.Cards("other", "A different card", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster, FaceUpOnly = true, AtkMin = 2000, AtkMax = 2000 }),
+    ];
+
+    private static string A(string noun) => ("AEIOUaeiou".Contains(noun[0]) ? "an " : "a ") + noun;
+
+    public override string Describe(BlockArgs args)
+    {
+        var a = args.Cards("cards");
+        var b = args.Cards("other");
+        string Noun(CardFilter f) => FilterText.Describe(f, args.Pack, false, "", withLocation: false);
+        if (FilterText.IsFieldOnly(a) && FilterText.IsFieldOnly(b) && a.Owner == b.Owner && a.Owner != CardOwner.Either)
+            return $"{(a.Owner == CardOwner.You ? "you control" : "your opponent controls")} {A(Noun(a))} and a different {Noun(b)}";
+        return $"there is {A(FilterText.Describe(a, args.Pack, false, "in"))} and a different {FilterText.Describe(b, args.Pack, false, "in")}";
+    }
+
+    public override void Compile(BlockContext ctx)
+    {
+        var a = ctx.Script.Filter(ctx.Args.Cards("cards"));
+        var b = ctx.Script.Filter(ctx.Args.Cards("other"));
+        var pair = ctx.Script.AddFunction("pairfilter", "c,e,tp",
+        [
+            $"if not {a.Function}(c,e,tp) then return false end",
+            $"local g=Duel.GetMatchingGroup({b.Function},tp,{b.Self},{b.Opp},{b.Exclude},e,tp)",
+            "g:RemoveCard(c)",
+            "return g:GetCount()>0",
+        ]);
+        ctx.Effect.Conditions.Add($"Duel.IsExistingMatchingCard({pair},tp,{a.Self},{a.Opp},1,{a.Exclude},e,tp)");
+    }
+}

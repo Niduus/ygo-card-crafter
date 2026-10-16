@@ -23,6 +23,7 @@ internal static class Procedures
             CardType = FilterCardType.Monster, MonsterKind = alt.MonsterKind, Race = alt.Race, Attribute = alt.Attribute, Archetype = alt.Archetype,
             Archetype2 = alt.Archetype2, CardCode = alt.CardCode, AltCodes = alt.AltCodes, ExceptOwnName = alt.ExceptOwnName, ExceptCode = alt.ExceptCode,
             LevelMin = alt.LevelMin, LevelMax = alt.LevelMax, AtkMin = alt.AtkMin, AtkMax = alt.AtkMax, DefMin = alt.DefMin, DefMax = alt.DefMax,
+            Requirements = alt.Requirements,
         });
         parts.Insert(0, "c:IsFaceup()");
         if (proc.XyzAlternateDetach > 0) parts.Add($"c:CheckRemoveOverlayCard(tp,{proc.XyzAlternateDetach},REASON_COST)");

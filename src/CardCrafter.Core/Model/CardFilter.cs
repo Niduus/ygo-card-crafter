@@ -86,11 +86,14 @@ public sealed class CardFilter
     public bool PointedToByThisCard { get; set; }
     /// <summary>Only the monster in the center Main Monster Zone (Elfnote).</summary>
     public bool CenterZone { get; set; }
+    /// <summary>Further requirements, each a property compared with a value: "original ATK 2000 or more", "not DARK".</summary>
+    public List<CardRequirement> Requirements { get; set; } = [];
 
     public CardFilter Clone()
     {
         var copy = (CardFilter)MemberwiseClone();
         copy.AltCodes = [.. AltCodes];
+        copy.Requirements = Requirements.Select(r => r.Clone()).ToList();
         return copy;
     }
 

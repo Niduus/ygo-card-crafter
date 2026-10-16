@@ -102,8 +102,8 @@ public sealed class ScriptBuilder(CardProject project, CardPack? pack)
         {
             CardType = f.CardType, MonsterKind = f.MonsterKind, Race = f.Race, Attribute = f.Attribute, Archetype = f.Archetype, CardCode = f.CardCode,
             ExceptOwnName = f.ExceptOwnName, ExceptCode = f.ExceptCode,
-            LevelMin = f.LevelMin, LevelMax = f.LevelMax, AtkMin = f.AtkMin, AtkMax = f.AtkMax,
-        }, "c", kind);
+            LevelMin = f.LevelMin, LevelMax = f.LevelMax, AtkMin = f.AtkMin, AtkMax = f.AtkMax, Requirements = f.Requirements,
+        }, "c", kind, hasEffect: false);
         parts.Remove("c:IsType(TYPE_MONSTER)");
         if (parts.Count == 0) return "nil";
         return AddFunction(baseName, "c", [$"return {string.Join(" and ", parts)}"]);

@@ -90,6 +90,15 @@ public static class FilterText
             if (withAtk) words[^1] += " and " + def;
             else words.Add("with " + def);
         }
+        // Further requirements: "with 2000 or more original ATK, that is not DARK, and whose effects are negated".
+        var extra = f.Requirements.Select(r => Compiler.CardProperties.Text(r, pack)).Where(t => t.Length > 0).ToList();
+        if (extra.Count > 0)
+            words.Add(extra.Count switch
+            {
+                1 => extra[0],
+                2 => $"{extra[0]} and {extra[1]}",
+                _ => string.Join(", ", extra.Take(extra.Count - 1)) + ", and " + extra[^1],
+            });
         if (f.Summoned == FilterSummoned.FromExtra) words.Add("Special Summoned from the Extra Deck");
         else if (f.Summoned == FilterSummoned.ThisTurn) words.Add("Summoned this turn");
         if (f.MentionsCode != 0)

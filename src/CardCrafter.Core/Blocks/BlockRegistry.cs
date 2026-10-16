@@ -28,6 +28,7 @@ public static class BlockRegistry
         new CompareCountsCondition(),
         new DifferentCondition(),
         new TotalCondition(),
+        new TwoCardsCondition(),
         new LifeThisTurnCondition(),
         new LifeDifferenceCondition(),
         new StatsFromValuePassive(),

@@ -27,6 +27,30 @@ public sealed partial class FilterEditorViewModel : ObservableObject
         AllowedZones = allowedZones;
         MaterialMode = materialMode;
         _ownerChoice = ownerChoice;
+        foreach (var r in filter.Requirements) Requirements.Add(NewRequirement(r));
+    }
+
+    public CardPack Pack => _pack();
+
+    // ---- more requirements: any property compared with a value, all for the same card
+    public System.Collections.ObjectModel.ObservableCollection<RequirementViewModel> Requirements { get; } = [];
+
+    private RequirementViewModel NewRequirement(CardRequirement r) => new(r, this, () => Changed(), RemoveRequirement);
+
+    [CommunityToolkit.Mvvm.Input.RelayCommand]
+    private void AddRequirement()
+    {
+        var r = new CardRequirement { Property = "atk", Op = RequirementOp.GreaterOrEqual, Value = 2000 };
+        _f.Requirements.Add(r);
+        Requirements.Add(NewRequirement(r));
+        Changed();
+    }
+
+    private void RemoveRequirement(RequirementViewModel vm)
+    {
+        _f.Requirements.Remove(vm.Model);
+        Requirements.Remove(vm);
+        Changed();
     }
 
     private readonly bool _ownerChoice;

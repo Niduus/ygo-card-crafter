@@ -111,6 +111,41 @@
         <CheckBox Content="or is that card" IsChecked="{Binding MentionsOrIs}" />
       </StackPanel>
     </Grid>
+    <TextBlock Classes="label" Text="More requirements (all for the same card)" Margin="0,8,0,0" />
+    <ItemsControl ItemsSource="{Binding Requirements}">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate DataType="vm:RequirementViewModel">
+          <Border BorderBrush="#33FFFFFF" BorderThickness="1" CornerRadius="4" Padding="6" Margin="0,2">
+            <StackPanel Spacing="4">
+              <Grid ColumnDefinitions="*,6,*,6,Auto">
+                <ComboBox ItemsSource="{Binding PropertyOptions}" SelectedItem="{Binding Property}" HorizontalAlignment="Stretch" MaxDropDownHeight="360" ToolTip.Tip="What to check" />
+                <ComboBox Grid.Column="2" ItemsSource="{Binding OpOptions}" SelectedItem="{Binding Op}" HorizontalAlignment="Stretch" ToolTip.Tip="How it compares" />
+                <Button Grid.Column="4" Classes="icon" Content="✕" Command="{Binding RemoveCommand}" ToolTip.Tip="Remove this requirement" />
+              </Grid>
+              <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding IsNumber}">
+                <NumericUpDown Value="{Binding Value}" Minimum="0" Maximum="999999" FormatString="0" Width="96" ShowButtonSpinner="False" />
+                <TextBlock Text="and" VerticalAlignment="Center" IsVisible="{Binding IsRange}" />
+                <NumericUpDown Value="{Binding Value2}" Minimum="0" Maximum="999999" FormatString="0" Width="96" ShowButtonSpinner="False" IsVisible="{Binding IsRange}" />
+              </StackPanel>
+              <ItemsControl ItemsSource="{Binding Choices}" IsVisible="{Binding IsChoices}">
+                <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate DataType="vm:RequirementChoice">
+                    <CheckBox Content="{Binding Label}" IsChecked="{Binding IsChecked}" Margin="0,0,8,0" MinWidth="0" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <ComboBox ItemsSource="{Binding ArchetypeOptions}" SelectedItem="{Binding Archetype}" IsVisible="{Binding IsArchetype}" HorizontalAlignment="Stretch" MaxDropDownHeight="320" />
+              <AutoCompleteBox Text="{Binding CardText}" ItemsSource="{Binding CardNameChoices}" IsVisible="{Binding IsCardName}" Watermark="type a card name"
+                               FilterMode="Contains" MinimumPrefixLength="2" MaxDropDownHeight="260" HorizontalAlignment="Stretch" />
+            </StackPanel>
+          </Border>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+    <Button Content="+ Add a requirement" Command="{Binding AddRequirementCommand}" HorizontalAlignment="Left"
+            ToolTip.Tip="Original ATK, Rank, Link Rating, materials, counters, &quot;not DARK&quot;, how it was Summoned, whether its effects are negated..." />
+
     <Grid ColumnDefinitions="Auto,8,*" Margin="0,6,0,0">
       <CheckBox Content="except this card's name" IsChecked="{Binding ExceptOwnName}" VerticalAlignment="Center"
                 ToolTip.Tip="Not a card with this card's name, e.g. &quot;1 Warrior monster from your Deck, except &quot;Card Name&quot;&quot;" />

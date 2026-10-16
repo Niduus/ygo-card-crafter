@@ -313,8 +313,8 @@ public static class ScriptCompiler
         var conds = FilterCompiler.Conditions(new CardFilter
         {
             CardType = FilterCardType.Monster, MonsterKind = f.MonsterKind, Race = f.Race, Attribute = f.Attribute, Archetype = f.Archetype,
-            CardCode = f.CardCode, LevelMin = f.LevelMin, LevelMax = f.LevelMax, AtkMin = f.AtkMin, AtkMax = f.AtkMax,
-        });
+            CardCode = f.CardCode, LevelMin = f.LevelMin, LevelMax = f.LevelMax, AtkMin = f.AtkMin, AtkMax = f.AtkMax, Requirements = f.Requirements,
+        }, hasEffect: false);
         conds.Remove("c:IsType(TYPE_MONSTER)");
         var test = conds.Count == 0 ? "true" : string.Join(" and ", conds);
         var limit = conds.Count == 0 ? "1" : script.AddFunction("eqlimit", "e,c", [$"return {test}"]);
