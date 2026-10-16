@@ -29,6 +29,7 @@ public static class BlockRegistry
         new DifferentCondition(),
         new TotalCondition(),
         new TwoCardsCondition(),
+        new TreatedAsPassive(),
         new LifeThisTurnCondition(),
         new LifeDifferenceCondition(),
         new StatsFromValuePassive(),

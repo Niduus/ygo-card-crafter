@@ -115,3 +115,33 @@ public class RequirementTests
             EffectTextGenerator.Generate(Card(TwoCards(dark, strong))));
     }
 }
+
+/// <summary>"This card is always treated as a "HERO" card", "also treated as a DARK Tuner".</summary>
+public class TreatedAsTests
+{
+    [EngineFact]
+    public void ArchetypeNameAttributeAndTuner_Apply()
+    {
+        const long id = 100100101;
+        var b = new BlockInstance(TreatedAsPassive.BlockId);
+        b.Filters["as"] = new CardFilter { CardType = FilterCardType.Monster, Archetype = 0x8, Attribute = CardAttribute.Dark, MonsterKind = MonsterKind.Tuner, CardCode = 46986414 };
+        var p = new CardProject
+        {
+            Card = new CardData { Id = id, Name = "Treated", Frame = MonsterFrame.Effect, Level = 4, Atk = 1000, Def = 1000, Attribute = CardAttribute.Earth },
+            Effects = [new EffectEvent { When = new BlockInstance("when.while_face_up"), Do = [b] }],
+        };
+        CardNames.Set([(46986414, "Dark Magician")]);
+        try
+        {
+            Assert.Equal("This card is always treated as a \"HERO\" card, and this card's name is also treated as \"Dark Magician\", and this card is also treated as a DARK Tuner.",
+                EffectTextGenerator.Generate(p, new CardPack { Cards = [p], Archetypes = [new Archetype { Code = 0x8, Name = "HERO" }] }));
+        }
+        finally { CardNames.Set([]); }
+        new EngineScenario(p).Card(id, 0, "mzone").Card(id, 0, "grave").Card(Warrior, 0, "deck", 4).Card(Warrior, 1, "deck", 4)
+            .Check($"Duel.GetMatchingGroupCount(Card.IsSetCard,0,LOCATION_MZONE+LOCATION_GRAVE,0,nil,0x8)==2")
+            .Check($"Duel.IsExistingMatchingCard(Card.IsCode,0,LOCATION_MZONE,0,1,nil,46986414)")
+            .Check($"Duel.GetFirstMatchingCard(Card.IsCode,0,LOCATION_MZONE,0,nil,{id}):IsAttribute(ATTRIBUTE_DARK)")
+            .Check($"Duel.GetFirstMatchingCard(Card.IsCode,0,LOCATION_MZONE,0,nil,{id}):IsAttribute(ATTRIBUTE_EARTH)")
+            .Check($"Duel.GetFirstMatchingCard(Card.IsCode,0,LOCATION_MZONE,0,nil,{id}):IsType(TYPE_TUNER)").AssertPasses();
+    }
+}
