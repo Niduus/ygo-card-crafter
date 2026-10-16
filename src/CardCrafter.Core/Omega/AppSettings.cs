@@ -18,6 +18,10 @@ public sealed class AppSettings
     /// <summary>"owner/repo" whose public GitHub Releases provide updates. Null uses Card Crafter's own.</summary>
     public string? UpdateRepository { get; set; }
     public List<string> RecentPacks { get; set; } = [];
+    /// <summary>The Claude model the assistant uses, by id.</summary>
+    public string? AssistantModel { get; set; }
+    /// <summary>How hard the assistant thinks: low, medium, high, xhigh or max.</summary>
+    public string AssistantEffort { get; set; } = "medium";
 
     public static string Folder
     {

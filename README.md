@@ -374,6 +374,12 @@ editor so you can finish it in Lua. Card Crafter still checks it for syntax erro
 
 The full list of blocks and templates is in [docs/blocks.md](docs/blocks.md).
 
+**Ask Claude.** The **Assistant** tab is a chat with Claude that knows how Card Crafter works. Paste your own Claude API
+key (from the [Claude Console](https://console.anthropic.com/settings/keys)), then ask it to build an effect from card
+text, explain a card, or find out why something shows an error. It changes your cards through the same blocks you use,
+every change shows in the editor, and **Undo Claude's last changes** puts them back. Usage is billed to your own
+Anthropic account; the key stays on your computer. See [docs/ai-assistant.md](docs/ai-assistant.md).
+
 ## Finding YGO Omega
 
 Card Crafter looks in this order and stops at the first folder that actually contains Omega:
@@ -495,6 +501,7 @@ that becomes the app's version, and installed copies offer it as an update.
 | `src/CardCrafter.Core/Database` | `.cdb` reading and writing |
 | `src/CardCrafter.Core/Omega` | Finding, scanning, exporting to and installing into Omega |
 | `src/CardCrafter.Core/Validation` | Lua syntax and engine-name checks |
+| `src/CardCrafter.Core/Assistant` | The AI assistant: its guide, its tools, and the Claude conversation ([docs/ai-assistant.md](docs/ai-assistant.md)) |
 | `src/CardCrafter.App` | The Avalonia desktop app |
 | `tools/engine-harness` | Plays test duels in ygopro-core |
 

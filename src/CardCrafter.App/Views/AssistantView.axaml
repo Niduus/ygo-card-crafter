@@ -1,0 +1,118 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CardCrafter.App.ViewModels"
+             xmlns:assistant="using:CardCrafter.Core.Assistant"
+             x:Class="CardCrafter.App.Views.AssistantView"
+             x:DataType="vm:AssistantViewModel">
+  <Grid ColumnDefinitions="*,300" Margin="0,8,0,8">
+    <!-- chat -->
+    <Grid Grid.Column="0" RowDefinitions="*,Auto,Auto" Margin="0,0,12,0">
+      <Border Grid.Row="0" Background="{StaticResource SheetBrush}" CornerRadius="10" Padding="4">
+        <Panel>
+          <ScrollViewer Name="ChatScroll" HorizontalScrollBarVisibility="Disabled">
+            <ItemsControl ItemsSource="{Binding Lines}" Margin="8">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="vm:ChatLine">
+                  <Panel Margin="0,4">
+                    <!-- your message -->
+                    <Border IsVisible="{Binding IsYou}" Background="#1E3A8A" CornerRadius="10" Padding="10,6" HorizontalAlignment="Right" MaxWidth="640">
+                      <SelectableTextBlock Text="{Binding Text}" TextWrapping="Wrap" />
+                    </Border>
+                    <!-- Claude's reply -->
+                    <Border IsVisible="{Binding IsClaude}" Background="{StaticResource RowBrush}" CornerRadius="10" Padding="10,6" HorizontalAlignment="Left" MaxWidth="720">
+                      <StackPanel>
+                        <TextBlock Text="Claude" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,2" />
+                        <SelectableTextBlock Text="{Binding Text}" TextWrapping="Wrap" />
+                      </StackPanel>
+                    </Border>
+                    <!-- a change Claude made -->
+                    <TextBlock IsVisible="{Binding IsActivity}" Text="{Binding Shown}" FontSize="12" Foreground="#86EFAC" Margin="12,0" TextWrapping="Wrap" />
+                    <!-- a problem -->
+                    <Border IsVisible="{Binding IsProblem}" Background="#33F87171" CornerRadius="8" Padding="10,6" HorizontalAlignment="Left" MaxWidth="720">
+                      <SelectableTextBlock Text="{Binding Text}" TextWrapping="Wrap" Foreground="#FECACA" />
+                    </Border>
+                  </Panel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+          <!-- before the first message -->
+          <StackPanel IsVisible="{Binding IsEmpty}" VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="520" Spacing="8">
+            <TextBlock Classes="h2" Text="Ask Claude about your cards" HorizontalAlignment="Center" />
+            <TextBlock TextWrapping="Wrap" TextAlignment="Center" Foreground="{StaticResource MutedBrush}"
+                       Text="Claude knows how Card Crafter's blocks, card pickers and scripts work. It can build effects on the selected card, fix problems, or explain anything in the app. Try one of these:" />
+            <Button HorizontalAlignment="Stretch" Command="{Binding SuggestCommand}"
+                    CommandParameter="Make this card: &quot;If this card is Normal Summoned: You can add 1 Level 4 or lower Warrior monster from your Deck to your hand. You can only use this effect once per turn.&quot;"
+                    Content="Build an effect from card text" />
+            <Button HorizontalAlignment="Stretch" Command="{Binding SuggestCommand}"
+                    CommandParameter="Check this card for problems and explain how to fix them."
+                    Content="Check this card for problems" />
+            <Button HorizontalAlignment="Stretch" Command="{Binding SuggestCommand}"
+                    CommandParameter="Explain how this card's effects work: which blocks it uses and what the script does in the game."
+                    Content="Explain how this card works" />
+            <Button HorizontalAlignment="Stretch" Command="{Binding SuggestCommand}"
+                    CommandParameter="Design a new Spell card that supports my archetype, then build it in a new card."
+                    Content="Design a new card with me" />
+          </StackPanel>
+        </Panel>
+      </Border>
+
+      <!-- message box -->
+      <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="0,8,0,0">
+        <TextBox Grid.Column="0" Text="{Binding Input}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="64" MaxHeight="180"
+                 Watermark="Message Claude… (Ctrl+Enter sends)">
+          <TextBox.KeyBindings>
+            <KeyBinding Gesture="Ctrl+Enter" Command="{Binding SendCommand}" />
+          </TextBox.KeyBindings>
+        </TextBox>
+        <StackPanel Grid.Column="1" Spacing="6" Margin="8,0,0,0" VerticalAlignment="Bottom">
+          <Button Content="Send" Classes="accent" Command="{Binding SendCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+          <Button Content="Stop" Command="{Binding StopCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+        </StackPanel>
+      </Grid>
+      <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="0,6,0,0">
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsBusy}" Width="80" VerticalAlignment="Center" />
+          <TextBlock Text="Claude is working…" IsVisible="{Binding IsBusy}" FontSize="12" VerticalAlignment="Center" />
+          <TextBlock Text="{Binding Usage}" FontSize="11" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+          <Button Content="Undo Claude's last changes" Command="{Binding UndoCommand}"
+                  ToolTip.Tip="Puts the cards back as they were before Claude's last message that changed them" />
+          <Button Content="New chat" Command="{Binding NewChatCommand}" ToolTip.Tip="Start over; Claude forgets this conversation (your cards stay as they are)" />
+        </StackPanel>
+      </Grid>
+    </Grid>
+
+    <!-- setup and how it works -->
+    <ScrollViewer Grid.Column="1">
+      <StackPanel Margin="0,0,14,0">
+        <TextBlock Classes="h2" Text="Claude API key" Margin="0,0,0,4" />
+        <TextBox Text="{Binding ApiKey}" PasswordChar="•" Watermark="sk-ant-…" />
+        <CheckBox Content="Remember on this computer" IsChecked="{Binding RememberKey}" Margin="0,6,0,0"
+                  ToolTip.Tip="Saved apart from your packs, encrypted for your Windows user. Packs never hold the key." />
+        <TextBlock Text="{Binding KeyStatus}" FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+        <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,6,0,0">
+          <Button Content="Get a key" Command="{Binding GetKeyCommand}" ToolTip.Tip="Opens the Claude Console's API keys page" />
+          <Button Content="Forget key" Command="{Binding ForgetKeyCommand}" />
+        </StackPanel>
+
+        <TextBlock Classes="label" Text="Model" />
+        <ComboBox ItemsSource="{Binding Models}" SelectedItem="{Binding SelectedModel}" HorizontalAlignment="Stretch">
+          <ComboBox.ItemTemplate>
+            <DataTemplate DataType="assistant:AssistantModel">
+              <TextBlock Text="{Binding Label}" />
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
+        <TextBlock Classes="label" Text="Effort" />
+        <ComboBox ItemsSource="{Binding Efforts}" SelectedItem="{Binding SelectedEffort}" HorizontalAlignment="Stretch"
+                  ToolTip.Tip="How hard Claude thinks before answering. Higher is more thorough, slower and uses more tokens; medium suits most cards." />
+
+        <TextBlock Classes="h2" Text="How it works" />
+        <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{StaticResource MutedBrush}" Text="{Binding HowItWorks}" />
+        <Button Content="Full guide (for users and developers)" Command="{Binding OpenGuideCommand}" Margin="0,8,0,0" />
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

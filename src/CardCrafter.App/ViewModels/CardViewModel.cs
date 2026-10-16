@@ -761,7 +761,10 @@ public sealed partial class CardViewModel : ObservableObject
         TunerFilter = new FilterEditorViewModel(Project.Procedure.TunerFilter, Zone.None, true, _pack, Changed);
         IncludeFilter = new FilterEditorViewModel(Project.Procedure.IncludeFilter, Zone.None, true, _pack, Changed);
         XyzAlternateFilter = new FilterEditorViewModel(Project.Procedure.XyzAlternateFilter, Zone.None, true, _pack, Changed);
+        EquipFilter = new FilterEditorViewModel(Project.EquipFilter, Zone.MonsterZone, true, _pack, Changed, ownerChoice: true);
         LoadFusionSlots();
+        RebuildArchetypes();
+        _raceOptions = null;
         OnPropertyChanged(string.Empty);
         Changed();
     }
