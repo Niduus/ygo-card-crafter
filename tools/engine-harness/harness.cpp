@@ -306,6 +306,21 @@ static void respond(intptr_t pd, Scenario& sc) {
 		set_responseb(pd, b);
 		return;
 	}
+	case PROCESSOR_SELECT_COUNTER: {
+		// "Remove N counters from anywhere on the field": as many as each card has, in order, until N are taken.
+		uint16_t type = (uint16_t)unit.arg2;
+		int left = (int)unit.arg3;
+		auto& cards = f->core.select_cards;
+		int idx = 0;
+		for (size_t i = 0; i < cards.size() && idx + 1 < (int)sizeof(b); ++i) {
+			int take = std::min<int>(left, cards[i]->get_counter(type));
+			left -= take;
+			b[idx++] = (uint8_t)(take & 0xff);
+			b[idx++] = (uint8_t)((take >> 8) & 0xff);
+		}
+		set_responseb(pd, b);
+		return;
+	}
 	case PROCESSOR_SELECT_UNSELECT_CARD: {
 		bool finishable = unit.arg3 & 0xff;
 		if (finishable || f->core.select_cards.empty()) { set_responsei(pd, -1); return; }

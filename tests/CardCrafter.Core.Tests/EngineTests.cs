@@ -439,6 +439,12 @@ public class EngineTests
             // Hidden zones can't be targeted, so aim at the GY instead.
             var f = inst.Filters["cards"];
             if ((f.Zones & (Zone.Deck | Zone.Hand | Zone.ExtraDeck)) != Zone.None) f.Zones = Zone.Graveyard;
+            // Counters placed by default on this card: an A-Counter (any card can hold one) on the opponent's monster.
+            if (blockId == PlaceCounterAction.BlockId)
+            {
+                inst.With("counter", "0x100e");
+                inst.Filters["cards"] = new CardFilter { Owner = CardOwner.Opponent, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster, FaceUpOnly = true };
+            }
         }
         var fromHand = blockId == "do.special_summon_self";
         var card = new CardProject
@@ -465,9 +471,10 @@ public class EngineTests
     public static IEnumerable<object[]> CostBlocks() =>
         // Detaching needs an Xyz monster with materials; Xyz_DetachMaterialAsCost covers it.
         // Returning cards to the Extra Deck needs Extra Deck monsters in the GY, which this board doesn't have.
-        BlockRegistry.OfKind(BlockKind.Cost).Where(b => b.Id != "cost.detach").SelectMany(def =>
+        // Removing counters needs counters on the field: CounterTests pays it.
+        BlockRegistry.OfKind(BlockKind.Cost).Where(b => b.Id is not ("cost.detach" or RemoveCounterCost.BlockId)).SelectMany(def =>
             new[] { def.CreateInstance() }
-                .Concat(def.Params.Where(p => p.Type == ParamType.Choice).SelectMany(p => p.Choices.Skip(1).Where(c => !(def.Id == "cost.move_cards" && c.Value == "extra"))
+                .Concat(def.Params.Where(p => p.Type == ParamType.Choice).SelectMany(p => Samples.OtherChoices(p).Where(c => !(def.Id == "cost.move_cards" && c.Value == "extra"))
                     .Select(c => def.CreateInstance().With(p.Key, c.Value))))
                 .Select(inst => new object[] { def.Id, string.Join(",", inst.Values.Select(kv => $"{kv.Key}={kv.Value}")) }));
 
@@ -507,7 +514,7 @@ public class EngineTests
         // A Trap activated from the hand has its own duel in UniqueEngineTests.
         BlockRegistry.OfKind(BlockKind.Passive).Where(b => b.Id != ActivateFromHandPassive.BlockId).SelectMany(def =>
             new[] { def.CreateInstance() }
-                .Concat(def.Params.Where(p => p.Type == ParamType.Choice).SelectMany(p => p.Choices.Skip(1).Select(c => def.CreateInstance().With(p.Key, c.Value))))
+                .Concat(def.Params.Where(p => p.Type == ParamType.Choice).SelectMany(p => Samples.OtherChoices(p).Select(c => def.CreateInstance().With(p.Key, c.Value))))
                 .Select(inst => new object[] { def.Id, string.Join(",", inst.Values.Select(kv => $"{kv.Key}={kv.Value}")) }));
 
     [EngineTheory]

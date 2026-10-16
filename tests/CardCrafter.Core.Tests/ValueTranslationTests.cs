@@ -148,14 +148,25 @@ public class ValueTranslationTests
     [EngineFact]
     public void AmountsThatWouldActDifferently_StayScript()
     {
-        if (Script(109401) is null || Script(82377606) is null || Script(14306092) is null) return;
-        // Dark Dimension Soldier inflicts its End Phase damage even when there is no Set card: the block can't be activated for 0.
-        var soldier = PieceWith(109401, Monster(100098020), "EVENT_PHASE+PHASE_END");
-        Assert.False(soldier.Translated);
-        Assert.Contains("amount is 0", soldier.Reason);
+        if (Script(82377606) is null) return;
         // Ally of Justice Unlimiter needs another target than itself, since it Tributes itself.
         Assert.False(PieceWith(82377606, Monster(100098021), "EFFECT_TYPE_IGNITION").Translated);
-        // Card.GetCounter(0) counts kinds of counters, not counters: "for each Shark Counter" isn't a value the blocks have.
-        Assert.False(PieceWith(14306092, Monster(100098022), "SetCode(EFFECT_UPDATE_ATTACK)").Translated);
+    }
+
+    [EngineFact]
+    public void DarkDimensionSoldier_WorksOutItsBurnWhenActivated_EvenIfItIs0()
+    {
+        if (Script(109401) is null) return;
+        // "During the End Phase: inflict 100 damage for each Set card": worked out in the target step (Duel.SetTargetParam),
+        // and activated even when there is none.
+        var card = Monster(100098020);
+        var effect = Effect(109401, card, LifeFromValueAction.BlockId);
+        var b = effect.Do.Single();
+        Assert.Equal(("resolve", "true", "count", "per", "100"), (b.Values["when"], b.Values["zero_ok"], b.Values["value"], b.Values["how"], b.Values["amount"]));
+        Assert.Contains("Inflict 100 damage to your opponent for each face-down card on the field.", EffectTextGenerator.Describe(effect, card));
+        new EngineScenario(Project(card, effect)).Card(card.Id, 0, "mzone").Card(Spell, 1, "szone", 2).Card(Warrior, 0, "deck", 4).Card(Warrior, 1, "deck", 4)
+            .Check("Duel.GetLP(1)==7800").AssertPasses();
+        new EngineScenario(Project(card, effect)).Card(card.Id, 0, "mzone").Card(Warrior, 0, "deck", 4).Card(Warrior, 1, "deck", 4)
+            .Check("Duel.GetLP(1)==8000").AssertPasses();
     }
 }

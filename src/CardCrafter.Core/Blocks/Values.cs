@@ -29,11 +29,12 @@ public static class ValueSources
         new("sum_atk", "the total ATK of these cards:", "total ATK of the cards picked below"),
         new("sum_def", "the total DEF of these cards:", "total DEF of the cards picked below"),
         new("sum_level", "the total Levels of these cards:", "total Levels of the cards picked below"),
+        new("sum_counters", "the number of counters on these cards:", "counters on the cards picked below"),
         new("its_level", "its Level"),
         new("its_rank", "its Rank"),
         new("its_link", "its Link Rating"),
         new("its_materials", "the number of materials attached to it"),
-        new("its_counters", "the number of counters on it"),
+        new("its_counters", "the number of counters on it", "the number of counters on it (pick which below)"),
         new("its_equips", "the number of Equip Cards equipped to it"),
         new("its_linked", "the number of monsters it points to"),
         new("its_used", "the number of materials used for its Summon"),
@@ -53,7 +54,10 @@ public static class ValueSources
         new("per", "x / for each (amount below)"),
     ];
 
-    public static bool UsesCards(string source) => source is "count" or "different_attr" or "different_race" or "different_name" or "sum_atk" or "sum_def" or "sum_level";
+    public static bool UsesCards(string source) => source is "count" or "different_attr" or "different_race" or "different_name" or "sum_atk" or "sum_def" or "sum_level" or "sum_counters";
+
+    /// <summary>Values that count counters, which say which counter.</summary>
+    public static bool UsesCounter(string source) => source is "its_counters" or "sum_counters";
 
     /// <summary>Values about the monster itself ("its Level", "materials attached to it").</summary>
     public static bool IsOwn(string source) => source.StartsWith("its_", StringComparison.Ordinal);
@@ -63,31 +67,33 @@ public static class ValueSources
     /// ATK, damage) read "ATK equal to its Level x 300" instead.
     /// </summary>
     public static bool IsCountable(string source) => source is "count" or "different_attr" or "different_race" or "different_name"
-        or "its_materials" or "its_counters" or "its_equips" or "its_linked" or "its_used";
+        or "its_materials" or "its_counters" or "its_equips" or "its_linked" or "its_used" or "sum_counters";
 
     /// <summary>"its" for "it", "this card's" for "this card".</summary>
     private static string Poss(string owner) => owner == "it" ? "its" : owner + "'s";
 
     /// <summary>The value's own words for "for each": "card in your hand", "material attached to it", "counter on it".</summary>
-    private static string Each(string source, CardFilter cards, CardPack? pack, string owner) => source switch
+    /// <param name="counter">The counter counted: "Spell Counter", or "counter" for any.</param>
+    private static string Each(string source, CardFilter cards, CardPack? pack, string owner, string counter) => source switch
     {
         "count" => CardCounts.Group(cards, pack, plural: false),
         "different_attr" => $"different Attribute among the {CardCounts.Group(cards, pack)}",
         "different_race" => $"different Type among the {CardCounts.Group(cards, pack)}",
         "different_name" => $"different card name among the {CardCounts.Group(cards, pack)}",
         "its_materials" => $"material attached to {owner}",
-        "its_counters" => $"counter on {owner}",
+        "its_counters" => $"{counter} on {owner}",
+        "sum_counters" => $"{counter} on {Counters.Where(cards, pack)}",
         "its_equips" => $"Equip Card equipped to {owner}",
         "its_linked" => $"monster {owner} points to",
         "its_used" => $"material used for {Poss(owner)} Summon",
-        _ => Of(source, cards, pack, owner),
+        _ => Of(source, cards, pack, owner, counter),
     };
 
     /// <summary>
     /// The value itself: "the number of cards in your hand", "the total ATK of monsters you control", "its Level".
     /// <paramref name="owner"/> is the monster "its" means: "it", or "this card" where nothing else is affected.
     /// </summary>
-    public static string Of(string source, CardFilter cards, CardPack? pack, string owner = "it") => source switch
+    public static string Of(string source, CardFilter cards, CardPack? pack, string owner = "it", string counter = "counter") => source switch
     {
         "count" => $"the number of {CardCounts.Group(cards, pack)}",
         "different_attr" => $"the number of different Attributes among the {CardCounts.Group(cards, pack)}",
@@ -100,7 +106,8 @@ public static class ValueSources
         "its_rank" => $"{Poss(owner)} Rank",
         "its_link" => $"{Poss(owner)} Link Rating",
         "its_materials" => $"the number of materials attached to {owner}",
-        "its_counters" => $"the number of counters on {owner}",
+        "its_counters" => $"the number of {counter}s on {owner}",
+        "sum_counters" => $"the number of {counter}s on {Counters.Where(cards, pack)}",
         "its_equips" => $"the number of Equip Cards equipped to {owner}",
         "its_linked" => $"the number of monsters {owner} points to",
         "its_used" => $"the number of materials used for {Poss(owner)} Summon",
@@ -114,7 +121,7 @@ public static class ValueSources
     public static bool ForEach(BlockArgs args) => args.Choice("how") == "per" && IsCountable(args.Choice("value"));
 
     /// <summary>"card in your hand", for "300 damage for each card in your hand".</summary>
-    public static string EachText(BlockArgs args, string owner = "it") => Each(args.Choice("value"), args.Cards(CardsKey), args.Pack, owner);
+    public static string EachText(BlockArgs args, string owner = "it") => Each(args.Choice("value"), args.Cards(CardsKey), args.Pack, owner, Counters.Name(args));
 
     /// <summary>
     /// "ATK equal to the difference between both players' LP", "300 ATK for each card in your hand", "ATK equal to half
@@ -123,7 +130,7 @@ public static class ValueSources
     /// </summary>
     public static string Phrase(BlockArgs args, string unit, string owner = "it", bool forEach = true)
     {
-        var of = Of(args.Choice("value"), args.Cards(CardsKey), args.Pack, owner);
+        var of = Of(args.Choice("value"), args.Cards(CardsKey), args.Pack, owner, Counters.Name(args));
         var n = args.Int("amount").ToString(CultureInfo.InvariantCulture);
         return args.Choice("how") switch
         {
@@ -135,23 +142,17 @@ public static class ValueSources
         };
     }
 
-    /// <summary>The Lua function that adds up every counter on a card: GetCounter(0) only says how many kinds it has.</summary>
-    public static string CounterTotal(ScriptBuilder script) => script.AddFunction("allcounters", "c",
-    [
-        "if c:GetCounter(0)==0 then return 0 end",
-        "local n=0",
-        "for t=1,0xff do n=n+c:GetCounter(t)+c:GetCounter(t|0x1000) end",
-        "return n",
-    ]);
-
     /// <summary>
     /// The Lua number: <paramref name="card"/> is the monster "its" means and <paramref name="p"/> the player "you" means.
     /// <paramref name="ev"/> is false inside a lasting effect, which has no event to take an amount from.
     /// </summary>
     /// <param name="valueKey">The parameter holding the source, and <paramref name="cardsKey"/> its card picker: blocks with two values use other names.</param>
-    public static string Lua(BlockContext ctx, string card, string p, bool ev = true, string valueKey = "value", string cardsKey = CardsKey, string howKey = "how", string amountKey = "amount")
+    /// <param name="counterSuffix">Tells the second value's counter blanks apart.</param>
+    public static string Lua(BlockContext ctx, string card, string p, bool ev = true, string valueKey = "value", string cardsKey = CardsKey, string howKey = "how", string amountKey = "amount",
+        string counterSuffix = "")
     {
         var source = ctx.Args.Choice(valueKey);
+        var counter = Counters.Id(ctx.Args, counterSuffix);
         string Group()
         {
             var f = ctx.Script.Filter(ctx.Args.Cards(cardsKey));
@@ -171,11 +172,12 @@ public static class ValueSources
             "sum_atk" => $"{Group()}:GetSum(Card.GetAttack)",
             "sum_def" => $"{Group()}:GetSum(Card.GetDefense)",
             "sum_level" => $"{Group()}:GetSum(Card.GetLevel)",
+            "sum_counters" => Counters.SumOf(ctx.Script, Group(), counter),
             "its_level" => $"{card}:GetLevel()",
             "its_rank" => $"{card}:GetRank()",
             "its_link" => $"{card}:GetLink()",
             "its_materials" => $"{card}:GetOverlayCount()",
-            "its_counters" => $"{CounterTotal(ctx.Script)}({card})",
+            "its_counters" => Counters.On(ctx.Script, card, counter),
             "its_equips" => $"{card}:GetEquipCount()",
             "its_linked" => $"{card}:GetLinkedGroupCount()",
             "its_used" => $"{card}:GetMaterialCount()",
@@ -209,6 +211,8 @@ public static class ValueSources
         ParamSpec.Choice("value", "Of", withEvent ? Sources : Sources.Where(o => o.Value != "event").ToArray()),
         ParamSpec.Cards(CardsKey, "Which cards (for counts and totals)", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Hand })
             .ShowIf(b => UsesCards(b.Values.GetValueOrDefault("value", "lp_diff"))),
+        // Saved before counters had a kind, "the number of counters on it" is every counter: "any" is the default.
+        .. Counters.Params(withAny: true, b => UsesCounter(b.Values.GetValueOrDefault("value", "lp_diff"))),
     ];
 
     /// <summary>The engine codes for gaining, losing or becoming a stat.</summary>
@@ -279,7 +283,7 @@ public sealed class StatsFromValuePassive : PassiveBlock
     public override string Id => BlockId;
     public override string Group => "Monsters";
     public override string Name => "Gains ATK/DEF/Level equal to a live value (LP difference, cards, materials...)";
-    public override string Sentence => "{cards} {dir} {stat} {how} {amount} {value} {of}";
+    public override string Sentence => "{cards} {dir} {stat} {how} {amount} {value} {counter} {counter_id} {of}";
     public override string Help => "The amount changes as the game does: LP, cards counted by the picker, the monster's own Level or materials, damage taken this turn...";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
@@ -337,7 +341,7 @@ public sealed class StatsFromValueAction : CardGroupAction
     public override string Id => BlockId;
     public override string Group => "Monsters";
     public override string Name => "Monsters gain ATK/DEF/Level equal to a value (LP difference, cards, its Level...)";
-    public override string Sentence => "{count} {cards} {target} {dir} {stat} {how} {amount} {value} {of} {duration}";
+    public override string Sentence => "{count} {cards} {target} {dir} {stat} {how} {amount} {value} {counter} {counter_id} {of} {duration}";
     protected override string Category => "CATEGORY_ATKCHANGE";
     protected override string Hint => "HINTMSG_FACEUP";
     protected override string TargetedWording => "{0}";
@@ -355,6 +359,7 @@ public sealed class StatsFromValueAction : CardGroupAction
         ParamSpec.Choice("stat", "Stat", ValueSources.Stats),
         .. ValueSources.Params(),
         ParamSpec.Choice("duration", "Until", Resets.Duration),
+        KeptParam,
     ];
 
     private static string Tail(BlockArgs args) => args.Describe("duration") is { Length: > 0 } d ? " " + d : "";
@@ -362,7 +367,7 @@ public sealed class StatsFromValueAction : CardGroupAction
     public override string Describe(BlockArgs args)
     {
         if (args.IsThisCard) return ValueSources.Sentence(args, "this card", false) + Tail(args);
-        var all = Param("mode") is not null && args.Choice("mode") == "all";
+        var all = args.CountMode == "all";
         var subject = all ? $"all {args.Describe("cards")}" : Some(args);
         // "each face-up monster you control gains ATK equal to its Level", "each of 2 face-up monsters you control ...".
         var each = all
@@ -395,6 +400,7 @@ public sealed class StatsFromValueAction : CardGroupAction
         {
             lines.Add("\t\tlocal se=Effect.CreateEffect(e:GetHandler())");
             lines.Add("\t\tse:SetType(EFFECT_TYPE_SINGLE)");
+            lines.AddRange(KeptLines(ctx, "se", "\t\t"));
             lines.Add($"\t\tse:SetCode({code})");
             lines.Add($"\t\tse:SetValue({(lose ? "-v" : "v")})");
             lines.Add($"\t\tse:SetReset({reset})");
@@ -406,19 +412,26 @@ public sealed class StatsFromValueAction : CardGroupAction
     }
 }
 
-/// <summary>"Inflict damage to your opponent equal to the number of cards in their hand x 300", "gain LP equal to the difference in LP".</summary>
+/// <summary>
+/// "Inflict damage to your opponent equal to the number of cards in their hand x 300", "gain LP equal to the difference in
+/// LP". The amount is worked out when the effect resolves, or when it is activated (as Dark Dimension Soldier's is); it
+/// can be activated only when the amount is above 0, unless it may be 0.
+/// </summary>
 public sealed class LifeFromValueAction : ActionBlock
 {
     public const string BlockId = "do.lp_value";
     public override string Id => BlockId;
     public override string Group => "Life Points";
     public override string Name => "Inflict damage / gain LP equal to a value (cards, LP, ATK...)";
-    public override string Sentence => "{what} {who} {how} {amount} {value} {of}";
+    public override string Sentence => "{what} {who} {how} {amount} {value} {counter} {counter_id} {of} {when}";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Choice("what", "Do", new("damage", "Inflict damage to"), new("gain", "Gain LP:")),
         ParamSpec.Choice("who", "Who", new("opponent", "your opponent"), new("you", "you"), new("both", "both players")),
         .. ValueSources.Params(),
+        // Saved before these were offered: worked out when it resolves, and only activated when above 0.
+        ParamSpec.Choice("when", "Amount worked out", new("resolve", "", "when it resolves"), new("activate", "", "when it is activated")),
+        ParamSpec.Flag("zero_ok", "can be activated even if the amount is 0", false),
     ];
 
     public override string Describe(BlockArgs args)
@@ -458,9 +471,17 @@ public sealed class LifeFromValueAction : ActionBlock
         ctx.Effect.TargetLines.Add($"Duel.SetOperationInfo(0,{(damage ? "CATEGORY_DAMAGE" : "CATEGORY_RECOVER")},nil,0,{info},0)");
         var value = ValueSources.Lua(ctx, "e:GetHandler()", "tp");
         // Nothing to do when the amount is 0 ("for each card in your hand" with an empty hand).
-        if (ctx.Args.Choice("value") != "event") ctx.Effect.TargetChecks.Add($"{value}>0");
+        if (ctx.Args.Choice("value") != "event" && !ctx.Args.Bool("zero_ok")) ctx.Effect.TargetChecks.Add($"{value}>0");
         var r = ctx.Effect.NewLocal("r");
         var lv = ctx.Effect.NewLocal("lv");
+        if (ctx.Args.Choice("when") == "activate")
+        {
+            // Kept with the chain link, as official cards do (Duel.SetTargetParam), so it is the same when it resolves.
+            if (ctx.Effect.TargetLines.Any(l => l.StartsWith("Duel.SetTargetParam(", StringComparison.Ordinal)))
+                ctx.Effect.Error($"\"{Name}\": only one block of an effect can work out its amount when the effect is activated.");
+            ctx.Effect.TargetLines.Add($"Duel.SetTargetParam({value})");
+            value = "Duel.GetChainInfo(0,CHAININFO_TARGET_PARAM)";
+        }
         var body = new List<string> { $"local {r}=0", $"local {lv}={value}", $"if {lv}>0 then" };
         // Both players at the same time, as official cards do it: a step for each, then both together.
         var step = players.Length > 1 ? ",true" : "";

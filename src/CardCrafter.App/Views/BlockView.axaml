@@ -29,6 +29,9 @@
               <NumericUpDown Classes="inline" Value="{Binding Value}" Minimum="{Binding Minimum}" Maximum="{Binding Maximum}"
                              Increment="{Binding Increment}" FormatString="0" Width="{Binding Width}" ShowButtonSpinner="False" ToolTip.Tip="{Binding Label}" IsVisible="{Binding IsShown}" />
             </DataTemplate>
+            <DataTemplate DataType="vm:HexSegmentViewModel">
+              <TextBox Classes="inline" Text="{Binding Text}" Width="72" Watermark="0x1" ToolTip.Tip="{Binding Label}" IsVisible="{Binding IsShown}" />
+            </DataTemplate>
             <DataTemplate DataType="vm:ChoiceSegmentViewModel">
               <ComboBox Classes="inline" ItemsSource="{Binding Choices}" SelectedItem="{Binding Selected}" ToolTip.Tip="{Binding Label}" IsVisible="{Binding IsShown}">
                 <ComboBox.ItemTemplate>

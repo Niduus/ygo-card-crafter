@@ -366,11 +366,14 @@ public sealed class SetAttackAction : CardGroupAction
     protected override IReadOnlyList<ParamSpec> BuildParams() =>
     [
         ParamSpec.Int("count", "How many", 1, 1, 10),
+        // Saved before "all" was offered: no count mode is "exactly".
+        CountModeParam,
         ParamSpec.Cards("cards", "Which monsters", DefaultCards, Zone.MonsterZone, thisCard: true),
         ParamSpec.Flag("target", "(targeting)", true),
         ParamSpec.Choice("mode", "Becomes", new("half", "half its current ATK"), new("zero", "0"), new("value", "", "a number:")),
         ParamSpec.Int("amount", "Number (for \"a number\")", 0, 0, 99999),
         ParamSpec.Choice("duration", "Until", Resets.Duration),
+        KeptParam,
     ];
 
     private static string Becomes(BlockArgs args) => args.Choice("mode") switch
@@ -404,7 +407,7 @@ public sealed class SetAttackAction : CardGroupAction
         var fn = ctx.Script.AddFunction("setatk", "g,e",
         [
             "local n=0", "local tc=g:GetFirst()", "while tc do", "\tif tc:IsFaceup() then",
-            "\t\tlocal e1=Effect.CreateEffect(e:GetHandler())", "\t\te1:SetType(EFFECT_TYPE_SINGLE)", "\t\te1:SetCode(EFFECT_SET_ATTACK_FINAL)",
+            "\t\tlocal e1=Effect.CreateEffect(e:GetHandler())", "\t\te1:SetType(EFFECT_TYPE_SINGLE)", .. KeptLines(ctx, "e1", "\t\t"), "\t\te1:SetCode(EFFECT_SET_ATTACK_FINAL)",
             $"\t\te1:SetValue({value})", $"\t\te1:SetReset({Resets.Of(ctx)})", "\t\ttc:RegisterEffect(e1)", "\t\tn=n+1",
             "\tend", "\ttc=g:GetNext()", "end", "return n",
         ]);
@@ -427,11 +430,14 @@ public sealed class ChangeLevelAction : CardGroupAction
     protected override IReadOnlyList<ParamSpec> BuildParams() =>
     [
         ParamSpec.Int("count", "How many", 1, 1, 10),
+        // Saved before "all" was offered: no count mode is "exactly".
+        CountModeParam,
         ParamSpec.Cards("cards", "Which monsters", DefaultCards, Zone.MonsterZone, thisCard: true),
         ParamSpec.Flag("target", "(targeting)", true),
         ParamSpec.Choice("mode", "Level", new("becomes", "becomes"), new("up", "increases by"), new("down", "decreases by")),
         ParamSpec.Int("amount", "Amount", 1, 1, 12),
         ParamSpec.Choice("duration", "Until", Resets.Duration),
+        KeptParam,
     ];
 
     private static string Change(BlockArgs args, bool single) => args.Choice("mode") switch
@@ -444,8 +450,10 @@ public sealed class ChangeLevelAction : CardGroupAction
     public override string Describe(BlockArgs args)
     {
         if (args.IsThisCard) return $"this card's {Change(args, true)} {args.Describe("duration")}".TrimEnd();
-        var n = args.Int("count");
-        return ($"the {Change(args, n == 1)} of {n} {args.Describe("cards")} {args.Describe("duration")}".TrimEnd() + args.ExceptText())
+        // "the Level of 1 monster becomes 4", "the Levels of all face-up monsters you control increase by 1".
+        var change = Change(args, One(args));
+        var noun = change.IndexOf(' ');
+        return ($"the {change[..noun]} of {Some(args)} {change[(noun + 1)..]} {args.Describe("duration")}".TrimEnd() + args.ExceptText())
             .Replace("the Level becomes", "the Level becomes", StringComparison.Ordinal);
     }
 
@@ -466,7 +474,7 @@ public sealed class ChangeLevelAction : CardGroupAction
         var fn = ctx.Script.AddFunction("changelv", "g,e",
         [
             "local n=0", "local tc=g:GetFirst()", "while tc do", "\tif tc:IsFaceup() then",
-            "\t\tlocal e1=Effect.CreateEffect(e:GetHandler())", "\t\te1:SetType(EFFECT_TYPE_SINGLE)", $"\t\te1:SetCode({code})",
+            "\t\tlocal e1=Effect.CreateEffect(e:GetHandler())", "\t\te1:SetType(EFFECT_TYPE_SINGLE)", .. KeptLines(ctx, "e1", "\t\t"), $"\t\te1:SetCode({code})",
             $"\t\te1:SetValue({value})", $"\t\te1:SetReset({Resets.Of(ctx)})", "\t\ttc:RegisterEffect(e1)", "\t\tn=n+1",
             "\tend", "\ttc=g:GetNext()", "end", "return n",
         ]);
@@ -530,6 +538,8 @@ public sealed class BattleRuleAction : CardGroupAction
     protected override IReadOnlyList<ParamSpec> BuildParams() =>
     [
         ParamSpec.Int("count", "How many", 1, 1, 10),
+        // Saved before "all" was offered: no mode is "exactly".
+        ModeParam,
         ParamSpec.Cards("cards", "Which monsters", DefaultCards, Zone.MonsterZone, thisCard: true),
         ParamSpec.Flag("target", "(targeting)", true),
         ParamSpec.Choice("rule", "What",
@@ -538,6 +548,7 @@ public sealed class BattleRuleAction : CardGroupAction
             new("twice", "can make a second attack during each Battle Phase"),
             new("pierce", "inflicts piercing battle damage"),
             new("cannot_be_targeted", "cannot be targeted by your opponent's card effects")),
+        KeptParam,
     ];
 
     private static (string Code, string Value) Rule(string rule) => rule switch
@@ -571,7 +582,7 @@ public sealed class BattleRuleAction : CardGroupAction
         var fn = ctx.Script.AddFunction("battlerule", "g,e",
         [
             "local n=0", "local tc=g:GetFirst()", "while tc do", "\tif tc:IsFaceup() then",
-            "\t\tlocal e1=Effect.CreateEffect(e:GetHandler())", "\t\te1:SetType(EFFECT_TYPE_SINGLE)", $"\t\te1:SetCode({code})",
+            "\t\tlocal e1=Effect.CreateEffect(e:GetHandler())", "\t\te1:SetType(EFFECT_TYPE_SINGLE)", .. KeptLines(ctx, "e1", "\t\t"), $"\t\te1:SetCode({code})",
             $"\t\te1:SetValue({value})", $"\t\te1:SetReset({Resets.EndOfTurn})", "\t\ttc:RegisterEffect(e1)", "\t\tn=n+1",
             "\tend", "\ttc=g:GetNext()", "end", "return n",
         ]);

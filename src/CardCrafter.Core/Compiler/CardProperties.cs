@@ -79,6 +79,8 @@ public static class CardProperties
         new("equips", "Equip Cards equipped to it", PropertyKind.Number, "GetEquipCount()", "Equip Cards equipped to it", Guard: "c:IsType(TYPE_MONSTER)"),
         new("linked", "Monsters it points to (Link)", PropertyKind.Number, "GetLinkedGroupCount()", "monsters it points to", Guard: "c:IsType(TYPE_LINK)"),
         new("attacks", "Attacks it declared this turn", PropertyKind.Number, "GetAttackAnnouncedCount()", "attacks it declared this turn", Guard: "c:IsType(TYPE_MONSTER)"),
+        // Values holds the counter's id (none for any counter): see CounterOf.
+        new(CounterCount, "Counters on it (how many, of which kind)", PropertyKind.Number, "", "counters"),
         // ---- choices
         new("attribute", "Attribute", PropertyKind.Flags, "c:IsAttribute({0})", "Attribute", Choices: Attributes(), IsText: "that is {0}", IsNotText: "that is not {0}"),
         new("orig_attribute", "Original Attribute", PropertyKind.Flags, "c:GetOriginalAttribute()&{0}~=0", "original Attribute", Choices: Attributes(),
@@ -133,6 +135,12 @@ public static class CardProperties
 
     public static CardProperty? Find(string key) => All.FirstOrDefault(p => p.Key == key);
 
+    /// <summary>"Counters on it": a number whose <see cref="CardRequirement.Values"/> holds the counter's id.</summary>
+    public const string CounterCount = "counter_count";
+
+    /// <summary>The counter a "counters on it" requirement counts, or null for every counter.</summary>
+    public static int? CounterOf(CardRequirement r) => r.Values.FirstOrDefault() is var id and > 0 ? (int)id : null;
+
     public static string OpLabel(RequirementOp op) => op switch
     {
         RequirementOp.Equal => "is exactly",
@@ -160,7 +168,7 @@ public static class CardProperties
         {
             case PropertyKind.Number:
             {
-                var v = $"c:{p.Lua}";
+                var v = p.Key == CounterCount ? Blocks.Counters.Inline("c", CounterOf(r)) : $"c:{p.Lua}";
                 string N(int n) => n.ToString(CultureInfo.InvariantCulture);
                 var (lo, hi) = (Math.Min(r.Value, r.Value2), Math.Max(r.Value, r.Value2));
                 test = r.Op switch
@@ -313,6 +321,7 @@ public static class CardProperties
             "equips" => ("equipped with {0}", "that is not equipped with exactly {0}", "Equip Card", "Equip Cards"),
             "linked" => ("that points to {0}", "that does not point to exactly {0}", "monster", "monsters"),
             "attacks" => ("that declared {0} this turn", "that did not declare exactly {0} this turn", "attack", "attacks"),
+            CounterCount => ("with {0} on it", "that does not have exactly {0} on it", Blocks.Counters.Name(CounterOf(r)), Blocks.Counters.Name(CounterOf(r)) + "s"),
             _ => ("with {0}", "that does not have exactly {0}", p.Noun, p.Noun),
         };
         string Count(string n) => n == "1" ? $"1 {one}" : $"{n} {many}";

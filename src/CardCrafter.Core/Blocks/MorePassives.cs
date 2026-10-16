@@ -478,7 +478,7 @@ public sealed class SelfStatsPerCardPassive : PassiveBlock
     public override string Id => "passive.self_stats_per";
     public override string Group => "This card";
     public override string Name => "This card gains ATK/DEF for each card";
-    public override string Sentence => "This card {dir} {amount} {stat} for each {per} {cards}";
+    public override string Sentence => "This card {dir} {amount} {stat} for each {per} {counter} {counter_id} {cards}";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Choice("dir", "Gains/loses", new("gain", "gains"), new("lose", "loses")),
@@ -489,7 +489,9 @@ public sealed class SelfStatsPerCardPassive : PassiveBlock
             new("materials", "material attached to it", "material attached to it (Xyz)"),
             new("level", "Level it has", "of its Levels (Level x amount)"),
             new("linked", "monster it points to", "monster it points to (Link)"),
-            new("counters", "counter on it", "counter on it")),
+            new("counters", "counter on it", "counter on it (pick which below)")),
+        // Saved before counters had a kind, "for each counter on it" is every counter: "any" is the default.
+        .. Counters.Params(withAny: true, b => b.Values.GetValueOrDefault("per") == "counters"),
         ParamSpec.Cards("cards", "For each card (when \"card picked below\")", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Graveyard, CardType = FilterCardType.Monster }),
     ];
 
@@ -501,7 +503,7 @@ public sealed class SelfStatsPerCardPassive : PassiveBlock
             "materials" => $"{head} for each material attached to it",
             "level" => $"{head} for each of its Levels",
             "linked" => $"{head} for each monster it points to",
-            "counters" => $"{head} for each counter on it",
+            "counters" => $"{head} for each {Counters.Name(args)} on it",
             _ => $"{head} for each {Text.FilterText.Describe(args.Cards("cards"), args.Pack, preposition: "in", ownName: args.CardName)}",
         };
     }
@@ -517,7 +519,11 @@ public sealed class SelfStatsPerCardPassive : PassiveBlock
             case "level": count = "c:GetLevel()"; break;
             case "linked": count = "c:GetLinkedGroupCount()"; break;
             // GetCounter(0) is how many kinds of counter there are, not how many counters.
-            case "counters": count = $"{ValueSources.CounterTotal(ctx.Script)}(c)"; break;
+            case "counters":
+                count = Counters.On(ctx.Script, "c", Counters.Id(ctx.Args));
+                // A card that gains ATK for its own counters can hold them.
+                if (Counters.Id(ctx.Args) is { } id) Counters.Permit(ctx, id);
+                break;
             default:
                 var f = ctx.Script.Filter(ctx.Args.Cards("cards"));
                 count = $"Duel.GetMatchingGroupCount({f.Function},e:GetHandlerPlayer(),{f.Self},{f.Opp},{(f.Exclude == "nil" ? "nil" : "e:GetHandler()")},e,e:GetHandlerPlayer())";

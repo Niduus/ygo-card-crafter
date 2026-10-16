@@ -13,6 +13,22 @@ public abstract class ActionBlock : BlockDefinition
     public static ParamSpec ModeParam => ParamSpec.Choice("mode", "Exactly / up to / all",
         new("exact", "", "exactly"), new("up_to", "up to"), new("all", "all"));
 
+    /// <summary>
+    /// For effects given to monsters that may include this card: whether this card keeps what it gave itself while its
+    /// effects are negated (EFFECT_FLAG_CANNOT_DISABLE), as many official cards' "all monsters you control gain ..." do.
+    /// </summary>
+    public static ParamSpec KeptParam => ParamSpec.Flag("kept", "this card keeps it even if its effects are negated", false)
+        .ShowIf(b => !(b.Filters.TryGetValue("cards", out var f) && f.ThisCard));
+
+    /// <summary>"e1:SetProperty(EFFECT_FLAG_CANNOT_DISABLE)" when the block's "kept" is ticked, else nothing.</summary>
+    protected static IEnumerable<string> KeptLines(BlockContext ctx, string v, string indent) =>
+        ctx.Args.Definition.Param("kept") is not null && ctx.Args.Bool("kept") && !ctx.Args.Cards("cards").ThisCard
+            ? [$"{indent}{v}:SetProperty(EFFECT_FLAG_CANNOT_DISABLE)"] : [];
+
+    /// <summary>The same, for blocks whose "mode" says something else ("Level becomes / increases by").</summary>
+    public static ParamSpec CountModeParam => ParamSpec.Choice("count_mode", "Exactly / up to / all",
+        new("exact", "", "exactly"), new("up_to", "up to"), new("all", "all"));
+
     /// <summary>"for each of those cards": an amount multiplied by how many cards the cost or the action before used.</summary>
     public static ParamSpec PerParam => ParamSpec.Choice("per", "For each",
         new("once", "", "(once)"),
@@ -97,7 +113,7 @@ public abstract class CardGroupAction : ActionBlock
     public override (string Target, string Action)? DescribeTargeting(BlockArgs args)
     {
         if (Param("target") is null || !args.Bool("target")) return null;
-        var single = !args.IsPlural && !(Param("mode") is not null && args.Choice("mode") == "up_to" && args.Int("count") > 1);
+        var single = !args.IsPlural && !(args.CountMode == "up_to" && args.Int("count") > 1);
         var target = $"target {args.Describe("count")} {args.Describe("cards")}{args.ExceptText()}";
         return (target, TargetedAction(args, single ? "it" : "them", single));
     }
@@ -116,12 +132,12 @@ public abstract class CardGroupAction : ActionBlock
     /// <summary>Whether the card picker offers "This card itself" (move, destroy or Summon this exact card).</summary>
     protected virtual bool AllowsThisCard => false;
 
-    /// <summary>"this card", or "2 Dragon monsters": the cards the action is about, for its sentence.</summary>
+    /// <summary>"this card", "2 Dragon monsters", "up to 2 ...", "all ...": the cards the action is about, for its sentence.</summary>
     protected static string Some(BlockArgs args) =>
-        args.IsThisCard ? "this card" : $"{args.Int("count")} {args.Describe("cards")}";
+        args.IsThisCard ? "this card" : $"{args.Describe("count")} {args.Describe("cards")}";
 
-    /// <summary>One card: this card, or a count of 1.</summary>
-    protected static bool One(BlockArgs args) => args.IsThisCard || args.Int("count") == 1;
+    /// <summary>One card: this card, or a count of 1 (not "all").</summary>
+    protected static bool One(BlockArgs args) => args.IsThisCard || args.Int("count") == 1 && !args.IsPlural;
 
     /// <summary>Whether "all" makes sense (it doesn't for Special Summons, which need a free zone for each card).</summary>
     protected virtual bool AllowsAll => true;
@@ -134,7 +150,7 @@ public abstract class CardGroupAction : ActionBlock
         ParamSpec.Flag("target", "(targeting)", false),
     ];
 
-    private string Mode(BlockContext ctx) => Param("mode") is null ? "exact" : ctx.Args.Choice("mode");
+    private static string Mode(BlockContext ctx) => ctx.Args.CountMode;
 
     /// <summary>The action on this card itself: wherever the effect is used from, only if it is still there.</summary>
     private void CompileThisCard(BlockContext ctx)

@@ -286,12 +286,15 @@ public sealed class ChangeStatsAction : CardGroupAction
     protected override IReadOnlyList<ParamSpec> BuildParams() =>
     [
         ParamSpec.Int("count", "How many", 1, 1, 10),
+        // Saved before "all" was offered: no mode is "exactly".
+        ModeParam,
         ParamSpec.Cards("cards", "Which monsters", DefaultCards, Zone.MonsterZone, thisCard: true),
         ParamSpec.Flag("target", "(targeting)", false),
         ParamSpec.Choice("dir", "Gain/lose", new("gain", "gain(s)"), new("lose", "lose(s)")),
         ParamSpec.Int("amount", "Amount", 500, 1, 99999),
         ParamSpec.Choice("stat", "Stat", new("atk", "ATK"), new("def", "DEF"), new("both", "ATK/DEF")),
         ParamSpec.Choice("duration", "Until", new("turn", "until the end of this turn"), new("always", "", "while face-up")),
+        KeptParam,
     ];
 
     public override string Describe(BlockArgs args)
@@ -299,6 +302,7 @@ public sealed class ChangeStatsAction : CardGroupAction
         var one = One(args);
         var verb = args.Choice("dir") == "gain" ? (one ? "gains" : "gain") : (one ? "loses" : "lose");
         var tail = $"{verb} {args.Int("amount")} {args.Describe("stat")} {args.Describe("duration")}".TrimEnd();
+        // "all face-up monsters you control gain 500 ATK".
         return $"{Some(args)} {tail}{args.ExceptText()}";
     }
 
@@ -327,6 +331,7 @@ public sealed class ChangeStatsAction : CardGroupAction
         {
             body.Add($"\t\tlocal e{i + 1}=Effect.CreateEffect(c)");
             body.Add($"\t\te{i + 1}:SetType(EFFECT_TYPE_SINGLE)");
+            body.AddRange(KeptLines(ctx, $"e{i + 1}", "\t\t"));
             body.Add($"\t\te{i + 1}:SetCode({code})");
             body.Add($"\t\te{i + 1}:SetValue({amount.ToString(CultureInfo.InvariantCulture)})");
             body.Add($"\t\te{i + 1}:SetReset({reset})");

@@ -80,6 +80,7 @@ public static partial class ScriptTranslator
                 result.Pieces.Add(new TranslatedPiece { Piece = piece, Reason = ex.Message });
             }
         }
+        CounterPermits(result);
         // One WHEN block per event, as the editor offers them.
         foreach (var e in result.Pieces.SelectMany(p => p.Effects)) TriggerSplit.Normalize(e);
         return result;
@@ -410,6 +411,8 @@ public static partial class ScriptTranslator
             }
         }
 
+        // "Each time a Spell Card is activated, place 1 Spell Counter on this card when that Spell resolves."
+        if (CounterAccumulator(piece, effect, type, code, set, range, props, fns) is { } accumulator) return accumulator;
         // Lasting effects: no activation at all.
         if (!type.Overlaps(["EFFECT_TYPE_ACTIVATE", "EFFECT_TYPE_IGNITION", "EFFECT_TYPE_QUICK_O", "EFFECT_TYPE_QUICK_F", "EFFECT_TYPE_TRIGGER_O", "EFFECT_TYPE_TRIGGER_F", "EFFECT_TYPE_FLIP"]))
             return new TranslatedPiece { Piece = piece, Effect = Passive(effect, type, code, set, range, props, fns, card, merge) };
@@ -443,6 +446,7 @@ public static partial class ScriptTranslator
         if (!set.TryGetValue("Operation", out var op)) throw No("it has no operation");
         effect.Do.AddRange(Operation(op, fns, targeting, card));
         if (effect.Do.Count == 0) throw No("its operation does nothing the blocks recognise");
+        CounterActivationChecks(effect, targeting, type);
         // Value blocks: the activation must ask what the blocks ask, or IF blocks say the rest.
         if (effect.Do.Any(b => b.BlockId is StatsFromValueAction.BlockId or LifeFromValueAction.BlockId))
             effect.If.AddRange(ValueActivationChecks(effect, targeting, tg is not null, fns));
@@ -488,6 +492,7 @@ public static partial class ScriptTranslator
         if ((line == "aux.EnableDualAttribute(c)" && card.Abilities.HasFlag(MonsterAbility.Gemini))
             || (line == "aux.EnableSpiritReturn(c,EVENT_SUMMON_SUCCESS,EVENT_FLIP)" && card.Abilities.HasFlag(MonsterAbility.Spirit)))
             return new TranslatedPiece { Piece = null!, Ignored = true };
+        if (CounterPermit(line) is { } permit) return permit;
         // The counter behind "the turn you activate this" locks: the lock block writes its own.
         if (Regex.IsMatch(line, @"^Duel\.AddCustomActivityCounter\((?:id|\d+),ACTIVITY_(?:SPSUMMON|CHAIN|ATTACK),[\w.]+\)$"))
             return new TranslatedPiece { Piece = null!, Ignored = true };
@@ -1213,6 +1218,7 @@ public static partial class ScriptTranslator
     {
         Match m;
         if (body.StartsWith("return ", StringComparison.Ordinal) && AllAreCheck(body[7..], fns) is { } allAre) return [allAre];
+        if (CounterCondition(body, fns) is { } counterIf) return [counterIf];
         // "If you control more monsters than your opponent does" and other counts compared.
         if ((m = Regex.Match(body, @"^return Duel\.GetFieldGroupCount\(tp,([\w+]+),([\w+]+)\)(<=|>=|==|<|>)Duel\.GetFieldGroupCount\(tp,([\w+]+),([\w+]+)\)$")).Success)
         {
@@ -1457,6 +1463,7 @@ public static partial class ScriptTranslator
                 filter.Zones = Model.Zone.Hand;
                 blocks.Add(Block("cost.discard").With("count", Int(m.Groups[2].Value)).With("cards", filter));
             }
+            else if (CounterCost(line) is { } counterCost) blocks.Add(counterCost);
             else throw No($"its cost does something the blocks don't ({Short(line)})");
         }
         if (picked is not null) throw No("its cost picks cards and does something the blocks don't with them");
@@ -1478,8 +1485,9 @@ public static partial class ScriptTranslator
         public int? Param { get; set; }
         /// <summary>Duel.SetTargetParam(ev): the amount of damage or LP that started the effect.</summary>
         public bool ParamEvent { get; set; }
-        /// <summary>Duel.SetTargetParam(ct*300): an amount worked out at activation.</summary>
-        public bool ParamDynamic { get; set; }
+        /// <summary>Duel.SetTargetParam(ct*300): an amount worked out at activation, and what it is.</summary>
+        public bool ParamDynamic => ParamLive is not null;
+        public LiveValue? ParamLive { get; set; }
         /// <summary>What "if chk==0 then return ... end" asks before the effect can be activated, with its locals in place.</summary>
         public string? Check { get; set; }
         /// <summary>The check when it is written over lines of its own, which only the value blocks read.</summary>
@@ -1679,7 +1687,7 @@ public static partial class ScriptTranslator
             {
                 var param = Squash(Substitute(tpm.Groups[1].Value, values.Locals));
                 if (param == "ev") { info.ParamEvent = true; continue; }
-                if (OperationValue(param, "c", values) is not null) { info.ParamDynamic = true; continue; }
+                if (OperationValue(param, "c", values) is { } snapshot) { info.ParamLive = snapshot; continue; }
             }
             if (Regex.Match(line, @"^if (\w+)(?:>0|~=0) then$") is { Success: true } zm && values.Locals.Any(l => l.Key == zm.Groups[1].Value)) continue;
             if (line.Length == 0 || line.StartsWith("if chkc then", StringComparison.Ordinal) || line.StartsWith("if chk==0 then", StringComparison.Ordinal)
@@ -1703,6 +1711,7 @@ public static partial class ScriptTranslator
                 info.Filter.ExcludeThisCard = m.Groups[5].Value != "nil";
                 info.Count = Int(m.Groups[4].Value);
             }
+            else if (CounterTarget(line, info)) { }
             else throw No($"its target step does something the blocks don't ({Short(line)})");
         }
         return info;
@@ -2213,6 +2222,13 @@ public static partial class ScriptTranslator
                 || IsGuard(line))
                 continue;
             Match m;
+            // "Each face-up monster you control gains 500 ATK": a loop over every card of a group.
+            if (GroupLoop(body, index, groups, temps) is { } loop)
+            {
+                if (loop.Block is { } each) { blocks.Add(Add(each.Linked(link))); link = ActionLink.And; }
+                index = loop.End;
+                continue;
+            }
             if (line == "local tc=Duel.GetFirstTarget()" && target.Filter is not null) { targetCard = true; continue; }
             if (line == "local ft=Duel.GetLocationCount(tp,LOCATION_MZONE)") { ftCap = 5; continue; }
             if (ftCap is not null && Regex.IsMatch(line, @"^if (?:ft>1 and )?Duel\.IsPlayerAffectedByEffect\(tp,59822133\) then ft=1 end$")) continue;
@@ -2424,6 +2440,7 @@ public static partial class ScriptTranslator
         };
         int Amount(string d) => d == "d" ? target.Param ?? throw No("its amount is unclear")
             : Regex.IsMatch(d, @"^\d+$") ? Int(d) : throw No($"its amount comes from the duel ({d})");
+        if (CounterAction(line, target, targetCard) is { } counter) return counter;
 
         // "inflict 300 damage for each card in your opponent's hand": an amount worked out when it resolves.
         if ((m = Regex.Match(line, @"^Duel\.(Damage|Recover)\((\w+|1-tp),(.+),REASON_EFFECT\)$")).Success && !Regex.IsMatch(m.Groups[3].Value, @"^(?:\d+|CCEQ_\w+)$")
@@ -2588,6 +2605,7 @@ public static partial class ScriptTranslator
                                                                           && PerCard(value, fns) is { } per:
                     var perBlock = Block("passive.self_stats_per").With("dir", per.Amount < 0 ? "lose" : "gain").With("amount", Math.Abs(per.Amount))
                         .With("stat", code == "EFFECT_UPDATE_ATTACK" ? "atk" : "def").With("per", per.Per);
+                    if (per.Counter is { } perCounter) perBlock.WithCounter(perCounter);
                     effect.Do.Add(per.Filter is null ? perBlock : perBlock.With("cards", per.Filter));
                     return effect;
                 case "EFFECT_UPDATE_ATTACK" or "EFFECT_UPDATE_DEFENSE" when value is not null && Regex.IsMatch(value, @"^-?\d+$") && range is not null:
@@ -2784,16 +2802,18 @@ public static partial class ScriptTranslator
     }
 
     /// <summary>"300 for each Dragon monster in your GY": a value function that counts cards, times an amount.</summary>
-    private static (CardFilter? Filter, string Per, int Amount)? PerCard(string value, Functions fns)
+    private static (CardFilter? Filter, string Per, int Amount, int? Counter)? PerCard(string value, Functions fns)
     {
         string body;
         try { body = Body(value, fns).Replace("c:GetControler()", "tp", StringComparison.Ordinal).Replace("e:GetHandler():", "c:", StringComparison.Ordinal); }
         catch (Untranslatable) { return null; }
         Match m;
-        // "for each material attached to it", "for each of its Levels", "for each monster it points to". Not "for each
-        // counter": the block counts with c:GetCounter(0), which the engine answers with the number of kinds of counters.
+        // "for each material attached to it", "for each of its Levels", "for each monster it points to".
         if ((m = Regex.Match(body, @"^return c:(GetOverlayCount|GetLevel|GetLinkedGroupCount)\(\)\*(-?\d+)$")).Success)
-            return (null, m.Groups[1].Value switch { "GetOverlayCount" => "materials", "GetLevel" => "level", _ => "linked" }, Int(m.Groups[2].Value));
+            return (null, m.Groups[1].Value switch { "GetOverlayCount" => "materials", "GetLevel" => "level", _ => "linked" }, Int(m.Groups[2].Value), null);
+        // "for each Spell Counter on it".
+        if ((m = Regex.Match(body, $@"^return c:GetCounter\({CounterNumber}\)\*(-?\d+)$")).Success && CounterOf(m.Groups[1].Value) is { } counter)
+            return (null, "counters", Int(m.Groups[2].Value), counter);
         // "for each Dragon monster in your GY": a filter, or a Card function with its argument.
         if ((m = Regex.Match(body, @"^return Duel\.GetMatchingGroupCount\(([\w.]+),tp,([\w+]+),([\w+]+),(nil|c|e:GetHandler\(\))(?:,(\w+))?\)\*(-?\d+)$")).Success)
         {
@@ -2807,7 +2827,7 @@ public static partial class ScriptTranslator
             else f = Filter(m.Groups[1].Value, fns);
             Locate(f, m.Groups[2].Value, m.Groups[3].Value);
             f.ExcludeThisCard = m.Groups[4].Value != "nil";
-            return (f, "cards", Int(m.Groups[6].Value));
+            return (f, "cards", Int(m.Groups[6].Value), null);
         }
         m = Regex.Match(body, @"^return Duel\.GetFieldGroupCount\(tp,([\w+]+),([\w+]+)\)\*(-?\d+)$");
         if (m.Success)
@@ -2815,7 +2835,7 @@ public static partial class ScriptTranslator
             var f = new CardFilter { CardType = FilterCardType.Any };
             Locate(f, m.Groups[1].Value, m.Groups[2].Value);
             if (f.Zones == Model.Zone.MonsterZone) f.CardType = FilterCardType.Monster;
-            return (f, "cards", Int(m.Groups[3].Value));
+            return (f, "cards", Int(m.Groups[3].Value), null);
         }
         return null;
     }
@@ -3051,6 +3071,7 @@ public static partial class ScriptTranslator
     private static void Term(string term, CardFilter f)
     {
         Match m;
+        if (CounterTerm(term, f)) return;
         // Materials are checked with their material forms (IsLinkRace, IsFusionSetCard...); the filter says what they must be.
         term = Regex.Replace(term, @"^(not )?c:Is(?:Fusion|Link|Synchro|Xyz)(Type|Attribute|Race|SetCard|Code)\(", "$1c:Is$2(");
         if (Regex.IsMatch(term, @"^c:(IsAbleTo\w+|IsDiscardable|IsDestructable|IsSSetable|IsCanBeSpecialSummoned|IsCanChangePosition|IsCanTurnSet|IsSummonable|IsMSetable|IsControlerCanBeChanged|IsCanOverlay|IsReleasable|IsReleasableByEffect|IsCanBeFusionMaterial|IsCanBeSynchroMaterial|IsCanBeXyzMaterial|IsCanBeLinkMaterial|IsCanBeRitualMaterial|IsCanAddCounter)\(.*\)$")) return;

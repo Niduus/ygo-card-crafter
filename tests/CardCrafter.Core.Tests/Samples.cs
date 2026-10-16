@@ -6,6 +6,14 @@ namespace CardCrafter.Core.Tests;
 /// <summary>Example cards built the way a user would build them on the event sheet.</summary>
 public static class Samples
 {
+    /// <summary>
+    /// A choice's values after the default, for tests that try each: of the counters (there are dozens, all written the
+    /// same way), the first two, an unnamed one and one typed in.
+    /// </summary>
+    public static IEnumerable<ChoiceOption> OtherChoices(ParamSpec p) => p.Key.StartsWith(Counters.KindKey, StringComparison.Ordinal)
+        ? p.Choices.Where((c, i) => i is 1 or 2 || c.Value is Counters.Custom || c.Label == "counter" && c.Value.StartsWith("0x", StringComparison.Ordinal))
+        : p.Choices.Skip(1);
+
     public static CardProject PotOfGreedClone() => new()
     {
         Card = new CardData { Id = 100000001, Name = "Jar of Avarice", Kind = CardKind.Spell, SpellKind = SpellKind.Normal },

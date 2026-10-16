@@ -39,6 +39,38 @@ public sealed class IntSegmentViewModel(ParamSpec spec, BlockInstance inst, Acti
     }
 }
 
+/// <summary>A number written in hexadecimal, like a counter's engine id ("0x1f"): typed as text, kept as a number.</summary>
+public sealed class HexSegmentViewModel(ParamSpec spec, BlockInstance inst, Action changed) : SegmentViewModel
+{
+    public string Label => spec.Label;
+    public bool IsShown => spec.ShownWhen?.Invoke(inst) ?? true;
+    public void RefreshShown() => OnPropertyChanged(nameof(IsShown));
+
+    /// <summary>Parses "0x1f", "1f" or "x1F"; null when it isn't a number in range.</summary>
+    public static int? Parse(string? text, int min, int max)
+    {
+        var t = (text ?? "").Trim();
+        if (t.StartsWith("0x", StringComparison.OrdinalIgnoreCase)) t = t[2..];
+        else if (t.StartsWith('x') || t.StartsWith('X')) t = t[1..];
+        return int.TryParse(t, NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out var v) && v >= min && v <= max ? v : null;
+    }
+
+    public string Text
+    {
+        get => int.TryParse(inst.Values.GetValueOrDefault(spec.Key, spec.Default), NumberStyles.Integer, CultureInfo.InvariantCulture, out var v)
+            ? "0x" + v.ToString("x", CultureInfo.InvariantCulture) : "";
+        set
+        {
+            // Half-typed text stays in the box; only a whole number is kept.
+            if (Parse(value, spec.Min, spec.Max) is not { } v) return;
+            var text = v.ToString(CultureInfo.InvariantCulture);
+            if (inst.Values.GetValueOrDefault(spec.Key) == text) return;
+            inst.Values[spec.Key] = text;
+            changed();
+        }
+    }
+}
+
 public sealed class ChoiceSegmentViewModel(ParamSpec spec, BlockInstance inst, Action changed) : SegmentViewModel
 {
     public string Label => spec.Label;

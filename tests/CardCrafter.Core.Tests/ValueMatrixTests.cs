@@ -101,6 +101,9 @@ public class ValueMatrixTests
         new("its_materials", 2, 2000, XyzData, [], null, s => s.Card(Warrior, 0, "mzone", 2).Card(Id, 0, "extra"), s => s.SpSummon(Id)),
         new("its_used", 2, 2000, XyzData, [], null, s => s.Card(Warrior, 0, "mzone", 2).Card(Id, 0, "extra"), s => s.SpSummon(Id)),
         // 3 counters of one kind and 2 of another: 5 counters.
+        // Every counter on your field: 3 on this card, 2 on a Warrior; 4 on the opponent's don't count.
+        new("sum_counters", 5, 1000, null, [], new CardFilter { Owner = CardOwner.You, Zones = Zone.Field }, s => s.Card(Id, 0, "mzone").Card(Warrior, 0, "mzone").Card(Fiend, 1, "mzone")
+            .Setup($"Duel.GetFirstMatchingCard(Card.IsCode,0,LOCATION_MZONE,0,nil,{Id}):AddCounter(0x1001,3) Duel.GetFirstMatchingCard(Card.IsCode,0,LOCATION_MZONE,0,nil,{Warrior}):AddCounter(0x1002,2) Duel.GetFirstMatchingCard(Card.IsCode,1,LOCATION_MZONE,0,nil,{Fiend}):AddCounter(0x1002,4)"), Nothing),
         new("its_counters", 5, 1000, null, [], null, s => s.Card(Id, 0, "mzone")
             .Setup($"local c=Duel.GetFirstMatchingCard(Card.IsCode,0,LOCATION_MZONE,0,nil,{Id}) c:AddCounter(0x1001,3) c:AddCounter(0x1002,2)"), Nothing),
         // An Equip Spell activated from the hand onto it; the action is "if this card is equipped with an Equip Card".

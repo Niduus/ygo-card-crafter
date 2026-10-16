@@ -26,11 +26,13 @@ public class AllBlocksTests
             switch (p.Type)
             {
                 case ParamType.Choice:
-                    foreach (var c in p.Choices.Skip(1))
+                    foreach (var c in Samples.OtherChoices(p))
                     {
                         // Special Summoning or Setting "all" is refused (each card needs a free zone); BlockModeTests checks that.
                         if (p.Key == "mode" && c.Value == "all" && def.Id is "do.special_summon" or "do.set" or "do.place") continue;
                         var inst = def.CreateInstance().With(p.Key, c.Value);
+                        // "All" cards aren't targeted.
+                        if (c.Value == "all" && p.Key is "mode" or "count_mode" && def.Param("target") is not null) inst.Values["target"] = "false";
                         if (def.Id == "cost.move_cards" && c.Value == "grave") inst.Filters["cards"].Zones = Zone.Hand;
                         yield return ($"{p.Key}={c.Value}", inst);
                     }
@@ -40,6 +42,9 @@ public class AllBlocksTests
                     // Targeting needs a public zone to aim at.
                     if (p.Key == "target" && flipped.Filters.TryGetValue("cards", out var f) && (f.Zones & (Zone.Deck | Zone.Hand | Zone.ExtraDeck)) != Zone.None)
                         f.Zones = Zone.Graveyard;
+                    // This card itself is never targeted: aim at the opponent's monsters.
+                    if (p.Key == "target" && flipped.Filters.TryGetValue("cards", out var own) && own.ThisCard && flipped.Values["target"] == "true")
+                        flipped.Filters["cards"] = new CardFilter { Owner = CardOwner.Opponent, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster, FaceUpOnly = true };
                     yield return ($"{p.Key}=flipped", flipped);
                     break;
                 case ParamType.Integer:
@@ -182,7 +187,7 @@ public class AllBlocksTests
             var keys = SentenceParser.Parse(def.Sentence).Where(s => s.Key is not null).Select(s => s.Key!).ToList();
             foreach (var k in keys) Assert.True(def.Param(k) is not null, $"{def.Id}: sentence blank {{{k}}} has no parameter");
             // "exactly / up to / all" sits before the count and "for each" at the end, without a blank of their own.
-            foreach (var p in def.Params) Assert.True(keys.Contains(p.Key) || p.Type == ParamType.Bool || p.Key is "mode" or "per", $"{def.Id}: parameter {p.Key} is not in the sentence");
+            foreach (var p in def.Params) Assert.True(keys.Contains(p.Key) || p.Type == ParamType.Bool || p.Key is "mode" or "count_mode" or "per", $"{def.Id}: parameter {p.Key} is not in the sentence");
         }
     }
 }

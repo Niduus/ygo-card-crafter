@@ -302,6 +302,8 @@ public class RequirementMatrixNumberTests
         ("atk", "stat", 2000), ("def", "stat", 1200), ("base_atk", "stat", 2000), ("base_def", "stat", 1200),
         ("level", "stat", 4), ("orig_level", "stat", 4), ("rank", "xyz", 4), ("link", "link", 2), ("scale", "pendulum", 3),
         ("materials", "xyz_summoned", 2), ("equips", "equipped2", 2), ("linked", "pointed_at", 1), ("attacks", "direct_attack", 1),
+        // 3 counters of one kind; the requirement without a kind counts every counter.
+        ("counter_count", "counters", 3),
     ];
 
     public static IEnumerable<object[]> Matrix() =>
@@ -556,6 +558,8 @@ public class RequirementMatrixTextTests
         [Is("targetable"), "that can be targeted"],
         [Is("counters"), "that has a counter on it"],
         [IsNot("counters"), "that has no counters on it"],
+        [R("counter_count", RequirementOp.GreaterOrEqual, 2), "with 2 or more counters on it"],
+        [RequirementMatrix.R("counter_count", RequirementOp.Equal, 1, 0, [0x1]), "with 1 Spell Counter on it"],
     ];
 
     private static CardPack Pack() => new()

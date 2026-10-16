@@ -45,6 +45,8 @@ public sealed class ParamSpec
     public bool AllowThisCard { get; init; }
     /// <summary>For card filters: the block says where the card is, so the picker only asks what the card is.</summary>
     public bool WhereFromBlock { get; init; }
+    /// <summary>For numbers: the editor shows and takes it in hexadecimal ("0x1f"), as engine ids are written.</summary>
+    public bool Hex { get; init; }
 
     /// <summary>When set, the editor shows this blank only while it applies, like "from the GY" for Special Summons only.</summary>
     public Func<BlockInstance, bool>? ShownWhen { get; private set; }
@@ -57,6 +59,10 @@ public sealed class ParamSpec
 
     public static ParamSpec Int(string key, string label, int def, int min = 0, int max = 999999) =>
         new() { Key = key, Label = label, Type = ParamType.Integer, Default = def.ToString(CultureInfo.InvariantCulture), Min = min, Max = max };
+
+    /// <summary>A number the editor shows in hexadecimal, like a counter's engine id.</summary>
+    public static ParamSpec HexInt(string key, string label, int def, int min, int max) =>
+        new() { Key = key, Label = label, Type = ParamType.Integer, Default = def.ToString(CultureInfo.InvariantCulture), Min = min, Max = max, Hex = true };
 
     public static ParamSpec Choice(string key, string label, params ChoiceOption[] options) =>
         new() { Key = key, Label = label, Type = ParamType.Choice, Default = options[0].Value, Choices = options };
@@ -190,8 +196,14 @@ public sealed class BlockArgs(BlockDefinition def, BlockInstance inst, CardPack?
     public string? CardName { get; init; }
 
     /// <summary>Whether the block's cards read as plural: a count other than 1, or "all".</summary>
-    public bool IsPlural => (Definition.Param("count") is { Type: ParamType.Integer } && Int("count") != 1)
-                            || (Definition.Param("mode") is not null && Choice("mode") == "all");
+    public bool IsPlural => (Definition.Param("count") is { Type: ParamType.Integer } && Int("count") != 1) || CountMode == "all";
+
+    /// <summary>
+    /// "exact", "up_to" or "all": how many cards a card action takes. It is "mode", or "count_mode" on blocks whose
+    /// "mode" says something else ("Level becomes / increases by").
+    /// </summary>
+    public string CountMode => Definition.Param("count_mode") is not null ? Choice("count_mode")
+        : Definition.Param("mode") is { } m && m.Choices.Any(c => c.Value is "all" or "up_to") ? Choice("mode") : "exact";
 
     /// <summary>", except "Card Name"" for this block's card filters, or "".</summary>
     public string ExceptText() => string.Concat(Definition.Params.Where(p => p.Type == ParamType.Cards).Select(p => Text.FilterText.ExceptText(Cards(p.Key), Pack, CardName)));
@@ -242,8 +254,8 @@ public sealed class BlockArgs(BlockDefinition def, BlockInstance inst, CardPack?
             // "Special Summon this card", not "Special Summon 1 this card".
             ParamType.Integer when key == "count" && IsThisCard => "",
             // "up to 3", "all": card actions say how many with their count.
-            ParamType.Integer when key == "count" && Definition.Param("mode") is not null && Choice("mode") == "all" => "all",
-            ParamType.Integer when key == "count" && Definition.Param("mode") is not null && Choice("mode") == "up_to" => $"up to {Int(key).ToString(CultureInfo.InvariantCulture)}",
+            ParamType.Integer when key == "count" && CountMode == "all" => "all",
+            ParamType.Integer when key == "count" && CountMode == "up_to" => $"up to {Int(key).ToString(CultureInfo.InvariantCulture)}",
             ParamType.Integer => Int(key).ToString(CultureInfo.InvariantCulture),
             ParamType.Choice => spec.Choices.First(c => c.Value == Choice(key)).Label,
             ParamType.Bool => Bool(key) ? spec.Label : "",

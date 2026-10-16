@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:CardCrafter.App.ViewModels"
+             xmlns:blocks="using:CardCrafter.Core.Blocks"
              x:Class="CardCrafter.App.Views.FilterEditorView"
              x:DataType="vm:FilterEditorViewModel"
              Width="396">
@@ -126,6 +127,16 @@
                 <NumericUpDown Value="{Binding Value}" Minimum="0" Maximum="999999" FormatString="0" Width="96" ShowButtonSpinner="False" />
                 <TextBlock Text="and" VerticalAlignment="Center" IsVisible="{Binding IsRange}" />
                 <NumericUpDown Value="{Binding Value2}" Minimum="0" Maximum="999999" FormatString="0" Width="96" ShowButtonSpinner="False" IsVisible="{Binding IsRange}" />
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding IsCounter}">
+                <ComboBox ItemsSource="{Binding CounterOptions}" SelectedItem="{Binding Counter}" MaxDropDownHeight="320" ToolTip.Tip="Which counter">
+                  <ComboBox.ItemTemplate>
+                    <DataTemplate DataType="blocks:ChoiceOption">
+                      <TextBlock Text="{Binding Display}" />
+                    </DataTemplate>
+                  </ComboBox.ItemTemplate>
+                </ComboBox>
+                <TextBox Text="{Binding CounterId}" Width="80" Watermark="0x1" IsVisible="{Binding IsCustomCounter}" ToolTip.Tip="The counter's id, in hexadecimal" />
               </StackPanel>
               <ItemsControl ItemsSource="{Binding Choices}" IsVisible="{Binding IsChoices}">
                 <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>

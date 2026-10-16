@@ -76,6 +76,48 @@ public sealed partial class RequirementViewModel : ObservableObject
     public bool IsRange => IsNumber && _r.Op is RequirementOp.Between or RequirementOp.Outside;
     public bool IsChoices => Prop.Kind is PropertyKind.Flags or PropertyKind.Options;
     public bool IsArchetype => Prop.Kind == PropertyKind.Archetype;
+
+    // "Counters on it": which counter, kept as its id in Values (none for every counter).
+    public bool IsCounter => Prop.Key == CardProperties.CounterCount;
+    public IReadOnlyList<Core.Blocks.ChoiceOption> CounterOptions { get; } = Core.Blocks.Counters.Kinds(withAny: true);
+    private bool _customCounter;
+
+    public Core.Blocks.ChoiceOption? Counter
+    {
+        get
+        {
+            var value = _customCounter ? Core.Blocks.Counters.Custom : Core.Blocks.Counters.ValueOf(CardProperties.CounterOf(_r));
+            return CounterOptions.FirstOrDefault(o => o.Value == value) ?? CounterOptions[0];
+        }
+        set
+        {
+            if (value is null) return;
+            _customCounter = value.Value == Core.Blocks.Counters.Custom;
+            _r.Values = value.Value switch
+            {
+                Core.Blocks.Counters.Any => [],
+                Core.Blocks.Counters.Custom => _r.Values,
+                var hex => [long.Parse(hex.AsSpan(2), System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture)],
+            };
+            OnPropertyChanged(nameof(IsCustomCounter));
+            OnPropertyChanged(nameof(CounterId));
+            _changed();
+        }
+    }
+
+    public bool IsCustomCounter => IsCounter && (_customCounter || Core.Blocks.Counters.ValueOf(CardProperties.CounterOf(_r)) == Core.Blocks.Counters.Custom);
+
+    /// <summary>The counter's id in hexadecimal ("0x1f"), for a counter that isn't in the list.</summary>
+    public string CounterId
+    {
+        get => CardProperties.CounterOf(_r) is { } id ? Core.Blocks.Counters.Hex(id) : "";
+        set
+        {
+            if (HexSegmentViewModel.Parse(value, 1, 0xffff) is not { } id) return;
+            _r.Values = [id];
+            _changed();
+        }
+    }
     public bool IsCardName => Prop.Kind == PropertyKind.CardName;
 
     public decimal? Value

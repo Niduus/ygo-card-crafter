@@ -24,6 +24,9 @@ foreach (var (kind, title, intro) in new[]
     {
         var opts = string.Join("; ", b.Params.Select(p => p.Type switch
         {
+            // The counters are listed once, below.
+            ParamType.Choice when p.Key.StartsWith(Counters.KindKey, StringComparison.Ordinal) =>
+                $"**{p.Label}**: {(p.Choices.Any(c => c.Value == Counters.Any) ? "any counter, " : "")}one of the [counters](#counters), or another by its id",
             ParamType.Choice => $"**{p.Label}**: {string.Join(", ", p.Choices.Select(c => c.Display))}",
             ParamType.Integer => $"**{p.Label}**: {p.Min}–{p.Max}",
             ParamType.Bool => $"**{p.Label}** on/off",
@@ -34,6 +37,10 @@ foreach (var (kind, title, intro) in new[]
     }
     sb.AppendLine();
 }
+sb.AppendLine("## Counters").AppendLine();
+sb.AppendLine("The counters the counter blocks name, with their engine ids. Any other counter can be picked by its id (in hexadecimal);");
+sb.AppendLine("ids with 0x1000 go on any card, the others only on cards that can hold them (a card whose own blocks use a counter can).").AppendLine();
+sb.AppendLine(string.Join(", ", Counters.Known.Select(k => $"{k.Name} ({Counters.Hex(k.Id)})")) + ".").AppendLine();
 sb.AppendLine("## Templates").AppendLine();
 sb.AppendLine("Ready-made effects modelled on well-known cards. They are inserted as normal blocks you can change.").AppendLine();
 sb.AppendLine("| Template | Like | For | What it does |").AppendLine("|---|---|---|---|");

@@ -815,6 +815,8 @@ public sealed class DeclareNegateAction : ActionBlock
         e.AddCategory("CATEGORY_DISABLE");
         e.TargetLines.Add("Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_CODE)");
         e.TargetLines.Add("local code=Duel.AnnounceCard(tp)");
+        if (e.TargetLines.Any(l => l.StartsWith("Duel.SetTargetParam(", StringComparison.Ordinal)))
+            e.Error($"\"{Name}\": another block of this effect already keeps a number with the chain link (an amount worked out when activated).");
         e.TargetLines.Add("Duel.SetTargetParam(code)");
         e.TargetLines.Add("Duel.SetOperationInfo(0,CATEGORY_ANNOUNCE,nil,0,tp,0)");
         var op = ctx.Script.AddFunction("declop", "e,tp,eg,ep,ev,re,r,rp", ["if re:GetHandler():IsOriginalCodeRule(e:GetLabel()) then Duel.NegateEffect(ev) end"]);

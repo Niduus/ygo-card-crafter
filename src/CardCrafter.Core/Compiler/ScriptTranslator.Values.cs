@@ -12,14 +12,18 @@ namespace CardCrafter.Core.Compiler;
 /// </summary>
 public static partial class ScriptTranslator
 {
-    /// <summary>A live value as the value blocks hold it; <see cref="Negative"/> for "loses" / "*-300".</summary>
-    private sealed record LiveValue(string Source, string How, int Amount, CardFilter? Cards, bool Negative)
+    /// <summary>
+    /// A live value as the value blocks hold it; <see cref="Negative"/> for "loses" / "*-300". <see cref="Counter"/> is
+    /// the counter a count of counters counts.
+    /// </summary>
+    private sealed record LiveValue(string Source, string How, int Amount, CardFilter? Cards, bool Negative, int? Counter = null)
     {
         public BlockInstance On(BlockInstance b)
         {
             b.With("value", Source).With("how", How);
             if (How == "per") b.With("amount", Amount);
             if (Cards is not null) b.With(ValueSources.CardsKey, Cards);
+            if (ValueSources.UsesCounter(Source)) b.WithCounter(Counter);
             return b;
         }
     }
@@ -44,7 +48,7 @@ public static partial class ScriptTranslator
 
     /// <summary>The value sources "for each" reads naturally with: a number of things, not an amount of LP or ATK.</summary>
     private static bool Countable(string source) => source is "count" or "different_attr" or "different_race" or "different_name"
-        or "its_level" or "its_rank" or "its_link" or "its_materials" or "its_equips" or "its_linked" or "its_used";
+        or "its_level" or "its_rank" or "its_link" or "its_materials" or "its_equips" or "its_linked" or "its_used" or "its_counters" or "sum_counters";
 
     /// <summary>Sources whose value is above 0 exactly when the cards they look at exist.</summary>
     private static bool CountsCards(string source) => source is "count" or "different_attr" or "different_race" or "different_name";
@@ -197,7 +201,7 @@ public static partial class ScriptTranslator
     {
         Match m;
         if (x == "ev") return s.Event ? ("event", null) : null;
-        // The monster's own numbers. (Card.GetCounter(0) is the number of kinds of counters, not the counters: no source.)
+        // The monster's own numbers. (Counters are read by CounterBase.)
         if ((m = Regex.Match(x, @"^(.+):(GetLevel|GetRank|GetLink|GetOverlayCount|GetEquipCount|GetLinkedGroupCount|GetMaterialCount|GetBaseAttack|GetBaseDefense)\(\)$")).Success
             && s.IsIts(StripParens(m.Groups[1].Value)))
             return (m.Groups[2].Value switch
@@ -296,11 +300,12 @@ public static partial class ScriptTranslator
             how = "half";
             baseExpr = StripParens(half);
         }
-        if (ValueBase(baseExpr, s, fns) is not { } b) return null;
-        if (amount == 1) return new LiveValue(b.Source, how, 0, b.Cards, neg);
+        int? counter = null;
+        if ((CounterBase(baseExpr, s, fns, out counter) ?? ValueBase(baseExpr, s, fns)) is not { } b) return null;
+        if (amount == 1) return new LiveValue(b.Source, how, 0, b.Cards, neg, counter);
         if (how == "half") return null;
-        if (amount == 2 && !Countable(b.Source)) return new LiveValue(b.Source, "double", 0, b.Cards, neg);
-        return Countable(b.Source) ? new LiveValue(b.Source, "per", amount, b.Cards, neg) : null;
+        if (amount == 2 && !Countable(b.Source)) return new LiveValue(b.Source, "double", 0, b.Cards, neg, counter);
+        return Countable(b.Source) ? new LiveValue(b.Source, "per", amount, b.Cards, neg, counter) : null;
     }
 
     /// <summary>The stat and direction an effect code changes: ("atk", "gain") for EFFECT_UPDATE_ATTACK, ("level", "becomes")...</summary>
@@ -463,10 +468,15 @@ public static partial class ScriptTranslator
     {
         var target = ov.Target;
         LiveValue? live;
-        if (amount == "d")
+        var snapshot = false;
+        if (amount == "d" && target.ParamLive is { } kept)
         {
-            // The amount worked out when the effect was activated: the block works it out when it resolves.
-            if (target.ParamDynamic) throw No("its amount is worked out when it is activated, not when it resolves");
+            // The amount worked out when the effect was activated (Duel.SetTargetParam(ct*300)).
+            live = kept;
+            snapshot = true;
+        }
+        else if (amount == "d")
+        {
             if (!target.ParamEvent) return null;
             live = AmountEvent ? new LiveValue("event", "equal", 0, null, false) : null;
         }
@@ -478,17 +488,17 @@ public static partial class ScriptTranslator
         if (live is null) return null;
         if (live.Negative) return null;
         if (ov.Guarded) throw No("it only changes LP while a card is still there, which the block doesn't check");
-        // The block can only be activated when the amount is above 0; the script must ask the same.
-        if (live.Source != "event" && !(target.Check is { } check && SplitTopLevelAnd(check).Any(t => AmountAbove0(live, t, ov.Fns))))
-            throw No("it can be activated when the amount is 0, unlike the block");
-        return live.On(Block(LifeFromValueAction.BlockId).With("what", kind == "Damage" ? "damage" : "gain").With("who", who));
+        // Whether it can be activated when the amount is 0: the script asks "above 0", or it doesn't.
+        var zeroOk = live.Source != "event" && !(target.Check is { } check && SplitTopLevelAnd(check).Any(t => AmountAbove0(live, t, ov.Fns)));
+        return live.On(Block(LifeFromValueAction.BlockId).With("what", kind == "Damage" ? "damage" : "gain").With("who", who))
+            .With("when", snapshot ? "activate" : "resolve").With("zero_ok", zeroOk);
     }
 
     /// <summary>The live value a value block holds.</summary>
     private static LiveValue ValueIn(BlockInstance b) =>
         new(b.Values.GetValueOrDefault("value") ?? "", b.Values.GetValueOrDefault("how") ?? "equal",
             int.TryParse(b.Values.GetValueOrDefault("amount"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) ? n : 0,
-            b.Filters.GetValueOrDefault(ValueSources.CardsKey), false);
+            b.Filters.GetValueOrDefault(ValueSources.CardsKey), false, Counters.IdOf(b));
 
     /// <summary>
     /// What the target step asks before the effect can be activated ("if chk==0 then return ... end"), for an effect
@@ -509,6 +519,8 @@ public static partial class ScriptTranslator
             if (target.Filter is not null && IsTargetCheck(term, target, fns)) continue;
             if (selfStats && term is "e:GetHandler():IsFaceup()" or "c:IsFaceup()") continue;
             if (amounts.Any(a => AmountAbove0(a, term, fns))) continue;
+            // "All face-up monsters you control gain ...": the block asks itself that there is one.
+            if (effect.Do.Any(b => b.BlockId == StatsFromValueAction.BlockId && b.Values.GetValueOrDefault("mode") == "all" && IsExistsCheck(term, b.Filters["cards"], fns))) continue;
             if (effect.Do.All(b => b.BlockId is StatsFromValueAction.BlockId or LifeFromValueAction.BlockId) && (ExistsCheck(raw.Trim(), fns) ?? CountAbove0(term, fns)) is { } gate)
             {
                 gates.Add(gate);
@@ -542,6 +554,18 @@ public static partial class ScriptTranslator
         catch (Untranslatable) { return false; }
     }
 
+    /// <summary>"Duel.IsExistingMatchingCard(f,tp,LOCATION_MZONE,0,1,nil)" for exactly these cards.</summary>
+    private static bool IsExistsCheck(string term, CardFilter cards, Functions fns)
+    {
+        if (Regex.Match(term, @"^Duel\.IsExistingMatchingCard\((.*)\)$") is not { Success: true } m || SplitArgs(m.Groups[1].Value) is not { Count: 6 } a || a[4] != "1") return false;
+        var scope = new ValueScope { You = ["tp"], Handler = ["c", "e:GetHandler()"] };
+        try
+        {
+            return GroupFilter(a[0], a[1], a[2], a[3], a[5], [], scope, fns) is { } f && SamePicker(f, cards);
+        }
+        catch (Untranslatable) { return false; }
+    }
+
     /// <summary>Whether one check of the target step is "the amount is above 0".</summary>
     private static bool AmountAbove0(LiveValue live, string term, Functions fns)
     {
@@ -556,7 +580,8 @@ public static partial class ScriptTranslator
         try { asked = ValueOf(pos.Groups[1].Value, scope, fns); } catch (Untranslatable) { return false; }
         if (asked is null || asked.Negative || asked.How == "half") return false;
         if (CountsCards(asked.Source) && CountsCards(live.Source)) return SamePicker(asked.Cards!, live.Cards!);
-        return asked.Source == live.Source && (asked.Cards is null ? live.Cards is null : live.Cards is not null && SamePicker(asked.Cards, live.Cards));
+        return asked.Source == live.Source && asked.Counter == live.Counter
+            && (asked.Cards is null ? live.Cards is null : live.Cards is not null && SamePicker(asked.Cards, live.Cards));
     }
 
     private static bool SamePicker(CardFilter a, CardFilter b)
