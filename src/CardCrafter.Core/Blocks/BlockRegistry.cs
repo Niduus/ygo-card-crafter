@@ -33,6 +33,8 @@ public static class BlockRegistry
         new StatsFromValuePassive(),
         new StatsFromValueAction(),
         new LifeFromValueAction(),
+        new SetLifeAction(),
+        new EquipValuePassive(),
         new SummonedThisTurnCondition(),
         new LinkedCondition(),
         new PointsToCondition(),

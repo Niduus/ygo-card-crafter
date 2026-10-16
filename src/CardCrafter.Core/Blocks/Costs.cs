@@ -53,11 +53,24 @@ public sealed class PayLifePointsCost : CostBlock
     public override string Id => "cost.pay_lp";
     public override string Group => "Life Points";
     public override string Name => "Pay Life Points";
-    public override string Sentence => "Pay {amount} LP";
-    public override IReadOnlyList<ParamSpec> Params { get; } = [ParamSpec.Int("amount", "Amount", 1000, 1, 99999)];
+    public override string Sentence => "Pay {how} {amount} LP";
+    public override IReadOnlyList<ParamSpec> Params { get; } =
+    [
+        ParamSpec.Choice("how", "How much", new("amount", "", "a number"), new("half", "half your", "half your LP")),
+        ParamSpec.Int("amount", "Amount", 1000, 1, 99999).ShowIf(b => b.Values.GetValueOrDefault("how", "amount") == "amount"),
+    ];
+
+    public override string Describe(BlockArgs args) =>
+        args.Choice("how") == "half" ? "pay half your LP" : $"pay {args.Int("amount")} LP";
 
     public override void Compile(BlockContext ctx)
     {
+        // "Pay half your LP": rounded down, as the game does.
+        if (ctx.Args.Choice("how") == "half")
+        {
+            ctx.Effect.CostLines.Add("Duel.PayLPCost(tp,math.floor(Duel.GetLP(tp)/2))");
+            return;
+        }
         var n = ctx.Args.Int("amount");
         ctx.Effect.CostChecks.Add($"Duel.CheckLPCost(tp,{n})");
         ctx.Effect.CostLines.Add($"Duel.PayLPCost(tp,{n})");

@@ -106,7 +106,7 @@ public class AllBlocksTests
                 project.Card.Frame = MonsterFrame.Xyz;
                 project.Procedure.Kind = SummonProcedureKind.Xyz;
                 break;
-            case "passive.equipped":
+            case "passive.equipped" or "passive.equip_value":
                 project.Card.Kind = CardKind.Spell;
                 project.Card.SpellKind = SpellKind.Equip;
                 break;
