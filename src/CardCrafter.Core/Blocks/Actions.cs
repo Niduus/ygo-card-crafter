@@ -24,7 +24,8 @@ public abstract class ActionBlock : BlockDefinition
         new("amount", "", "a number"),
         new("orig_atk", "equal to that monster's original ATK", "equal to the original ATK of the cards the action before affected"),
         new("atk", "equal to that monster's ATK", "equal to the ATK those cards had on the field"),
-        new("orig_def", "equal to that monster's original DEF", "equal to the original DEF of the cards the action before affected"));
+        new("orig_def", "equal to that monster's original DEF", "equal to the original DEF of the cards the action before affected"),
+        new("event", "equal to that amount", "equal to the damage taken or LP paid/gained that started this effect"));
 
     protected static bool UsesAmount(BlockInstance b) => b.Values.GetValueOrDefault("equal", "amount") == "amount";
 
@@ -32,6 +33,13 @@ public abstract class ActionBlock : BlockDefinition
     protected static List<string>? EqualLines(BlockContext ctx, string v)
     {
         if (ctx.Args.Definition.Param("equal") is null || ctx.Args.Choice("equal") == "amount") return null;
+        // "gain LP equal to the damage you took": the amount of the damage, payment or LP gain that triggered the effect.
+        if (ctx.Args.Choice("equal") == "event")
+        {
+            if (ctx.Effect.Code is not ("EVENT_DAMAGE" or "EVENT_BATTLE_DAMAGE" or "EVENT_RECOVER" or "EVENT_PAY_LPCOST"))
+                ctx.Effect.Warn("\"Equal to that amount\" needs a WHEN that is damage being taken or LP being paid or gained.");
+            return [$"local {v}=ev"];
+        }
         if (ctx.Effect.LastResult is null) { ctx.Effect.Error("\"Equal to that monster's ATK\" needs a DO block before it that destroys, banishes or sends cards."); return null; }
         var stat = ctx.Args.Choice("equal") switch { "atk" => "GetPreviousAttackOnField", "orig_def" => "GetTextDefense", _ => "GetTextAttack" };
         var og = ctx.Effect.NewLocal("og");

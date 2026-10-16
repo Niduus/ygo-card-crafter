@@ -1132,12 +1132,14 @@ public static partial class ScriptTranslator
         if (Regex.Match(Body(condition, fns), @"^return aux\.CardCrafterUsesPerMaterials\(""(\w+)""\)$") is { Success: true } upm)
             return [Block(UsesPerMaterialsCondition.BlockId).With("kind", upm.Groups[1].Value)];
         var body = Body(condition, fns);
+        // "(you control no monsters or none of them is not X)" is the same check as "none of them is not X".
+        body = Regex.Replace(body, @"\(Duel\.GetFieldGroupCount\(tp,LOCATION_MZONE,0\)==0 or (not Duel\.IsExistingMatchingCard\([\w.]+,tp,LOCATION_MZONE,0,1,nil\))\)", "$1");
         if (body.StartsWith("return ", StringComparison.Ordinal) && !body.Contains(" or ", StringComparison.Ordinal) && !body.Contains('(' + "Duel.GetCurrentPhase", StringComparison.Ordinal))
         {
             // "A and B": each part on its own IF block, when every part is one the blocks have.
             var parts = SplitTopLevelAnd(body["return ".Length..]);
             if (parts.Count > 1)
-                return parts.SelectMany(p => ConditionBody("return " + p, fns)).ToList();
+                return MergeAllAre(parts.SelectMany(p => ConditionBody("return " + p, fns)).ToList());
         }
         return ConditionBody(body, fns);
     }
@@ -1162,9 +1164,61 @@ public static partial class ScriptTranslator
         return parts;
     }
 
+    /// <summary>
+    /// "not Duel.IsExistingMatchingCard(s.cfilter,tp,LOCATION_MZONE,0,1,nil)" with cfilter "c:IsFacedown() or not X":
+    /// "you control no monsters, or all monsters you control are X". Null for any other check.
+    /// </summary>
+    private static BlockInstance? AllAreCheck(string term, Functions fns)
+    {
+        var m = Regex.Match(term, @"^not Duel\.IsExistingMatchingCard\(([\w.]+),tp,([\w+]+),([\w+]+),1,(nil|e:GetHandler\(\)|c)\)$");
+        if (!m.Success) return null;
+        string text;
+        try { text = string.Join(" ", fns.Get(m.Groups[1].Value).Body.Select(l => l.Trim())); } catch (Untranslatable) { return null; }
+        var k = Regex.Match(text, @"^return (?:c:IsFacedown\(\) or not (.+)|not (.+) or c:IsFacedown\(\))$");
+        if (!k.Success) return null;
+        var inner = (k.Groups[1].Success ? k.Groups[1].Value : k.Groups[2].Value).Trim();
+        if (inner.StartsWith('(') && inner.EndsWith(')') && Balanced(inner[1..^1])) inner = inner[1..^1];
+        if (inner.Contains(" or ", StringComparison.Ordinal) || inner.Contains("not ", StringComparison.Ordinal)) return null;
+        var kind = new CardFilter { CardType = FilterCardType.Monster };
+        foreach (var t in SplitTopLevelAnd(inner)) Term(t.Trim(), kind);
+        kind.Zones = Model.Zone.None;
+        var group = new CardFilter { CardType = FilterCardType.Monster };
+        Locate(group, m.Groups[2].Value, m.Groups[3].Value);
+        if ((group.Zones & ~Model.Zone.MonsterZone) != Model.Zone.None) return null;
+        group.ExcludeThisCard = m.Groups[4].Value != "nil";
+        return Block(AllAreCondition.BlockId).With("mode", "none_or_all").With("cards", group).With("kind", kind);
+    }
+
+    /// <summary>"you control a monster" and "no monsters, or all are X" together: "all monsters you control are X".</summary>
+    private static List<BlockInstance> MergeAllAre(List<BlockInstance> blocks)
+    {
+        var all = blocks.FirstOrDefault(b => b.BlockId == AllAreCondition.BlockId && b.Values.GetValueOrDefault("mode") == "none_or_all");
+        if (all is null) return blocks;
+        var group = all.Filters["cards"];
+        var some = blocks.FirstOrDefault(b => b.BlockId == "if.cards_exist" && b.Values.GetValueOrDefault("count", "1") == "1"
+            && b.Values.GetValueOrDefault("cmp", "at_least") == "at_least" && b.Filters.TryGetValue("cards", out var f)
+            && f.Owner == group.Owner && f.Zones == group.Zones && f.ExcludeThisCard == group.ExcludeThisCard
+            && FilterCompiler.Conditions(f).Where(x => x != "c:IsType(TYPE_MONSTER)").Count() == 0);
+        if (some is null) return blocks;
+        all.Values["mode"] = "all";
+        return blocks.Where(b => b != some).ToList();
+    }
+
     private static List<BlockInstance> ConditionBody(string body, Functions fns)
     {
         Match m;
+        if (body.StartsWith("return ", StringComparison.Ordinal) && AllAreCheck(body[7..], fns) is { } allAre) return [allAre];
+        // "If you control more monsters than your opponent does" and other counts compared.
+        if ((m = Regex.Match(body, @"^return Duel\.GetFieldGroupCount\(tp,([\w+]+),([\w+]+)\)(<=|>=|==|<|>)Duel\.GetFieldGroupCount\(tp,([\w+]+),([\w+]+)\)$")).Success)
+        {
+            var a = new CardFilter { CardType = FilterCardType.Any };
+            var b = new CardFilter { CardType = FilterCardType.Any };
+            Locate(a, m.Groups[1].Value, m.Groups[2].Value);
+            Locate(b, m.Groups[4].Value, m.Groups[5].Value);
+            foreach (var f in new[] { a, b }) if (f.Zones == Model.Zone.MonsterZone) f.CardType = FilterCardType.Monster;
+            var cmp = m.Groups[3].Value switch { ">" => "more", "<" => "fewer", "==" => "same", ">=" => "at_least", _ => "at_most" };
+            return [Block("if.compare_counts").With("cmp", cmp).With("cards", a).With("other", b)];
+        }
         // "While "Umi" is on the field": the face-up Field Spell.
         if ((m = Regex.Match(body, @"^return (not )?Duel\.IsEnvironment\((\d+)(?:,PLAYER_ALL(?:,LOCATION_FZONE)?)?\)$")).Success)
             return [Block("if.card_present").With("card", new CardFilter { CardCode = Int64(m.Groups[2].Value), Owner = CardOwner.Either, Zones = Model.Zone.SpellTrapZone, CardType = FilterCardType.Any, FaceUpOnly = true })
@@ -1185,6 +1239,15 @@ public static partial class ScriptTranslator
         {
             var f = new CardFilter { CardType = FilterCardType.Monster, Zones = Model.Zone.MonsterZone, Owner = m.Groups[1].Value == "0" ? CardOwner.Opponent : CardOwner.You };
             return [m.Groups[3].Value == "==0" ? Block("if.no_cards").With("cards", f) : Block("if.cards_exist").With("count", 1).With("cards", f)];
+        }
+        // "If you control exactly 1 monster", "if you control 2 or fewer monsters", "3 or more cards in your hand".
+        if ((m = Regex.Match(body, @"^return Duel\.GetFieldGroupCount\(tp,(LOCATION_MZONE|LOCATION_ONFIELD|LOCATION_GRAVE|LOCATION_REMOVED|LOCATION_SZONE|0),(LOCATION_MZONE|LOCATION_ONFIELD|LOCATION_GRAVE|LOCATION_REMOVED|LOCATION_SZONE|0)\)(==|<=|<|>=|>)(\d+)$")).Success
+            && (m.Groups[1].Value == "0") != (m.Groups[2].Value == "0") && CountBlock(m.Groups[3].Value, Int(m.Groups[4].Value)) is { } counted)
+        {
+            var f = new CardFilter { CardType = FilterCardType.Any };
+            Locate(f, m.Groups[1].Value, m.Groups[2].Value);
+            if (f.Zones == Model.Zone.MonsterZone) f.CardType = FilterCardType.Monster;
+            return [counted.With("cards", f)];
         }
         // "If you have no cards in your GY" and "if there are 3 or more cards in your opponent's GY".
         if ((m = Regex.Match(body, @"^return Duel\.GetFieldGroupCount\(tp,(LOCATION_GRAVE|LOCATION_REMOVED|LOCATION_ONFIELD|0),(LOCATION_GRAVE|LOCATION_REMOVED|LOCATION_ONFIELD|0)\)(==0|>0|~=0|>=(\d+))$")).Success
@@ -2792,6 +2855,23 @@ public static partial class ScriptTranslator
             none = m.Groups[6].Value == "==0";
             n = m.Groups[7].Success ? Int(m.Groups[7].Value) : 1;
         }
+        // "exactly 2", "2 or fewer": a count compared.
+        else if ((m = Regex.Match(term, @"^Duel\.GetMatchingGroupCount\(([\w.]+),tp,([\w+|]+),([\w+|]+),(nil|e:GetHandler\(\)|c)(?:,(.+))?\)(==|<=|<|>)(\d+)$")).Success
+            && CountBlock(m.Groups[6].Value, Int(m.Groups[7].Value)) is { } counted)
+        {
+            CardFilter cf;
+            var cextra = m.Groups[5].Value;
+            if (cextra is "" or "e,tp" or "tp" or "e,tp,c") cf = Filter(m.Groups[1].Value, fns);
+            else if (m.Groups[1].Value.StartsWith("Card.", StringComparison.Ordinal) && !cextra.Contains(','))
+            {
+                cf = new CardFilter { CardType = FilterCardType.Any };
+                Term($"c:{m.Groups[1].Value[5..]}({cextra})", cf);
+            }
+            else return null;
+            Locate(cf, m.Groups[2].Value.Replace('|', '+'), m.Groups[3].Value.Replace('|', '+'));
+            cf.ExcludeThisCard = m.Groups[4].Value != "nil";
+            return counted.With("cards", cf);
+        }
         else return null;
         CardFilter f;
         if (extra is "" or "e,tp" or "tp" or "e,tp,c") f = Filter(fn, fns);
@@ -2806,6 +2886,18 @@ public static partial class ScriptTranslator
         if (none) return n == 1 ? Block("if.no_cards").With("cards", f) : null;
         return Block("if.cards_exist").With("count", n).With("cards", f);
     }
+
+    /// <summary>A count compared with a number, as a cards-exist or no-cards block without its cards; null when it can't be said.</summary>
+    private static BlockInstance? CountBlock(string op, int n) => (op, n) switch
+    {
+        ("==", 0) or ("<", 1) or ("<=", 0) => Block("if.no_cards"),
+        ("==", > 0) => Block("if.cards_exist").With("cmp", "exactly").With("count", n),
+        ("<=", > 0) => Block("if.cards_exist").With("cmp", "at_most").With("count", n),
+        ("<", > 1) => Block("if.cards_exist").With("cmp", "at_most").With("count", n - 1),
+        (">", >= 0) => Block("if.cards_exist").With("count", n + 1),
+        (">=", > 0) => Block("if.cards_exist").With("count", n),
+        _ => null,
+    };
 
     [ThreadStatic] private static string? _chainCounter;
 

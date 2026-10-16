@@ -24,6 +24,12 @@ public static class BlockRegistry
         // IF
         new CardsExistCondition(),
         new NoCardsCondition(),
+        new AllAreCondition(),
+        new CompareCountsCondition(),
+        new DifferentCondition(),
+        new TotalCondition(),
+        new LifeThisTurnCondition(),
+        new LifeDifferenceCondition(),
         new SummonedThisTurnCondition(),
         new LinkedCondition(),
         new PointsToCondition(),

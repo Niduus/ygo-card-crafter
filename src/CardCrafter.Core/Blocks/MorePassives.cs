@@ -192,6 +192,11 @@ public sealed class PlayerRulePassive : PassiveBlock
         ParamSpec.Choice("rule", "Rule",
             new("no_battle_damage", "You take no battle damage"),
             new("no_effect_damage", "You take no effect damage"),
+            new("no_damage", "You take no damage"),
+            new("half_damage", "Any damage you take is halved"),
+            new("reflect_effect", "Effect damage you would take is inflicted to your opponent instead"),
+            new("opp_double_battle", "Battle damage your opponent takes is doubled"),
+            new("opp_no_effect_damage", "Your opponent takes no effect damage"),
             new("opp_no_extra", "Your opponent cannot Special Summon monsters from the Extra Deck"),
             new("opp_no_special", "Your opponent cannot Special Summon monsters"),
             new("opp_no_draw_extra", "Your opponent cannot add cards from their Deck to their hand except by drawing them"),
@@ -222,6 +227,39 @@ public sealed class PlayerRulePassive : PassiveBlock
                 var fn = ctx.Script.AddFunction("damval", "e,re,val,r,rp,rc", ["if bit.band(r,REASON_EFFECT)~=0 then return 0 end", "return val"]);
                 ctx.Effect.AddPassive(v => Player(v, "EFFECT_CHANGE_DAMAGE", "1", "0", fn));
                 ctx.Effect.AddPassive(v => Player(v, "EFFECT_NO_EFFECT_DAMAGE", "1", "0"));
+                break;
+            }
+            case "no_damage":
+            {
+                var fn = ctx.Script.AddFunction("nodamval", "e,re,val,r,rp,rc", ["return 0"]);
+                ctx.Effect.AddPassive(v => Player(v, "EFFECT_AVOID_BATTLE_DAMAGE", "1", "0", "1"));
+                ctx.Effect.AddPassive(v => Player(v, "EFFECT_CHANGE_DAMAGE", "1", "0", fn));
+                ctx.Effect.AddPassive(v => Player(v, "EFFECT_NO_EFFECT_DAMAGE", "1", "0"));
+                break;
+            }
+            case "half_damage":
+            {
+                var fn = ctx.Script.AddFunction("halfdamval", "e,re,val,r,rp,rc", ["return math.floor(val/2)"]);
+                ctx.Effect.AddPassive(v => Player(v, "EFFECT_CHANGE_DAMAGE", "1", "0", fn));
+                break;
+            }
+            case "reflect_effect":
+            {
+                var fn = ctx.Script.AddFunction("reflectval", "e,re,val,r,rp,rc", ["return bit.band(r,REASON_EFFECT)~=0"]);
+                ctx.Effect.AddPassive(v => Player(v, "EFFECT_REFLECT_DAMAGE", "1", "0", fn));
+                break;
+            }
+            case "opp_double_battle":
+            {
+                var fn = ctx.Script.AddFunction("doubledamval", "e,re,val,r,rp,rc", ["if bit.band(r,REASON_BATTLE)~=0 then return val*2 end", "return val"]);
+                ctx.Effect.AddPassive(v => Player(v, "EFFECT_CHANGE_DAMAGE", "0", "1", fn));
+                break;
+            }
+            case "opp_no_effect_damage":
+            {
+                var fn = ctx.Script.AddFunction("damval", "e,re,val,r,rp,rc", ["if bit.band(r,REASON_EFFECT)~=0 then return 0 end", "return val"]);
+                ctx.Effect.AddPassive(v => Player(v, "EFFECT_CHANGE_DAMAGE", "0", "1", fn));
+                ctx.Effect.AddPassive(v => Player(v, "EFFECT_NO_EFFECT_DAMAGE", "0", "1"));
                 break;
             }
             case "opp_no_extra":

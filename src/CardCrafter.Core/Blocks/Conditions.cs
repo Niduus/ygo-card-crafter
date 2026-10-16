@@ -16,11 +16,12 @@ public sealed class CardsExistCondition : ConditionBlock
     public override string Id => "if.cards_exist";
     public override string Group => "Cards";
     public override string Name => "There are cards somewhere";
-    public override string Sentence => "There are {count} or more {cards}";
-    public override string Help => "For example: you control 2 or more Dragon monsters, or there are 3 or more Spells in your GY.";
+    public override string Sentence => "There are {cmp} {count} {cards}";
+    public override string Help => "For example: you control 2 or more Dragon monsters, you control exactly 1 monster, or there are 3 or fewer Spells in your GY.";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
-        ParamSpec.Int("count", "How many", 1, 1, 60),
+        ParamSpec.Choice("cmp", "How many", CardCounts.Compare),
+        ParamSpec.Int("count", "Number", 1, 1, 60),
         ParamSpec.Cards("cards", "Which cards", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster, FaceUpOnly = true }),
     ];
 
@@ -28,20 +29,26 @@ public sealed class CardsExistCondition : ConditionBlock
     {
         var n = args.Int("count");
         var cards = args.Cards("cards");
-        var noun = FilterText.Describe(cards, args.Pack, plural: n != 1, preposition: "in");
-        var article = n == 1 ? (AnStart(noun) ? "an" : "a") : n + " or more";
+        var cmp = args.Choice("cmp");
+        var plural = n != 1 || cmp == "at_most";
+        var noun = FilterText.Describe(cards, args.Pack, plural: plural, preposition: "in");
+        // "a Dragon monster", "exactly 1 monster", "2 or more", "3 or fewer".
+        var article = cmp == "at_least" && n == 1 ? (AnStart(noun) ? "an" : "a") : CardCounts.Amount(cmp, n);
         if (FilterText.IsFieldOnly(cards) && cards.Owner != CardOwner.Either)
-            return $"{(cards.Owner == CardOwner.You ? "you control" : "your opponent controls")} {article} {FilterText.Describe(cards, args.Pack, n != 1, "", withLocation: false)}";
+            return $"{(cards.Owner == CardOwner.You ? "you control" : "your opponent controls")} {article} {FilterText.Describe(cards, args.Pack, plural, "", withLocation: false)}";
         // "you have a Trap in your GY", as cards say it.
         if (cards.Owner == CardOwner.You && (cards.Zones & Zone.Field) == 0 && cards.Zones != Zone.None)
             return $"you have {article} {noun}";
-        return $"there {(n == 1 ? "is" : "are")} {article} {noun}";
+        return $"there {(plural ? "are" : "is")} {article} {noun}";
     }
 
     public override void Compile(BlockContext ctx)
     {
         var f = ctx.Script.Filter(ctx.Args.Cards("cards"));
-        ctx.Effect.Conditions.Add($"Duel.IsExistingMatchingCard({f.Function},tp,{f.Self},{f.Opp},{ctx.Args.Int("count")},{f.Exclude},e,tp)");
+        var cmp = ctx.Args.Choice("cmp");
+        ctx.Effect.Conditions.Add(cmp == "at_least"
+            ? $"Duel.IsExistingMatchingCard({f.Function},tp,{f.Self},{f.Opp},{ctx.Args.Int("count")},{f.Exclude},e,tp)"
+            : $"{CardCounts.Count(ctx, f)}{CardCounts.Op(cmp)}{ctx.Args.Int("count")}");
     }
 }
 
