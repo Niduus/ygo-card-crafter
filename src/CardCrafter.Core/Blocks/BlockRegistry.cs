@@ -40,6 +40,8 @@ public static class BlockRegistry
         new TurnWatchAction(),
         new SelfStatCondition(),
         new EachTimePassive(),
+        new DiceAction(),
+        new DeclareLevelAction(),
         new SummonedThisTurnCondition(),
         new LinkedCondition(),
         new PointsToCondition(),

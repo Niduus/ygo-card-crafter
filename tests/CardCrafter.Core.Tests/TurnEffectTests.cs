@@ -122,3 +122,34 @@ public class EachTimeTests
             .Activate(burner).ExpectActivations(1).Check("Duel.GetLP(0)==8600").Check("Duel.GetLP(1)==7000").AssertPasses();
     }
 }
+
+/// <summary>Dice rolls and declared Levels.</summary>
+public class ChanceTests
+{
+    [EngineFact]
+    public void ADieBurns_BetweenOneAndSixTimesTheAmount()
+    {
+        const long id = 100099301;
+        var p = new CardProject
+        {
+            Card = new CardData { Id = id, Name = "Dice", Frame = MonsterFrame.Effect, Level = 4, Atk = 1000, Def = 1000 },
+            Effects = [new EffectEvent { When = new BlockInstance("when.ignition"), Do = [new BlockInstance(DiceAction.BlockId)] }],
+        };
+        Assert.Contains("roll a six-sided die and inflict damage to your opponent equal to the result x 500", EffectTextGenerator.Generate(p));
+        new EngineScenario(p).Card(id, 0, "mzone").Card(Warrior, 0, "deck", 4).Card(Warrior, 1, "deck", 4)
+            .Activate(id).ExpectActivations(1).Check("Duel.GetLP(1)<=7500 and Duel.GetLP(1)>=5000 and Duel.GetLP(1)%500==0").AssertPasses();
+    }
+
+    [EngineFact]
+    public void ADeclaredLevel_Applies()
+    {
+        const long id = 100099302;
+        var p = new CardProject
+        {
+            Card = new CardData { Id = id, Name = "Declare", Frame = MonsterFrame.Effect, Level = 4, Atk = 1000, Def = 1000 },
+            Effects = [new EffectEvent { When = new BlockInstance("when.ignition"), Do = [new BlockInstance(DeclareLevelAction.BlockId).With("min", 5).With("max", 7).With("duration", "always")] }],
+        };
+        new EngineScenario(p).Card(id, 0, "mzone").Card(Warrior, 0, "deck", 4).Card(Warrior, 1, "deck", 4)
+            .Activate(id).Check($"Duel.GetFirstMatchingCard(Card.IsCode,0,LOCATION_MZONE,0,nil,{id}):GetLevel()>=5").AssertPasses();
+    }
+}
