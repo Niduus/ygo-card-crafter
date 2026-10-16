@@ -88,6 +88,8 @@ public sealed class CardFilter
     public bool CenterZone { get; set; }
     /// <summary>Further requirements, each a property compared with a value: "original ATK 2000 or more", "not DARK".</summary>
     public List<CardRequirement> Requirements { get; set; } = [];
+    /// <summary>Any one of <see cref="Requirements"/> is enough ("a DARK monster or a Dragon monster"); otherwise all must hold.</summary>
+    public bool AnyRequirement { get; set; }
 
     public CardFilter Clone()
     {

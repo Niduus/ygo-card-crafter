@@ -139,9 +139,10 @@ public static class FilterCompiler
         if (f.PointedToByThisCard) parts.Add($"e:GetHandler():GetLinkedGroup():IsContains({card})");
         if (f.CenterZone) parts.Add($"{card}:IsLocation(LOCATION_MZONE) and {card}:GetSequence()==2");
         // The filter's further requirements, from the property catalog: "original ATK 2000 or more", "not DARK".
-        foreach (var r in f.Requirements)
-            if (CardProperties.Lua(r, hasEffect) is { } test)
-                parts.Add(card == "c" ? test : System.Text.RegularExpressions.Regex.Replace(test, @"\bc:", card + ":"));
+        var tests = f.Requirements.Select(r => CardProperties.Lua(r, hasEffect)).OfType<string>()
+            .Select(test => card == "c" ? test : System.Text.RegularExpressions.Regex.Replace(test, @"\bc:", card + ":")).ToList();
+        if (f.AnyRequirement && tests.Count > 1) parts.Add("(" + string.Join(" or ", tests) + ")");
+        else parts.AddRange(tests);
         if (f.FaceDownOnly) parts.Add($"{card}:IsFacedown()");
         else if (f.FaceUpOnly)
         {

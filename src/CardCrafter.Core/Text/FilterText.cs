@@ -96,8 +96,8 @@ public static class FilterText
             words.Add(extra.Count switch
             {
                 1 => extra[0],
-                2 => $"{extra[0]} and {extra[1]}",
-                _ => string.Join(", ", extra.Take(extra.Count - 1)) + ", and " + extra[^1],
+                2 => $"{extra[0]} {(f.AnyRequirement ? "or" : "and")} {extra[1]}",
+                _ => string.Join(", ", extra.Take(extra.Count - 1)) + (f.AnyRequirement ? ", or " : ", and ") + extra[^1],
             });
         if (f.Summoned == FilterSummoned.FromExtra) words.Add("Special Summoned from the Extra Deck");
         else if (f.Summoned == FilterSummoned.ThisTurn) words.Add("Summoned this turn");

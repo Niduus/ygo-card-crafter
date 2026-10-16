@@ -143,6 +143,8 @@
         </DataTemplate>
       </ItemsControl.ItemTemplate>
     </ItemsControl>
+    <CheckBox Content="Any one of these is enough (or)" IsChecked="{Binding AnyRequirement}" IsVisible="{Binding HasSeveralRequirements}"
+              ToolTip.Tip="&quot;a DARK monster or a Dragon monster&quot;: the card needs to meet only one of the requirements above" />
     <Button Content="+ Add a requirement" Command="{Binding AddRequirementCommand}" HorizontalAlignment="Left"
             ToolTip.Tip="Original ATK, Rank, Link Rating, materials, counters, &quot;not DARK&quot;, how it was Summoned, whether its effects are negated..." />
 

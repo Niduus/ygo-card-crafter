@@ -145,3 +145,24 @@ public class TreatedAsTests
             .Check($"Duel.GetFirstMatchingCard(Card.IsCode,0,LOCATION_MZONE,0,nil,{id}):IsType(TYPE_TUNER)").AssertPasses();
     }
 }
+
+/// <summary>"a DARK monster or a Dragon monster": any one requirement is enough.</summary>
+public class AnyRequirementTests
+{
+    [Fact]
+    public void Or_ReadsAndCompiles()
+    {
+        var f = new CardFilter
+        {
+            Owner = CardOwner.You, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster, AnyRequirement = true,
+            Requirements =
+            [
+                new CardRequirement { Property = "attribute", Op = RequirementOp.Is, Values = [(long)CardAttribute.Dark] },
+                new CardRequirement { Property = "race", Op = RequirementOp.Is, Values = [(long)CardRace.Dragon] },
+            ],
+        };
+        Assert.Equal("monster that is DARK or that is a Dragon monster", FilterText.Describe(f, null, withLocation: false));
+        var conditions = FilterCompiler.Conditions(f);
+        Assert.Contains("((c:IsAttribute(0x20)) or (c:IsRace(0x2000)))", conditions);
+    }
+}

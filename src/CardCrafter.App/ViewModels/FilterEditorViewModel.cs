@@ -35,6 +35,9 @@ public sealed partial class FilterEditorViewModel : ObservableObject
     // ---- more requirements: any property compared with a value, all for the same card
     public System.Collections.ObjectModel.ObservableCollection<RequirementViewModel> Requirements { get; } = [];
 
+    /// <summary>Any one requirement is enough, instead of all of them.</summary>
+    public bool AnyRequirement { get => _f.AnyRequirement; set { if (_f.AnyRequirement == value) return; _f.AnyRequirement = value; Changed(); } }
+
     private RequirementViewModel NewRequirement(CardRequirement r) => new(r, this, () => Changed(), RemoveRequirement);
 
     [CommunityToolkit.Mvvm.Input.RelayCommand]
@@ -43,13 +46,17 @@ public sealed partial class FilterEditorViewModel : ObservableObject
         var r = new CardRequirement { Property = "atk", Op = RequirementOp.GreaterOrEqual, Value = 2000 };
         _f.Requirements.Add(r);
         Requirements.Add(NewRequirement(r));
+        OnPropertyChanged(nameof(HasSeveralRequirements));
         Changed();
     }
+
+    public bool HasSeveralRequirements => Requirements.Count > 1;
 
     private void RemoveRequirement(RequirementViewModel vm)
     {
         _f.Requirements.Remove(vm.Model);
         Requirements.Remove(vm);
+        OnPropertyChanged(nameof(HasSeveralRequirements));
         Changed();
     }
 
