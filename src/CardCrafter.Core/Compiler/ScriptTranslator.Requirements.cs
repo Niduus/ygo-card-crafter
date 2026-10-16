@@ -695,6 +695,17 @@ public static partial class ScriptTranslator
                 if (!proven) throw No($"it picks cards by {CardProperties.Find(r.Property)!.Noun switch { "" => r.Property, var n => n }} among cards that aren't monsters now");
             }
             if ((f.CenterZone || f.Requirements.Any(r => r.Property == "extra_zone")) && f.Zones != Model.Zone.MonsterZone) throw No(ZoneBySequence);
+            if (f.Requirements.FindIndex(r => r.Property == "main_zone") is var seq && seq >= 0)
+            {
+                if (f.AnyRequirement || (f.Zones & ~Model.Zone.Field) != 0 || f.Zones == Model.Zone.None) throw No(ZoneBySequence);
+                // In the Monster Zones it is "not in the Extra Monster Zone"; in the Spell & Trap Zones only a Field Spell is in the Field Zone.
+                if (f.Zones == Model.Zone.MonsterZone) f.Requirements[seq] = Req("extra_zone", RequirementOp.IsNot);
+                else if (f.Zones == Model.Zone.SpellTrapZone)
+                {
+                    if (f.SpellTrapKind is not SpellTrapKind.Any and not SpellTrapKind.Field || f.CardType is FilterCardType.Monster or FilterCardType.Trap) f.Requirements.RemoveAt(seq);
+                    else f.Requirements[seq] = Req("card_type", RequirementOp.IsNot, values: 0x80000);
+                }
+            }
         }
         // A material can come from elsewhere than a Monster Zone, where its sequence means something else.
         if (piece.Procedure is { } proc && typeof(SummonProcedure).GetProperties().Where(p => p.PropertyType == typeof(CardFilter)).Select(p => (CardFilter?)p.GetValue(proc))

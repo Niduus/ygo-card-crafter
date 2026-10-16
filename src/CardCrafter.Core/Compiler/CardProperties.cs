@@ -140,6 +140,9 @@ public static class CardProperties
         new("has_materials", "Has materials attached (Xyz)", PropertyKind.State, "c:GetOverlayCount()>0", "", IsText: "that has material", IsNotText: "that has no material"),
         new("extra_zone", "In an Extra Monster Zone", PropertyKind.State, "c:IsLocation(LOCATION_MZONE) and c:GetSequence()>4", "",
             IsText: "in the Extra Monster Zone", IsNotText: "not in the Extra Monster Zone"),
+        // GetSequence()<5 on the field: not the Extra Monster Zone, and not the Field Zone (sequence 5 of the Spell & Trap Zones).
+        new("main_zone", "In a Main Monster Zone or a Spell & Trap Zone", PropertyKind.State, "c:IsOnField() and c:GetSequence()<5", "",
+            IsText: "not in the Extra Monster Zone or the Field Zone", IsNotText: "in the Extra Monster Zone or the Field Zone"),
         new("targetable", "Can be targeted by this effect", PropertyKind.State, "c:IsCanBeEffectTarget(e)", "",
             IsText: "that can be targeted", IsNotText: "that cannot be targeted", NeedsEffect: true),
     ];

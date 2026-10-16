@@ -3145,8 +3145,8 @@ public static partial class ScriptTranslator
         // "Tribute 1 monster" as a cost in a chain: the engine's own check that it isn't already destroyed.
         if (term == "not c:IsStatus(STATUS_BATTLE_DESTROYED)") return;
         if (term == "c:IsFacedown()") { f.FaceDownOnly = true; f.FaceUpOnly = false; return; }
-        // In the Spell & Trap Zone, not the Field Zone: the Spell & Trap Zone picker means that already.
-        if (term == "c:GetSequence()<5") return;
+        // Not the Extra Monster Zone or the Field Zone: SettleRequirements says it in the words of the filter's zones.
+        if (term == "c:GetSequence()<5") { f.Requirements.Add(new() { Property = "main_zone", Op = RequirementOp.Is }); return; }
         if (term == "c:IsFaceupEx()") { f.FaceUpOnly = true; return; }
         if ((m = Regex.Match(term, @"^not c:IsCode\((\d+|id)\)$")).Success)
         {

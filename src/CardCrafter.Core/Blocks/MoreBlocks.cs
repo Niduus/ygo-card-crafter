@@ -235,8 +235,9 @@ public sealed class NegateCardEffectsAction : CardGroupAction
         return args.Describe("duration") is { Length: > 0 } d ? $"{text} {d}" : text;
     }
 
+    // An Effect Monster, or one that is originally one (a Gemini monster that is a Normal Monster for now), as aux.NegateMonsterFilter.
     protected override string? AbleCheck(BlockContext ctx) =>
-        "c:IsFaceup() and not c:IsDisabled() and (c:IsType(TYPE_EFFECT) or c:IsType(TYPE_SPELL+TYPE_TRAP))";
+        "c:IsFaceup() and not c:IsDisabled() and (c:IsType(TYPE_EFFECT) or c:GetOriginalType()&TYPE_EFFECT~=0 or c:IsType(TYPE_SPELL+TYPE_TRAP))";
 
     protected override string Apply(string group, BlockContext ctx)
     {

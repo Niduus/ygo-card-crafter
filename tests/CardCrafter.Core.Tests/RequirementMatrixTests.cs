@@ -474,6 +474,7 @@ public class RequirementMatrixChoiceTests
         Row("xyz_summoned", true, Is("has_materials")), Row("xyz_summoned", false, IsNot("has_materials")), Row("xyz", false, Is("has_materials")), Row("xyz", true, IsNot("has_materials")),
         Row("link_summoned", true, Is("extra_zone")), Row("link_summoned", false, IsNot("extra_zone")), Row("pointed_at", true, Is("extra_zone")),
         Row("link", false, Is("extra_zone")), Row("link", true, IsNot("extra_zone")),
+        Row("link_summoned", false, Is("main_zone")), Row("link_summoned", true, IsNot("main_zone")), Row("link", true, Is("main_zone")), Row("link", false, IsNot("main_zone")),
         Row("stat", true, Is("targetable")), Row("stat", false, IsNot("targetable")), Row("untargetable", false, Is("targetable")), Row("untargetable", true, IsNot("targetable")),
         Row("counters", true, Is("counters")), Row("counters", false, IsNot("counters")), Row("stat", false, Is("counters")), Row("stat", true, IsNot("counters")),
     ];
@@ -573,6 +574,8 @@ public class RequirementMatrixTextTests
         [IsNot("equipped"), "that is not equipped with an Equip Card"],
         [Is("has_materials"), "that has material"],
         [IsNot("extra_zone"), "not in the Extra Monster Zone"],
+        [Is("main_zone"), "not in the Extra Monster Zone or the Field Zone"],
+        [IsNot("main_zone"), "in the Extra Monster Zone or the Field Zone"],
         [Is("targetable"), "that can be targeted"],
         [Is("counters"), "that has a counter on it"],
         [IsNot("counters"), "that has no counters on it"],
