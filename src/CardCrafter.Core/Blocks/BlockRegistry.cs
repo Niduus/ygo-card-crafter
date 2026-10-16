@@ -32,6 +32,8 @@ public static class BlockRegistry
         new TreatedAsPassive(),
         new ActivationTrigger(),
         new AttackDeclaredTrigger(),
+        new EventThisTurnCondition(),
+        new CompareValuesCondition(),
         new LifeThisTurnCondition(),
         new LifeDifferenceCondition(),
         new StatsFromValuePassive(),

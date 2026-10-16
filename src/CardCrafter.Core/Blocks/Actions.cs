@@ -612,6 +612,7 @@ public sealed class SpecialSummonSelfAction : ActionBlock
             new("attack", "in Attack Position"),
             new("defense", "in Defense Position"),
             new("defense_facedown", "in face-down Defense Position")),
+        ParamSpec.Flag("ignore", "ignoring its Summoning conditions", false),
     ];
 
     /// <summary>"Special Summon this card from your hand", taking the place from the WHEN block.</summary>
@@ -620,7 +621,8 @@ public sealed class SpecialSummonSelfAction : ActionBlock
         var zone = args.TriggerZone;
         var what = zone == "banished" ? "Special Summon this banished card" : "Special Summon this card";
         if (zone is not null && Zones.From(zone) is { } from) what += " " + from;
-        return $"{what} {args.Describe("position")}".TrimEnd();
+        what = $"{what} {args.Describe("position")}".TrimEnd();
+        return args.Bool("ignore") ? what + ", ignoring its Summoning conditions" : what;
     }
 
     public override void Compile(BlockContext ctx)
@@ -635,16 +637,25 @@ public sealed class SpecialSummonSelfAction : ActionBlock
             "defense_facedown" => "POS_FACEDOWN_DEFENSE",
             _ => "POS_FACEUP",
         };
+        var ignore = ctx.Args.Bool("ignore") ? "true" : "false";
+        // Ritual and Extra Deck Monsters (and "must be Special Summoned" ones) must be properly Summoned before they can
+        // come back from the GY or banishment, unless the effect ignores their Summoning conditions.
+        var c = ctx.Card;
+        if (ignore == "false" && ctx.Effect.Range is "LOCATION_GRAVE" or "LOCATION_REMOVED" or "LOCATION_GRAVE+LOCATION_REMOVED"
+            && (c.IsExtraDeck || c.Frame == MonsterFrame.Ritual || c.Abilities.HasFlag(MonsterAbility.SpecialSummonOnly)))
+            ctx.Effect.Warn($"A {(c.Frame == MonsterFrame.Ritual ? "Ritual" : c.IsExtraDeck ? c.Frame.ToString() : "\"must be Special Summoned\"")} Monster can only be Special Summoned from the GY or banishment " +
+                            "after it was properly Summoned first. Tick \"ignoring its Summoning conditions\" if this effect should work anyway.");
         var r = ctx.Effect.NewLocal("r");
         ctx.Effect.AddCategory("CATEGORY_SPECIAL_SUMMON");
         ctx.Effect.TargetChecks.Add("Duel.GetLocationCount(tp,LOCATION_MZONE)>0");
-        ctx.Effect.TargetChecks.Add($"e:GetHandler():IsCanBeSpecialSummoned(e,0,tp,false,false,{pos})");
+        // The second switch also lifts "must first be properly Summoned" (the engine's revive limit).
+        ctx.Effect.TargetChecks.Add($"e:GetHandler():IsCanBeSpecialSummoned(e,0,tp,{ignore},{ignore},{pos})");
         ctx.Effect.TargetLines.Add("Duel.SetOperationInfo(0,CATEGORY_SPECIAL_SUMMON,e:GetHandler(),1,0,0)");
         ctx.Effect.AddStep(
         [
             $"local {r}=0",
             "if c:IsRelateToEffect(e) and Duel.GetLocationCount(tp,LOCATION_MZONE)>0 then",
-            $"\t{r}=Duel.SpecialSummon(c,SUMMON_VALUE_SELF,tp,tp,false,false,{pos})",
+            $"\t{r}=Duel.SpecialSummon(c,SUMMON_VALUE_SELF,tp,tp,{ignore},{ignore},{pos})",
             "end",
         ], r, ctx.Link);
     }

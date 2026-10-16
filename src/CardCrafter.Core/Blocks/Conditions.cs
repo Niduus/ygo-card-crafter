@@ -132,22 +132,45 @@ public sealed class LifePointsCondition : ConditionBlock
     public override string Id => "if.life_points";
     public override string Group => "Life Points";
     public override string Name => "Life Points compared to a number";
-    public override string Sentence => "{who} LP is {cmp} {amount}";
 
-    public override string Describe(BlockArgs args) =>
-        $"{(args.Choice("who") == "you" ? "your" : "your opponent's")} LP are {args.Int("amount")} or {(args.Choice("cmp") == "le" ? "less" : "more")}";
+    public override string Sentence => "{who} LP is {cmp} {amount} {amount2}";
+
+    public override string Describe(BlockArgs args)
+    {
+        var whose = args.Choice("who") == "you" ? "your" : "your opponent's";
+        var (n, m) = (args.Int("amount"), args.Int("amount2"));
+        return args.Choice("cmp") switch
+        {
+            "lt" => $"{whose} LP are less than {n}",
+            "gt" => $"{whose} LP are more than {n}",
+            "eq" => $"{whose} LP are exactly {n}",
+            "between" => $"{whose} LP are between {Math.Min(n, m)} and {Math.Max(n, m)}",
+            "ge" => $"{whose} LP are {n} or more",
+            _ => $"{whose} LP are {n} or less",
+        };
+    }
+
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Choice("who", "Whose", new("you", "Your"), new("opponent", "Your opponent's")),
-        ParamSpec.Choice("cmp", "Compare", new("le", "at most"), new("ge", "at least")),
+        ParamSpec.Choice("cmp", "Compare", new("le", "at most"), new("ge", "at least"), new("lt", "less than"), new("gt", "more than"), new("eq", "exactly"), new("between", "between")),
         ParamSpec.Int("amount", "Amount", 2000, 0, 999999),
+        ParamSpec.Int("amount2", "and", 4000, 0, 999999).ShowIf(b => b.Values.GetValueOrDefault("cmp") == "between"),
     ];
 
     public override void Compile(BlockContext ctx)
     {
-        var p = ctx.Args.Choice("who") == "you" ? "tp" : "1-tp";
-        var op = ctx.Args.Choice("cmp") == "le" ? "<=" : ">=";
-        ctx.Effect.Conditions.Add($"Duel.GetLP({p}){op}{ctx.Args.Int("amount")}");
+        var lp = $"Duel.GetLP({(ctx.Args.Choice("who") == "you" ? "tp" : "1-tp")})";
+        var (n, m) = (ctx.Args.Int("amount"), ctx.Args.Int("amount2"));
+        ctx.Effect.Conditions.Add(ctx.Args.Choice("cmp") switch
+        {
+            "lt" => $"{lp}<{n}",
+            "gt" => $"{lp}>{n}",
+            "eq" => $"{lp}=={n}",
+            "between" => $"{lp}>={Math.Min(n, m)} and {lp}<={Math.Max(n, m)}",
+            "ge" => $"{lp}>={n}",
+            _ => $"{lp}<={n}",
+        });
     }
 }
 
@@ -159,13 +182,32 @@ public sealed class CompareLifePointsCondition : ConditionBlock
     public override string Sentence => "You have {cmp} LP than your opponent";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
-        ParamSpec.Choice("cmp", "Compare", new("less", "less"), new("more", "more")),
+        ParamSpec.Choice("cmp", "Compare",
+            new("less", "less"), new("more", "more"), new("le", "less or the same", "the same or less"), new("ge", "more or the same", "the same or more"),
+            new("same", "the same", "exactly the same"), new("half", "half or less of", "half or less of your opponent's"),
+            new("double", "at least double", "at least double your opponent's")),
     ];
 
-    public override string Describe(BlockArgs args) => $"you have {args.Describe("cmp")} LP than your opponent";
+    public override string Describe(BlockArgs args) => args.Choice("cmp") switch
+    {
+        "le" => "your LP are less than or equal to your opponent's",
+        "ge" => "your LP are more than or equal to your opponent's",
+        "same" => "your LP are the same as your opponent's",
+        "half" => "your LP are half your opponent's or less",
+        "double" => "your LP are at least double your opponent's",
+        _ => $"you have {args.Describe("cmp")} LP than your opponent",
+    };
 
-    public override void Compile(BlockContext ctx) =>
-        ctx.Effect.Conditions.Add(ctx.Args.Choice("cmp") == "less" ? "Duel.GetLP(tp)<Duel.GetLP(1-tp)" : "Duel.GetLP(tp)>Duel.GetLP(1-tp)");
+    public override void Compile(BlockContext ctx) => ctx.Effect.Conditions.Add(ctx.Args.Choice("cmp") switch
+    {
+        "more" => "Duel.GetLP(tp)>Duel.GetLP(1-tp)",
+        "le" => "Duel.GetLP(tp)<=Duel.GetLP(1-tp)",
+        "ge" => "Duel.GetLP(tp)>=Duel.GetLP(1-tp)",
+        "same" => "Duel.GetLP(tp)==Duel.GetLP(1-tp)",
+        "half" => "Duel.GetLP(tp)*2<=Duel.GetLP(1-tp)",
+        "double" => "Duel.GetLP(tp)>=Duel.GetLP(1-tp)*2",
+        _ => "Duel.GetLP(tp)<Duel.GetLP(1-tp)",
+    });
 }
 
 public sealed class TurnCondition : ConditionBlock

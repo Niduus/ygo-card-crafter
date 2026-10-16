@@ -498,7 +498,8 @@ public class EngineTests
             .Card(Warrior, 0, "hand", 2).Card(Warrior, 0, "grave", 2).Card(Warrior, 0, "deck", 5)
             .Activate(card.Card.Id)
             .ExpectActivations(1)
-            .Check("Duel.GetLP(0)>=7100")
+            // "Pay half your LP" pays 4000 of 8000; every other cost pays at most 1000.
+            .Check(inst.Values.GetValueOrDefault("how") == "half" ? "Duel.GetLP(0)==4100" : "Duel.GetLP(0)>=7100")
             .AssertPasses();
     }
 

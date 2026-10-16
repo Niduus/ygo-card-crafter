@@ -148,12 +148,13 @@ public static class ValueSources
     /// The Lua number: <paramref name="card"/> is the monster "its" means and <paramref name="p"/> the player "you" means.
     /// <paramref name="ev"/> is false inside a lasting effect, which has no event to take an amount from.
     /// </summary>
-    public static string Lua(BlockContext ctx, string card, string p, bool ev = true)
+    /// <param name="valueKey">The parameter holding the source, and <paramref name="cardsKey"/> its card picker: blocks with two values use other names.</param>
+    public static string Lua(BlockContext ctx, string card, string p, bool ev = true, string valueKey = "value", string cardsKey = CardsKey, string howKey = "how", string amountKey = "amount")
     {
-        var source = ctx.Args.Choice("value");
+        var source = ctx.Args.Choice(valueKey);
         string Group()
         {
-            var f = ctx.Script.Filter(ctx.Args.Cards(CardsKey));
+            var f = ctx.Script.Filter(ctx.Args.Cards(cardsKey));
             return $"Duel.GetMatchingGroup({f.Function},{p},{f.Self},{f.Opp},{(f.Exclude == "nil" ? "nil" : "e:GetHandler()")},e,{p})";
         }
         var raw = source switch
@@ -189,11 +190,12 @@ public static class ValueSources
         if (source == "event" && !ev) ctx.Effect.Error("\"That amount\" only exists while an effect resolves after damage or an LP change; a lasting effect can't use it.");
         else if (source == "event" && ctx.Effect.Code is not ("EVENT_DAMAGE" or "EVENT_BATTLE_DAMAGE" or "EVENT_RECOVER" or "EVENT_PAY_LPCOST"))
             ctx.Effect.Warn("\"That amount\" needs a WHEN that is damage being taken or LP being paid or gained; otherwise it is 0.");
-        return ctx.Args.Choice("how") switch
+        if (ctx.Args.Definition.Param(howKey) is null) return raw;
+        return ctx.Args.Choice(howKey) switch
         {
             "half" => $"math.floor(({raw})/2)",
             "double" => $"({raw})*2",
-            "per" => $"({raw})*{ctx.Args.Int("amount").ToString(CultureInfo.InvariantCulture)}",
+            "per" => $"({raw})*{ctx.Args.Int(amountKey).ToString(CultureInfo.InvariantCulture)}",
             _ => raw,
         };
     }
