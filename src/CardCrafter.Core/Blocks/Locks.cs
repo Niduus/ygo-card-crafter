@@ -37,6 +37,11 @@ internal static class Locks
         new("search", "add cards from the Deck to the hand, except by drawing them"),
         new("sset", "Set Spells/Traps"),
         new("bp", "conduct the Battle Phase"),
+        new("activate_cards", "activate Spell/Trap Cards"),
+        new("activate_spell_cards", "activate Spell Cards"),
+        new("activate_trap_cards", "activate Trap Cards"),
+        new("activate_gy", "activate the effects of cards in the GY"),
+        new("pendulum", "Pendulum Summon monsters"),
     ];
 
     /// <summary>The engine effects a lock is made of: one per kind of Summon it stops ("Normal or Special Summon" is two).</summary>
@@ -48,10 +53,10 @@ internal static class Locks
     };
 
     private static bool IsSummonLock(string what) =>
-        what is "special" or "special_extra" or "normal_special" or "summon_any" or "normal" or "special_hand" or "special_deck" or "special_gy";
+        what is "special" or "special_extra" or "normal_special" or "summon_any" or "normal" or "special_hand" or "special_deck" or "special_gy" or "pendulum";
 
     /// <summary>The locks a turn-long restriction on yourself can be: the ones modern cards put on their own player.</summary>
-    public static readonly ChoiceOption[] TurnWhat = What.Where(w => w.Value is "special" or "special_extra" or "activate_any" or "activate_monster" or "activate_monster_of" or "special_of" or "attack").ToArray();
+    public static readonly ChoiceOption[] TurnWhat = What.Where(w => w.Value is "special" or "special_extra" or "activate_any" or "activate_monster" or "activate_monster_of" or "special_of" or "attack" or "bp" or "normal_special").ToArray();
 
     /// <summary>Locks whose card picker names what is locked ("the effects of LIGHT monsters"), not an exception.</summary>
     public static bool Names(string what) => what is "activate_monster_of" or "special_of";
@@ -75,7 +80,7 @@ internal static class Locks
 
     /// <summary>True when the "except" filter picks some monsters, not every one: only then is there an exception.</summary>
     public static bool HasExcept(string what, CardFilter f) =>
-        what is not ("search" or "bp") && !Names(what) && (FilterCompiler.Conditions(f).Any(c => c != "c:IsType(TYPE_MONSTER)") || f.ExceptOwnName || f.ExceptCode != 0);
+        what is not ("search" or "bp" or "activate_cards" or "activate_spell_cards" or "activate_trap_cards" or "activate_gy") && !Names(what) && (FilterCompiler.Conditions(f).Any(c => c != "c:IsType(TYPE_MONSTER)") || f.ExceptOwnName || f.ExceptCode != 0);
 
     private static string Verb(string what) => What.First(w => w.Value == what).Label;
 
@@ -131,7 +136,8 @@ internal static class Locks
 
     /// <summary>"you cannot Special Summon from the Extra Deck" and ", except Xyz Monsters" apart, for wording that puts the turn between them.</summary>
     public static (string Head, string Except) Split(string what, CardFilter except, BlockArgs args) =>
-        Names(what) ? ($"you cannot {Named(what, except, args)}", "") : ($"you cannot {Verb(what)}", ExceptText(what, except, args));
+        what == "bp" ? ("you cannot conduct your Battle Phase", "")
+        : Names(what) ? ($"you cannot {Named(what, except, args)}", "") : ($"you cannot {Verb(what)}", ExceptText(what, except, args));
 
     /// <summary>
     /// The settings of the lock effect <paramref name="v"/>: a field effect on the players (or on the monsters, for
@@ -177,6 +183,21 @@ internal static class Locks
                 Player("EFFECT_CANNOT_SSET");
                 if (f != "nil") lines.Add($"{v}:SetTarget({ctx.Script.AddFunction("ssetlimit", "e,c", [$"return not {f}(c)"])})");
                 break;
+            case "pendulum":
+            {
+                // A Pendulum Scale's "You cannot Pendulum Summon monsters, except ...": it cannot be negated, and is
+                // lost while the card is forbidden, as the official scales write it.
+                if (range is not null)
+                {
+                    lines.Add($"{v}:SetProperty({Props("EFFECT_FLAG_PLAYER_TARGET+EFFECT_FLAG_CANNOT_DISABLE+EFFECT_FLAG_CAN_FORBIDDEN")})");
+                    lines.Add($"{v}:SetCode(EFFECT_CANNOT_SPECIAL_SUMMON)");
+                    lines.Add($"{v}:SetRange({range})");
+                    lines.Add($"{v}:SetTargetRange({self},{opp})");
+                }
+                else Player("EFFECT_CANNOT_SPECIAL_SUMMON");
+                lines.Add($"{v}:SetTarget({ctx.Script.AddFunction("pendlimit", "e,c,sump,sumtype,sumpos,targetp,se", ["return bit.band(sumtype,SUMMON_TYPE_PENDULUM)==SUMMON_TYPE_PENDULUM" + Not("c")])})");
+                break;
+            }
             case "special_hand" or "special_deck" or "special_gy":
             {
                 Player("EFFECT_CANNOT_SPECIAL_SUMMON");
@@ -227,6 +248,10 @@ internal static class Locks
         "activate_spell" => "re:IsActiveType(TYPE_SPELL) and (re:GetHandler():IsOnField() or re:IsHasType(EFFECT_TYPE_ACTIVATE))",
         "activate_trap" => "re:IsActiveType(TYPE_TRAP) and (re:GetHandler():IsOnField() or re:IsHasType(EFFECT_TYPE_ACTIVATE))",
         "activate_spelltrap" => "re:IsActiveType(TYPE_SPELL+TYPE_TRAP) and (re:GetHandler():IsOnField() or re:IsHasType(EFFECT_TYPE_ACTIVATE))",
+        "activate_cards" => "re:IsHasType(EFFECT_TYPE_ACTIVATE)",
+        "activate_spell_cards" => "re:IsHasType(EFFECT_TYPE_ACTIVATE) and re:GetHandler():IsType(TYPE_SPELL)",
+        "activate_trap_cards" => "re:IsHasType(EFFECT_TYPE_ACTIVATE) and re:GetHandler():IsType(TYPE_TRAP)",
+        "activate_gy" => "re:GetActivateLocation()==LOCATION_GRAVE",
         _ => "true",
     };
 
@@ -249,6 +274,20 @@ internal static class Locks
                 activity = "ACTIVITY_SPSUMMON";
                 filter = ctx.Script.AddFunction("counterfilter", "c", [$"return not ({breaks})"]);
                 break;
+            }
+            // "You cannot conduct your Battle Phase the turn you activate this card": the game counts Battle Phases itself.
+            case "bp":
+                return "Duel.GetActivityCount(tp,ACTIVITY_BATTLE_PHASE)==0";
+            // "You cannot Normal or Special Summon monsters the turn you activate this, except ...": both kinds counted.
+            case "normal_special":
+            {
+                var both = ctx.Script.AddFunction("counterfilter", "c", [$"return {(f == "nil" ? "false" : $"{f}(c)")}"]);
+                if (!ctx.Script.AddActivityCounter("ACTIVITY_SUMMON", both) || !ctx.Script.AddActivityCounter("ACTIVITY_SPSUMMON", both))
+                {
+                    ctx.Effect.Error("Two \"the turn you activate this\" locks on one card must lock the same thing.");
+                    return null;
+                }
+                return "Duel.GetCustomActivityCount(id,tp,ACTIVITY_SUMMON)==0 and Duel.GetCustomActivityCount(id,tp,ACTIVITY_SPSUMMON)==0";
             }
             case "attack":
                 activity = "ACTIVITY_ATTACK";
@@ -289,7 +328,12 @@ public sealed class LockPassive : PassiveBlock
         ParamSpec.Cards("cards", "Except (plain monsters for none)", () => new CardFilter { CardType = FilterCardType.Monster }, Zone.MonsterZone),
     ];
 
-    public override string Describe(BlockArgs args) => Locks.Sentence(args.Choice("who"), Locks.WhatOf(args), args.Cards("cards"), args);
+    public override string Describe(BlockArgs args)
+    {
+        var text = Locks.Sentence(args.Choice("who"), Locks.WhatOf(args), args.Cards("cards"), args);
+        // The Pendulum Scales' lock is written so it can't be negated, and the card says so.
+        return Locks.WhatOf(args) == "pendulum" ? text + ". This effect cannot be negated" : text;
+    }
 
     public override void Compile(BlockContext ctx)
     {

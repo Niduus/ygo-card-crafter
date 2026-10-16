@@ -20,9 +20,9 @@ public class VerdictTests
         var orange = TranslationVerdict.Of(new TranslatedPiece { Piece = Piece(), Reason = "its target step does something the blocks don't (local b1=...)" }, card);
         Assert.Equal(PieceColor.Orange, orange.Color);
         Assert.Contains("built by hand", orange.Note);
-        var red = TranslationVerdict.Of(new TranslatedPiece { Piece = Piece(), Reason = "its lasting effect isn't one the blocks have (FIELD EFFECT_INDESTRUCTABLE_COUNT)" }, card);
+        var red = TranslationVerdict.Of(new TranslatedPiece { Piece = Piece(), Reason = "its lasting effect isn't one the blocks have (FIELD EFFECT_CHANGE_BATTLE_DAMAGE)" }, card);
         Assert.Equal(PieceColor.Red, red.Color);
-        Assert.Contains("EFFECT_INDESTRUCTABLE_COUNT", red.Note);
+        Assert.Contains("EFFECT_CHANGE_BATTLE_DAMAGE", red.Note);
         // A lasting effect some block writes, only in another form, can be built by hand.
         Assert.Equal(PieceColor.Orange, TranslationVerdict.Of(new TranslatedPiece { Piece = Piece(), Reason = "its lasting effect isn't one the blocks have (SINGLE EFFECT_UPDATE_ATTACK)" }, card).Color);
         Assert.Equal(PieceColor.Red, TranslationVerdict.Of(new TranslatedPiece { Piece = Piece(), Reason = "its lasting effect isn't one the blocks have (SINGLE+CONTINUOUS EVENT_SPSUMMON_SUCCESS)" }, card).Color);

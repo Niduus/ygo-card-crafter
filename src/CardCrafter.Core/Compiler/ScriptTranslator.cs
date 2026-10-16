@@ -447,6 +447,7 @@ public static partial class ScriptTranslator
         effect.Do.AddRange(Operation(op, fns, targeting, card));
         if (effect.Do.Count == 0) throw No("its operation does nothing the blocks recognise");
         CounterActivationChecks(effect, targeting, type);
+        OneTargetingBlock(effect);
         // Value blocks: the activation must ask what the blocks ask, or IF blocks say the rest.
         if (effect.Do.Any(b => b.BlockId is StatsFromValueAction.BlockId or LifeFromValueAction.BlockId))
             effect.If.AddRange(ValueActivationChecks(effect, targeting, tg is not null, fns));
@@ -494,8 +495,10 @@ public static partial class ScriptTranslator
             return new TranslatedPiece { Piece = null!, Ignored = true };
         if (CounterPermit(line) is { } permit) return permit;
         // The counter behind "the turn you activate this" locks: the lock block writes its own.
-        if (Regex.IsMatch(line, @"^Duel\.AddCustomActivityCounter\((?:id|\d+),ACTIVITY_(?:SPSUMMON|CHAIN|ATTACK),[\w.]+\)$"))
+        if (Regex.IsMatch(line, @"^Duel\.AddCustomActivityCounter\((?:id|\d+),ACTIVITY_(?:SPSUMMON|SUMMON|CHAIN|ATTACK),[\w.]+\)$"))
             return new TranslatedPiece { Piece = null!, Ignored = true };
+        // "Send this card to the GY" (EFFECT_SELF_TOGRAVE): the block enables the engine's check itself.
+        if (line == "Duel.EnableGlobalFlag(GLOBALFLAG_SELF_TOGRAVE)") return new TranslatedPiece { Piece = null!, Ignored = true };
         if (line is "c:EnableReviveLimit()" or "aux.EnablePendulumAttribute(c)" || line.StartsWith("aux.AddCodeList(c,", StringComparison.Ordinal)
             || line.StartsWith("aux.AddSetNameMonsterList(c,", StringComparison.Ordinal) || line.StartsWith("aux.AddMaterialCodeList(c,", StringComparison.Ordinal))
             return new TranslatedPiece { Piece = null!, Ignored = true };
@@ -1216,6 +1219,7 @@ public static partial class ScriptTranslator
 
     private static List<BlockInstance> ConditionBody(string body, Functions fns)
     {
+        if (LastingCondition(body) is { } battling) return battling;
         Match m;
         if (body.StartsWith("return ", StringComparison.Ordinal) && AllAreCheck(body[7..], fns) is { } allAre) return [allAre];
         if (CounterCondition(body, fns) is { } counterIf) return [counterIf];
@@ -1372,13 +1376,14 @@ public static partial class ScriptTranslator
             if (line.StartsWith("@TEMP ", StringComparison.Ordinal))
             {
                 var temp = temps[Int(line[6..])];
+                if (LastingCost(temp, rawBody, fns) is { } lastingCost) { blocks.Add(lastingCost); continue; }
                 if (temp.Parts is [{ Holder: "player" } only] && UntilEndOfTurn(only.Set) && LockOf(only.Set, fns) is { Who: "you" } r
                     && Locks.TurnWhat.Any(w => w.Value == r.What))
                 {
                     blocks.Add(Block("cost.summon_restriction").With("what", r.What).With("when", wholeTurn ? "whole_turn" : "rest").With("cards", r.Except));
                     continue;
                 }
-                throw No("its cost puts an effect on the turn the blocks don't have");
+                throw No($"its cost puts an effect on the turn the blocks don't have ({string.Join("+", temp.Parts.Select(p => p.Set.GetValueOrDefault("Code")))})");
             }
             // Cards picked first, then moved: "local g=Duel.SelectMatchingCard(...)" then "Duel.Remove(g,POS_FACEUP,REASON_COST)".
             if ((m = Regex.Match(line, @"^local (\w+)=Duel\.SelectMatchingCard\(tp,([\w.()]+),tp,([\w+]+),0,(\d+),(\d+),(nil|e:GetHandler\(\)|c)(?:,([\w,]+))?\)$")).Success)
@@ -1824,6 +1829,7 @@ public static partial class ScriptTranslator
                 var body = TargetBody();
                 if (body is null) return (who, "special", except);
                 if (body == "aux.TargetBoolFunction(Card.IsLocation,LOCATION_EXTRA)") return (who, "special_extra", except);
+                if (PendulumLock(body, set) is { } pendulumExcept) return (who, "pendulum", pendulumExcept);
                 var places = Spared(body);
                 return (who, places switch
                 {
@@ -1875,6 +1881,7 @@ public static partial class ScriptTranslator
                 body = body
                     .Replace("local rc=re:GetHandler() ", "").Replace("rc:", "re:GetHandler():")
                     .Replace("local loc=re:GetActivateLocation() ", "").Replace("loc==", "re:GetActivateLocation()==");
+                if (ActivationLock(body) is { } cardsLock) return (who, cardsLock, except);
                 if (!body.StartsWith("return ", StringComparison.Ordinal)) throw No($"its lock on activations is unusual ({Short(body)})");
                 string? type = null;
                 bool onField = false, hand = false, gy = false, mzone = false, offField = false, named = false;
@@ -2083,7 +2090,7 @@ public static partial class ScriptTranslator
             }
             if (parts.Count == 1 && BanishInsteadOf(first, fns) is { } bi)
                 return Block("do.banish_instead").With("duration", lasts).With("what", bi.What).With("whose", bi.Whose);
-            throw No($"it puts an effect on a player the blocks don't have ({codes[0]})");
+            return LastingTemp(temp, target, targetCard, fns) ?? throw No($"it puts an effect on a player the blocks don't have ({codes[0]})");
         }
         if (holder == "c")
         {
@@ -2124,7 +2131,7 @@ public static partial class ScriptTranslator
         if (parts.Count == 1 && codes[0] == "EFFECT_CHANGE_LEVEL" && Int(value, out var tlv))
             return OnTarget("do.change_level").With("mode", "becomes").With("amount", tlv).With("duration", duration);
         if (LiveTempStats(temp, target, targetCard) is { } liveTarget) return liveTarget;
-        throw No($"it gives the target an effect the blocks don't have ({codes[0]})");
+        return LastingTemp(temp, target, targetCard, fns) ?? throw No($"it gives the target an effect the blocks don't have ({codes[0]})");
     }
 
     /// <summary>The operation's statements, matched to DO blocks in order, with "and if you do" / "then" links.</summary>
@@ -2255,6 +2262,7 @@ public static partial class ScriptTranslator
                 link = ActionLink.And;
                 continue;
             }
+            if (line.StartsWith("@TEMP ", StringComparison.Ordinal) && LastingTempLine(index, body, temps, blocks, target, targetCard)) { link = ActionLink.And; continue; }
             if (line.StartsWith("@TEMP ", StringComparison.Ordinal))
             {
                 var temp = TempAction(temps[Int(line[6..])], target, targetCard, fns);
@@ -2575,7 +2583,7 @@ public static partial class ScriptTranslator
         effect.When = Block("when.while_face_up").With("zone", Zone(range ?? "LOCATION_MZONE"));
         var value = set.GetValueOrDefault("Value");
         if (set.ContainsKey("Target") && !type.Contains("EFFECT_TYPE_FIELD"))
-            throw No("its lasting effect picks its cards in a way the blocks don't");
+            throw No($"its lasting effect picks its cards in a way the blocks don't ({code})");
 
         if (type.SetEquals(["EFFECT_TYPE_SINGLE"]))
         {
@@ -2728,6 +2736,7 @@ public static partial class ScriptTranslator
             effect.Do.Add(live);
             return effect;
         }
+        if (MoreLasting(effect, type, code, set, range, fns, card)) return effect;
         throw No($"its lasting effect isn't one the blocks have ({string.Join("+", type.Select(t => t.Replace("EFFECT_TYPE_", "")))} {code})");
     }
 
@@ -2844,7 +2853,8 @@ public static partial class ScriptTranslator
     private static string? ImmuneValue(string value, Functions fns)
     {
         string body;
-        try { body = Body(value, fns).Replace("re:", "te:", StringComparison.Ordinal); } catch (Untranslatable) { return null; }
+        // Body() writes e:GetHandlerPlayer() as tp; the value function has no tp of its own.
+        try { body = Regex.Replace(Body(value, fns).Replace("re:", "te:", StringComparison.Ordinal), @"\btp\b", "e:GetHandlerPlayer()"); } catch (Untranslatable) { return null; }
         return body switch
         {
             "return te:GetOwnerPlayer()~=e:GetHandlerPlayer()" or "return te:GetOwnerPlayer()~=e:GetOwnerPlayer()" or "return e:GetHandlerPlayer()~=te:GetOwnerPlayer()" => "opponent",
@@ -2857,7 +2867,7 @@ public static partial class ScriptTranslator
             "return te:IsActiveType(TYPE_SPELL) and te:GetOwnerPlayer()~=e:GetHandlerPlayer()" => "opp_spell",
             "return te:IsActiveType(TYPE_TRAP) and te:GetOwnerPlayer()~=e:GetHandlerPlayer()" => "opp_trap",
             "return te:GetOwnerPlayer()~=e:GetHandlerPlayer() and te:IsActivated()" or "return e:GetHandlerPlayer()~=te:GetOwnerPlayer() and te:IsActivated()" => "opp_activated",
-            _ => null,
+            _ => ImmuneWhose(body),
         };
     }
 
@@ -2865,7 +2875,7 @@ public static partial class ScriptTranslator
     private static string? IndestructibleEffectBy(string value, Functions fns)
     {
         string body;
-        try { body = Body(value, fns).Replace("te:", "re:", StringComparison.Ordinal); } catch (Untranslatable) { return null; }
+        try { body = Regex.Replace(Body(value, fns).Replace("te:", "re:", StringComparison.Ordinal), @"\btp\b", "e:GetHandlerPlayer()"); } catch (Untranslatable) { return null; }
         return body switch
         {
             "return re:IsActiveType(TYPE_SPELL+TYPE_TRAP)" => "spelltrap_effect",
@@ -2879,7 +2889,7 @@ public static partial class ScriptTranslator
     private static string? IndestructibleCountBy(string value, Functions fns)
     {
         string body;
-        try { body = Body(value, fns); } catch (Untranslatable) { return null; }
+        try { body = Regex.Replace(Body(value, fns), @"\btp\b", "e:GetHandlerPlayer()"); } catch (Untranslatable) { return null; }
         body = Regex.Replace(body, @"bit\.band\(r,([\w+]+)\)", "r&$1");
         var m = Regex.Match(body, @"^(?:return (.+)|if (.+) then return (?:1|true) else return (?:0|false) end)$");
         if (!m.Success) return null;

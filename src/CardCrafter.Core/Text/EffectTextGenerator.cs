@@ -127,6 +127,10 @@ public static partial class EffectTextGenerator
         if (passive)
         {
             text = head.Length == 0 ? SentenceCase.Upper(actions) : $"{SentenceCase.Upper(head)}, {actions}";
+            // "If this card attacks, ... until the end of the Damage Step."
+            foreach (var b in effect.If)
+                if (BlockRegistry.Find(b.BlockId) is ConditionBlock cd && cd.Until(new BlockArgs(cd, b, pack) { Effect = effect, CardName = card.Name }) is { Length: > 0 } until)
+                    text += " " + until;
         }
         else if (SplitOptions(effect.Do) is { Count: > 1 } options)
         {
@@ -272,7 +276,10 @@ public static partial class EffectTextGenerator
             ifs = ifs.Where(b => !ReferenceEquals(b, usedMats)).ToList();
         }
         var conditions = ifs.Select(b => Text(b, pack)).Where(t => t.Length > 0).ToList();
-        var cond = string.Join(" and ", conditions);
+        // "While you have no cards in your hand, if this card attacks": a clause that brings its own "if" comes last.
+        var own = conditions.Where(t => t.StartsWith("if ", StringComparison.Ordinal)).ToList();
+        var cond = string.Join(" and ", conditions.Except(own));
+        if (own.Count > 0) cond = cond.Length == 0 ? string.Join(", ", own) : $"{cond}, {string.Join(", ", own)}";
 
         // "When your opponent Normal Summons a monster during their turn", not "during your opponent's turn".
         if (trigger is QuickTrigger or ActivateTrigger && Timing.IsOpponents(effect.When!.Values.GetValueOrDefault("timing") ?? ""))
@@ -286,7 +293,7 @@ public static partial class EffectTextGenerator
         string head;
         if (cond.Length == 0) head = when;
         // "If your opponent controls a card, you can activate this card from your hand": a rule, not a lasting "while".
-        else if (when.Length == 0) head = Clause(cond, passive && !effect.Do.All(b => b.BlockId is ActivateFromHandPassive.BlockId or NoTributeSummonPassive.BlockId or SelfDestroyPassive.BlockId) ? "while" : "if");
+        else if (when.Length == 0) head = Clause(cond, passive && !effect.Do.All(b => b.BlockId is ActivateFromHandPassive.BlockId or NoTributeSummonPassive.BlockId or SelfDestroyPassive.BlockId or ActivateSetTurnPassive.BlockId or CannotBeSummonedPassive.BlockId) ? "while" : "if");
         else head = $"{when} {Clause(cond, "while")}";
 
         // "During your opponent's Main Phase", not "During the Main Phase during your opponent's turn".
@@ -302,7 +309,7 @@ public static partial class EffectTextGenerator
 
     /// <summary>"during your turn" stays as is; anything else gets a joining word such as "if" or "while".</summary>
     private static string Clause(string cond, string joiner) =>
-        cond.StartsWith("during ", StringComparison.Ordinal) ? cond : $"{joiner} {cond}";
+        cond.StartsWith("during ", StringComparison.Ordinal) || cond.StartsWith("if ", StringComparison.Ordinal) ? cond : $"{joiner} {cond}";
 
     private static (string? Target, string Text) Actions(List<BlockInstance> blocks, CardPack? pack, EffectEvent effect, bool sentences = false)
     {

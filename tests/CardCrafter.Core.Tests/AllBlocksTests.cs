@@ -130,7 +130,7 @@ public class AllBlocksTests
                 project.Card.Kind = CardKind.Trap;
                 project.Effects[0].When = new BlockInstance("when.activate");
                 break;
-            case "passive.activate_from_hand":
+            case "passive.activate_from_hand" or ActivateSetTurnPassive.BlockId:
                 project.Card.Kind = CardKind.Trap;
                 break;
             case "passive.replace_destroy" when inst.Values.GetValueOrDefault("how") == "detach":

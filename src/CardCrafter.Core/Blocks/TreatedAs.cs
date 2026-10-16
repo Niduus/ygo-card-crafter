@@ -21,7 +21,8 @@ public sealed class TreatedAsPassive : PassiveBlock
     [
         ParamSpec.Choice("how", "How", new("also", "also"), new("instead", "", "instead (Attribute and Type replace its own)")),
         ParamSpec.Cards("as", "Treated as", () => new CardFilter { CardType = FilterCardType.Monster, MonsterKind = MonsterKind.Tuner }),
-        ParamSpec.Choice("where", "Where", new("always", "", "always (everywhere)"), new("field", "while on the field"), new("field_gy", "while on the field or in the GY")),
+        ParamSpec.Choice("where", "Where", new("always", "", "always (everywhere)"), new("field", "while on the field"), new("field_gy", "while on the field or in the GY"),
+            new("face_up", "while face-up on the field", "while face-up on the field (lost while its effects are negated)")),
     ];
 
     private static string Where(BlockArgs args) => args.Choice("where") switch { "field" => " while it is on the field", "field_gy" => " while it is on the field or in the GY", _ => "" };
@@ -51,6 +52,12 @@ public sealed class TreatedAsPassive : PassiveBlock
             parts.Add($"this card is {also}treated as {("AEIOU".Contains(words[0]) ? "an" : "a")} {words}");
         }
         if (parts.Count == 0) return "";
+        // "While face-up on the field, this card is also DARK-Attribute."
+        if (args.Choice("where") == "face_up")
+        {
+            var attributeOnly = f.Attribute != CardAttribute.None && f.Race == CardRace.None && f.MonsterKind == MonsterKind.Any && archetypes.Count == 0 && f.CardCode == 0;
+            return "while face-up on the field, " + (attributeOnly ? $"this card is {also}{EnumNames.Display(f.Attribute)}-Attribute" : string.Join(", and ", parts));
+        }
         return string.Join(", and ", parts) + Where(args);
     }
 
@@ -59,11 +66,14 @@ public sealed class TreatedAsPassive : PassiveBlock
         var f = ctx.Args.Cards("as");
         var instead = ctx.Args.Choice("how") == "instead";
         var field = ctx.Card.IsMonster ? "LOCATION_MZONE" : "LOCATION_SZONE";
-        var range = ctx.Args.Choice("where") switch { "field" => field, "field_gy" => field + "+LOCATION_GRAVE", _ => null };
+        var range = ctx.Args.Choice("where") switch { "field" or "face_up" => field, "field_gy" => field + "+LOCATION_GRAVE", _ => null };
+        // "While face-up on the field" is an ordinary effect of the card: it is lost while the card's effects are negated.
+        var faceUp = ctx.Args.Choice("where") == "face_up";
         void Add(string code, string value) => ctx.Effect.AddPassive(v =>
         [
             $"{v}:SetType(EFFECT_TYPE_SINGLE)",
-            range is null ? $"{v}:SetProperty(EFFECT_FLAG_CANNOT_DISABLE+EFFECT_FLAG_UNCOPYABLE)" : $"{v}:SetProperty(EFFECT_FLAG_SINGLE_RANGE+EFFECT_FLAG_CANNOT_DISABLE+EFFECT_FLAG_UNCOPYABLE)",
+            faceUp ? $"{v}:SetProperty(EFFECT_FLAG_SINGLE_RANGE)"
+            : range is null ? $"{v}:SetProperty(EFFECT_FLAG_CANNOT_DISABLE+EFFECT_FLAG_UNCOPYABLE)" : $"{v}:SetProperty(EFFECT_FLAG_SINGLE_RANGE+EFFECT_FLAG_CANNOT_DISABLE+EFFECT_FLAG_UNCOPYABLE)",
             .. range is null ? Array.Empty<string>() : [$"{v}:SetRange({range})"],
             $"{v}:SetCode({code})",
             $"{v}:SetValue({value})",
