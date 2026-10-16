@@ -93,7 +93,7 @@ public class ChanceAndDeclarationTests
     public void CallingTheCoin_ReadsAsSentences()
     {
         var p = Ushioni(100099502);
-        Assert.Equal("Once per turn: You can toss a coin and call it. If you call it right, inflict 1000 damage to your opponent. If you call it wrong, inflict 1000 damage to you.",
+        Assert.Equal("Once per turn: You can toss a coin and call it. If you call it right, inflict 1000 damage to your opponent. If you call it wrong, you take 1000 damage.",
             EffectTextGenerator.Generate(p));
         var lua = Lua(p);
         Assert.Contains("Duel.AnnounceCoin(tp)", lua);
@@ -170,7 +170,7 @@ public class ChanceAndDeclarationTests
     public void DieResults_ReadAsLinesOfTheirOwn()
     {
         var p = DiceBranches(100099510);
-        Assert.Equal("Roll a six-sided die and apply the result.\n ● 1 or 6: Inflict 1000 damage to you.\n ● 2, 3, or 4: Draw 1 card.\n ● 5: Draw 2 cards.",
+        Assert.Equal("Roll a six-sided die and apply the result.\n ● 1 or 6: You take 1000 damage.\n ● 2, 3, or 4: Draw 1 card.\n ● 5: Draw 2 cards.",
             EffectTextGenerator.Generate(p));
         var lua = Lua(p);
         Assert.Contains("CATEGORY_DICE", lua);

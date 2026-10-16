@@ -584,8 +584,10 @@ public sealed class DamageAction : ActionBlock
 
     public override string Describe(BlockArgs args)
     {
-        if (args.Choice("equal") != "amount") return $"inflict damage to {args.Describe("who")} {args.Describe("equal")}";
-        var text = $"inflict {args.Int("amount")} damage to {args.Describe("who")}";
+        // Cards say "you take 1000 damage", not "inflict 1000 damage to you".
+        var you = args.Choice("who") == "you";
+        if (args.Choice("equal") != "amount") return you ? $"you take damage {args.Describe("equal")}" : $"inflict damage to {args.Describe("who")} {args.Describe("equal")}";
+        var text = you ? $"you take {args.Int("amount")} damage" : $"inflict {args.Int("amount")} damage to {args.Describe("who")}";
         return args.Describe("per") is { Length: > 0 } per ? $"{text} {per}" : text;
     }
 
