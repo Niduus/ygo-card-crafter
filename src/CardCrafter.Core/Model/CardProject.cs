@@ -2,6 +2,9 @@ namespace CardCrafter.Core.Model;
 
 public enum SummonProcedureKind { None, Fusion, Synchro, Xyz, Link }
 
+/// <summary>What a Contact Fusion does with its materials: shuffles them into the Deck, banishes, sends to the GY or Tributes them.</summary>
+public enum ContactFusionMove { ShuffleIntoDeck, Banish, SendToGrave, Tribute }
+
 /// <summary>How an Extra Deck monster is summoned. Compiles to the engine's built-in procedures.</summary>
 public sealed class SummonProcedure
 {
@@ -38,6 +41,19 @@ public sealed class SummonProcedure
     public int MinMaterials { get; set; } = 2;
     /// <summary>0 means "no maximum" (Synchro) or "Link Rating" (Link).</summary>
     public int MaxMaterials { get; set; }
+    /// <summary>Fusion: named materials can't be replaced by a Fusion substitute such as "King of the Swamp".</summary>
+    public bool FusionNoSubstitutes { get; set; }
+    /// <summary>
+    /// Fusion: "Must first be Special Summoned (from your Extra Deck) by shuffling the above cards you control into the
+    /// Deck. (You do not use "Polymerization".)" A Contact Fusion: the materials above are moved by <see cref="ContactMove"/>
+    /// from <see cref="ContactZones"/>. The card's summoning rule says whether it can also be Fusion Summoned.
+    /// </summary>
+    public bool Contact { get; set; }
+    public ContactFusionMove ContactMove { get; set; }
+    /// <summary>Where Contact Fusion materials can be: the Monster Zone or the whole field, and also the hand and GY.</summary>
+    public Zone ContactZones { get; set; } = Zone.MonsterZone;
+    /// <summary>Contact Fusion materials can also be the opponent's cards on the field.</summary>
+    public bool ContactOpponent { get; set; }
 }
 
 /// <summary>One Fusion Material: a card, or any card that passes the filter, <see cref="Min"/> to <see cref="Max"/> of them.</summary>

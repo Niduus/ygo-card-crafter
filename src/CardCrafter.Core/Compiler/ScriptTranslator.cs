@@ -25,9 +25,11 @@ public sealed record TranslatedPiece
     public CardFilter? EquipTo { get; init; }
     /// <summary>A card-wide setting the piece stands for, like "You can only control 1 "Card Name"."</summary>
     public Action<CardData>? Setting { get; init; }
+    /// <summary>A setting of the Summoning conditions the piece stands for, like a Contact Fusion.</summary>
+    public Action<SummonProcedure>? ProcedureSetting { get; init; }
     /// <summary>Why it stays as script.</summary>
     public string? Reason { get; init; }
-    public bool Translated => Effect is not null || Procedure is not null || Ignored || Rule is not null || NoSpecialSummon || EquipTo is not null || Setting is not null;
+    public bool Translated => Effect is not null || Procedure is not null || Ignored || Rule is not null || NoSpecialSummon || EquipTo is not null || Setting is not null || ProcedureSetting is not null;
 
     /// <summary>Every effect the piece became.</summary>
     public IEnumerable<EffectEvent> Effects => Effect is null ? MoreEffects : [Effect, .. MoreEffects];
@@ -70,6 +72,7 @@ public static partial class ScriptTranslator
         lua = UsesPerMaterials(lua);
         lua = EqualToStat(lua);
         var pieces = LuaPieces.Split(lua, id, strings);
+        _ritualCalls = null;
         foreach (var piece in pieces)
         {
             try
@@ -82,6 +85,7 @@ public static partial class ScriptTranslator
             }
         }
         CounterPermits(result);
+        ContactFusionRules(result);
         // One WHEN block per event, as the editor offers them.
         foreach (var e in result.Pieces.SelectMany(p => p.Effects)) TriggerSplit.Normalize(e);
         return result;
@@ -159,6 +163,8 @@ public static partial class ScriptTranslator
         // "Must be Special Summoned by its own way" includes "Cannot be Normal Summoned/Set": the strictest rule wins.
         var rule = result.Pieces.Where(p => p.Rule is not null).Select(p => p.Rule!.Value).DefaultIfEmpty(SummonRule.Normal).Max() is var mr && mr != SummonRule.Normal ? mr : (SummonRule?)null;
         var procedure = result.Pieces.LastOrDefault(p => p.Procedure is not null)?.Procedure ?? project.Procedure;
+        if (result.Pieces.Any(p => p.ProcedureSetting is not null)) procedure = PackSerializer.Clone(procedure);
+        foreach (var p in result.Pieces) p.ProcedureSetting?.Invoke(procedure);
         var check = PackSerializer.Clone(project.Card);
         if (rule is { } cr) check.SummonRule = cr;
         check.CannotBeSpecialSummoned |= result.Pieces.Any(p => p.NoSpecialSummon);
@@ -221,6 +227,14 @@ public static partial class ScriptTranslator
         {
             Match m;
             if ((m = Regex.Match(line, @"^local\s+(\w+)\s*=\s*Effect\.CreateEffect\(c\)$")).Success) { vars[m.Groups[1].Value] = []; continue; }
+            // "local e1=aux.AddRitualProcGreater2(c,...,true)": an effect the Ritual helper makes.
+            if ((m = Regex.Match(line, @"^local\s+(\w+)\s*=\s*(aux\.AddRitualProc\w+\(c,.*\))$")).Success)
+            {
+                var (ritualSet, ritualRegistered) = RitualProcEffect(m.Groups[2].Value, fns);
+                vars[m.Groups[1].Value] = ritualSet;
+                if (ritualRegistered) registered.Add(m.Groups[1].Value);
+                continue;
+            }
             if ((m = Regex.Match(line, @"^local\s+(\w+)\s*=\s*(\w+):Clone\(\)$")).Success && vars.TryGetValue(m.Groups[2].Value, out var from))
             {
                 vars[m.Groups[1].Value] = new Dictionary<string, string>(from);
@@ -440,8 +454,15 @@ public static partial class ScriptTranslator
         if (condition is not null && !usedCondition) effect.If.AddRange(Conditions(condition, fns));
         effect.If.AddRange(TakePendingIf());
         if (set.GetValueOrDefault("Cost") is { } cost) effect.Cost.AddRange(Costs(cost, fns));
-        // Polymerization's family: one Fusion Summon block.
-        if (set.TryGetValue("Operation", out var fusionOp) && FusionOf(fusionOp, set.GetValueOrDefault("Target"), fns) is { } fusion)
+        // A Ritual helper's effect, and Polymerization's family: one Ritual or Fusion Summon block.
+        if (RitualOf(set) is { } ritual)
+        {
+            effect.Do.Add(ritual);
+            return new TranslatedPiece { Piece = piece, Effect = effect };
+        }
+        if (set.TryGetValue("Operation", out var fusionOp) && FusionEffect(effect, fusionOp, set.GetValueOrDefault("Target"), fns))
+            return new TranslatedPiece { Piece = piece, Effect = effect };
+        if (set.TryGetValue("Operation", out fusionOp) && FusionOf(fusionOp, set.GetValueOrDefault("Target"), fns) is { } fusion)
         {
             effect.Do.Add(fusion);
             return new TranslatedPiece { Piece = piece, Effect = effect };
@@ -471,6 +492,7 @@ public static partial class ScriptTranslator
     private static TranslatedPiece? TranslateStatement(string line, CardData card, Functions fns)
     {
         Match m;
+        if (RitualFusionStatement(line, fns) is { } ritualFusion) return ritualFusion;
         // Lines that only describe the card, or that Card Crafter writes itself from the Card tab.
         if (line == "c:EnableUnsummonable()") return new TranslatedPiece { Piece = null!, Rule = SummonRule.SpecialSummonOnly };
         if ((m = Regex.Match(line, @"^c:SetUniqueOnField\(1,0,(id|\d+)\)$")).Success && (m.Groups[1].Value == "id" || Int64(m.Groups[1].Value) == _sourceId))
@@ -533,11 +555,11 @@ public static partial class ScriptTranslator
             return Proc(SummonProcedureKind.Xyz, int.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture), m.Groups[3].Success ? int.Parse(m.Groups[3].Value, CultureInfo.InvariantCulture) : 0);
         m = Regex.Match(line, @"^aux\.AddLinkProcedure\(c,(nil|aux\.FilterBoolFunction\(Card\.IsLinkType,TYPE_EFFECT\)),(\d+)(?:,(\d+))?\)$");
         if (m.Success) return Proc(SummonProcedureKind.Link, int.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture), m.Groups[3].Success ? int.Parse(m.Groups[3].Value, CultureInfo.InvariantCulture) : 0);
-        m = Regex.Match(line, @"^aux\.AddFusionProcCode(?:2|3|4)?\(c,([\d,]+),(?:true|false),(?:true|false)\)$");
+        m = Regex.Match(line, @"^aux\.AddFusionProcCode(?:2|3|4)?\(c,([\d,]+),(true|false),(?:true|false)\)$");
         if (m.Success)
         {
             var codes = m.Groups[1].Value.Split(',').Select(s => long.Parse(s, CultureInfo.InvariantCulture)).ToList();
-            return new TranslatedPiece { Piece = null!, Procedure = new SummonProcedure { Kind = SummonProcedureKind.Fusion, FusionMaterialCodes = codes, MinMaterials = codes.Count } };
+            return new TranslatedPiece { Piece = null!, Procedure = new SummonProcedure { Kind = SummonProcedureKind.Fusion, FusionMaterialCodes = codes, MinMaterials = codes.Count, FusionNoSubstitutes = m.Groups[2].Value == "false" } };
         }
         if (MaterialProcedure(line, card, fns) is { } procedure) return new TranslatedPiece { Piece = null!, Procedure = procedure };
         return null;
@@ -669,20 +691,27 @@ public static partial class ScriptTranslator
                 }
                 return proc;
             }
+            // The helpers that take no "sub" can't use Fusion substitutes for named materials.
             case "AddFusionProcFun2" when args.Count == 3:
-                return Fusion([Slot(args[0]), Slot(args[1])]);
+                return NoSub(Fusion([Slot(args[0]), Slot(args[1])]), true);
             case "AddFusionProcFunRep" when args.Count == 3:
-                return Fusion([Slot(args[0], Num(1), Num(1))]);
+                return NoSub(Fusion([Slot(args[0], Num(1), Num(1))]), true);
             case "AddFusionProcFunRep2" when args.Count == 4:
-                return Fusion([Slot(args[0], Num(1), Num(2) >= 63 ? 0 : Num(2))]);
+                return NoSub(Fusion([Slot(args[0], Num(1), Num(2) >= 63 ? 0 : Num(2))]), true);
             case "AddFusionProcCodeFun" when args.Count == 5:
-                return Fusion([Slot(args[0]), Slot(args[1], Num(2), Num(2))]);
+                return NoSub(Fusion([Slot(args[0]), Slot(args[1], Num(2), Num(2))]), args[3] == "false");
             case "AddFusionProcCodeRep" when args.Count == 4:
-                return Fusion([Slot(args[0], Num(1), Num(1))]);
+                return NoSub(Fusion([Slot(args[0], Num(1), Num(1))]), args[2] == "false");
             case "AddFusionProcMix" when args.Count >= 4 && args[0] is "true" or "false" && args[1] is "true" or "false":
-                return Fusion(args.Skip(2).Select(a => Slot(a)).ToList());
+                return NoSub(Fusion(args.Skip(2).Select(a => Slot(a)).ToList()), args[0] == "false");
         }
         throw No($"its Summon procedure is written in a way the blocks can't ({Short(line)})");
+
+        static SummonProcedure NoSub(SummonProcedure p, bool noSub)
+        {
+            p.FusionNoSubstitutes = noSub;
+            return p;
+        }
 
         static SummonProcedure Fusion(List<MaterialSlot> slots)
         {

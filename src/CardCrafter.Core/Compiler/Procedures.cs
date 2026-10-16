@@ -94,7 +94,7 @@ internal static class Procedures
             if (repeating.Count == 0)
             {
                 if (parts.Count < 2) { script.Diagnostics.Add(new(Severity.Error, "A Fusion Monster needs at least 2 materials.")); yield break; }
-                yield return $"aux.AddFusionProcMix(c,true,true,{string.Join(",", parts)})";
+                yield return $"aux.AddFusionProcMix(c,{Sub(proc)},true,{string.Join(",", parts)})";
                 yield break;
             }
             var (rep, at) = repeating[0];
@@ -103,21 +103,26 @@ internal static class Procedures
             if (others.Count == 0)
             {
                 if (rep.Min < 2) { script.Diagnostics.Add(new(Severity.Error, "A Fusion Monster needs at least 2 materials.")); yield break; }
-                yield return $"aux.AddFusionProcFunRep2(c,{parts[at]},{rep.Min},{max},true)";
+                // "2+ "Blue-Eyes White Dragon"": a passcode repeats with the helper for names.
+                yield return rep.Or is null && OnlyCode(rep.Filter)
+                    ? $"aux.AddFusionProcCodeRep2(c,{parts[at]},{rep.Min},{max},{Sub(proc)},true)"
+                    : $"aux.AddFusionProcFunRep2(c,{parts[at]},{rep.Min},{max},true)";
                 yield break;
             }
-            yield return $"aux.AddFusionProcMixRep(c,true,true,{parts[at]},{Math.Max(1, rep.Min)},{max},{string.Join(",", others)})";
+            yield return $"aux.AddFusionProcMixRep(c,{Sub(proc)},true,{parts[at]},{Math.Max(1, rep.Min)},{max},{string.Join(",", others)})";
             yield break;
         }
         if (proc.FusionMaterialCodes.Count >= 2)
         {
-            yield return $"aux.AddFusionProcMix(c,true,true,{string.Join(",", proc.FusionMaterialCodes.Select(Lua.Num))})";
+            yield return $"aux.AddFusionProcMix(c,{Sub(proc)},true,{string.Join(",", proc.FusionMaterialCodes.Select(Lua.Num))})";
             yield break;
         }
         var f = script.MaterialFilter(proc.MaterialFilter, "fusfilter", SummonProcedureKind.Fusion);
         yield return $"aux.AddFusionProcFunRep(c,{Fn(f)},{Math.Max(2, proc.MinMaterials)},true)";
 
         static string Fn(string f) => f == "nil" ? "aux.TRUE" : f;
+        // Whether a Fusion substitute can stand in for a named material.
+        static string Sub(SummonProcedure p) => p.FusionNoSubstitutes ? "false" : "true";
     }
 
     /// <summary>True when the filter names one card and nothing else, so it can be written as its passcode (which allows substitutes).</summary>
@@ -187,6 +192,7 @@ internal static class Procedures
             {
                 case SummonProcedureKind.Fusion:
                     lines.AddRange(Fusion(proc, script));
+                    lines.AddRange(ContactFusion.Lines(project, script));
                     break;
                 case SummonProcedureKind.Synchro:
                 {

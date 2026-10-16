@@ -37,6 +37,10 @@ public static partial class LuaPieces
     [GeneratedRegex(@"^\s*local\s+(\w+)\s*=\s*(\w+):Clone\(\)")]
     private static partial Regex CloneEffect();
 
+    /// <summary>An effect a Ritual helper makes and returns: "local e1=aux.AddRitualProcGreater2(c,...)".</summary>
+    [GeneratedRegex(@"^\s*local\s+(\w+)\s*=\s*aux\.AddRitualProc\w*\(")]
+    private static partial Regex HelperEffect();
+
     [GeneratedRegex(@"aux\.Stringid\(\s*(?:id|\d+)\s*,\s*(\d+)\s*\)")]
     private static partial Regex Stringid();
 
@@ -99,6 +103,11 @@ public static partial class LuaPieces
         {
             var clone = chunk.Select(l => CloneEffect().Match(l)).FirstOrDefault(m => m.Success);
             var owner = clone is null ? null : merged.LastOrDefault(c => c.Any(l => Regex.IsMatch(l, $@"^\s*local\s+{Regex.Escape(clone.Groups[2].Value)}\s*=")));
+            // "local e1=aux.AddRitualProcGreater2(c,...)" then "e1:SetRange(...)": the lines that set up a helper's effect go with it.
+            if (owner is null && merged.Count > 0 && HelperEffect().Match(merged[^1].First(l => !l.Trim().StartsWith("--", StringComparison.Ordinal))) is { Success: true } helper
+                && chunk.Where(l => !l.Trim().StartsWith("--", StringComparison.Ordinal))
+                    .All(l => l.Trim().StartsWith(helper.Groups[1].Value + ":", StringComparison.Ordinal) || l.Trim() == $"c:RegisterEffect({helper.Groups[1].Value})"))
+                owner = merged[^1];
             if (owner is not null) owner.AddRange(chunk);
             else merged.Add([.. chunk]);
         }

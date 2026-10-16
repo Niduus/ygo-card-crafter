@@ -19,6 +19,9 @@ out="$(dirname "$0")/../src/CardCrafter.Core/Validation/KnownApi.txt"
   # Lua-side helpers.
   grep -hoE '^function (Auxiliary|Card|Duel|Group|Effect)\.[A-Za-z0-9_]+' "$scripts"/utility.lua "$scripts"/procedure.lua \
     | sed -E 's/^function //; s/^Auxiliary\./aux./'
+  # Lua-side helper values scripts set, like aux.GCheckAdditional and aux.RCheckAdditional.
+  grep -hoE '^Auxiliary\.[A-Za-z0-9_]+[[:space:]]*=' "$scripts"/utility.lua "$scripts"/procedure.lua \
+    | sed -E 's/[[:space:]]*=$//; s/^Auxiliary\./aux./'
   # Constants.
   grep -hoE '^[A-Z][A-Z0-9_]+[[:space:]]*=' "$scripts"/constant.lua | sed -E 's/[[:space:]]*=$//; s/^/const./'
 } | awk '!seen[$0]++' > "$out"

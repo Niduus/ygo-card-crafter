@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using CardCrafter.Core.Blocks;
+using CardCrafter.Core.Compiler;
 using CardCrafter.Core.Model;
 
 namespace CardCrafter.Core.Text;
@@ -58,8 +59,9 @@ public static partial class EffectTextGenerator
         if (MaterialText.Alternate(project, pack) is { Length: > 0 } alternate) paragraph.Add(alternate);
         if (project.Card.OnlyOneOnField) paragraph.Add($"You can only control 1 \"{project.Card.Name}\".");
         if (EquipText(project, pack) is { Length: > 0 } equip) paragraph.Add(equip);
-        if (RuleText(project) is { Length: > 0 } rule) paragraph.Add(rule);
-        if (project.Card.IsMonster && project.Card.CannotBeSpecialSummoned && !project.Card.OnlyByOwnProcedure) paragraph.Add("Cannot be Special Summoned.");
+        if (ContactFusion.Text(project) is { Length: > 0 } contact) paragraph.Add(contact);
+        else if (RuleText(project) is { Length: > 0 } rule) paragraph.Add(rule);
+        if (project.Card.IsMonster && project.Card.CannotBeSpecialSummoned && !project.Card.OnlyByOwnProcedure && !ContactFusion.Applies(project)) paragraph.Add("Cannot be Special Summoned.");
         if (project.Card.IsMonster && project.Card.SpecialSummonOncePerTurn) paragraph.Add($"You can only Special Summon \"{project.Card.Name}\" once per turn.");
         var combined = CombinedLimit(project, effects);
         paragraph.AddRange(effects

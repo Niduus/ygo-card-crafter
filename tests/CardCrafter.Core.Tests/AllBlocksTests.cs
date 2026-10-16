@@ -139,6 +139,11 @@ public class AllBlocksTests
             case "passive.activate_from_hand" or ActivateSetTurnPassive.BlockId:
                 project.Card.Kind = CardKind.Trap;
                 break;
+            // "Ritual Summon this card": a Ritual Monster's effect in the hand.
+            case RitualSummonAction.BlockId when inst.Filters["cards"].ThisCard:
+                project.Card.Frame = MonsterFrame.Ritual;
+                project.Effects[0].When = new BlockInstance("when.ignition").With("zone", "hand");
+                break;
             case "passive.replace_destroy" when inst.Values.GetValueOrDefault("how") == "detach":
                 project.Card.Frame = MonsterFrame.Xyz;
                 project.Procedure.Kind = SummonProcedureKind.Xyz;
