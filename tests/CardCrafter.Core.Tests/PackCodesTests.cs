@@ -47,4 +47,18 @@ public class PackCodesTests
         Assert.Equal((CardRace)0x10000000, card.Card.Race);
         Assert.Equal((CardRace)(0x10000000 | 0x1), search.Filters["cards"].Race);
     }
+
+    [Fact]
+    public void ATypeValueWithStandardBits_IsFlagged()
+    {
+        // "Infested" at 0x100000230 shows in the game as Zombie, Machine and Winged-Beast (0x10 + 0x20 + 0x200).
+        var why = PackCodes.TypeValueProblem(0x100000230);
+        Assert.NotNull(why);
+        Assert.Contains("Zombie", why);
+        Assert.Contains("Machine", why);
+        Assert.Contains("0x230", why);
+        Assert.Contains("0x100000000", why);
+        Assert.Null(PackCodes.TypeValueProblem(0x100000000));
+        Assert.Null(PackCodes.TypeValueProblem(0x4000000));
+    }
 }

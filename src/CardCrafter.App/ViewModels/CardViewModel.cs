@@ -51,6 +51,7 @@ public sealed partial class CardViewModel : ObservableObject
         MaterialFilter = new FilterEditorViewModel(project.Procedure.MaterialFilter, Zone.None, true, pack, Changed);
         TunerFilter = new FilterEditorViewModel(project.Procedure.TunerFilter, Zone.None, true, pack, Changed);
         IncludeFilter = new FilterEditorViewModel(project.Procedure.IncludeFilter, Zone.None, true, pack, Changed);
+        XyzAlternateFilter = new FilterEditorViewModel(project.Procedure.XyzAlternateFilter, Zone.None, true, pack, Changed);
         EquipFilter = new FilterEditorViewModel(project.EquipFilter, Zone.MonsterZone, true, pack, Changed, ownerChoice: true);
         LoadFusionSlots();
         RebuildArchetypes();
@@ -504,6 +505,33 @@ public sealed partial class CardViewModel : ObservableObject
         set { var v = Math.Max(0, (int)(value ?? 0)); if (Project.Procedure.XyzMaterialLevel == v) return; Project.Procedure.XyzMaterialLevel = v; OnPropertyChanged(); Changed(); }
     }
 
+    // ---- "You can also Xyz Summon this card by using 1 Xyz Monster you control"
+    public FilterEditorViewModel XyzAlternateFilter { get; private set; }
+
+    public bool XyzAlternate
+    {
+        get => Project.Procedure.XyzAlternate;
+        set { if (Project.Procedure.XyzAlternate == value) return; Project.Procedure.XyzAlternate = value; OnPropertyChanged(); Changed(); }
+    }
+
+    public bool XyzAlternateOncePerTurn
+    {
+        get => Project.Procedure.XyzAlternateOncePerTurn;
+        set { if (Project.Procedure.XyzAlternateOncePerTurn == value) return; Project.Procedure.XyzAlternateOncePerTurn = value; OnPropertyChanged(); Changed(); }
+    }
+
+    public bool XyzAlternateAfterXyzBattle
+    {
+        get => Project.Procedure.XyzAlternateAfterXyzBattle;
+        set { if (Project.Procedure.XyzAlternateAfterXyzBattle == value) return; Project.Procedure.XyzAlternateAfterXyzBattle = value; OnPropertyChanged(); Changed(); }
+    }
+
+    public decimal? XyzAlternateDetach
+    {
+        get => Project.Procedure.XyzAlternateDetach;
+        set { var v = Math.Max(0, (int)(value ?? 0)); if (Project.Procedure.XyzAlternateDetach == v) return; Project.Procedure.XyzAlternateDetach = v; OnPropertyChanged(); Changed(); }
+    }
+
     /// <summary>Link: the materials must include a card the include filter allows.</summary>
     public bool Including
     {
@@ -580,6 +608,7 @@ public sealed partial class CardViewModel : ObservableObject
         MaterialFilter.RefreshArchetypes();
         TunerFilter.RefreshArchetypes();
         IncludeFilter.RefreshArchetypes();
+        XyzAlternateFilter.RefreshArchetypes();
         EquipFilter.RefreshArchetypes();
         foreach (var slot in FusionSlots) slot.Filter.RefreshArchetypes();
     }
@@ -594,6 +623,7 @@ public sealed partial class CardViewModel : ObservableObject
         MaterialFilter.RefreshArchetypes();
         TunerFilter.RefreshArchetypes();
         IncludeFilter?.RefreshArchetypes();
+        XyzAlternateFilter?.RefreshArchetypes();
         EquipFilter?.RefreshArchetypes();
         foreach (var slot in FusionSlots) slot.Filter.RefreshArchetypes();
     }
@@ -730,6 +760,7 @@ public sealed partial class CardViewModel : ObservableObject
         MaterialFilter = new FilterEditorViewModel(Project.Procedure.MaterialFilter, Zone.None, true, _pack, Changed);
         TunerFilter = new FilterEditorViewModel(Project.Procedure.TunerFilter, Zone.None, true, _pack, Changed);
         IncludeFilter = new FilterEditorViewModel(Project.Procedure.IncludeFilter, Zone.None, true, _pack, Changed);
+        XyzAlternateFilter = new FilterEditorViewModel(Project.Procedure.XyzAlternateFilter, Zone.None, true, _pack, Changed);
         LoadFusionSlots();
         OnPropertyChanged(string.Empty);
         Changed();

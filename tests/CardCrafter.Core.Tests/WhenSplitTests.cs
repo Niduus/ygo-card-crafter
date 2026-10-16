@@ -65,7 +65,8 @@ public class WhenSplitTests
         Assert.DoesNotContain(BlockRegistry.Find("when.summoned")!.Param("how")!.Choices, c => c.Value.Contains("_or_") || c.Value == "any");
         Assert.DoesNotContain(BlockRegistry.Find("when.event")!.Param("event")!.Choices, c => c.Label.Contains(" or Special"));
         Assert.DoesNotContain(BlockRegistry.Find("when.quick")!.Param("timing")!.Choices, c => c.Label.Contains(" or Special"));
-        Assert.DoesNotContain(BlockRegistry.Find(CardsEventTrigger.BlockId)!.Param("event")!.Choices, c => c.Label.Contains(" or "));
+        // "destroyed by battle or an opponent's card effect" is one printed condition (Sky Thunder), not two events.
+        Assert.DoesNotContain(BlockRegistry.Find(CardsEventTrigger.BlockId)!.Param("event")!.Choices, c => c.Label.Contains(" or ") && c.Value != "destroyed_battle_opp");
     }
 
     [Theory]

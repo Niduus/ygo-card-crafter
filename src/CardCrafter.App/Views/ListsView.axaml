@@ -68,7 +68,9 @@
             <ItemsControl ItemsSource="{Binding CustomTypes}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate DataType="vm:CustomTypeViewModel">
-                  <Grid ColumnDefinitions="*,8,130,4,Auto,4,Auto" Margin="0,2">
+                  <Grid ColumnDefinitions="*,8,130,4,Auto,4,Auto" RowDefinitions="Auto,Auto" Margin="0,2">
+                    <TextBlock Grid.Row="1" Grid.ColumnSpan="7" Text="{Binding Warning}" IsVisible="{Binding HasWarning}"
+                               TextWrapping="Wrap" FontSize="11" Foreground="#FCD34D" Margin="0,2,0,0" />
                     <TextBox Grid.Column="0" Text="{Binding Name}" />
                     <TextBox Grid.Column="2" Text="{Binding Value}" FontFamily="{StaticResource CodeFont}" />
                     <Button Grid.Column="4" Classes="icon" Content="🎲" ToolTip.Tip="Random value that no other Type uses (for a brand-new Type, not one Omega already has)"

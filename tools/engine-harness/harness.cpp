@@ -14,6 +14,7 @@
 //   activate <code> [times]            whoever controls this card activates its effects whenever offered
 //   summon <code>                      its controller Normal Summons this card when it can
 //   spsummon <code>                    its controller uses this card's summon procedure when it can
+//   attack <code>                      in the Battle Phase, this monster attacks once (the first target offered)
 //   announce <code>                    the card name declared for "declare 1 card name" (default 1004)
 //   turns <n>                          how many turns to play before checking (default 1)
 //   check <lua expression>             must be true after the last turn; player 0 is "0"
@@ -106,7 +107,7 @@ struct Placement { uint32_t code; int player; uint8_t location; int count; };
 struct Scenario {
 	std::vector<Placement> cards;
 	std::map<uint32_t, int> activate;
-	std::vector<uint32_t> summon, spsummon;
+	std::vector<uint32_t> summon, spsummon, attack;
 	uint32_t announce = 0;
 	std::vector<std::string> checks;
 	int turns = 1;
@@ -148,6 +149,7 @@ static bool parse_scenario(const char* path, Scenario& sc) {
 		else if (cmd == "activate") { uint32_t c; int t = 1; in >> c >> t; if (t <= 0) t = 1; sc.activate[c] = t; }
 		else if (cmd == "summon") { uint32_t c; in >> c; sc.summon.push_back(c); }
 		else if (cmd == "spsummon") { uint32_t c; in >> c; sc.spsummon.push_back(c); }
+		else if (cmd == "attack") { uint32_t c; in >> c; sc.attack.push_back(c); }
 		else if (cmd == "announce") { in >> sc.announce; }
 		else if (cmd == "turns") in >> sc.turns;
 		else if (cmd == "expect_activations") in >> sc.expect_activations;
@@ -184,7 +186,7 @@ static void respond(intptr_t pd, Scenario& sc) {
 	uint8_t b[64]{};
 	switch (unit.type) {
 	case PROCESSOR_SELECT_IDLECMD: {
-		{
+			{
 			for (size_t i = 0; i < f->core.select_chains.size(); ++i) {
 				card* c = f->core.select_chains[i].triggering_effect->get_handler();
 				if (wants(sc, c)) { used(sc, c); set_responsei(pd, 5 | (int32_t)(i << 16)); return; }
@@ -203,10 +205,24 @@ static void respond(intptr_t pd, Scenario& sc) {
 				}
 			}
 		}
+		// To the Battle Phase only when a monster is to attack; otherwise straight to the End Phase.
+		if (f->core.to_bp && !sc.attack.empty()) { set_responsei(pd, 6); return; }
 		set_responsei(pd, f->core.to_ep ? 7 : 6);
 		return;
 	}
 	case PROCESSOR_SELECT_BATTLECMD:
+			for (size_t i = 0; i < f->core.attackable_cards.size(); ++i) {
+			card* c = f->core.attackable_cards[i];
+			auto it = std::find(sc.attack.begin(), sc.attack.end(), c->data.code);
+			if (it != sc.attack.end()) {
+				std::printf("ATTACK: %u\n", c->data.code);
+				sc.attack.erase(it);
+				set_responsei(pd, 1 | (int32_t)(i << 16));
+				return;
+			}
+		}
+		// Main Phase 2 when a monster is still to be Summoned with its procedure.
+		if (f->core.to_m2 && !sc.spsummon.empty()) { set_responsei(pd, 2); return; }
 		set_responsei(pd, f->core.to_ep ? 3 : 2);
 		return;
 	case PROCESSOR_SELECT_CHAIN: {
@@ -352,6 +368,7 @@ static bool run_check(intptr_t pd, const std::string& expr) {
 }
 
 int main(int argc, char** argv) {
+	std::setvbuf(stdout, nullptr, _IONBF, 0);
 	if (argc < 3) { std::printf("usage: harness <scenario> <script dir>...\n"); return 2; }
 	for (int i = 2; i < argc; ++i) g_script_dirs.push_back(argv[i]);
 	Scenario sc;
@@ -382,7 +399,7 @@ int main(int argc, char** argv) {
 		uint32_t result = process(pd);
 		get_message(pd, msg.data());
 		duel* d = (duel*)pd;
-		if (result & PROCESSOR_END) break;
+			if (result & PROCESSOR_END) break;
 		if (result & PROCESSOR_WAITING) {
 			auto& unit = d->game_field->core.units.front();
 			// Stop at the first prompt of the turn after the last one the scenario plays.

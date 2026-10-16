@@ -16,6 +16,9 @@ namespace CardCrafter.App.ViewModels;
 public sealed partial class CustomTypeViewModel(CustomType model, Action changed, Action<long, long>? recoded = null) : ObservableObject
 {
     public CustomType Model { get; } = model;
+    /// <summary>Why the game won't show this value as the Type: it holds standard Types' bits.</summary>
+    public string Warning => PackCodes.TypeValueProblem(Model.Value) ?? "";
+    public bool HasWarning => Warning.Length > 0;
     public string Name { get => Model.Name; set { if (Model.Name == value) return; Model.Name = value; OnPropertyChanged(); changed(); } }
     public string Value
     {
@@ -39,6 +42,8 @@ public sealed partial class CustomTypeViewModel(CustomType model, Action changed
             changed();
         }
         OnPropertyChanged(nameof(Value));
+        OnPropertyChanged(nameof(Warning));
+        OnPropertyChanged(nameof(HasWarning));
     }
 }
 

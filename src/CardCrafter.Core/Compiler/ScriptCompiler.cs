@@ -361,6 +361,9 @@ public static class ScriptCompiler
     /// its name. Then the options of "Activate 1 of these effects", in the order the compiler numbers them. Strings
     /// the user typed over (<see cref="CardProject.StringOverrides"/>) replace the generated ones.
     /// </summary>
+    /// <summary>The string asking whether to Xyz Summon the other way ("by using 1 Xyz Monster you control").</summary>
+    public const string XyzAlternateUse = "Xyz Summon the other way";
+
     public static List<StringSlot> StringSlots(CardProject project, CardPack? pack = null)
     {
         var slots = project.Effects.Take(16).Select((e, i) =>
@@ -370,6 +373,8 @@ public static class ScriptCompiler
             var options = Text.EffectTextGenerator.OptionTexts(project.Effects[i], project.Card, pack);
             for (int o = 0; o < options.Count && slots.Count < 16; o++) slots.Add(new StringSlot($"Effect {i + 1}, option {o + 1}", options[o]));
         }
+        if (project.Card.IsExtraDeck && project.Procedure is { Kind: SummonProcedureKind.Xyz, XyzAlternate: true } && slots.Count < 16)
+            slots.Add(new StringSlot(XyzAlternateUse, Text.MaterialText.AlternatePrompt(project, pack)));
         for (int i = 0; i < slots.Count && i < project.StringOverrides.Count; i++)
             if (project.StringOverrides[i] is { Length: > 0 } typed) slots[i] = slots[i] with { Text = typed, Overridden = true };
         return slots;
@@ -437,6 +442,9 @@ public static class ScriptCompiler
                                         "its prompts show \"hand\" or \"Unknown (...)\" instead of the effect. Click Generate for a passcode that fits, then save again."));
         if (string.IsNullOrWhiteSpace(card.Name))
             d.Add(new(Severity.Error, "The card needs a name."));
+        // A custom Type mixed with standard Types' bits shows as those Types in the game.
+        if (card.IsMonster && ((long)card.Race & ~EnumNames.StandardRaceMask) != 0 && PackCodes.TypeValueProblem((long)card.Race) is { } typeProblem)
+            d.Add(new(Severity.Warning, "Its Type " + typeProblem));
         if (project.Effects.Count > 16)
             d.Add(new(Severity.Error, "A card can have at most 16 effects (the database has 16 text slots)."));
         if (card.Archetypes.Count > 4)

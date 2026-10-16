@@ -53,6 +53,7 @@ public static class PasscodeFix
         yield return p.MaterialFilter;
         yield return p.TunerFilter;
         yield return p.IncludeFilter;
+        yield return p.XyzAlternateFilter;
         foreach (var slot in p.Materials)
         {
             yield return slot.Filter;

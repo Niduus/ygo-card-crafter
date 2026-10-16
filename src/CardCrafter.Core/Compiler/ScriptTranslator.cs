@@ -210,6 +210,7 @@ public static partial class ScriptTranslator
         var lines = piece.Code.Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0 && !l.StartsWith("--", StringComparison.Ordinal)).ToList();
         var fns = new Functions(ParseFunctions(piece), piece.Prefix, piece.SourceId);
         if (lines.Count == 1 && TranslateStatement(lines[0], card, fns) is { } single) return single with { Piece = piece };
+        if (IsXyzBattledWatcher(lines, fns)) return new TranslatedPiece { Piece = piece, Ignored = true };
 
         // Every effect the piece creates or clones, with its settings, and the ones it registers on the card.
         var vars = new Dictionary<string, Dictionary<string, string>>();
@@ -607,6 +608,25 @@ public static partial class ScriptTranslator
                     MaxMaterials = args.Count == 6 ? Num(5) : 0, XyzMaterialLevel = lv == card.Level ? 0 : lv,
                 };
             }
+            // "You can also Xyz Summon this card by using 1 Xyz Monster you control": its other material, prompt, check and cost.
+            case "AddXyzProcedure" when args.Count is >= 5 and <= 7 && !Absent(3):
+            {
+                var lv = Num(1);
+                var min = Num(2);
+                var alt = Filter(args[3], fns);
+                alt.Owner = CardOwner.You;
+                alt.Zones = Model.Zone.MonsterZone;
+                alt.FaceUpOnly = false;
+                if (alt.CardType == FilterCardType.Any) alt.CardType = FilterCardType.Monster;
+                var max = args.Count >= 6 && !Absent(5) ? Num(5) : min;
+                var proc = new SummonProcedure
+                {
+                    Kind = SummonProcedureKind.Xyz, MaterialFilter = Material(args[0], fns), MinMaterials = min, MaxMaterials = max > min ? max : 0,
+                    XyzMaterialLevel = lv == card.Level ? 0 : lv, XyzAlternate = true, XyzAlternateFilter = alt,
+                };
+                if (args.Count == 7 && !Absent(6)) XyzAlternateOp(args[6], fns, proc);
+                return proc;
+            }
             case "AddLinkProcedure" when args.Count is 2 or 3 or 4:
             {
                 var proc = new SummonProcedure { Kind = SummonProcedureKind.Link, MaterialFilter = Material(args[0], fns), MinMaterials = Num(1), MaxMaterials = Absent(2) ? 0 : Num(2) };
@@ -644,6 +664,60 @@ public static partial class ScriptTranslator
             if (slots.Count(s => s.Repeats) > 1) throw No("more than one of its Fusion Materials repeats");
             return new SummonProcedure { Kind = SummonProcedureKind.Fusion, Materials = slots, MinMaterials = slots.Sum(s => s.Min) };
         }
+    }
+
+    /// <summary>
+    /// The check and cost of the other way to Xyz Summon: once per turn (a player flag), "if an Xyz Monster battled this
+    /// turn" (a flag the battle watcher sets) and detaching materials from the monster used.
+    /// </summary>
+    private static void XyzAlternateOp(string expr, Functions fns, SummonProcedure proc)
+    {
+        var (_, body) = fns.Get(expr);
+        var text = string.Join(" ", body.Select(l => l.Trim()));
+        var m = Regex.Match(text, @"^if chk==0 then return (.+?) end(.*)$");
+        if (!m.Success) throw No("its other way to Xyz Summon is checked in a way the blocks can't");
+        string? once = null;
+        foreach (var raw in SplitTopLevelAnd(m.Groups[1].Value))
+        {
+            var t = raw.Trim();
+            Match tm;
+            if (t == "true") continue;
+            if ((tm = Regex.Match(t, @"^Duel\.GetFlagEffect\(tp,([\w+]+)\)==0$")).Success) { once = tm.Groups[1].Value; continue; }
+            if (Regex.IsMatch(t, @"^Duel\.GetFlagEffect\(tp,[\w+]+\)>0$")) { proc.XyzAlternateAfterXyzBattle = true; continue; }
+            if ((tm = Regex.Match(t, @"^mc:CheckRemoveOverlayCard\(tp,(\d+),REASON_COST\)$")).Success) { proc.XyzAlternateDetach = Int(tm.Groups[1].Value); continue; }
+            throw No($"its other way to Xyz Summon is checked in a way the blocks can't ({Short(t)})");
+        }
+        var pay = m.Groups[2].Value.Trim();
+        if (proc.XyzAlternateDetach > 0)
+        {
+            var detach = $"mc:RemoveOverlayCard(tp,{proc.XyzAlternateDetach},{proc.XyzAlternateDetach},REASON_COST)";
+            if (!pay.Contains(detach, StringComparison.Ordinal)) throw No("its other way to Xyz Summon has a cost the blocks can't");
+            pay = pay.Replace(detach, "", StringComparison.Ordinal);
+        }
+        if (once is not null)
+        {
+            var flag = $"Duel.RegisterFlagEffect(tp,{once},RESET_PHASE+PHASE_END,EFFECT_FLAG_OATH,1)";
+            if (!pay.Contains(flag, StringComparison.Ordinal)) throw No("its other way to Xyz Summon is limited in a way the blocks can't");
+            pay = pay.Replace(flag, "", StringComparison.Ordinal);
+            proc.XyzAlternateOncePerTurn = true;
+        }
+        if (pay.Trim().Length > 0) throw No($"its other way to Xyz Summon does something the blocks can't ({Short(pay.Trim())})");
+    }
+
+    /// <summary>
+    /// "if not s.global_check then ... EVENT_BATTLED ... end" that marks both players when an Xyz Monster battles: what
+    /// "if an Xyz Monster battled this turn, you can also Xyz Summon" checks, which the Card tab writes itself.
+    /// </summary>
+    private static bool IsXyzBattledWatcher(List<string> lines, Functions fns)
+    {
+        var text = string.Join(" ", lines);
+        var m = Regex.Match(text, @"^if not ([\w.]+)\.global_check then \1\.global_check=true local (\w+)=Effect\.CreateEffect\(c\) \2:SetType\(EFFECT_TYPE_FIELD\+EFFECT_TYPE_CONTINUOUS\) \2:SetCode\(EVENT_BATTLED\) \2:SetOperation\(([\w.]+)\) Duel\.RegisterEffect\(\2,0\) end$");
+        if (!m.Success) return false;
+        var op = string.Join(" ", fns.Get(m.Groups[3].Value).Body.Select(l => l.Trim()));
+        var check = Regex.Match(op, @"^if ([\w.]+)\(Duel\.GetAttacker\(\)\) or \1\(Duel\.GetAttackTarget\(\)\) then Duel\.RegisterFlagEffect\(tp,([\w+]+),RESET_PHASE\+PHASE_END,0,1\) Duel\.RegisterFlagEffect\(1-tp,\2,RESET_PHASE\+PHASE_END,0,1\) end$");
+        if (!check.Success) return false;
+        var fn = string.Join(" ", fns.Get(check.Groups[1].Value).Body.Select(l => l.Trim()));
+        return fn == "return c and c:IsType(TYPE_XYZ)";
     }
 
     // ---------------------------------------------------------------- parts
@@ -917,12 +991,18 @@ public static partial class ScriptTranslator
         var other = body.Contains("eg:IsContains(e:GetHandler())", StringComparison.Ordinal);
         var (_, fbody) = fns.Get(m.Groups[1].Value);
         var text = string.Join(" ", fbody.Select(l => l.Trim()));
+        // "destroyed by battle or an opponent's card effect" / "by an opponent's card effect".
+        bool battleOrOpponent = false, byOpponent = false;
+        var opp = Regex.Match(text, @" and \(c:IsReason\(REASON_BATTLE\) or (?:\()?c:IsReason\(REASON_EFFECT\) and c:GetReasonPlayer\(\)==1-tp(?:\))?\)");
+        if (opp.Success) { battleOrOpponent = true; text = text.Remove(opp.Index, opp.Length); }
+        opp = Regex.Match(text, @" and c:IsReason\(REASON_EFFECT\) and c:GetReasonPlayer\(\)==1-tp\b");
+        if (opp.Success) { byOpponent = true; text = text.Remove(opp.Index, opp.Length); }
         var r = Regex.Match(text, @"^return (.+)$");
         if (!r.Success || text.Contains(" or ", StringComparison.Ordinal)) throw No("it picks cards in a way the blocks can't");
 
         var f = new CardFilter { Owner = CardOwner.Either, Zones = Model.Zone.MonsterZone, CardType = FilterCardType.Monster, ExcludeThisCard = other };
         string? summonType = null;
-        bool battle = false, battleOrEffect = false, wasOnField = false;
+        bool battle = false, battleOrEffect = false, wasOnField = false, anyCard = false, monster = false;
         foreach (var raw in r.Groups[1].Value.Split(" and "))
         {
             var term = raw.Trim();
@@ -935,7 +1015,9 @@ public static partial class ScriptTranslator
             switch (term)
             {
                 case "c:IsPreviousLocation(LOCATION_MZONE)": wasOnField = true; continue;
-                case "c:IsLocation(LOCATION_MZONE)" or "c:IsType(TYPE_MONSTER)": continue;
+                // "another card(s) you control": any card that was on the field.
+                case "c:IsPreviousLocation(LOCATION_ONFIELD)": wasOnField = true; anyCard = true; continue;
+                case "c:IsLocation(LOCATION_MZONE)" or "c:IsType(TYPE_MONSTER)": monster = true; continue;
                 case "c:IsPreviousPosition(POS_FACEUP)" or "c:IsFaceup()": f.FaceUpOnly = true; continue;
                 case "c:IsReason(REASON_BATTLE+REASON_EFFECT)" or "c:IsReason(REASON_EFFECT+REASON_BATTLE)": battleOrEffect = true; continue;
                 case "c:IsReason(REASON_BATTLE)": battle = true; continue;
@@ -950,8 +1032,17 @@ public static partial class ScriptTranslator
             if ((t = Regex.Match(term, @"^c:IsPreviousSetCard\((0x[0-9a-fA-F]+)\)$")).Success) { Term($"c:IsSetCard({t.Groups[1].Value})", f); continue; }
             Term(term, f);
         }
-        f.CardType = FilterCardType.Monster;
-        f.Zones = Model.Zone.MonsterZone;
+        if (anyCard && !monster && f.CardType == FilterCardType.Monster && code is "EVENT_DESTROYED" or "EVENT_LEAVE_FIELD")
+        {
+            f.CardType = FilterCardType.Any;
+            f.Zones = Model.Zone.Field;
+        }
+        else
+        {
+            f.CardType = FilterCardType.Monster;
+            f.Zones = Model.Zone.MonsterZone;
+        }
+        if ((battleOrOpponent || byOpponent) && (code != "EVENT_DESTROYED" || battle || battleOrEffect || summonType is not null)) throw No("its \"destroyed\" condition is unusual");
 
         string ev;
         switch (code)
@@ -974,7 +1065,7 @@ public static partial class ScriptTranslator
                 break;
             default:
                 if (summonType is not null) throw No("its \"destroyed\" condition is unusual");
-                ev = code == "EVENT_BATTLE_DESTROYED" || battle ? "destroyed_battle" : battleOrEffect ? "destroyed_any" : "destroyed";
+                ev = battleOrOpponent ? "destroyed_battle_opp" : byOpponent ? "destroyed_opp" : code == "EVENT_BATTLE_DESTROYED" || battle ? "destroyed_battle" : battleOrEffect ? "destroyed_any" : "destroyed";
                 break;
         }
         return Block(CardsEventTrigger.BlockId).With("cards", f).With("event", ev);
@@ -2024,7 +2115,7 @@ public static partial class ScriptTranslator
                 link = ActionLink.And;
                 continue;
             }
-            if ((m = Regex.Match(line, @"^local (\w+)=Duel\.SelectMatchingCard\(tp,([\w.()]+),tp,([\w+]+),([\w+]+),(\d+),\5,(nil|e:GetHandler\(\)|c)(?:,e,tp)?\)$")).Success)
+            if ((m = Regex.Match(line, @"^local (\w+)=Duel\.SelectMatchingCard\(tp,([\w.()]+),tp,([\w+]+),([\w+]+),(\d+),\5,(nil|e:GetHandler\(\)|c)(?:,e,tp|,e)?\)$")).Success)
             {
                 var f = Filter(m.Groups[2].Value, fns);
                 Locate(f, m.Groups[3].Value, m.Groups[4].Value);
@@ -2045,7 +2136,7 @@ public static partial class ScriptTranslator
                 groups[m.Groups[1].Value] = picked;
                 continue;
             }
-            if ((m = Regex.Match(line, @"^local (\w+)=Duel\.GetMatchingGroup\(([\w.()]+),tp,([\w+]+),([\w+]+),(nil|e:GetHandler\(\)|c)(?:,e,tp)?\)$")).Success)
+            if ((m = Regex.Match(line, @"^local (\w+)=Duel\.GetMatchingGroup\(([\w.()]+),tp,([\w+]+),([\w+]+),(nil|e:GetHandler\(\)|c|aux\.ExceptThisCard\(e\))(?:,e,tp)?\)$")).Success)
             {
                 var f = Filter(m.Groups[2].Value, fns);
                 Locate(f, m.Groups[3].Value, m.Groups[4].Value);
@@ -2200,6 +2291,7 @@ public static partial class ScriptTranslator
             (@"^Duel\.GetControl\((\w+),tp\)$", "control"),
             (@"^Duel\.ChangePosition\((\w+),POS_FACEUP_DEFENSE,POS_FACEUP_DEFENSE,POS_FACEUP_ATTACK,POS_FACEUP_ATTACK\)$", "pos_toggle"),
             (@"^Duel\.ChangePosition\((\w+),POS_FACEDOWN_DEFENSE\)$", "pos_facedown"),
+            (@"^Duel\.Overlay\((?:c|e:GetHandler\(\)),(\w+)\)$", "do.attach"),
         };
         foreach (var (pattern, blockId) in verbs)
         {
@@ -2736,7 +2828,9 @@ public static partial class ScriptTranslator
         text = Regex.Replace(text, @"\(c:IsAbleTo\w+\(\) or c:IsAbleTo\w+\(\)\)( and )?", "");
         // A check passed in as a parameter ("f(c)" with f=Card.IsAbleToGraveAsCost) and room to Summon.
         foreach (var par in pars.Skip(1)) text = Regex.Replace(text, $@"(?: and )?\b{Regex.Escape(par)}\(c\)", "");
-        text = Regex.Replace(text, @"(?: and )?Duel\.GetMZoneCount\(tp,c\)>0", "").Replace("return  and ", "return ").Replace("return and ", "return ");
+        text = Regex.Replace(text, @"(?: and )?Duel\.GetMZoneCount\(tp,c\)>0", "");
+        // "not immune to this effect", which the game checks anyway when it moves the card.
+        text = Regex.Replace(text, @"(?: and )?\(not e or not c:IsImmuneToEffect\(e\)\)|(?: and )?not c:IsImmuneToEffect\(e\)", "").Replace("return  and ", "return ").Replace("return and ", "return ");
         if (text.Trim() == "return") return f;
         var m = Regex.Match(text, @"^return (.+)$");
         if (!m.Success || text.Contains(" or ", StringComparison.Ordinal)) throw No($"it picks cards in a way the blocks can't ({Short(Regex.Replace(text, @"c\d+\.|s\.", "s."))})");

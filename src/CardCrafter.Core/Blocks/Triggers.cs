@@ -917,6 +917,8 @@ public sealed class CardsEventTrigger : BlockDefinition
             new("destroyed", "destroyed"),
             new("destroyed_battle", "destroyed by battle"),
             new("destroyed_effect", "destroyed by a card effect"),
+            new("destroyed_opp", "destroyed by an opponent's card effect"),
+            new("destroyed_battle_opp", "destroyed by battle or an opponent's card effect"),
             new("to_gy", "sent to the GY"),
             new("banished", "banished"),
             new("tributed", "Tributed"),
@@ -999,9 +1001,12 @@ public sealed class CardsEventTrigger : BlockDefinition
         else
         {
             if (f.Owner != CardOwner.Either) parts.Add(f.Owner == CardOwner.You ? "c:IsPreviousControler(tp)" : "c:IsPreviousControler(1-tp)");
-            parts.Add("c:IsPreviousLocation(LOCATION_MZONE)");
+            // Spells and Traps leave the field too: "if another card(s) you control is destroyed".
+            parts.Add(f.CardType == FilterCardType.Monster ? "c:IsPreviousLocation(LOCATION_MZONE)" : "c:IsPreviousLocation(LOCATION_ONFIELD)");
             if (f.FaceUpOnly) parts.Add("c:IsPreviousPosition(POS_FACEUP)");
             if (ev == "destroyed_effect") parts.Add("c:IsReason(REASON_EFFECT)");
+            if (ev == "destroyed_opp") parts.Add("c:IsReason(REASON_EFFECT) and c:GetReasonPlayer()==1-tp");
+            if (ev == "destroyed_battle_opp") parts.Add("(c:IsReason(REASON_BATTLE) or c:IsReason(REASON_EFFECT) and c:GetReasonPlayer()==1-tp)");
         }
         switch (ev)
         {
@@ -1009,7 +1014,9 @@ public sealed class CardsEventTrigger : BlockDefinition
             case "flip": e.Code = "EVENT_FLIP_SUMMON_SUCCESS"; break;
             case "tribute": e.Code = "EVENT_SUMMON_SUCCESS"; parts.Add("c:IsSummonType(SUMMON_TYPE_ADVANCE)"); break;
             case "special": e.Code = "EVENT_SPSUMMON_SUCCESS"; break;
-            case "destroyed" or "destroyed_effect": e.Code = "EVENT_DESTROYED"; break;
+            case "destroyed" or "destroyed_effect" or "destroyed_opp": e.Code = "EVENT_DESTROYED"; break;
+            // Battle destruction happens in the Damage Step.
+            case "destroyed_battle_opp": e.Code = "EVENT_DESTROYED"; e.AddProperty("EFFECT_FLAG_DAMAGE_STEP"); break;
             case "destroyed_battle": e.Code = "EVENT_BATTLE_DESTROYED"; break;
             case "to_gy": e.Code = "EVENT_TO_GRAVE"; break;
             case "banished": e.Code = "EVENT_REMOVE"; break;

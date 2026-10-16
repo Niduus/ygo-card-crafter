@@ -7,6 +7,70 @@ internal static class Procedures
 {
     public static int XyzLevel(SummonProcedure proc, CardData card) => proc.XyzMaterialLevel > 0 ? proc.XyzMaterialLevel : card.Level;
 
+    /// <summary>The player flag of "once per turn" for the other way to Xyz Summon, and the one set when an Xyz Monster battles.</summary>
+    private const string AlternateUsedFlag = "id+7200", XyzBattledFlag = "id+7201";
+
+    /// <summary>
+    /// "You can also Xyz Summon this card by using 1 Xyz Monster you control": the engine's Xyz procedure with its
+    /// alternative material, the prompt asking which way, and the check and cost of that way.
+    /// </summary>
+    private static IEnumerable<string> XyzAlternate(CardProject project, ScriptBuilder script, string f, int min)
+    {
+        var proc = project.Procedure;
+        var alt = proc.XyzAlternateFilter;
+        var parts = FilterCompiler.Conditions(new CardFilter
+        {
+            CardType = FilterCardType.Monster, MonsterKind = alt.MonsterKind, Race = alt.Race, Attribute = alt.Attribute, Archetype = alt.Archetype,
+            Archetype2 = alt.Archetype2, CardCode = alt.CardCode, AltCodes = alt.AltCodes, ExceptOwnName = alt.ExceptOwnName, ExceptCode = alt.ExceptCode,
+            LevelMin = alt.LevelMin, LevelMax = alt.LevelMax, AtkMin = alt.AtkMin, AtkMax = alt.AtkMax, DefMin = alt.DefMin, DefMax = alt.DefMax,
+        });
+        parts.Insert(0, "c:IsFaceup()");
+        if (proc.XyzAlternateDetach > 0) parts.Add($"c:CheckRemoveOverlayCard(tp,{proc.XyzAlternateDetach},REASON_COST)");
+        var altf = script.AddFunction("xyzaltfilter", "c,e,tp,xyzc", [$"return {string.Join(" and ", parts)}"]);
+
+        var checks = new List<string>();
+        var pay = new List<string>();
+        if (proc.XyzAlternateAfterXyzBattle) checks.Add($"Duel.GetFlagEffect(tp,{XyzBattledFlag})>0");
+        if (proc.XyzAlternateOncePerTurn)
+        {
+            checks.Add($"Duel.GetFlagEffect(tp,{AlternateUsedFlag})==0");
+            pay.Add($"Duel.RegisterFlagEffect(tp,{AlternateUsedFlag},RESET_PHASE+PHASE_END,EFFECT_FLAG_OATH,1)");
+        }
+        if (proc.XyzAlternateDetach > 0) pay.Insert(0, $"mc:RemoveOverlayCard(tp,{proc.XyzAlternateDetach},{proc.XyzAlternateDetach},REASON_COST)");
+        var op = checks.Count + pay.Count == 0 ? "nil"
+            : script.AddFunction("xyzaltop", "e,tp,chk,mc", [$"if chk==0 then return {(checks.Count == 0 ? "true" : string.Join(" and ", checks))} end", .. pay]);
+
+        var slot = ScriptCompiler.StringSlots(project, script.Pack).FindIndex(s => s.Use == ScriptCompiler.XyzAlternateUse);
+        // 1165 is the game's own "Xyz Summon" text, for a card whose 16 texts are all taken.
+        var desc = slot is >= 0 and < 16 ? $"aux.Stringid(id,{slot})" : "1165";
+        var max = Math.Max(min, proc.MaxMaterials);
+        var lines = new List<string> { $"aux.AddXyzProcedure(c,{f},{XyzLevel(proc, project.Card)},{min},{altf},{desc},{max},{op})" };
+        if (proc.XyzAlternateAfterXyzBattle)
+        {
+            var battled = script.AddFunction("xyzbattled", "e,tp,eg,ep,ev,re,r,rp",
+            [
+                "local a,d=Duel.GetAttacker(),Duel.GetAttackTarget()",
+                "if a and a:IsType(TYPE_XYZ) or d and d:IsType(TYPE_XYZ) then",
+                $"\tDuel.RegisterFlagEffect(0,{XyzBattledFlag},RESET_PHASE+PHASE_END,0,1)",
+                $"\tDuel.RegisterFlagEffect(1,{XyzBattledFlag},RESET_PHASE+PHASE_END,0,1)",
+                "end",
+            ]);
+            // Every battle of the Duel is watched once, by the first copy of this card.
+            lines.AddRange(
+            [
+                "if not s.cc_xyz_battled then",
+                "\ts.cc_xyz_battled=true",
+                "\tlocal ge=Effect.CreateEffect(c)",
+                "\tge:SetType(EFFECT_TYPE_FIELD+EFFECT_TYPE_CONTINUOUS)",
+                "\tge:SetCode(EVENT_BATTLED)",
+                $"\tge:SetOperation({battled})",
+                "\tDuel.RegisterEffect(ge,0)",
+                "end",
+            ]);
+        }
+        return lines;
+    }
+
     /// <summary>
     /// Fusion Materials: listed one by one ("Aleister" monster + LIGHT or EARTH monster), with at most one slot that
     /// takes several cards; or the older exact passcodes; or "N+ monsters" that pass one filter.
@@ -135,6 +199,11 @@ internal static class Procedures
                 {
                     var f = script.MaterialFilter(proc.MaterialFilter, "xyzfilter", SummonProcedureKind.Xyz);
                     var min = Math.Max(2, proc.MinMaterials);
+                    if (proc.XyzAlternate)
+                    {
+                        lines.AddRange(XyzAlternate(project, script, f, min));
+                        break;
+                    }
                     var max = proc.MaxMaterials > min ? $",nil,nil,{proc.MaxMaterials}" : "";
                     lines.Add($"aux.AddXyzProcedure(c,{f},{XyzLevel(proc, card)},{min}{max})");
                     break;

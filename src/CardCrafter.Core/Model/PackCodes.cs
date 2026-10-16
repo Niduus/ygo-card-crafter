@@ -29,6 +29,21 @@ public static class PackCodes
         return free.Count == 0 ? 0 : free[(rng ?? Random.Shared).Next(free.Count)];
     }
 
+    /// <summary>
+    /// Why a custom Type's value won't show as that Type in the game, or null when it is fine. A card's Type is a set of
+    /// bits, so a value with standard Types' bits in it (0x100000230 has 0x10, 0x20 and 0x200) shows as those Types.
+    /// </summary>
+    public static string? TypeValueProblem(long value)
+    {
+        var standard = value & EnumNames.StandardRaceMask;
+        if (standard == 0) return null;
+        var names = Enum.GetValues<CardRace>().Where(r => r != CardRace.None && (standard & (long)r) != 0).Select(EnumNames.Display).ToList();
+        var own = value & ~EnumNames.StandardRaceMask;
+        var instead = own != 0 ? $" 0x{(own & -own):x}" : " one";
+        return $"0x{value:x} contains the bits of {string.Join(", ", names)} (0x{standard:x}), so YGO Omega shows the card as {(names.Count == 1 ? "that Type" : "those Types")}. " +
+               $"A custom Type needs a value none of the standard Types use, such as{instead}: click 🎲 for a free one.";
+    }
+
     /// <summary>Changes archetype <paramref name="from"/> to <paramref name="to"/> on every card and filter; how many changed.</summary>
     public static int ChangeArchetype(CardPack pack, int from, int to)
     {

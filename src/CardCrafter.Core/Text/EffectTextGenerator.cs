@@ -15,6 +15,7 @@ public static partial class EffectTextGenerator
     {
         // Printed cards keep the materials on their own line; everything else is one paragraph.
         var paragraph = new List<string>();
+        if (MaterialText.Alternate(project, pack) is { Length: > 0 } alternate) paragraph.Add(alternate);
         if (project.Card.OnlyOneOnField) paragraph.Add($"You can only control 1 \"{project.Card.Name}\".");
         if (EquipText(project, pack) is { Length: > 0 } equip) paragraph.Add(equip);
         if (RuleText(project) is { Length: > 0 } rule) paragraph.Add(rule);
@@ -25,7 +26,10 @@ public static partial class EffectTextGenerator
             .Select(e => Describe(e, project.Card, pack, limitSentence: combined is null || !UsesCombinedLimit(e)))
             .Where(s => s.Length > 0));
         if (combined is not null) paragraph.Add(combined);
-        var text = string.Join(" ", paragraph);
+        // After a list of "●" options, the next effect starts on a new line.
+        var text = "";
+        for (var i = 0; i < paragraph.Count; i++)
+            text += (i == 0 ? "" : paragraph[i - 1].Contains(OptionLine, StringComparison.Ordinal) ? "\n" : " ") + paragraph[i];
         return MaterialText.Describe(project, pack) is { Length: > 0 } materials
             ? (text.Length == 0 ? materials : materials + "\n" + text)
             : text;
@@ -35,6 +39,9 @@ public static partial class EffectTextGenerator
     /// The summoning rule line when no Summon procedure effect already says it: "Cannot be Normal Summoned/Set."
     /// or, for Extra Deck and Ritual monsters, "Must be Fusion Summoned."
     /// </summary>
+    /// <summary>What starts each option of "activate 1 of these effects": a new, indented line with a bullet.</summary>
+    public const string OptionLine = "\n ● ";
+
     private static string RuleText(CardProject project)
     {
         var card = project.Card;
@@ -125,7 +132,8 @@ public static partial class EffectTextGenerator
             var body = costs.Length == 0 ? "activate 1 of these effects" : $"{costs}, then activate 1 of these effects";
             body = optional ? "You can " + body : SentenceCase.Upper(body);
             text = head.Length == 0 ? body : $"{SentenceCase.Upper(head)}: {body}";
-            text += "; " + string.Join(" ", options.Select(o => "● " + OptionText(o, pack, effect))).TrimEnd('.');
+            // Each option on its own line, as printed cards list them.
+            text += ";" + string.Concat(options.Select(o => OptionLine + OptionText(o, pack, effect))).TrimEnd('.');
         }
         else
         {

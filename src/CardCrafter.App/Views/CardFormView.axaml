@@ -313,6 +313,26 @@
                   <NumericUpDown Name="XyzLevelBox" Value="{Binding XyzMaterialLevel}" Minimum="0" Maximum="13" FormatString="0" Width="120" />
                 </StackPanel>
               </StackPanel>
+              <!-- "You can also Xyz Summon this card by using 1 Xyz Monster you control" (Number C39, Sky Thunder) -->
+              <StackPanel IsVisible="{Binding IsXyz}" Spacing="4" Margin="0,4,0,0">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <CheckBox Name="XyzAlternateBox" Content="Can also be Xyz Summoned by using 1" IsChecked="{Binding XyzAlternate}" VerticalAlignment="Center"
+                            ToolTip.Tip="Put this card on top of a monster you control instead of using materials; that monster's materials go to this card." />
+                  <Button Classes="chip" Content="{Binding XyzAlternateFilter.Summary}" IsEnabled="{Binding XyzAlternate}" VerticalAlignment="Center">
+                    <Button.Flyout><Flyout><views:FilterEditorView DataContext="{Binding XyzAlternateFilter}" /></Flyout></Button.Flyout>
+                  </Button>
+                  <TextBlock Text="you control" VerticalAlignment="Center" />
+                </StackPanel>
+                <WrapPanel IsVisible="{Binding XyzAlternate}" Orientation="Horizontal" Margin="24,0,0,0">
+                  <CheckBox Content="once per turn" IsChecked="{Binding XyzAlternateOncePerTurn}" Margin="0,0,12,0" />
+                  <CheckBox Content="only if an Xyz Monster battled this turn" IsChecked="{Binding XyzAlternateAfterXyzBattle}" Margin="0,0,12,0" />
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <TextBlock Text="detaching" VerticalAlignment="Center" />
+                    <NumericUpDown Value="{Binding XyzAlternateDetach}" Minimum="0" Maximum="5" FormatString="0" Width="110" />
+                    <TextBlock Text="of its materials" VerticalAlignment="Center" />
+                  </StackPanel>
+                </WrapPanel>
+              </StackPanel>
               <StackPanel IsVisible="{Binding IsLinkProcedure}" Orientation="Horizontal" Spacing="8">
                 <CheckBox Name="LinkIncludingBox" Content="including a" IsChecked="{Binding Including}" VerticalAlignment="Center" />
                 <Button Classes="chip" Content="{Binding IncludeFilter.Summary}" IsEnabled="{Binding Including}" VerticalAlignment="Center">

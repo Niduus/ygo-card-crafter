@@ -55,6 +55,44 @@ public static class MaterialText
         }
     }
 
+    /// <summary>
+    /// "Once per turn, if an Xyz Monster battled this turn, you can also Xyz Summon "Divine Arsenal AA-ZEUS - Sky Thunder" by
+    /// using 1 Xyz Monster you control. (Transfer its materials to this card.)"; "" without another way to Xyz Summon.
+    /// </summary>
+    public static string Alternate(CardProject project, CardPack? pack = null)
+    {
+        var proc = project.Procedure;
+        if (!project.Card.IsExtraDeck || proc is not { Kind: SummonProcedureKind.Xyz, XyzAlternate: true }) return "";
+        var lead = (proc.XyzAlternateOncePerTurn, proc.XyzAlternateAfterXyzBattle) switch
+        {
+            (true, true) => "Once per turn, if an Xyz Monster battled this turn, you",
+            (true, false) => "Once per turn, you",
+            (false, true) => "If an Xyz Monster battled this turn, you",
+            _ => "You",
+        };
+        var name = project.Card.Name.Length > 0 ? $"\"{project.Card.Name}\"" : "this card";
+        var detach = proc.XyzAlternateDetach switch
+        {
+            0 => "",
+            1 => " and detaching 1 material from it",
+            var n => $" and detaching {n} materials from it",
+        };
+        return $"{lead} can also Xyz Summon {name} by using {Using(proc, pack)}{detach}. (Transfer its materials to this card.)";
+    }
+
+    /// <summary>The prompt asking which way to Xyz Summon: "Xyz Summon by using 1 Xyz Monster you control".</summary>
+    public static string AlternatePrompt(CardProject project, CardPack? pack = null) =>
+        $"Xyz Summon by using {Using(project.Procedure, pack)}";
+
+    private static string Using(SummonProcedure proc, CardPack? pack)
+    {
+        var f = proc.XyzAlternateFilter.Clone();
+        f.Owner = CardOwner.You;
+        f.Zones = Zone.MonsterZone;
+        f.FaceUpOnly = false;
+        return $"1 {FilterText.Describe(f, pack, false, withLocation: false)} you control";
+    }
+
     /// <summary>"2", "2+" or "2-3".</summary>
     private static string Count(int min, int max) =>
         max == min ? $"{min}" : $"{min}+";

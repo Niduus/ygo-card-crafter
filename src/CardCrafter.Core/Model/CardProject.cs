@@ -20,6 +20,18 @@ public sealed class SummonProcedure
     public List<MaterialSlot> Materials { get; set; } = [];
     /// <summary>Xyz: the Level of the materials, 0 for the same as the Rank.</summary>
     public int XyzMaterialLevel { get; set; }
+    /// <summary>
+    /// Xyz: "You can also Xyz Summon this card by using 1 <see cref="XyzAlternateFilter"/> you control" (its materials go to
+    /// this card), as on Number C39 or Divine Arsenal AA-ZEUS - Sky Thunder.
+    /// </summary>
+    public bool XyzAlternate { get; set; }
+    public CardFilter XyzAlternateFilter { get; set; } = new() { Owner = CardOwner.You, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster, MonsterKind = MonsterKind.Xyz };
+    /// <summary>"Once per turn, you can also Xyz Summon...": the other way can be used once per turn.</summary>
+    public bool XyzAlternateOncePerTurn { get; set; }
+    /// <summary>"If an Xyz Monster battled this turn, you can also Xyz Summon..." (Sky Thunder).</summary>
+    public bool XyzAlternateAfterXyzBattle { get; set; }
+    /// <summary>"...by using 1 Xyz Monster you control and detaching 2 materials from it": materials detached first.</summary>
+    public int XyzAlternateDetach { get; set; }
     /// <summary>Link: the materials must include at least one card <see cref="IncludeFilter"/> allows ("including a "Sky Striker" monster").</summary>
     public bool Including { get; set; }
     public CardFilter IncludeFilter { get; set; } = new() { CardType = FilterCardType.Monster };

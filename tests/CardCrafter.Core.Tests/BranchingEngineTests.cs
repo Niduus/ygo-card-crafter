@@ -101,7 +101,7 @@ public class BranchingEngineTests
             .Activate(p.Card.Id).ExpectActivations(1)
             .Check("Duel.GetFieldGroupCount(1,LOCATION_MZONE,0)==0").Check("Duel.GetFieldGroupCount(0,LOCATION_HAND,0)==0").AssertPasses();
         var text = EffectTextGenerator.Generate(p);
-        Assert.StartsWith("You can activate 1 of these effects; ● Target 1 monster your opponent controls; destroy it. ● Draw 2 cards.", text);
+        Assert.StartsWith("You can activate 1 of these effects;\n ● Target 1 monster your opponent controls; destroy it.\n ● Draw 2 cards.", text);
         var compiled = ScriptCompiler.Compile(p);
         Assert.Contains("aux.SelectFromOptions(tp,", compiled.Lua);
         Assert.Equal(3, compiled.Strings.Count);
