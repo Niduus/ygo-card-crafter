@@ -38,6 +38,7 @@ public static class BlockRegistry
         new TurnFieldAction(),
         new TurnPlayerRuleAction(),
         new TurnWatchAction(),
+        new SelfStatCondition(),
         new SummonedThisTurnCondition(),
         new LinkedCondition(),
         new PointsToCondition(),

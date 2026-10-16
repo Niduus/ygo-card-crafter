@@ -70,3 +70,32 @@ public class TurnEffectTests
             .Activate(Id).Check("Duel.GetLP(0)==8300").Check("Duel.GetLP(1)==7500").AssertPasses();
     }
 }
+
+/// <summary>"If this card's ATK is higher than its original ATK" and the other comparisons on this card's numbers.</summary>
+public class SelfStatConditionTests
+{
+    [EngineTheory]
+    [InlineData("above_orig", 0, true)]
+    [InlineData("below_orig", 0, false)]
+    [InlineData("at_least", 1500, true)]
+    [InlineData("at_least", 1600, false)]
+    [InlineData("exactly", 1500, true)]
+    public void AfterGainingAtk(string cmp, int amount, bool activates)
+    {
+        const long id = 100099101;
+        var gain = new BlockInstance("do.change_self_stats").With("duration", "always");
+        var check = new BlockInstance(SelfStatCondition.BlockId).With("cmp", cmp).With("amount", amount);
+        var p = new CardProject
+        {
+            Card = new CardData { Id = id, Name = "Stat Test", Frame = MonsterFrame.Effect, Level = 4, Atk = 1000, Def = 1000 },
+            Effects =
+            [
+                new EffectEvent { When = new BlockInstance("when.ignition"), Limit = OncePerTurn.Soft, Do = [gain] },
+                new EffectEvent { When = new BlockInstance("when.ignition"), If = [check], Do = [new BlockInstance("do.gain_lp").With("amount", 100)] },
+            ],
+        };
+        Assert.StartsWith("Once per turn: You can activate this effect; this card gains 500 ATK.", EffectTextGenerator.Generate(p));
+        new EngineScenario(p).Card(id, 0, "mzone").Card(Warrior, 0, "deck", 4).Card(Warrior, 1, "deck", 4)
+            .Activate(id, 2).Check(activates ? "Duel.GetLP(0)==8100" : "Duel.GetLP(0)==8000").AssertPasses();
+    }
+}
