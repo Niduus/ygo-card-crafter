@@ -99,3 +99,26 @@ public class SelfStatConditionTests
             .Activate(id, 2).Check(activates ? "Duel.GetLP(0)==8100" : "Duel.GetLP(0)==8000").AssertPasses();
     }
 }
+
+/// <summary>"Each time your opponent takes damage, you gain 300 LP" while this card is face-up.</summary>
+public class EachTimeTests
+{
+    [EngineFact]
+    public void AnswersEachTime_WithoutAChain()
+    {
+        const long id = 100099201, burner = 100099202;
+        var watcher = new CardProject
+        {
+            Card = new CardData { Id = id, Name = "Watcher", Frame = MonsterFrame.Effect, Level = 4, Atk = 1000, Def = 1000 },
+            Effects = [new EffectEvent { When = new BlockInstance("when.while_face_up"), Do = [new BlockInstance(EachTimePassive.BlockId).With("event", "opp_damage").With("then", "gain").With("amount", 300)] }],
+        };
+        Assert.Equal("Each time your opponent takes damage, you gain 300 LP.", EffectTextGenerator.Generate(watcher));
+        var burn = new CardProject
+        {
+            Card = new CardData { Id = burner, Name = "Burner", Frame = MonsterFrame.Effect, Level = 4, Atk = 1000, Def = 1000 },
+            Effects = [new EffectEvent { When = new BlockInstance("when.ignition"), Do = [new BlockInstance("do.damage").With("amount", 500), new BlockInstance("do.damage").With("amount", 500).Linked(ActionLink.Then)] }],
+        };
+        new EngineScenario(watcher, burn).Card(id, 0, "mzone").Card(burner, 0, "mzone").Card(Warrior, 0, "deck", 4).Card(Warrior, 1, "deck", 4)
+            .Activate(burner).ExpectActivations(1).Check("Duel.GetLP(0)==8600").Check("Duel.GetLP(1)==7000").AssertPasses();
+    }
+}

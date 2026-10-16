@@ -230,3 +230,73 @@ public sealed class TurnWatchAction : ActionBlock
         ctx.Effect.AddStep(lines, null, ctx.Link);
     }
 }
+
+/// <summary>
+/// "Each time your opponent Special Summons a monster(s), inflict 200 damage to them" while this card is face-up: it
+/// answers at once, without starting a chain (a Continuous effect), like "each time" on cards such as Lava Golem's foes.
+/// </summary>
+public sealed class EachTimePassive : PassiveBlock
+{
+    public const string BlockId = "passive.each_time";
+    public override string Id => BlockId;
+    public override string Group => "Players";
+    public override string Name => "Each time something happens, do something (no chain)";
+    public override string Sentence => "Each time {event}, {then} {amount}";
+    public override string Help => "A Continuous effect: it applies at once and can't be chained to. The effect's IF blocks and once per turn apply to it.";
+    public override IReadOnlyList<ParamSpec> Params { get; } =
+    [
+        ParamSpec.Choice("event", "Each time", EventTrigger.Events.Select(e => new ChoiceOption(e.Key, e.Text)).ToArray()),
+        ParamSpec.Choice("then", "Then",
+            new("damage", "inflict damage to your opponent:"),
+            new("damage_you", "you take damage:"),
+            new("gain", "gain LP:"),
+            new("opp_gain", "your opponent gains LP:")),
+        ParamSpec.Int("amount", "Amount", 200, 1, 99999),
+    ];
+
+    public override string Describe(BlockArgs args)
+    {
+        var n = args.Int("amount").ToString(CultureInfo.InvariantCulture);
+        var then = args.Choice("then") switch
+        {
+            "damage_you" => $"you take {n} damage",
+            "gain" => $"you gain {n} LP",
+            "opp_gain" => $"your opponent gains {n} LP",
+            _ => $"inflict {n} damage to your opponent",
+        };
+        return $"each time {EventTrigger.Find(args.Choice("event")).Text}, {then}";
+    }
+
+    public override void Compile(BlockContext ctx)
+    {
+        var ev = EventTrigger.Find(ctx.Args.Choice("event"));
+        var check = ev.Check;
+        if (check is not null && check.IndexOf('@') is var at and >= 0)
+        {
+            var colon = check.IndexOf(':', at);
+            var fn = ctx.Script.AddFunction(check[(at + 1)..colon], "c,tp", [$"return {check[(colon + 1)..]}"]);
+            check = check[..at] + $"eg:IsExists({fn},1,nil,tp)";
+        }
+        var n = ctx.Args.Int("amount").ToString(CultureInfo.InvariantCulture);
+        var act = ctx.Args.Choice("then") switch
+        {
+            "damage_you" => $"Duel.Damage(tp,{n},REASON_EFFECT)",
+            "gain" => $"Duel.Recover(tp,{n},REASON_EFFECT)",
+            "opp_gain" => $"Duel.Recover(1-tp,{n},REASON_EFFECT)",
+            _ => $"Duel.Damage(1-tp,{n},REASON_EFFECT)",
+        };
+        // The event's own check goes in the operation: the effect's condition is its IF blocks.
+        var body = new List<string>();
+        if (check is not null) body.Add($"if not ({check}) then return end");
+        body.AddRange(["Duel.Hint(HINT_CARD,0,id)", act]);
+        var op = ctx.Script.AddFunction("eachop", "e,tp,eg,ep,ev,re,r,rp", body);
+        var range = RangeOf(ctx);
+        ctx.Effect.AddPassive(v =>
+        [
+            $"{v}:SetType(EFFECT_TYPE_FIELD+EFFECT_TYPE_CONTINUOUS)",
+            $"{v}:SetCode({ev.Code})",
+            $"{v}:SetRange({range})",
+            $"{v}:SetOperation({op})",
+        ], limited: true);
+    }
+}
