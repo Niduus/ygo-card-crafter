@@ -154,7 +154,7 @@ public class SummonByEffectTranslationTests
             .Activate(card.Id).ExpectActivations(activations).Check($"{Find(card.Id, 0, "LOCATION_PZONE")}:GetRightScale()=={scale + activations}").AssertPasses();
     }
 
-    [Fact]
+    [EngineFact]
     public void PerformapalParrotrio_MakesItsScaleBecome7_IfItHasAPartner()
     {
         var card = PendulumCard(100171041, 2);
@@ -183,7 +183,7 @@ public class SummonByEffectTranslationTests
             .Check($"{Find(card.Id, 0, "LOCATION_PZONE")}:GetLeftScale()=={scale}").AssertPasses();
     }
 
-    [Fact]
+    [EngineFact]
     public void ExtraPendulum_IsTheExtraPendulumBlock_FromTheExtraDeck()
     {
         var card = new CardData { Id = 100171061, Name = "Extra", Kind = CardKind.Spell };
@@ -193,7 +193,7 @@ public class SummonByEffectTranslationTests
         Assert.Equal((ExtraPendulumAction.BlockId, "extra"), (b.BlockId, b.Values["from"]));
     }
 
-    [Fact]
+    [EngineFact]
     public void PendulumMonsters_PlaceThemselvesInThePendulumZone()
     {
         // Supreme King Z-ARC: "If this card in the Monster Zone is destroyed"; Clear Wing Fast Dragon: "... by battle or card effect".

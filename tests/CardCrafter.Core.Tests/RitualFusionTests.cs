@@ -548,7 +548,7 @@ public class RitualFusionTranslationTests
             .Activate(100098101).ExpectActivations(0).AssertPasses();
     }
 
-    [Fact]
+    [EngineFact]
     public void LightAndDarknessRitual_AlsoBanishesFromTheGY()
     {
         // "local e1=aux.AddRitualProcGreater2(c,s.rfilter,nil,s.grfilter)" with its description set afterwards: one effect.
@@ -561,7 +561,7 @@ public class RitualFusionTranslationTests
         Assert.DoesNotContain(result.Pieces, p => p.Piece.Code.TrimStart().StartsWith("e1:", StringComparison.Ordinal));
     }
 
-    [Fact]
+    [EngineFact]
     public void LibromancerMagigirl_RitualSummonsAsAQuickEffect()
     {
         // "local e2=aux.AddRitualProcGreater2(c,s.ritfilter,LOCATION_HAND,nil,nil,true)" then e2:SetType(EFFECT_TYPE_QUICK_O) ...
@@ -572,7 +572,7 @@ public class RitualFusionTranslationTests
         Assert.Equal(0x17c, effect.Do.Single().Filters["cards"].Archetype);
     }
 
-    [Fact]
+    [EngineFact]
     public void ForbiddenRitualArt_StaysScript_ItsExtraOperationIsNotABlock()
     {
         var result = ScriptTranslator.Translate(Script(12157563), 12157563, Spell(100098104, SpellKind.Ritual));
@@ -596,7 +596,7 @@ public class RitualFusionTranslationTests
             .Activate(100098105).ExpectActivations(1).Check(On(100098106)).Check(On(Fiend, 1, "LOCATION_GRAVE")).Check(On(Dragon, 0, "LOCATION_GRAVE")).AssertPasses();
     }
 
-    [Fact]
+    [EngineFact]
     public void MiracleFusion_BanishesFromTheFieldOrGY()
     {
         var p = Translated(45906428, Spell(100098107));
@@ -643,7 +643,7 @@ public class RitualFusionTranslationTests
             .SpSummon(100098110).Check(On(100098110)).Check(On(100098111, 0, "LOCATION_DECK")).Check(On(100098112, 0, "LOCATION_DECK")).AssertPasses();
     }
 
-    [Fact]
+    [EngineFact]
     public void GateGuardianOfThunderAndWind_MustBeSpecialSummonedByBanishing()
     {
         var project = new CardProject
@@ -660,7 +660,7 @@ public class RitualFusionTranslationTests
         Assert.Contains("Must be Special Summoned (from your Extra Deck) by banishing the above cards you control.", EffectTextGenerator.Generate(project));
     }
 
-    [Fact]
+    [EngineFact]
     public void ContactFusion_EitherFusionSummonedOrSpecialSummoned_IsTheUsualRule()
     {
         // Meizen the Battle Ninja: "not e:GetHandler():IsLocation(LOCATION_EXTRA) or aux.fuslimit(e,se,sp,st)".
@@ -669,7 +669,7 @@ public class RitualFusionTranslationTests
         Assert.Contains(result.Pieces, p => p.Rule == SummonRule.Normal);
     }
 
-    [Fact]
+    [EngineFact]
     public void ContactFusion_WithItsOwnMaterialFilter_StaysScript()
     {
         // Gladiator Beast Heraklinos's materials are also checked to be monsters by its own filter.
@@ -677,7 +677,7 @@ public class RitualFusionTranslationTests
         Assert.Contains(result.Pieces, p => !p.Translated && p.Reason!.StartsWith("its Contact Fusion", StringComparison.Ordinal));
     }
 
-    [Fact]
+    [EngineFact]
     public void FusionMaterialsWithARepeatingSlot_AndNoSubstitutes()
     {
         // "aux.AddFusionProcCodeFunRep(c,68468459,aux.FilterBoolFunction(Card.IsRace,RACE_DRAGON),1,127,true,true)".
