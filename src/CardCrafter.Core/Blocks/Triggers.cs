@@ -365,11 +365,17 @@ public sealed class DestroysByBattleTrigger : SelfTriggerBlock
 {
     public override string Id => "when.destroys_by_battle";
     public override string Name => "This card destroys a monster by battle";
-    public override string Sentence => "If this card destroys an opponent's monster by battle{sent}";
+    public override string Sentence => "If this card destroys {versus} by battle{sent}";
     public override EventPhrase? Phrase(BlockArgs args) => new("If", Describe(args)["If ".Length..]);
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Choice("sent", "And", new("any", "", "(that's all)"), new("gy", " and sends it to the GY")),
+        // What the scripts check: an opponent's monster and this card still on the field (most cards), any monster, or nothing.
+        ParamSpec.Choice("versus", "Which monster",
+            new("opponent", "an opponent's monster"),
+            new("any", "a monster", "a monster (this card still on the field)"),
+            new("monster", "a monster", "a monster that is still a monster (this card still on the field)"),
+            new("unchecked", "a monster", "a monster (even if this card left the field)")),
         OptionalParam,
     ];
 
@@ -377,7 +383,19 @@ public sealed class DestroysByBattleTrigger : SelfTriggerBlock
     {
         Zones.RequireMonster(ctx, Name);
         Setup(ctx, "EVENT_BATTLE_DESTROYING");
-        ctx.Effect.Conditions.Add(ctx.Args.Choice("sent") == "gy" ? "aux.bdogcon(e,tp,eg,ep,ev,re,r,rp)" : "aux.bdocon(e,tp,eg,ep,ev,re,r,rp)");
+        var gy = ctx.Args.Choice("sent") == "gy";
+        var check = (ctx.Args.Choice("versus"), gy) switch
+        {
+            ("opponent", true) => "aux.bdogcon(e,tp,eg,ep,ev,re,r,rp)",
+            ("opponent", false) => "aux.bdocon(e,tp,eg,ep,ev,re,r,rp)",
+            // The monster it destroyed: a Trap Card that was a monster is a Trap again in the GY.
+            ("any" or "monster", true) => "aux.bdgcon(e,tp,eg,ep,ev,re,r,rp)",
+            ("any", false) => "aux.bdcon(e,tp,eg,ep,ev,re,r,rp)",
+            ("monster", false) => "aux.bdcon(e,tp,eg,ep,ev,re,r,rp) and e:GetHandler():GetBattleTarget():IsType(TYPE_MONSTER)",
+            (_, true) => "e:GetHandler():GetBattleTarget():IsLocation(LOCATION_GRAVE) and e:GetHandler():GetBattleTarget():IsType(TYPE_MONSTER)",
+            _ => null,
+        };
+        if (check is not null) ctx.Effect.Conditions.Add(check);
     }
 }
 

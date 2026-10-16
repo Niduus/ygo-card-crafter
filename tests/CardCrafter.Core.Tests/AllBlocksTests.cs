@@ -102,6 +102,12 @@ public class AllBlocksTests
             project.Procedure.Kind = SummonProcedureKind.Link;
         }
         if (def.Id == "do.negate") project.Effects[0].When = new BlockInstance("when.quick").With("timing", "chain_any");
+        // "Activate this card": a Trap, watching anyone's battle.
+        if (def.Kind == BlockKind.Trigger && inst.Values.GetValueOrDefault("mode") == "activate")
+        {
+            project.Card.Kind = CardKind.Trap;
+            if (def.Id == BattleWindowTrigger.BlockId) inst.Values["who"] = "any";
+        }
         switch (def.Id)
         {
             case "do.negate_summon":

@@ -75,7 +75,7 @@ public static partial class EffectTextGenerator
     /// <summary>Hard once-per-turn effects that are used, not activated as a Spell/Trap Card or a Summon procedure.</summary>
     private static bool UsesCombinedLimit(EffectEvent e) =>
         e.Limit == OncePerTurn.Hard && e.When is { } w && BlockRegistry.Find(w.BlockId) is { } t
-        && t is not (ActivateTrigger or SummonProcedureTrigger or WhileFaceUpTrigger);
+        && t is not (ActivateTrigger or SummonProcedureTrigger or WhileFaceUpTrigger) && !DetailedTriggers.IsCardActivation(t, w);
 
     /// <summary>
     /// Printed cards with several hard once-per-turn effects say it once, at the end: "You can only use each effect of
@@ -110,12 +110,12 @@ public static partial class EffectTextGenerator
         if (trigger is SummonProcedureTrigger) return DescribeProcedure(effect, card, pack);
 
         bool passive = trigger is WhileFaceUpTrigger;
-        bool activation = trigger is ActivateTrigger;
+        bool activation = trigger is ActivateTrigger || DetailedTriggers.IsCardActivation(trigger, effect.When);
         // FLIP effects are mandatory unless ticked optional; other triggers are optional unless unticked.
         var optionalValue = effect.When.Values.GetValueOrDefault("optional");
         bool optional = trigger is FlipTrigger
             ? string.Equals(optionalValue, "true", StringComparison.OrdinalIgnoreCase)
-            : trigger is not (ActivateTrigger or WhileFaceUpTrigger) && !string.Equals(optionalValue, "false", StringComparison.OrdinalIgnoreCase);
+            : trigger is not (ActivateTrigger or WhileFaceUpTrigger) && !activation && !string.Equals(optionalValue, "false", StringComparison.OrdinalIgnoreCase);
 
         var head = Head(trigger, effect, pack, passive);
         if (effect.Limit == OncePerTurn.Soft && !passive)
@@ -286,7 +286,8 @@ public static partial class EffectTextGenerator
             cond = cond.Replace("during your opponent's turn", "during their turn", StringComparison.Ordinal);
 
         // Where this card must be, when no cost or action on this card says it: "If this card is in your GY".
-        if (trigger is QuickTrigger or IgnitionTrigger or EventTrigger or CardsEventTrigger or PhaseTrigger
+        if (trigger is QuickTrigger or IgnitionTrigger or EventTrigger or CardsEventTrigger or PhaseTrigger or ActivationTrigger or AttackDeclaredTrigger
+                or BattleWindowTrigger or SummonAttemptTrigger
             && effect.When!.Values.GetValueOrDefault("zone") is { } zone && Zones.Where(zone) is { } where && !SaysWhereThisCardIs(effect))
             cond = cond.Length == 0 ? $"this card is {where}" : $"this card is {where} and {cond}";
 
@@ -298,7 +299,7 @@ public static partial class EffectTextGenerator
 
         // "During your opponent's Main Phase", not "During the Main Phase during your opponent's turn".
         head = PhaseTurn().Replace(head, m => $"{m.Groups[1].Value} {(m.Groups[3].Value == "your opponent's" ? "your opponent's" : "your")} {m.Groups[2].Value} Phase");
-        if (trigger is QuickTrigger) head = head.Length == 0 ? "(Quick Effect)" : $"{head} (Quick Effect)";
+        if (trigger is QuickTrigger || DetailedTriggers.IsQuick(trigger, effect.When!)) head = head.Length == 0 ? "(Quick Effect)" : $"{head} (Quick Effect)";
         return head;
     }
 

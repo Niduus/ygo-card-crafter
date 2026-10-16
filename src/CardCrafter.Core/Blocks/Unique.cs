@@ -756,7 +756,7 @@ public sealed class ChainLimitCost : CostBlock
     public override string Afterword(BlockArgs args)
     {
         var who = args.Choice("who") == "both" ? "Neither player can" : "Your opponent cannot";
-        var thing = args.Effect?.When?.BlockId == "when.activate" ? "card" : "effect";
+        var thing = DetailedTriggers.ActivatesThisCard(args.Effect) ? "card" : "effect";
         return $"{who} activate {args.Describe("what")} in response to this {thing}'s activation.";
     }
 

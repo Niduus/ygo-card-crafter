@@ -425,15 +425,17 @@ public static partial class ScriptTranslator
             condition = null;
             damageStep = true;
         }
-        var (when, usedCondition) = Trigger(type, code, range, condition, alsoSpecial, fns, merge.AlsoTributed);
+        var (when, usedCondition) = TriggerOrDetailed(type, code, range, condition, alsoSpecial, fns, merge.AlsoTributed, props);
         if (merge.AlsoFlip)
         {
             if (when.BlockId != "when.summoned") throw No("it registers more than one effect");
             when = when.With("how", "any");
         }
-        if (damageStep) when = when.With("damage_step", true);
+        if (damageStep) when = when.BlockId is "when.quick" or "when.activate" ? when.With("damage_step", true) : throw No("it can be used in the Damage Step in a way its WHEN block doesn't say");
         effect.When = when;
+        effect.AlsoWhen.AddRange(TakePendingAlsoWhen());
         if (condition is not null && !usedCondition) effect.If.AddRange(Conditions(condition, fns));
+        effect.If.AddRange(TakePendingIf());
         if (set.GetValueOrDefault("Cost") is { } cost) effect.Cost.AddRange(Costs(cost, fns));
         // Polymerization's family: one Fusion Summon block.
         if (set.TryGetValue("Operation", out var fusionOp) && FusionOf(fusionOp, set.GetValueOrDefault("Target"), fns) is { } fusion)
@@ -452,6 +454,7 @@ public static partial class ScriptTranslator
         if (effect.Do.Any(b => b.BlockId is StatsFromValueAction.BlockId or LifeFromValueAction.BlockId))
             effect.If.AddRange(ValueActivationChecks(effect, targeting, tg is not null, fns));
         else if (targeting.CheckOnItsOwnLines is { } ownLines) throw No($"its target step does something the blocks don't ({ownLines})");
+        VerifyChainChecks(effect, card);
         return new TranslatedPiece { Piece = piece, Effect = effect };
     }
 
@@ -1013,9 +1016,11 @@ public static partial class ScriptTranslator
         var r = Regex.Match(text, @"^return (.+)$");
         if (!r.Success || text.Contains(" or ", StringComparison.Ordinal)) throw No("it picks cards in a way the blocks can't");
 
+        // "This card isn't one of them" is not "another card is one of them": the detailed block says it exactly.
+        if (other) return null;
         var f = new CardFilter { Owner = CardOwner.Either, Zones = Model.Zone.MonsterZone, CardType = FilterCardType.Monster, ExcludeThisCard = other };
-        string? summonType = null;
-        bool battle = false, battleOrEffect = false, wasOnField = false, anyCard = false, monster = false;
+        string? summonType = null, ownerCheck = null;
+        bool battle = false, battleOrEffect = false, wasOnField = false, anyCard = false, monster = false, faceUpNow = false, previousState = false;
         foreach (var raw in r.Groups[1].Value.Split(" and "))
         {
             var term = raw.Trim();
@@ -1023,8 +1028,11 @@ public static partial class ScriptTranslator
             if ((t = Regex.Match(term, @"^c:(IsControler|IsSummonPlayer|IsPreviousControler)\((tp|1-tp)\)$")).Success)
             {
                 f.Owner = t.Groups[2].Value == "tp" ? CardOwner.You : CardOwner.Opponent;
+                ownerCheck = t.Groups[1].Value;
                 continue;
             }
+            if (term == "c:IsFaceup()") faceUpNow = true;
+            if (term.Contains("Previous", StringComparison.Ordinal) && term.Contains("OnField", StringComparison.Ordinal) || term.StartsWith("c:IsPreviousSetCard(", StringComparison.Ordinal)) previousState = true;
             switch (term)
             {
                 case "c:IsPreviousLocation(LOCATION_MZONE)": wasOnField = true; continue;
@@ -1081,6 +1089,11 @@ public static partial class ScriptTranslator
                 ev = battleOrOpponent ? "destroyed_battle_opp" : byOpponent ? "destroyed_opp" : code == "EVENT_BATTLE_DESTROYED" || battle ? "destroyed_battle" : battleOrEffect ? "destroyed_any" : "destroyed";
                 break;
         }
+        // The block checks who controls them now for Summons and the GY, and before for the rest, and that the rest were on
+        // the field and face-up before: a script that checks anything else is read by the detailed block instead.
+        var summonOrGy = code is "EVENT_SUMMON_SUCCESS" or "EVENT_SPSUMMON_SUCCESS" or "EVENT_TO_GRAVE";
+        if (ownerCheck is not null && ownerCheck != (summonOrGy ? "IsControler" : "IsPreviousControler")) return null;
+        if (!summonOrGy && (!wasOnField || faceUpNow || previousState)) return null;
         return Block(CardsEventTrigger.BlockId).With("cards", f).With("event", ev);
     }
 
@@ -2158,6 +2171,7 @@ public static partial class ScriptTranslator
         var (body, temps) = FoldTempEffects(JoinContinuations(rawBody));
         // Murakumo: "your opponent can discard 1 card, or that effect is negated".
         var whole = string.Join(" ", body.Select(l => l.Trim()).Where(l => l.Length > 0));
+        if (SummonNegation(whole) is { } negateSummon) return negateSummon;
         if (Regex.IsMatch(whole, @"^if Duel\.(?:GetMatchingGroupCount\(Card\.IsDiscardable,tp,0,LOCATION_HAND,nil,REASON_EFFECT\)>0|IsExistingMatchingCard\(Card\.IsDiscardable,1-tp,LOCATION_HAND,0,1,nil(?:,REASON_EFFECT)?\)) and Duel\.SelectYesNo\(1-tp,aux\.Stringid\(\w+,\d+\)\) then Duel\.DiscardHand\(1-tp,(?:aux\.TRUE|nil),1,1,REASON_EFFECT\+REASON_DISCARD(?:,nil)?\) else Duel\.NegateEffect\(ev\) end$"))
             return [Block("do.negate_unless").With("pay", "discard")];
         if (Regex.IsMatch(whole, @"^if Duel\.CheckLPCost\(1-tp,1000\) and Duel\.SelectYesNo\(1-tp,aux\.Stringid\(\w+,\d+\)\) then Duel\.PayLPCost\(1-tp,1000\) else Duel\.NegateEffect\(ev\) end$"))

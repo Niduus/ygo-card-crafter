@@ -29,7 +29,7 @@ public class DetailedTriggerTests
         Assert.StartsWith("When your opponent activates a Spell Card in their hand that targets a monster(s) you control (Quick Effect): ", EffectTextGenerator.Generate(Watcher(when)));
         var gy = new BlockInstance(ActivationTrigger.BlockId).With("mode", "trigger").With("who", "either").With("what", "monster").With("from", "gy");
         gy.Filters["card"] = new CardFilter { CardType = FilterCardType.Monster, Attribute = CardAttribute.Dark, Zones = Zone.None };
-        Assert.StartsWith("If a player activates the effect of a DARK monster in the GY: ", EffectTextGenerator.Generate(Watcher(gy)));
+        Assert.StartsWith("If a DARK monster's effect is activated in the GY: ", EffectTextGenerator.Generate(Watcher(gy)));
         var attack = new BlockInstance(AttackDeclaredTrigger.BlockId).With("how", "direct");
         Assert.StartsWith("When an opponent's monster declares a direct attack (Quick Effect): ", EffectTextGenerator.Generate(Watcher(attack)));
     }
