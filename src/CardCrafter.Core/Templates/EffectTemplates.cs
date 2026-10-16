@@ -741,6 +741,55 @@ public static class EffectTemplates
                 Do = [B(SummonUsingThisAction.BlockId).With("kind", "synchro")],
             },
         },
+        // Summons by effect, Rank-Ups and Pendulums (SummonMechanics.Extra.cs).
+        new()
+        {
+            Name = "Xyz Summon by effect", LikeCard = "Wonder Xyz", For = CardKind.Spell, Group = "Extra Deck",
+            Description = "Immediately after this effect resolves, Xyz Summon 1 Xyz Monster using monsters you control as material. Change Xyz to Synchro or Link for the same with other Summons.",
+            Create = () => new EffectEvent { Label = "Xyz Summon", When = B("when.activate"), Do = [B(ExtraDeckSummonAction.BlockId).With("kind", "xyz")] },
+        },
+        new()
+        {
+            Name = "Rank-Up-Magic", LikeCard = "Rank-Up-Magic Limited Barian's Force", For = CardKind.Spell, Group = "Extra Deck",
+            Description = "Target 1 Xyz Monster you control; Special Summon from your Extra Deck, 1 Xyz Monster that is 1 Rank higher than that monster you control, by using it as material.",
+            Create = () => new EffectEvent { Label = "Rank-Up", When = B("when.activate"), Do = [B(RankUpAction.BlockId)] },
+        },
+        new()
+        {
+            Name = "Place in the Pendulum Zone when destroyed", LikeCard = "Supreme King Z-ARC", For = CardKind.Monster, Group = "Pendulum",
+            Description = "If this card in the Monster Zone is destroyed: You can place this card in your Pendulum Zone. For a Pendulum Monster.",
+            Create = () =>
+            {
+                var place = B(PlaceAction.BlockId).With("where", "pzone");
+                place.Filters["cards"] = new CardFilter { ThisCard = true };
+                return new EffectEvent { Label = "Pendulum", When = B("when.destroyed").With("by", "in_mzone"), Do = [place] };
+            },
+        },
+        new()
+        {
+            Name = "Change this card's Pendulum Scale", LikeCard = "Performapal Parrotrio", For = CardKind.Monster, Group = "Pendulum",
+            Description = "Once per turn: You can make this card's Pendulum Scale become 7 until the end of this turn. A Pendulum Effect, used in the Pendulum Zone.",
+            Create = () => new EffectEvent
+            {
+                Label = "Scale", When = B("when.ignition").With("zone", "pendulum_zone"), Limit = OncePerTurn.Soft,
+                Do = [B(PendulumScaleAction.BlockId).With("amount", 7)],
+            },
+        },
+        new()
+        {
+            Name = "Special Summon from the Pendulum Zone", LikeCard = "Abyss Actor - Extras", For = CardKind.Monster, Group = "Pendulum",
+            Description = "If your opponent controls a monster: You can Special Summon this card from your Pendulum Zone. A Pendulum Effect, used in the Pendulum Zone.",
+            Create = () =>
+            {
+                var theirs = B("if.cards_exist");
+                theirs.Filters["cards"] = new CardFilter { Owner = CardOwner.Opponent, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster };
+                return new EffectEvent
+                {
+                    Label = "Special Summon", When = B("when.ignition").With("zone", "pendulum_zone"), Limit = OncePerTurn.Hard,
+                    If = [theirs], Do = [B("do.special_summon_self")],
+                };
+            },
+        },
     ];
 
     private static CardFilter Narrow(CardFilter f)

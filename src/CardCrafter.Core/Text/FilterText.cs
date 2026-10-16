@@ -24,7 +24,8 @@ public static class FilterText
     {
         if (f.ThisCard) return "this card";
         var words = new List<string>();
-        if (f.ExcludeThisCard) words.Add("other");
+        // "a card in your other Pendulum Zone": "other" goes with the zone there.
+        if (f.ExcludeThisCard && !OtherPendulumZone(f)) words.Add("other");
         if (f.FaceDownOnly || f.Position == FilterPosition.FaceDownDefense) words.Add(f.Position == FilterPosition.FaceDownDefense ? "face-down Defense Position" : "face-down");
         else if (f.FaceUpOnly || f.Position is FilterPosition.FaceUpAttack or FilterPosition.FaceUpDefense) words.Add("face-up");
         if (f.Position is FilterPosition.Attack or FilterPosition.FaceUpAttack) words.Add("Attack Position");
@@ -141,7 +142,7 @@ public static class FilterText
 
         if (withLocation)
         {
-            var where = Location(f, preposition);
+            var where = Location(f, preposition, plural);
             if (where.Length > 0) words.Add(where);
         }
         var text = string.Join(" ", words);
@@ -247,9 +248,18 @@ public static class FilterText
         _ => null,
     };
 
-    private static string Location(CardFilter f, string preposition)
+    /// <summary>"in your other Pendulum Zone": the Pendulum Zone this card isn't in.</summary>
+    private static bool OtherPendulumZone(CardFilter f) => f.ExcludeThisCard && f.Zones == Zone.PendulumZone && f.Owner == CardOwner.You;
+
+    private static string Location(CardFilter f, string preposition, bool plural = false)
     {
         if (f.Zones == Zone.None) return "";
+        var prep = preposition.Length == 0 ? "" : preposition + " ";
+        // "in your other Pendulum Zone", "in your Pendulum Zones", "in a Pendulum Zone".
+        if (f.Zones == Zone.PendulumZone)
+            return OtherPendulumZone(f) ? $"{prep}your other Pendulum Zone"
+                : f.Owner == CardOwner.Either ? (plural ? $"{prep}the Pendulum Zones" : $"{prep}a Pendulum Zone")
+                : $"{prep}{(f.Owner == CardOwner.You ? "your" : "your opponent's")} Pendulum Zone{(plural ? "s" : "")}";
         if (f.CenterZone)
         {
             return f.Owner switch
@@ -301,6 +311,7 @@ public static class FilterText
         if (f.Zones.HasFlag(Zone.Graveyard)) places.Add("GY");
         if (f.Zones.HasFlag(Zone.Banished)) places.Add("banished cards");
         if ((f.Zones & Zone.Field) != Zone.None) places.Add("field");
+        else if (f.Zones.HasFlag(Zone.PendulumZone)) places.Add("Pendulum Zone");
         var list = places.Count switch
         {
             1 => places[0],

@@ -13,6 +13,8 @@ public enum Zone
     Graveyard = 0x10,
     Banished = 0x20,
     ExtraDeck = 0x40,
+    /// <summary>The Pendulum Zones, part of the Spell & Trap Zones: "a card in your Pendulum Zone".</summary>
+    PendulumZone = 0x80,
     Field = MonsterZone | SpellTrapZone,
 }
 

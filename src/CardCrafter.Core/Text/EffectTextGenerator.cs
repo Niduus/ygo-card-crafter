@@ -11,7 +11,47 @@ namespace CardCrafter.Core.Text;
 /// </summary>
 public static partial class EffectTextGenerator
 {
-    public static string Generate(CardProject project, CardPack? pack = null)
+    /// <summary>
+    /// The card's text. For a Pendulum Monster it is the Monster Effect (or a Normal Monster's flavor text, which is
+    /// written by hand): the effects used in the Pendulum Zone go in <see cref="GeneratePendulum"/>.
+    /// </summary>
+    public static string Generate(CardProject project, CardPack? pack = null) =>
+        Generate(project, pack, project.Card.IsPendulum ? project.Effects.Where(e => !IsPendulumEffect(e)).ToList() : project.Effects);
+
+    /// <summary>A Pendulum Monster's Pendulum Effect text: its effects used in the Pendulum Zone. Empty for other cards.</summary>
+    public static string GeneratePendulum(CardProject project, CardPack? pack = null)
+    {
+        if (!project.Card.IsPendulum) return "";
+        var effects = project.Effects.Where(IsPendulumEffect).ToList();
+        var paragraph = effects.Select(e => Describe(e, project.Card, pack, limitSentence: CombinedLimit(project, effects) is null || !UsesCombinedLimit(e))).Where(s => s.Length > 0).ToList();
+        if (CombinedLimit(project, effects) is { } combined) paragraph.Add(combined);
+        return Join(paragraph);
+    }
+
+    /// <summary>
+    /// Both boxes as the card database writes a Pendulum Monster's text: "[ Pendulum Effect ]" and "[ Monster Effect ]"
+    /// (or "[ Flavor Text ]"), each followed by its text. Other cards get <see cref="Generate"/>.
+    /// </summary>
+    public static string GenerateWithSections(CardProject project, CardPack? pack = null)
+    {
+        if (!project.Card.IsPendulum) return Generate(project, pack);
+        var monster = project.Card.Frame == MonsterFrame.Normal ? "[ Flavor Text ]" : "[ Monster Effect ]";
+        return $"[ Pendulum Effect ]\n{GeneratePendulum(project, pack)}\n{monster}\n{Generate(project, pack)}";
+    }
+
+    /// <summary>An effect used while this card is in the Pendulum Zone: it goes in the Pendulum Effect box.</summary>
+    public static bool IsPendulumEffect(EffectEvent effect) => effect.When?.Values.GetValueOrDefault("zone") == "pendulum_zone";
+
+    /// <summary>Sentences joined into one paragraph; after a list of "●" options, the next effect starts on a new line.</summary>
+    private static string Join(List<string> paragraph)
+    {
+        var text = "";
+        for (var i = 0; i < paragraph.Count; i++)
+            text += (i == 0 ? "" : paragraph[i - 1].Contains(OptionLine, StringComparison.Ordinal) ? "\n" : " ") + paragraph[i];
+        return text;
+    }
+
+    private static string Generate(CardProject project, CardPack? pack, List<EffectEvent> effects)
     {
         // Printed cards keep the materials on their own line; everything else is one paragraph.
         var paragraph = new List<string>();
@@ -21,15 +61,12 @@ public static partial class EffectTextGenerator
         if (RuleText(project) is { Length: > 0 } rule) paragraph.Add(rule);
         if (project.Card.IsMonster && project.Card.CannotBeSpecialSummoned && !project.Card.OnlyByOwnProcedure) paragraph.Add("Cannot be Special Summoned.");
         if (project.Card.IsMonster && project.Card.SpecialSummonOncePerTurn) paragraph.Add($"You can only Special Summon \"{project.Card.Name}\" once per turn.");
-        var combined = CombinedLimit(project);
-        paragraph.AddRange(project.Effects
+        var combined = CombinedLimit(project, effects);
+        paragraph.AddRange(effects
             .Select(e => Describe(e, project.Card, pack, limitSentence: combined is null || !UsesCombinedLimit(e)))
             .Where(s => s.Length > 0));
         if (combined is not null) paragraph.Add(combined);
-        // After a list of "●" options, the next effect starts on a new line.
-        var text = "";
-        for (var i = 0; i < paragraph.Count; i++)
-            text += (i == 0 ? "" : paragraph[i - 1].Contains(OptionLine, StringComparison.Ordinal) ? "\n" : " ") + paragraph[i];
+        var text = Join(paragraph);
         return MaterialText.Describe(project, pack) is { Length: > 0 } materials
             ? (text.Length == 0 ? materials : materials + "\n" + text)
             : text;
@@ -82,9 +119,9 @@ public static partial class EffectTextGenerator
     /// "X" once per turn." or, when they share one limit, "You can only use 1 of these effects of "X" per turn, and
     /// only once that turn." Null when each effect keeps its own sentence.
     /// </summary>
-    private static string? CombinedLimit(CardProject project)
+    private static string? CombinedLimit(CardProject project, List<EffectEvent> effects)
     {
-        var hard = project.Effects.Select((e, i) => (e, i)).Where(x => UsesCombinedLimit(x.e)).ToList();
+        var hard = effects.Select((e, i) => (e, i)).Where(x => UsesCombinedLimit(x.e)).ToList();
         if (hard.Count < 2) return null;
         var groups = hard.Select(x => x.e.SharedLimitGroup > 0 ? x.e.SharedLimitGroup : -(x.i + 1)).ToList();
         var name = project.Card.Name;
@@ -274,6 +311,13 @@ public static partial class EffectTextGenerator
         {
             when += " " + SummonedUsingCondition.Using(new BlockArgs(usedDef, usedMats, pack));
             ifs = ifs.Where(b => !ReferenceEquals(b, usedMats)).ToList();
+        }
+        // Stargazer Magician: "Unless you have a "Magician" card in your other Pendulum Zone, this card's Pendulum Scale becomes 4."
+        if (passive && effect.AlsoWhen.Count == 0 && ifs is [{ BlockId: "if.no_cards" } none] && effect.Do.Any(b => b.BlockId == PendulumScalePassive.BlockId)
+            && none.Filters.TryGetValue("cards", out var unless) && unless.Owner == CardOwner.You && (unless.Zones & Zone.Field) == 0 && unless.Zones != Zone.None)
+        {
+            var noun = FilterText.Describe(unless, pack, preposition: "in");
+            return $"unless you have {SummonWording.Article(noun)} {noun}";
         }
         var conditions = ifs.Select(b => Text(b, pack)).Where(t => t.Length > 0).ToList();
         // "While you have no cards in your hand, if this card attacks": a clause that brings its own "if" comes last.

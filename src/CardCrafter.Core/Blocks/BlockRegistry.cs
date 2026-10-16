@@ -71,6 +71,12 @@ public static class BlockRegistry
         new OpponentSpecialSummonsAction(),
         new FusionSummonAction(),
         new SummonUsingThisAction(),
+        // Summons by effect, Rank-Ups and Pendulum Scales (SummonMechanics.Extra.cs).
+        new ExtraDeckSummonAction(),
+        new RankUpAction(),
+        new PendulumScaleAction(),
+        new ExtraPendulumAction(),
+        new PendulumScalePassive(),
         new MaterialGrantPassive(),
         new SummonedUsingCondition(),
         new PlaceAction(),

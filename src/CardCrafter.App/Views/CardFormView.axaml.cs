@@ -54,7 +54,7 @@ public partial class CardFormView : UserControl
     private void UpdateFace()
     {
         if (_card is null) return;
-        Face.Update(_card.Data, _card.TypeLine, _card.FaceText, _art, _card.Copyright);
+        Face.Update(_card.FaceData, _card.TypeLine, _card.FaceText, _art, _card.Copyright);
     }
 
     private async void OnPickArtwork(object? sender, RoutedEventArgs e)

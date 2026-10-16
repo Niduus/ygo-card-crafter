@@ -65,6 +65,8 @@ public sealed partial class CardViewModel : ObservableObject
     // ---- outputs, recomputed on every change
     [ObservableProperty] private string _lua = "";
     [ObservableProperty] private string _suggestedText = "";
+    /// <summary>The suggested Pendulum Effect text: the effects used in the Pendulum Zone.</summary>
+    [ObservableProperty] private string _suggestedPendulumText = "";
     [ObservableProperty] private int _errorCount;
     [ObservableProperty] private int _warningCount;
     public ObservableCollection<DiagnosticItem> Diagnostics { get; } = [];
@@ -164,6 +166,7 @@ public sealed partial class CardViewModel : ObservableObject
                 vm.Problems = string.Join("\n", result.Diagnostics.Where(d => d.EffectIndex == i + 1).Select(d => (d.Severity == Severity.Error ? "✖ " : "⚠ ") + d.Message));
             }
             SuggestedText = EffectTextGenerator.Generate(Project, pack);
+            SuggestedPendulumText = EffectTextGenerator.GeneratePendulum(Project, pack);
             OnPropertyChanged(nameof(MaterialsText));
             OnPropertyChanged(nameof(HasMaterialsText));
             OnPropertyChanged(nameof(HasErrors));
@@ -219,6 +222,17 @@ public sealed partial class CardViewModel : ObservableObject
     [ObservableProperty] private int _faceVersion;
     public string TypeLine => CardFaceText.TypeLine(C, _pack());
     public string FaceText => string.IsNullOrWhiteSpace(C.Text) ? SuggestedText : C.Text;
+    /// <summary>The card as the face shows it: a Pendulum Effect not written yet shows the suggested one.</summary>
+    public CardData FaceData
+    {
+        get
+        {
+            if (!C.IsPendulum || !string.IsNullOrWhiteSpace(C.PendulumText) || SuggestedPendulumText.Length == 0) return C;
+            var face = PackSerializer.Clone(C);
+            face.PendulumText = SuggestedPendulumText;
+            return face;
+        }
+    }
     /// <summary>The copyright line at the bottom right of the card face, from the pack's author.</summary>
     public string Copyright => _pack().Copyright is { Length: > 0 } line ? line
         : string.IsNullOrWhiteSpace(_pack().Author) ? "" : $"©{DateTime.Now.Year} {_pack().Author.Trim()}";
@@ -697,6 +711,7 @@ public sealed partial class CardViewModel : ObservableObject
     private void UseSuggestedText()
     {
         Text = SuggestedText;
+        if (IsPendulum) PendulumText = SuggestedPendulumText;
     }
 
     // ---- hand-written script

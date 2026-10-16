@@ -93,8 +93,9 @@ public static partial class TranslationVerdict
         if (reason.StartsWith("it keeps extra state", StringComparison.Ordinal)) return "It remembers things between steps in a way no block does.";
         if (reason.StartsWith("it makes an effect it never applies", StringComparison.Ordinal)) return "It makes an effect it never uses.";
         if (reason.StartsWith("it can be used more than once per turn", StringComparison.Ordinal)) return "It can be used twice or more per turn; blocks have once per turn or no limit.";
-        if (reason.StartsWith("it looks in LOCATION_PZONE", StringComparison.Ordinal) || reason.Contains("LOCATION_PZONE", StringComparison.Ordinal))
-            return "No card picker looks in the Pendulum Zones yet.";
+        // Card pickers can look in the Pendulum Zones; what is left uses them in other ways (checking a zone is free, its Scales...).
+        if (reason.Contains("LOCATION_PZONE", StringComparison.Ordinal))
+            return "It uses the Pendulum Zones in a way no block does.";
         if (reason.StartsWith("it works from", StringComparison.Ordinal)) return "No WHEN block works from there.";
         return null;
     }

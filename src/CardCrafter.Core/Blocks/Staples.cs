@@ -327,10 +327,43 @@ public sealed class PlaceAction : CardGroupAction
         ParamSpec.Choice("as", "As", new("keep", "", "as itself"), new("continuous_spell", "as a Continuous Spell"), new("continuous_trap", "as a Continuous Trap")),
     ];
 
-    protected override string TargetedAction(BlockArgs args, string pronoun, bool single) =>
-        $"place {pronoun} face-up {args.Describe("where")}" + (args.Choice("as") == "keep" ? "" : " " + args.Describe("as"));
+    protected override string TargetedAction(BlockArgs args, string pronoun, bool single) => args.Choice("where") == "pzone"
+        ? $"place {pronoun} {PendulumZones(args, single)}"
+        : $"place {pronoun} face-up {args.Describe("where")}" + (args.Choice("as") == "keep" ? "" : " " + args.Describe("as"));
+
+    /// <summary>"in your Pendulum Zone", or "Zones" for more than one card.</summary>
+    private static string PendulumZones(BlockArgs args, bool single) => single ? "in your Pendulum Zone" : "in your Pendulum Zones";
+
+    /// <summary>"Place this card in your Pendulum Zone": cards there are always face-up, so the card doesn't say it.</summary>
+    public override string Describe(BlockArgs args) => args.Choice("where") == "pzone"
+        ? FillSentence("Place {count} {cards} {target} " + PendulumZones(args, One(args) && args.CountMode != "up_to"), args)
+        : base.Describe(args);
 
     private static string Location(BlockContext ctx) => ctx.Args.Choice("where") switch { "fzone" => "LOCATION_FZONE", "pzone" => "LOCATION_PZONE", _ => "LOCATION_SZONE" };
+
+    public override void Compile(BlockContext ctx)
+    {
+        if (ctx.Args.Choice("where") == "pzone" && ctx.Args.Cards("cards").ThisCard && !ctx.Args.Bool("target"))
+            PlaceThisCardInPendulumZone(ctx);
+        else base.Compile(ctx);
+    }
+
+    /// <summary>
+    /// "If this card in the Monster Zone is destroyed: You can place this card in your Pendulum Zone", written as the
+    /// official Pendulum Monsters write it: a free Pendulum Zone to activate, then this card is placed if it is still there.
+    /// </summary>
+    private static void PlaceThisCardInPendulumZone(BlockContext ctx)
+    {
+        if (!ctx.Card.IsPendulum) ctx.Effect.Warn("Only Pendulum Monsters can be placed in the Pendulum Zone: tick Pendulum on the Card tab.");
+        if (ctx.Args.Choice("as") != "keep") ctx.Effect.Warn("\"As a Continuous Spell/Trap\" places cards in the Spell & Trap Zone; pick that zone.");
+        ctx.Effect.TargetChecks.Add("(Duel.CheckLocation(tp,LOCATION_PZONE,0) or Duel.CheckLocation(tp,LOCATION_PZONE,1))");
+        var r = ctx.Effect.NewLocal("r");
+        ctx.Effect.AddStep(
+        [
+            $"local {r}=0",
+            $"if c:IsRelateToEffect(e) and Duel.MoveToField(c,tp,tp,LOCATION_PZONE,POS_FACEUP,true) then {r}=1 end",
+        ], r, ctx.Link);
+    }
 
     protected override string? AbleCheck(BlockContext ctx) => ctx.Args.Choice("where") switch
     {

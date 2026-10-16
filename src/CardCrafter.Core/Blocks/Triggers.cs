@@ -225,11 +225,24 @@ public sealed class DestroyedTrigger : SelfTriggerBlock
             new("opponent", " by an opponent's card"),
             new("opponent_effect", " by an opponent's card effect"),
             new("facedown", " while face-down", "while face-down"),
-            new("in_pzone", " in the Pendulum Zone", "in the Pendulum Zone")),
+            new("in_pzone", " in the Pendulum Zone", "in the Pendulum Zone"),
+            new("in_mzone", " in the Monster Zone", "in the Monster Zone (a Pendulum Monster can then be placed in the Pendulum Zone)"),
+            new("in_mzone_battle_effect", " in the Monster Zone by battle or card effect", "in the Monster Zone by battle or card effect")),
         OptionalParam,
     ];
 
-    public override EventPhrase? Phrase(BlockArgs args) => new("If", "this card is {0}", Describe(args)["If this card is ".Length..]);
+    /// <summary>"If this card in the Pendulum Zone is destroyed", "If this card in the Monster Zone is destroyed by battle or card effect".</summary>
+    public override string Describe(BlockArgs args) => args.Choice("by") switch
+    {
+        "in_pzone" => "If this card in the Pendulum Zone is destroyed",
+        "in_mzone" => "If this card in the Monster Zone is destroyed",
+        "in_mzone_battle_effect" => "If this card in the Monster Zone is destroyed by battle or card effect",
+        _ => base.Describe(args),
+    };
+
+    public override EventPhrase? Phrase(BlockArgs args) => args.Choice("by") is "in_pzone" or "in_mzone" or "in_mzone_battle_effect"
+        ? new("If", Describe(args)["If ".Length..])
+        : new("If", "this card is {0}", Describe(args)["If this card is ".Length..]);
 
     public override void Compile(BlockContext ctx)
     {
@@ -263,6 +276,17 @@ public sealed class DestroyedTrigger : SelfTriggerBlock
             case "in_pzone":
                 Setup(ctx, "EVENT_DESTROYED");
                 ctx.Effect.Conditions.Add("e:GetHandler():IsPreviousLocation(LOCATION_PZONE)");
+                break;
+            // A face-up monster: a Pendulum Monster goes face-up to the Extra Deck, so it can be placed in the Pendulum Zone.
+            case "in_mzone":
+                Zones.RequireMonster(ctx, "Destroyed in the Monster Zone");
+                Setup(ctx, "EVENT_DESTROYED");
+                ctx.Effect.Conditions.Add("e:GetHandler():IsPreviousLocation(LOCATION_MZONE) and e:GetHandler():IsFaceup()");
+                break;
+            case "in_mzone_battle_effect":
+                Zones.RequireMonster(ctx, "Destroyed in the Monster Zone");
+                Setup(ctx, "EVENT_DESTROYED");
+                ctx.Effect.Conditions.Add("bit.band(r,REASON_EFFECT+REASON_BATTLE)~=0 and e:GetHandler():IsPreviousLocation(LOCATION_MZONE) and e:GetHandler():IsFaceup()");
                 break;
             default:
                 Setup(ctx, "EVENT_DESTROYED");

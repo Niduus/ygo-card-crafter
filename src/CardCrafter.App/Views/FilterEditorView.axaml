@@ -23,6 +23,7 @@
       <CheckBox Content="Extra Deck" IsChecked="{Binding InExtra}" IsVisible="{Binding ShowExtra}" Margin="0,0,10,0" />
       <CheckBox Content="Monster Zone" IsChecked="{Binding InMonsterZone}" IsVisible="{Binding ShowMonsterZone}" Margin="0,0,10,0" />
       <CheckBox Content="Spell &amp; Trap Zone" IsChecked="{Binding InSpellTrapZone}" IsVisible="{Binding ShowSpellTrapZone}" Margin="0,0,10,0" />
+      <CheckBox Content="Pendulum Zone" IsChecked="{Binding InPendulumZone}" IsVisible="{Binding ShowPendulumZone}" Margin="0,0,10,0" />
       <CheckBox Content="GY" IsChecked="{Binding InGraveyard}" IsVisible="{Binding ShowGraveyard}" Margin="0,0,10,0" />
       <CheckBox Content="Banished" IsChecked="{Binding InBanished}" IsVisible="{Binding ShowBanished}" Margin="0,0,10,0" />
     </WrapPanel>

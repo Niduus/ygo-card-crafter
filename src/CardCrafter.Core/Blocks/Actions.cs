@@ -638,6 +638,8 @@ public sealed class SpecialSummonSelfAction : ActionBlock
         var zone = args.TriggerZone;
         var what = zone == "banished" ? "Special Summon this banished card" : "Special Summon this card";
         if (zone is not null && Zones.From(zone) is { } from) what += " " + from;
+        // A Pendulum Effect's "Special Summon this card from your Pendulum Zone".
+        else if (zone == "pendulum_zone") what += " from your Pendulum Zone";
         what = $"{what} {args.Describe("position")}".TrimEnd();
         if (args.Bool("ignore")) what += ", ignoring its Summoning conditions";
         return args.Bool("banish") ? what + ", but banish it when it leaves the field" : what;

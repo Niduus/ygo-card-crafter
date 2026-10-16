@@ -310,7 +310,7 @@ public sealed class AssistantTools(IAssistantWorkspace workspace)
             return (JsonNode)effect;
         }).ToArray());
         if (project.UseCustomLua is false) node.Remove("customLua");
-        node["generatedText"] = EffectTextGenerator.Generate(project, workspace.Pack);
+        node["generatedText"] = EffectTextGenerator.GenerateWithSections(project, workspace.Pack);
         node["problems"] = new JsonArray(Problems(project).Select(p => (JsonNode)p).ToArray());
         return new ToolOutcome(node.ToJsonString(Json));
     }
@@ -497,7 +497,7 @@ public sealed class AssistantTools(IAssistantWorkspace workspace)
     {
         var project = Card;
         var result = ScriptCompiler.Compile(project, workspace.Pack);
-        return Out(new { lua = result.Lua, problems = Problems(project, result), cardText = EffectTextGenerator.Generate(project, workspace.Pack) });
+        return Out(new { lua = result.Lua, problems = Problems(project, result), cardText = EffectTextGenerator.GenerateWithSections(project, workspace.Pack) });
     }
 
     private ToolOutcome TranslateScript(string lua)

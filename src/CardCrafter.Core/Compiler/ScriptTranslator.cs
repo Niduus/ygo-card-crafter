@@ -60,6 +60,7 @@ public static partial class ScriptTranslator
         var result = new TranslationResult();
         _sourceId = id;
         _sourceCard = card;
+        _sourceLua = lua;
         _chainCounter = Regex.Match(lua, @"Duel\.AddCustomActivityCounter\((?:id|\d+),ACTIVITY_CHAIN,s\.(\w+)\)") is { Success: true } cm
             && Regex.Match(lua, $@"function s\.{cm.Groups[1].Value}\(re,tp,cid\)\s*\n(.*?)\nend", RegexOptions.Singleline) is { Success: true } fm
             ? string.Join(" ", fm.Groups[1].Value.Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0)) : null;
@@ -235,6 +236,8 @@ public static partial class ScriptTranslator
         }
         if (registered.Count == 0) throw No("it isn't a single effect created on this card");
         var sets = registered.Select(r => vars[r]).ToList();
+        // Stargazer Magician's "this card's Pendulum Scale becomes 4": its left and right Scales (ScriptTranslator.SummonByEffect.cs).
+        if (PendulumScalePieceOf(piece, sets, fns) is { } scales) return scales;
 
         // Copies that differ only in what they apply to are one effect on the card ("ATK/DEF", "Normal or Special").
         var merge = Merge.Of(sets);
@@ -441,6 +444,12 @@ public static partial class ScriptTranslator
         if (set.TryGetValue("Operation", out var fusionOp) && FusionOf(fusionOp, set.GetValueOrDefault("Target"), fns) is { } fusion)
         {
             effect.Do.Add(fusion);
+            return new TranslatedPiece { Piece = piece, Effect = effect };
+        }
+        // Summons by effect, Rank-Ups, Pendulum Scales and placing this card in the Pendulum Zone (ScriptTranslator.SummonByEffect.cs).
+        if (set.TryGetValue("Operation", out var wholeOp) && SummonByEffectOf(wholeOp, set.GetValueOrDefault("Target"), fns) is { } whole)
+        {
+            effect.Do.AddRange(whole);
             return new TranslatedPiece { Piece = piece, Effect = effect };
         }
         _eventCode = code;
@@ -860,6 +869,8 @@ public static partial class ScriptTranslator
                         "return bit.band(r,REASON_BATTLE)~=0" => "battle",
                         "return bit.band(r,REASON_EFFECT+REASON_BATTLE)~=0" => "any",
                         "return rp==1-tp and e:GetHandler():IsPreviousControler(tp)" or "return rp==1-tp and c:IsPreviousControler(tp)" => "opponent",
+                        // A Pendulum Monster's "If this card in the Monster Zone / Pendulum Zone is destroyed" (ScriptTranslator.SummonByEffect.cs).
+                        _ when PendulumDestroyed(body) is { } pendulumBy => pendulumBy,
                         _ => throw No($"its \"destroyed\" condition is unusual ({Short(body)})"),
                     };
                     return (Block("when.destroyed").With("by", by).With("optional", optional), body is not null);
@@ -3041,6 +3052,7 @@ public static partial class ScriptTranslator
             "LOCATION_GRAVE" => Model.Zone.Graveyard,
             "LOCATION_REMOVED" => Model.Zone.Banished,
             "LOCATION_EXTRA" => Model.Zone.ExtraDeck,
+            "LOCATION_PZONE" => Model.Zone.PendulumZone,
             _ => throw No($"it looks in {s}"),
         });
         var (a, b) = (Zones(mine), Zones(theirs));

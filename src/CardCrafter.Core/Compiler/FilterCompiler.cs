@@ -149,10 +149,12 @@ public static class FilterCompiler
         if (f.FaceDownOnly) parts.Add($"{card}:IsFacedown()");
         else if (f.FaceUpOnly)
         {
-            var onlyPublicZones = (f.Zones & ~(Zone.Field | Zone.Banished)) == Zone.None;
+            // Face-up counts on the field, among banished cards and in the Extra Deck ("face-up Pendulum Monsters in
+            // your Extra Deck"); cards in the hand, Deck and GY are never face-down that way.
+            var onlyPublicZones = (f.Zones & ~(Zone.Field | Zone.Banished | Zone.PendulumZone | Zone.ExtraDeck)) == Zone.None;
             parts.Add(onlyPublicZones
                 ? $"{card}:IsFaceup()"
-                : $"({card}:IsFaceup() or not {card}:IsLocation(LOCATION_ONFIELD+LOCATION_REMOVED))");
+                : $"({card}:IsFaceup() or not {card}:IsLocation(LOCATION_ONFIELD+LOCATION_REMOVED{(f.Zones.HasFlag(Zone.ExtraDeck) ? "+LOCATION_EXTRA" : "")}))");
         }
         return parts;
     }

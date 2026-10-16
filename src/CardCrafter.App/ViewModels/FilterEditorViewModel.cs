@@ -127,6 +127,7 @@ public sealed partial class FilterEditorViewModel : ObservableObject
     public bool ShowSpellTrapZone => ShowZone(Zone.SpellTrapZone);
     public bool ShowGraveyard => ShowZone(Zone.Graveyard);
     public bool ShowBanished => ShowZone(Zone.Banished);
+    public bool ShowPendulumZone => ShowZone(Zone.PendulumZone);
 
     public bool InHand { get => Has(Zone.Hand); set => Set(Zone.Hand, value, nameof(InHand)); }
     public bool InDeck { get => Has(Zone.Deck); set => Set(Zone.Deck, value, nameof(InDeck)); }
@@ -135,6 +136,7 @@ public sealed partial class FilterEditorViewModel : ObservableObject
     public bool InSpellTrapZone { get => Has(Zone.SpellTrapZone); set => Set(Zone.SpellTrapZone, value, nameof(InSpellTrapZone)); }
     public bool InGraveyard { get => Has(Zone.Graveyard); set => Set(Zone.Graveyard, value, nameof(InGraveyard)); }
     public bool InBanished { get => Has(Zone.Banished); set => Set(Zone.Banished, value, nameof(InBanished)); }
+    public bool InPendulumZone { get => Has(Zone.PendulumZone); set => Set(Zone.PendulumZone, value, nameof(InPendulumZone)); }
 
     public IReadOnlyList<Option<FilterCardType>> TypeOptions => Lists.FilterTypes;
     public Option<FilterCardType> CardType

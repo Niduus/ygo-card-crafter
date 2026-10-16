@@ -15,6 +15,7 @@ public static class Lua
         (Zone.Graveyard, "LOCATION_GRAVE"),
         (Zone.Banished, "LOCATION_REMOVED"),
         (Zone.ExtraDeck, "LOCATION_EXTRA"),
+        (Zone.PendulumZone, "LOCATION_PZONE"),
     ];
 
     /// <summary>LOCATION_ constants joined with +, or "0" when empty.</summary>
@@ -27,6 +28,8 @@ public static class Lua
             parts.Add("LOCATION_ONFIELD");
             rest &= ~Zone.Field;
         }
+        // The Pendulum Zones are part of the Spell & Trap Zones.
+        if (zones.HasFlag(Zone.SpellTrapZone)) rest &= ~Zone.PendulumZone;
         foreach (var (zone, name) in ZoneNames)
             if (rest.HasFlag(zone)) parts.Add(name);
         // Keep a stable, readable order: on-field first, then the rest as listed.

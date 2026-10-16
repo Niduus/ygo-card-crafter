@@ -62,10 +62,19 @@ public static class PackExporter
             // A card built from blocks whose text was never written gets its suggested text, so it never shows up
             // blank in the game. Cards on a hand-written or imported script keep their text exactly as it is.
             var data = card.Card;
-            if (!card.UseCustomLua && string.IsNullOrWhiteSpace(data.Text) && Text.EffectTextGenerator.Generate(card, pack) is { Length: > 0 } suggested)
+            if (!card.UseCustomLua)
             {
-                data = PackSerializer.Clone(data);
-                data.Text = suggested;
+                // A Pendulum Monster's effects in the Pendulum Zone go in its Pendulum Effect when that isn't written, beside a
+                // hand-written Monster Effect or flavor text too, unless that text already says them (written before they had a box).
+                var suggested = string.IsNullOrWhiteSpace(data.Text) ? Text.EffectTextGenerator.Generate(card, pack) : "";
+                var pendulum = data.IsPendulum && string.IsNullOrWhiteSpace(data.PendulumText) ? Text.EffectTextGenerator.GeneratePendulum(card, pack) : "";
+                if (pendulum.Length > 0 && data.Text.Contains(pendulum, StringComparison.Ordinal)) pendulum = "";
+                if (suggested.Length > 0 || pendulum.Length > 0)
+                {
+                    data = PackSerializer.Clone(data);
+                    if (suggested.Length > 0) data.Text = suggested;
+                    if (pendulum.Length > 0) data.PendulumText = pendulum;
+                }
             }
             rows.Add(CdbEncoder.Encode(data, compiled.Strings, pack.Ot));
 
