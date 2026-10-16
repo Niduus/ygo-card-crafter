@@ -356,7 +356,11 @@ public sealed class SetSpellTrapAction : CardGroupAction
     protected override string TargetedWording => "Set {0}";
     protected override Func<CardFilter> DefaultCards => () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Deck, CardType = FilterCardType.Trap };
     protected override string? AbleCheck(BlockContext ctx) => "c:IsSSetable()";
-    protected override string? SpaceCheck(int count, CardFilter f, BlockContext ctx) => $"Duel.GetLocationCount(tp,LOCATION_SZONE)>={count}";
+    /// <summary>
+    /// One card: IsSSetable already asks for a free Spell & Trap Zone (and lets a Field Spell go to the Field Zone even when
+    /// they are full), as official cards check it. Several cards need a zone each.
+    /// </summary>
+    protected override string? SpaceCheck(int count, CardFilter f, BlockContext ctx) => count > 1 ? $"Duel.GetLocationCount(tp,LOCATION_SZONE)>={count}" : null;
 
     protected override IReadOnlyList<ParamSpec> BuildParams() => [.. base.BuildParams(), ParamSpec.Flag("this_turn", "it can be activated this turn", false)];
 

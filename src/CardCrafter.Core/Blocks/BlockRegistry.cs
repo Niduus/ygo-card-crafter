@@ -177,6 +177,7 @@ public static class BlockRegistry
         new PlaceOnDeckAction(),
         new ExcavateAction(),
         new SortDeckTopAction(),
+        new LookAtHandAction(),
         new EquipToThisAction(),
         new CannotBeNegatedCost(),
         new BecomePassive(),

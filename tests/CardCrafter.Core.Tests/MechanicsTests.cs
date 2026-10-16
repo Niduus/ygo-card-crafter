@@ -380,32 +380,31 @@ public class MechanicsTests
     // ---------------------------------------------------------------- battle positions
 
     [EngineFact]
-    public void Position_AvengingKnightParshath_TogglesAFaceUpMonster()
+    public void Position_ADChanger_TogglesATarget()
     {
-        if (Script(69514125) is null) return;
-        // "Duel.ChangePosition(tc,POS_FACEUP_DEFENSE,0,POS_FACEUP_ATTACK,0)" on a face-up monster: the position block's "other position".
-        var card = Monster(69514125, CardRace.Fairy, 1900);
-        card.Frame = MonsterFrame.Synchro;
-        card.Level = 5;
-        var p = Applied(69514125, card);
+        if (Script(96146814) is null) return;
+        // "Duel.ChangePosition(tc,POS_FACEUP_DEFENSE,POS_FACEDOWN_DEFENSE,POS_FACEUP_ATTACK,POS_FACEUP_ATTACK)": whatever position
+        // the target is in when the effect resolves, the same as the position block's "to the other battle position".
+        var card = Monster(96146814, CardRace.Warrior, 100);
+        var p = Applied(96146814, card);
         Assert.Contains(p.Effects.SelectMany(e => e.Do), b => b.BlockId == "do.change_position" && b.Values["to"] == "toggle");
-        new EngineScenario(p).Card(card.Id, 0, "mzone").Card(Warrior, 1, "mzone").Card(Warrior, 0, "deck", 4)
+        new EngineScenario(p).Card(card.Id, 0, "grave").Card(Warrior, 1, "mzone").Card(Warrior, 0, "deck", 4)
             .Activate(card.Id).ExpectActivations(1)
-            .Check($"{Find(Warrior, 1, "LOCATION_MZONE")}:IsPosition(POS_FACEUP_DEFENSE)").AssertPasses();
+            .Check($"{Find(Warrior, 1, "LOCATION_MZONE")}:IsPosition(POS_FACEUP_DEFENSE)")
+            .Check($"Duel.IsExistingMatchingCard(Card.IsCode,0,LOCATION_REMOVED,0,1,nil,{card.Id})").AssertPasses();
     }
 
     [EngineFact]
-    public void Position_WormErokin_SetsAFaceUpMonster()
+    public void Position_ChecksAtResolution_StayScript()
     {
-        if (Script(14936691) is null) return;
-        // "Duel.ChangePosition(tc,POS_FACEDOWN_DEFENSE,0,POS_FACEDOWN_DEFENSE,0)": the block's "to face-down Defense Position".
-        var card = Monster(14936691, CardRace.Reptile, 1400);
-        card.Archetypes = [0x3e];
-        var p = Applied(14936691, card);
-        Assert.Contains(p.Effects.SelectMany(e => e.Do), b => b.BlockId == "do.change_position" && b.Values["to"] == "facedown");
-        new EngineScenario(p).Card(card.Id, 0, "mzone", 2).Card(Warrior, 0, "deck", 4)
-            .Activate(card.Id).ExpectActivations(1)
-            .Check("Duel.IsExistingMatchingCard(Card.IsPosition,0,LOCATION_MZONE,0,1,nil,POS_FACEDOWN_DEFENSE)").AssertPasses();
+        // "if tc:IsRelateToEffect(e) and tc:IsFaceup() then Duel.ChangePosition(tc,POS_FACEUP_DEFENSE,0,POS_FACEUP_ATTACK,0)":
+        // a target Set in response is left alone, while the block would flip it face-up. Both stay script.
+        foreach (var id in new long[] { 69514125, 14936691 })
+        {
+            if (Script(id) is not { } lua) continue;
+            var result = ScriptTranslator.Translate(lua, id, Monster(id));
+            Assert.Contains(result.Pieces, piece => !piece.Translated && piece.Reason!.Contains("Duel.ChangePosition(tc,", StringComparison.Ordinal));
+        }
     }
 
     [Fact]
@@ -630,6 +629,24 @@ public class MechanicsTests
         Assert.Equal("3", translated.Pieces.Single().Effect!.Do.Single().Values["count"]);
     }
 
+    [EngineFact]
+    public void LookAtHand_ShowsTheOpponentsHand()
+    {
+        var spy = new CardProject
+        {
+            Card = Monster(100171084),
+            Effects = [new EffectEvent { When = B("when.ignition"), Do = [B(LookAtHandAction.BlockId), B("do.draw").Linked(ActionLink.IfYouDo)] }],
+        };
+        new EngineScenario(spy).Card(spy.Card.Id, 0, "mzone").Card(Fiend, 1, "hand", 2).Card(Warrior, 0, "deck", 4)
+            .Activate(spy.Card.Id).ExpectActivations(1)
+            .Check("Duel.GetFieldGroupCount(1,LOCATION_HAND,0)==2")
+            .Check("Duel.GetFieldGroupCount(0,LOCATION_HAND,0)==1").AssertPasses();
+        Assert.Equal("You can look at your opponent's hand, and if you do, draw 1 card.", EffectTextGenerator.Generate(spy));
+        // An empty hand: nothing to look at, so it can't be activated.
+        new EngineScenario(spy).Card(spy.Card.Id, 0, "mzone").Card(Warrior, 0, "deck", 4)
+            .Activate(spy.Card.Id).ExpectActivations(0).AssertPasses();
+    }
+
     // ---------------------------------------------------------------- control
 
     [EngineFact]
@@ -664,6 +681,61 @@ public class MechanicsTests
         new EngineScenario(p, tg).Card(card.Id, 0, "hand").Card(tg.Card.Id, 0, "mzone").Card(Dragon, 1, "mzone").Card(Warrior, 0, "deck", 4)
             .Activate(card.Id).ExpectActivations(1)
             .Check($"{Find(tg.Card.Id, 1, "LOCATION_MZONE")}~=nil and {Find(Dragon, 0, "LOCATION_MZONE")}~=nil").AssertPasses();
+    }
+
+    // ---------------------------------------------------------------- face-down, Setting
+
+    [EngineFact]
+    public void SpecialSummon_FaceDown_AndTheOpponentIsShownIt()
+    {
+        var spell = new CardProject
+        {
+            Card = new CardData { Id = 100171150, Name = "Mechanics Ambush", Kind = CardKind.Spell },
+            Effects = [new EffectEvent { When = B("when.activate"), Do = [With(B("do.special_summon", ("position", "facedown")), "cards", new CardFilter { Owner = CardOwner.You, Zones = Zone.Hand, CardType = FilterCardType.Monster })] }],
+        };
+        new EngineScenario(spell).Card(spell.Card.Id, 0, "hand").Card(Warrior, 0, "hand").Card(Warrior, 0, "deck", 4)
+            .Activate(spell.Card.Id).ExpectActivations(1)
+            .Check($"{Find(Warrior, 0, "LOCATION_MZONE")}:IsPosition(POS_FACEDOWN_DEFENSE)").AssertPasses();
+        Assert.Equal("Special Summon 1 monster from your hand in face-down Defense Position.", EffectTextGenerator.Generate(spell));
+        var lua = ScriptCompiler.Compile(spell).Lua;
+        Assert.Contains("POS_FACEDOWN_DEFENSE", lua);
+        Assert.Contains("Duel.ConfirmCards(1-tp,g)", lua);
+    }
+
+    [EngineFact]
+    public void SpecialSummon_FaceDown_Translated()
+    {
+        if (Script(73702909) is null) return;
+        // "Special Summon 1 Level 2 or lower Warrior monster from your Deck in face-down Defense Position."
+        var p = Applied(73702909, Monster(73702909, CardRace.Warrior, 500));
+        Assert.Contains(p.Effects.SelectMany(e => e.Do), b => b.BlockId == "do.special_summon" && b.Values["position"] == "facedown");
+    }
+
+    [EngineFact]
+    public void Set_AFieldSpell_WhileTheSpellAndTrapZonesAreFull()
+    {
+        // IsSSetable lets a Field Spell go to the Field Zone even when the Spell & Trap Zones are full, as the rules do.
+        var field = new CardProject { Card = new CardData { Id = 100171151, Name = "Mechanics Field", Kind = CardKind.Spell, SpellKind = SpellKind.Field } };
+        var setter = new CardProject
+        {
+            Card = Monster(100171152),
+            Effects = [new EffectEvent { When = B("when.ignition"), Do = [With(B("do.set"), "cards", new CardFilter { Owner = CardOwner.You, Zones = Zone.Deck, CardType = FilterCardType.Spell })] }],
+        };
+        new EngineScenario(setter, field).Card(setter.Card.Id, 0, "mzone").Card(Spell, 0, "szone", 5).Card(field.Card.Id, 0, "deck").Card(Warrior, 0, "deck", 3)
+            .Activate(setter.Card.Id).ExpectActivations(1)
+            .Check($"Duel.IsExistingMatchingCard(Card.IsCode,0,LOCATION_FZONE,0,1,nil,{field.Card.Id})").AssertPasses();
+    }
+
+    [EngineFact]
+    public void Set_FromTheDeck_Translated()
+    {
+        if (Script(17475251) is null) return;
+        // "Set 1 "Fire Formation" Spell directly from your Deck": Duel.SSet(tp,g:GetFirst()) on the card the filter (with IsSSetable) picked.
+        var p = Applied(17475251, Monster(17475251, CardRace.BeastWarrior, 1600));
+        var set = p.Effects.SelectMany(e => e.Do).Single(b => b.BlockId == "do.set");
+        Assert.Equal(0x7c, set.Filters["cards"].Archetype);
+        Assert.Equal(FilterCardType.Spell, set.Filters["cards"].CardType);
+        Assert.Equal(Zone.Deck, set.Filters["cards"].Zones);
     }
 
     // ---------------------------------------------------------------- the End Phase

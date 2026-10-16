@@ -320,7 +320,8 @@ public sealed class SpecialSummonAction : CardGroupAction
         ParamSpec.Choice("position", "Position",
             new("faceup", "", "face-up"),
             new("attack", "in Attack Position"),
-            new("defense", "in Defense Position")),
+            new("defense", "in Defense Position"),
+            new("facedown", "in face-down Defense Position")),
         ParamSpec.Choice("zone", "Zone", new("any", "", "to any zone"), new("pointed", "to a zone this card points to")),
         ParamSpec.Flag("ignore", "ignoring its Summoning conditions", false),
     ];
@@ -334,14 +335,26 @@ public sealed class SpecialSummonAction : CardGroupAction
 
     private static string Ignore(BlockContext ctx) => ctx.Args.Bool("ignore") ? "true" : "false";
 
-    protected override string? AbleCheck(BlockContext ctx) => $"c:IsCanBeSpecialSummoned(e,0,tp,{Ignore(ctx)},false)";
+    private static bool FaceDown(BlockContext ctx) => ctx.Args.Choice("position") == "facedown";
+
+    protected override string? AbleCheck(BlockContext ctx) =>
+        FaceDown(ctx) ? $"c:IsCanBeSpecialSummoned(e,0,tp,{Ignore(ctx)},false,POS_FACEDOWN_DEFENSE)" : $"c:IsCanBeSpecialSummoned(e,0,tp,{Ignore(ctx)},false)";
 
     protected override string Apply(string g, BlockContext ctx)
     {
+        // Face-down: the opponent is shown the Summoned cards, as official cards do.
+        if (FaceDown(ctx))
+            return ctx.Script.AddFunction("spfacedown", "g,e,tp",
+            [
+                $"local n=Duel.SpecialSummon(g,{(ctx.Args.Cards("cards").ThisCard ? "SUMMON_VALUE_SELF" : "0")},tp,tp,{Ignore(ctx)},false,POS_FACEDOWN_DEFENSE{(PointsTo(ctx) ? ",e:GetHandler():GetLinkedZone(tp)" : "")})",
+                "if n>0 then Duel.ConfirmCards(1-tp,g) end",
+                "return n",
+            ]) + $"({g},e,tp)";
         var pos = ctx.Args.Choice("position") switch
         {
             "attack" => "POS_FACEUP_ATTACK",
             "defense" => "POS_FACEUP_DEFENSE",
+            "facedown" => "POS_FACEDOWN_DEFENSE",
             _ => "POS_FACEUP",
         };
         // "This card itself" is Special Summoned by its own effect: SUMMON_VALUE_SELF, as official cards do.

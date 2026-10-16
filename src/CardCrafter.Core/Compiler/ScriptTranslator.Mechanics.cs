@@ -339,10 +339,24 @@ public static partial class ScriptTranslator
         {
             var where = m.Groups[2].Value is "SEQ_DECKBOTTOM" or "1" ? "bottom" : "top";
             if (m.Groups[1].Value is "c" or "e:GetHandler()")
-                return Block(PlaceOnDeckAction.BlockId).With("cards", new CardFilter { ThisCard = true }).With("where", where);
+                return ChecksThisCardIsThere() ? Block(PlaceOnDeckAction.BlockId).With("cards", new CardFilter { ThisCard = true }).With("where", where) : null;
             if (CardsOf(m.Groups[1].Value, groups, target, targetCard) is not { } placed || placed.Count != 1 || placed.Filter.Zones.HasFlag(Model.Zone.Deck)) return null;
             return Block(PlaceOnDeckAction.BlockId).With("cards", placed.Filter).With("target", placed.Targeted).With("where", where);
         }
+        // "Special Summon 1 monster from your Deck in face-down Defense Position" (its opponent is then shown it).
+        if ((m = Regex.Match(line, @"^Duel\.SpecialSummon\((\w+),0,tp,tp,(false|true),false,POS_FACEDOWN_DEFENSE\)$")).Success && m.Groups[1].Value != "c")
+        {
+            // The block picks monsters that can be Summoned face-down: so must the script.
+            if (_opValues?.Fns is not { } fns || !fns.ByName.Values.Any(f => f.Body.Any(l => l.Contains("POS_FACEDOWN_DEFENSE)", StringComparison.Ordinal) && l.Contains("IsCanBeSpecialSummoned", StringComparison.Ordinal))))
+                return null;
+            if (CardsOf(m.Groups[1].Value, groups, target, targetCard) is not { } summoned) return null;
+            var f = summoned.Filter;
+            if (f.CardType == FilterCardType.Any) { f = f.Clone(); f.CardType = FilterCardType.Monster; }
+            return CountedBlock("do.special_summon", summoned with { Filter = f }).With("position", "facedown").With("ignore", m.Groups[2].Value == "true");
+        }
+        // "Set 1 Trap from your Deck", "target 1 Spell in your GY; Set it", "Set this card".
+        if ((m = Regex.Match(line, @"^Duel\.SSet\(tp,(\w+|e:GetHandler\(\))(:GetFirst\(\))?\)$")).Success)
+            return SetOf(m.Groups[1].Value, m.Groups[2].Success, groups, target, targetCard, card);
         // From MechanicsRewrite: a card picked from your own Deck, moved to its top.
         if ((m = Regex.Match(line, @"^Duel\.CardCrafterDeckTop\((\w+)\)$")).Success)
         {
@@ -381,6 +395,29 @@ public static partial class ScriptTranslator
             return PositionOf(m, groups, target, targetCard);
         return null;
     }
+
+    /// <summary>"Duel.SSet(tp,tc)" and the like: 1 card, as the Set block, which checks IsSSetable as the script's filter does.</summary>
+    private static BlockInstance? SetOf(string what, bool first, Dictionary<string, (CardFilter Filter, int Count)> groups, TargetInfo target, bool targetCard, CardData card)
+    {
+        // The block only picks cards that can be Set: so must the script.
+        if (_opValues?.Fns is not { } fns || !fns.ByName.Values.Any(f => f.Body.Any(l => l.Contains("IsSSetable", StringComparison.Ordinal)))) return null;
+        if (what is "c" or "e:GetHandler()")
+        {
+            if (first || card.Kind == CardKind.Monster || card.Kind == CardKind.Spell && card.SpellKind == SpellKind.Field) return null;
+            return ChecksThisCardIsThere() ? Block("do.set").With("cards", new CardFilter { ThisCard = true }) : null;
+        }
+        if (CardsOf(what, groups, target, targetCard) is not { Count: 1 } set) return null;
+        return CountedBlock("do.set", set);
+    }
+
+    /// <summary>
+    /// Blocks acting on this card do so only if it is still where the effect was used (IsRelateToEffect): the script must
+    /// check the same before it acts, and not Necrovalley's rule, which those blocks don't.
+    /// </summary>
+    private static bool ChecksThisCardIsThere() =>
+        _opValues?.Fns is { } fns
+        && fns.ByName.Values.Any(f => f.Body.Any(l => Regex.IsMatch(l, @"^\s*if (?:c|e:GetHandler\(\)):IsRelateToEffect\(e\) (?:then|and Duel\.)")))
+        && !fns.ByName.Values.Any(f => f.Body.Any(l => l.Contains("NecroValley", StringComparison.Ordinal)));
 
     private sealed record PickedCards(CardFilter Filter, int Count, bool Targeted);
 
@@ -448,17 +485,29 @@ public static partial class ScriptTranslator
         if (f.FaceUpOnly) possible.Remove(Pos.FaceDown);
         if (f.FaceDownOnly) possible.RemoveAll(p => p != Pos.FaceDown);
         if (possible.Count == 0) return null;
-        // What each choice of the block does, and to which monsters (its own check on the cards it picks).
-        var choices = new (string To, Dictionary<Pos, Pos> Moves, string Check)[]
+        // A target may have changed position in response (been Set, say) by the time the effect resolves; the block changes
+        // it whatever its position then. The script must do the same to it: no "if tc:IsFaceup()" or position check first.
+        if (cards.Targeted)
         {
-            ("defense", new() { [Pos.Attack] = Pos.Defense, [Pos.FaceDown] = Pos.Defense }, "IsCanChangePosition"),
-            ("attack", new() { [Pos.Defense] = Pos.Attack, [Pos.FaceDown] = Pos.Attack }, "IsCanChangePosition"),
-            ("toggle", new() { [Pos.Attack] = Pos.Defense, [Pos.Defense] = Pos.Attack, [Pos.FaceDown] = Pos.Attack }, "IsCanChangePosition"),
-            ("facedown", new() { [Pos.Attack] = Pos.FaceDown, [Pos.Defense] = Pos.FaceDown }, "IsCanTurnSet"),
+            if (_opValues?.Fns is not { } opFns) return null;
+            var guards = opFns.ByName.Values.Where(fn => fn.Body.Any(l => l.Contains("Duel.ChangePosition(", StringComparison.Ordinal)))
+                .SelectMany(fn => fn.Body).Where(l => l.TrimStart().StartsWith("if ", StringComparison.Ordinal));
+            if (guards.Any(l => Regex.IsMatch(l, @":(?:IsFaceup|IsFacedown|IsAttackPos|IsDefensePos|IsPosition|IsCanChangePosition|IsCanTurnSet)\(")))
+                return null;
+        }
+        // What each choice of the block does, and to which monsters (its own check on the cards it picks), and what its
+        // Duel.ChangePosition does to a monster in each position.
+        var choices = new (string To, Dictionary<Pos, Pos> Moves, Pos[] Lua, string Check)[]
+        {
+            ("defense", new() { [Pos.Attack] = Pos.Defense, [Pos.FaceDown] = Pos.Defense }, [Pos.Defense, Pos.Defense, Pos.Defense], "IsCanChangePosition"),
+            ("attack", new() { [Pos.Defense] = Pos.Attack, [Pos.FaceDown] = Pos.Attack }, [Pos.Attack, Pos.Attack, Pos.Attack], "IsCanChangePosition"),
+            ("toggle", new() { [Pos.Attack] = Pos.Defense, [Pos.Defense] = Pos.Attack, [Pos.FaceDown] = Pos.Attack }, [Pos.Defense, Pos.Attack, Pos.Attack], "IsCanChangePosition"),
+            ("facedown", new() { [Pos.Attack] = Pos.FaceDown, [Pos.Defense] = Pos.FaceDown }, [Pos.FaceDown, Pos.FaceDown, Pos.FaceDown], "IsCanTurnSet"),
         };
-        foreach (var (to, moves, check) in choices)
+        foreach (var (to, moves, lua, check) in choices)
         {
             if (!possible.All(p => moves.TryGetValue(p, out var end) && end == official[p])) continue;
+            if (cards.Targeted && starts.Any(p => lua[(int)p] != official[p])) continue;
             // The block only picks monsters that can change position (or be Set): the script's filter must ask the same.
             if (_opValues?.Fns is not { } fns || !fns.ByName.Values.Any(fn => fn.Body.Any(l => l.Contains(check + "()", StringComparison.Ordinal) || l.Contains("Card." + check, StringComparison.Ordinal))))
                 return null;

@@ -375,6 +375,32 @@ public sealed class SortDeckTopAction : ActionBlock
     }
 }
 
+/// <summary>"Look at your opponent's hand.": the cards are shown to you, then the hand is shuffled.</summary>
+public sealed class LookAtHandAction : ActionBlock
+{
+    public const string BlockId = "do.look_at_hand";
+    public override string Id => BlockId;
+    public override string Group => "Cards";
+    public override string Name => "Look at your opponent's hand";
+    public override string Sentence => "Look at your opponent's hand";
+
+    public override void Compile(BlockContext ctx)
+    {
+        var g = ctx.Effect.NewLocal("g");
+        var r = ctx.Effect.NewLocal("r");
+        ctx.Effect.TargetChecks.Add("Duel.GetFieldGroupCount(tp,0,LOCATION_HAND)>0");
+        ctx.Effect.AddStep(
+        [
+            $"local {g}=Duel.GetFieldGroup(tp,0,LOCATION_HAND)",
+            $"local {r}={g}:GetCount()",
+            $"if {r}>0 then",
+            $"\tDuel.ConfirmCards(tp,{g})",
+            "\tDuel.ShuffleHand(1-tp)",
+            "end",
+        ], r, ctx.Link);
+    }
+}
+
 // ---------------------------------------------------------------- Equip
 
 /// <summary>
