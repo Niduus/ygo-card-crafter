@@ -58,7 +58,8 @@ internal static class Zones
 
     public static void RequireMonster(BlockContext ctx, string what)
     {
-        if (!ctx.Card.IsMonster) ctx.Effect.Error($"\"{what}\" only works on monster cards.");
+        // A Trap Monster's effects work while it is a monster.
+        if (!ctx.Card.IsMonster && !TrapMonsterAction.IsTrapMonster(ctx.Script.Project)) ctx.Effect.Error($"\"{what}\" only works on monster cards.");
     }
 }
 

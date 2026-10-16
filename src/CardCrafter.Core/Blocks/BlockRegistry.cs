@@ -176,6 +176,20 @@ public static class BlockRegistry
         new DoubleTributePassive(),
         new ActivateSetTurnPassive(),
         new CannotBeSummonedPassive(),
+        // Gemini, Union, Trap Monsters, the Deck, excavating, equipping monsters, the Chain, Types (MoreMechanics.cs)
+        new GeminiCondition(),
+        new UnionPassive(),
+        new TrapMonsterAction(),
+        new PlaceOnDeckAction(),
+        new ExcavateAction(),
+        new SortDeckTopAction(),
+        new LookAtHandAction(),
+        new EquipToThisAction(),
+        new CannotBeNegatedCost(),
+        new BecomePassive(),
+        new DamageBothAction(),
+        new SwapControlAction(),
+        new EndPhaseAction(),
     ];
 
     private static readonly Dictionary<string, BlockDefinition> ById = All.ToDictionary(b => b.Id);

@@ -63,8 +63,10 @@ public static partial class EffectTextGenerator
         else if (RuleText(project) is { Length: > 0 } rule) paragraph.Add(rule);
         if (project.Card.IsMonster && project.Card.CannotBeSpecialSummoned && !project.Card.OnlyByOwnProcedure && !ContactFusion.Applies(project)) paragraph.Add("Cannot be Special Summoned.");
         if (project.Card.IsMonster && project.Card.SpecialSummonOncePerTurn) paragraph.Add($"You can only Special Summon \"{project.Card.Name}\" once per turn.");
+        if (SpiritText(project) is { Length: > 0 } spirit) paragraph.Add(spirit);
         var combined = CombinedLimit(project, effects);
-        paragraph.AddRange(effects
+        if (GeminiText(project, pack, combined) is { Length: > 0 } gemini) paragraph.Add(gemini);
+        paragraph.AddRange(effects.Where(e => !GeminiCondition.Has(e))
             .Select(e => Describe(e, project.Card, pack, limitSentence: combined is null || !UsesCombinedLimit(e)))
             .Where(s => s.Length > 0));
         if (combined is not null) paragraph.Add(combined);
@@ -397,6 +399,8 @@ public static partial class EffectTextGenerator
                 sb.Append(". ").Append(SentenceCase.Upper(t));
                 continue;
             }
+            // "Special Summon 1 monster from your GY, but destroy it during the End Phase."
+            if (sb.Length > 0 && def is EndPhaseAction) { sb.Append(", but ").Append(t); continue; }
             if (sb.Length > 0)
             {
                 sb.Append(b.Link switch
