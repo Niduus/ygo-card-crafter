@@ -161,12 +161,13 @@ public sealed class ChangePositionAction : CardGroupAction
     protected override string Category => "CATEGORY_POSITION";
     protected override string Hint => "HINTMSG_POSCHANGE";
     protected override string TargetedWording => "change {0}";
+    protected override bool AllowsThisCard => true;
     protected override Func<CardFilter> DefaultCards => () => new CardFilter { Owner = CardOwner.Opponent, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster, FaceUpOnly = true };
 
     protected override IReadOnlyList<ParamSpec> BuildParams() =>
     [
         ParamSpec.Int("count", "How many", 1, 1, 10),
-        ParamSpec.Cards("cards", "Which monsters", DefaultCards, Zone.MonsterZone),
+        ParamSpec.Cards("cards", "Which monsters", DefaultCards, Zone.MonsterZone, thisCard: true),
         ParamSpec.Flag("target", "(targeting)", false),
         ParamSpec.Choice("to", "To",
             new("defense", "to face-up Defense Position"),
@@ -177,10 +178,9 @@ public sealed class ChangePositionAction : CardGroupAction
 
     public override string Describe(BlockArgs args)
     {
-        var n = args.Int("count");
         return args.Choice("to") == "toggle"
-            ? $"change the battle position of {n} {args.Describe("cards")}{args.ExceptText()}"
-            : $"change {n} {args.Describe("cards")} {args.Describe("to")}{args.ExceptText()}";
+            ? $"change the battle position of {Some(args)}{args.ExceptText()}"
+            : $"change {Some(args)} {args.Describe("to")}{args.ExceptText()}";
     }
 
     protected override string TargetedAction(BlockArgs args, string pronoun, bool single) =>
@@ -360,12 +360,13 @@ public sealed class SetAttackAction : CardGroupAction
     protected override string Category => "CATEGORY_ATKCHANGE";
     protected override string Hint => "HINTMSG_FACEUP";
     protected override string TargetedWording => "{0}";
+    protected override bool AllowsThisCard => true;
     protected override Func<CardFilter> DefaultCards => () => new CardFilter { Owner = CardOwner.Opponent, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster, FaceUpOnly = true };
 
     protected override IReadOnlyList<ParamSpec> BuildParams() =>
     [
         ParamSpec.Int("count", "How many", 1, 1, 10),
-        ParamSpec.Cards("cards", "Which monsters", DefaultCards, Zone.MonsterZone),
+        ParamSpec.Cards("cards", "Which monsters", DefaultCards, Zone.MonsterZone, thisCard: true),
         ParamSpec.Flag("target", "(targeting)", true),
         ParamSpec.Choice("mode", "Becomes", new("half", "half its current ATK"), new("zero", "0"), new("value", "", "a number:")),
         ParamSpec.Int("amount", "Number (for \"a number\")", 0, 0, 99999),
@@ -381,10 +382,9 @@ public sealed class SetAttackAction : CardGroupAction
 
     public override string Describe(BlockArgs args)
     {
-        var n = args.Int("count");
-        var cards = $"{n} {args.Describe("cards")}";
         var verb = args.Choice("mode") == "half" ? "is halved" : $"becomes {Becomes(args)}";
-        return $"the ATK of {cards} {(n == 1 ? verb : verb.Replace("is halved", "are halved"))} {args.Describe("duration")}".TrimEnd() + args.ExceptText();
+        if (args.IsThisCard) return $"this card's ATK {verb} {args.Describe("duration")}".TrimEnd();
+        return $"the ATK of {Some(args)} {(One(args) ? verb : verb.Replace("is halved", "are halved"))} {args.Describe("duration")}".TrimEnd() + args.ExceptText();
     }
 
     protected override string TargetedAction(BlockArgs args, string pronoun, bool single) =>
@@ -421,12 +421,13 @@ public sealed class ChangeLevelAction : CardGroupAction
     protected override string Category => "";
     protected override string Hint => "HINTMSG_FACEUP";
     protected override string TargetedWording => "{0}";
+    protected override bool AllowsThisCard => true;
     protected override Func<CardFilter> DefaultCards => () => new CardFilter { Owner = CardOwner.You, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster, FaceUpOnly = true };
 
     protected override IReadOnlyList<ParamSpec> BuildParams() =>
     [
         ParamSpec.Int("count", "How many", 1, 1, 10),
-        ParamSpec.Cards("cards", "Which monsters", DefaultCards, Zone.MonsterZone),
+        ParamSpec.Cards("cards", "Which monsters", DefaultCards, Zone.MonsterZone, thisCard: true),
         ParamSpec.Flag("target", "(targeting)", true),
         ParamSpec.Choice("mode", "Level", new("becomes", "becomes"), new("up", "increases by"), new("down", "decreases by")),
         ParamSpec.Int("amount", "Amount", 1, 1, 12),
@@ -442,6 +443,7 @@ public sealed class ChangeLevelAction : CardGroupAction
 
     public override string Describe(BlockArgs args)
     {
+        if (args.IsThisCard) return $"this card's {Change(args, true)} {args.Describe("duration")}".TrimEnd();
         var n = args.Int("count");
         return ($"the {Change(args, n == 1)} of {n} {args.Describe("cards")} {args.Describe("duration")}".TrimEnd() + args.ExceptText())
             .Replace("the Level becomes", "the Level becomes", StringComparison.Ordinal);
@@ -522,12 +524,13 @@ public sealed class BattleRuleAction : CardGroupAction
     protected override string Category => "";
     protected override string Hint => "HINTMSG_FACEUP";
     protected override string TargetedWording => "{0}";
+    protected override bool AllowsThisCard => true;
     protected override Func<CardFilter> DefaultCards => () => new CardFilter { Owner = CardOwner.Opponent, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster, FaceUpOnly = true };
 
     protected override IReadOnlyList<ParamSpec> BuildParams() =>
     [
         ParamSpec.Int("count", "How many", 1, 1, 10),
-        ParamSpec.Cards("cards", "Which monsters", DefaultCards, Zone.MonsterZone),
+        ParamSpec.Cards("cards", "Which monsters", DefaultCards, Zone.MonsterZone, thisCard: true),
         ParamSpec.Flag("target", "(targeting)", true),
         ParamSpec.Choice("rule", "What",
             new("cannot_attack", "cannot attack"),
@@ -546,8 +549,12 @@ public sealed class BattleRuleAction : CardGroupAction
         _ => ("EFFECT_CANNOT_ATTACK", "1"),
     };
 
-    public override string Describe(BlockArgs args) =>
-        $"{args.Int("count")} {args.Describe("cards")} {args.Describe("rule")} this turn{args.ExceptText()}";
+    public override string Describe(BlockArgs args)
+    {
+        var rule = args.Describe("rule");
+        if (!One(args)) rule = rule.Replace("inflicts", "inflict", StringComparison.Ordinal);
+        return $"{Some(args)} {rule} this turn{args.ExceptText()}";
+    }
 
     protected override string TargetedAction(BlockArgs args, string pronoun, bool single)
     {
@@ -655,15 +662,21 @@ public sealed class SummonRestrictionAction : ActionBlock
 
     public override void Compile(BlockContext ctx)
     {
-        var lines = new List<string> { "local sl=Effect.CreateEffect(e:GetHandler())" };
-        lines.AddRange(Locks.Lines(ctx, "sl", ctx.Args.Choice("who"), Locks.WhatOf(ctx.Args), ctx.Args.Cards("cards"), null));
-        switch (ctx.Args.Choice("duration"))
+        var what = Locks.WhatOf(ctx.Args);
+        var lines = new List<string>();
+        for (var part = 0; part < Locks.Parts(what); part++)
         {
-            case "next": lines.Add("sl:SetReset(RESET_PHASE+PHASE_END,2)"); break;
-            case "duel": break;
-            default: lines.Add("sl:SetReset(RESET_PHASE+PHASE_END)"); break;
+            var v = part == 0 ? "sl" : $"sl{part + 1}";
+            lines.Add($"local {v}=Effect.CreateEffect(e:GetHandler())");
+            lines.AddRange(Locks.Lines(ctx, v, ctx.Args.Choice("who"), what, ctx.Args.Cards("cards"), null, part: part));
+            switch (ctx.Args.Choice("duration"))
+            {
+                case "next": lines.Add($"{v}:SetReset(RESET_PHASE+PHASE_END,2)"); break;
+                case "duel": break;
+                default: lines.Add($"{v}:SetReset(RESET_PHASE+PHASE_END)"); break;
+            }
+            lines.Add($"Duel.RegisterEffect({v},tp)");
         }
-        lines.Add("Duel.RegisterEffect(sl,tp)");
         if (ctx.Args.Bool("from_hand"))
         {
             if (ctx.Card.Kind != CardKind.Trap) ctx.Effect.Warn("\"Only if activated from the hand\" is for Trap Cards that can be activated from the hand.");

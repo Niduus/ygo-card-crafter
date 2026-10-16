@@ -108,6 +108,13 @@ public abstract class CardGroupAction : ActionBlock
     /// <summary>Whether the card picker offers "This card itself" (move, destroy or Summon this exact card).</summary>
     protected virtual bool AllowsThisCard => false;
 
+    /// <summary>"this card", or "2 Dragon monsters": the cards the action is about, for its sentence.</summary>
+    protected static string Some(BlockArgs args) =>
+        args.IsThisCard ? "this card" : $"{args.Int("count")} {args.Describe("cards")}";
+
+    /// <summary>One card: this card, or a count of 1.</summary>
+    protected static bool One(BlockArgs args) => args.IsThisCard || args.Int("count") == 1;
+
     /// <summary>Whether "all" makes sense (it doesn't for Special Summons, which need a free zone for each card).</summary>
     protected virtual bool AllowsAll => true;
 

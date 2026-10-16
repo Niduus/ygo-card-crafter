@@ -394,7 +394,7 @@ public static partial class ScriptTranslator
         if (type.SetEquals(["EFFECT_TYPE_FIELD"]) && range is not null && !set.ContainsKey("Reset"))
         {
             BlockInstance? gate = null;
-            if (LockOf(set, fns) is { } lockout)
+            if (LockOf(set, fns) is { } lockout && CombinedLock([lockout.What]) is not null)
                 gate = Block("passive.lock").With("who", lockout.Who).With("what", lockout.What).With("cards", lockout.Except);
             else if (BanishInsteadOf(set, fns) is { } instead)
                 gate = Block("passive.banish_instead").With("what", instead.What).With("whose", instead.Whose);
@@ -1657,7 +1657,8 @@ public static partial class ScriptTranslator
     private static (string Who, string What, CardFilter Except)? LockOf(Dictionary<string, string> set, Functions fns)
     {
         var code = set.GetValueOrDefault("Code");
-        if (code is not ("EFFECT_CANNOT_SPECIAL_SUMMON" or "EFFECT_CANNOT_ACTIVATE" or "EFFECT_CANNOT_TO_HAND" or "EFFECT_CANNOT_ATTACK_ANNOUNCE")) return null;
+        if (code is not ("EFFECT_CANNOT_SPECIAL_SUMMON" or "EFFECT_CANNOT_ACTIVATE" or "EFFECT_CANNOT_TO_HAND" or "EFFECT_CANNOT_ATTACK_ANNOUNCE"
+            or "EFFECT_CANNOT_SUMMON" or "EFFECT_CANNOT_MSET" or "EFFECT_CANNOT_FLIP_SUMMON" or "EFFECT_CANNOT_SSET" or "EFFECT_CANNOT_BP")) return null;
         var range = (set.GetValueOrDefault("TargetRange") ?? "").Replace(" ", "");
         var except = new CardFilter { CardType = FilterCardType.Monster };
         string Who(string r) => r switch
@@ -1677,6 +1678,22 @@ public static partial class ScriptTranslator
         string? TargetBody() => set.GetValueOrDefault("Target") is { } t
             ? t.StartsWith("aux.TargetBoolFunction(", StringComparison.Ordinal) ? t : Body(t, fns)
             : null;
+        // The monsters spared: "not X" parts of the target; where they come from is kept apart.
+        List<string> Spared(string body)
+        {
+            if (!body.StartsWith("return ", StringComparison.Ordinal)) throw No($"its lock picks monsters in a way the blocks can't ({Short(body)})");
+            var parts = SplitTopLevelAnd(body[7..]).Select(x => x.Trim()).ToList();
+            var places = parts.Where(x => Regex.IsMatch(x, @"^c:IsLocation\(LOCATION_(EXTRA|GRAVE|HAND|DECK)\)$")).ToList();
+            foreach (var part in parts.Except(places))
+            {
+                Match m;
+                if ((m = Regex.Match(part, @"^not \((.*)\)$")).Success && Balanced(m.Groups[1].Value)) Except(m.Groups[1].Value, "c");
+                else if ((m = Regex.Match(part, @"^not (c:\w+\([^()]*\))$")).Success) Except(m.Groups[1].Value, "c");
+                else if ((m = Regex.Match(part, @"^c:Get(Attribute|Race)\(\)~=(\w+)$")).Success) Except($"c:Is{m.Groups[1].Value}({m.Groups[2].Value})", "c");
+                else throw No($"its lock picks monsters in a way the blocks can't ({Short(part)})");
+            }
+            return places;
+        }
         switch (code)
         {
             case "EFFECT_CANNOT_SPECIAL_SUMMON":
@@ -1685,19 +1702,27 @@ public static partial class ScriptTranslator
                 var body = TargetBody();
                 if (body is null) return (who, "special", except);
                 if (body == "aux.TargetBoolFunction(Card.IsLocation,LOCATION_EXTRA)") return (who, "special_extra", except);
-                if (!body.StartsWith("return ", StringComparison.Ordinal)) throw No($"its lock picks monsters in a way the blocks can't ({Short(body)})");
-                var parts = SplitTopLevelAnd(body[7..]).Select(x => x.Trim()).ToList();
-                var extra = parts.Remove("c:IsLocation(LOCATION_EXTRA)");
-                foreach (var part in parts)
+                var places = Spared(body);
+                return (who, places switch
                 {
-                    Match m;
-                    if ((m = Regex.Match(part, @"^not \((.*)\)$")).Success && Balanced(m.Groups[1].Value)) Except(m.Groups[1].Value, "c");
-                    else if ((m = Regex.Match(part, @"^not (c:\w+\([^()]*\))$")).Success) Except(m.Groups[1].Value, "c");
-                    else if ((m = Regex.Match(part, @"^c:Get(Attribute|Race)\(\)~=(\w+)$")).Success) Except($"c:Is{m.Groups[1].Value}({m.Groups[2].Value})", "c");
-                    else throw No($"its lock picks monsters in a way the blocks can't ({Short(part)})");
-                }
-                return (who, extra ? "special_extra" : "special", except);
+                    [] => "special",
+                    ["c:IsLocation(LOCATION_EXTRA)"] => "special_extra",
+                    ["c:IsLocation(LOCATION_GRAVE)"] => "special_gy",
+                    ["c:IsLocation(LOCATION_HAND)"] => "special_hand",
+                    ["c:IsLocation(LOCATION_DECK)"] => "special_deck",
+                    _ => throw No("its lock covers several places at once"),
+                }, except);
             }
+            // Normal Summons, Sets and Flip Summons: parts of "you cannot Normal or Special Summon"; CombinedLock joins them.
+            case "EFFECT_CANNOT_SUMMON" or "EFFECT_CANNOT_MSET" or "EFFECT_CANNOT_FLIP_SUMMON" or "EFFECT_CANNOT_SSET":
+            {
+                var who = Who(range);
+                if (TargetBody() is { } body && Spared(body).Count > 0) throw No("its lock on Normal Summons looks at where monsters are");
+                return (who, code switch { "EFFECT_CANNOT_SUMMON" => "x_summon", "EFFECT_CANNOT_MSET" => "x_mset", "EFFECT_CANNOT_FLIP_SUMMON" => "x_flip", _ => "sset" }, except);
+            }
+            case "EFFECT_CANNOT_BP":
+                if (set.ContainsKey("Target")) throw No("its Battle Phase lock is unusual");
+                return (Who(range), "bp", except);
             case "EFFECT_CANNOT_TO_HAND":
             {
                 var body = TargetBody();
@@ -1771,6 +1796,20 @@ public static partial class ScriptTranslator
             }
         }
     }
+
+    /// <summary>
+    /// The lock several player effects make together: "Normal or Special Summon" is EFFECT_CANNOT_SUMMON plus
+    /// EFFECT_CANNOT_SPECIAL_SUMMON. Null when they aren't one of the locks the blocks have.
+    /// </summary>
+    private static string? CombinedLock(IEnumerable<string> whats) =>
+        string.Join("+", whats.OrderBy(w => w, StringComparer.Ordinal)) switch
+        {
+            "special+x_summon" => "normal_special",
+            "special+x_flip+x_summon" => "summon_any",
+            "x_mset+x_summon" => "normal",
+            var one when !one.Contains('+') && !one.StartsWith("x_", StringComparison.Ordinal) => one,
+            _ => null,
+        };
 
     /// <summary>"Tribute this card instead": the cards it protects, against what, and what it does with itself.</summary>
     private static BlockInstance ReplaceOf(Dictionary<string, string> set, Functions fns)
@@ -1912,8 +1951,14 @@ public static partial class ScriptTranslator
                 "" => "duel",
                 _ => throw No($"it puts an effect on a player for a time the blocks don't have ({Short(reset)})"),
             };
-            if (parts.Count == 1 && LockOf(first, fns) is { } l)
-                return Block("do.summon_restriction").With("duration", lasts).With("who", l.Who).With("what", l.What).With("cards", l.Except);
+            if (parts.Count is >= 1 and <= 3 && parts.Select(p => LockOf(p.Set, fns)).ToList() is var locks && locks.All(x => x is not null))
+            {
+                var l = locks[0]!.Value;
+                // Each part spares the same monsters and stops the same player.
+                var same = locks.All(x => x!.Value.Who == l.Who && FilterCompiler.Conditions(x.Value.Except).SequenceEqual(FilterCompiler.Conditions(l.Except)));
+                if (same && parts.All(p => (p.Set.GetValueOrDefault("Reset") ?? "").Replace(" ", "") == reset) && CombinedLock(locks.Select(x => x!.Value.What)) is { } what)
+                    return Block("do.summon_restriction").With("duration", lasts).With("who", l.Who).With("what", what).With("cards", l.Except);
+            }
             if (parts.Count == 1 && BanishInsteadOf(first, fns) is { } bi)
                 return Block("do.banish_instead").With("duration", lasts).With("what", bi.What).With("whose", bi.Whose);
             throw No($"it puts an effect on a player the blocks don't have ({codes[0]})");

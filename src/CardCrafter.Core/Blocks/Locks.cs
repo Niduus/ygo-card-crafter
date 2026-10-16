@@ -16,6 +16,12 @@ internal static class Locks
     [
         new("special", "Special Summon monsters"),
         new("special_extra", "Special Summon from the Extra Deck"),
+        new("normal_special", "Normal or Special Summon monsters"),
+        new("summon_any", "Summon monsters"),
+        new("normal", "Normal Summon/Set monsters"),
+        new("special_hand", "Special Summon monsters from the hand"),
+        new("special_deck", "Special Summon monsters from the Deck"),
+        new("special_gy", "Special Summon monsters from the GY"),
         new("activate_any", "activate cards or effects"),
         new("activate_monster", "activate monster effects"),
         new("activate_monster_hand", "activate the effects of monsters in the hand"),
@@ -29,7 +35,20 @@ internal static class Locks
         new("special_of", "Special Summon these monsters:"),
         new("attack", "declare attacks"),
         new("search", "add cards from the Deck to the hand, except by drawing them"),
+        new("sset", "Set Spells/Traps"),
+        new("bp", "conduct the Battle Phase"),
     ];
+
+    /// <summary>The engine effects a lock is made of: one per kind of Summon it stops ("Normal or Special Summon" is two).</summary>
+    public static int Parts(string what) => what switch
+    {
+        "normal" or "normal_special" => 2,
+        "summon_any" => 3,
+        _ => 1,
+    };
+
+    private static bool IsSummonLock(string what) =>
+        what is "special" or "special_extra" or "normal_special" or "summon_any" or "normal" or "special_hand" or "special_deck" or "special_gy";
 
     /// <summary>The locks a turn-long restriction on yourself can be: the ones modern cards put on their own player.</summary>
     public static readonly ChoiceOption[] TurnWhat = What.Where(w => w.Value is "special" or "special_extra" or "activate_any" or "activate_monster" or "activate_monster_of" or "special_of" or "attack").ToArray();
@@ -56,7 +75,7 @@ internal static class Locks
 
     /// <summary>True when the "except" filter picks some monsters, not every one: only then is there an exception.</summary>
     public static bool HasExcept(string what, CardFilter f) =>
-        what != "search" && !Names(what) && (FilterCompiler.Conditions(f).Any(c => c != "c:IsType(TYPE_MONSTER)") || f.ExceptOwnName || f.ExceptCode != 0);
+        what is not ("search" or "bp") && !Names(what) && (FilterCompiler.Conditions(f).Any(c => c != "c:IsType(TYPE_MONSTER)") || f.ExceptOwnName || f.ExceptCode != 0);
 
     private static string Verb(string what) => What.First(w => w.Value == what).Label;
 
@@ -75,7 +94,7 @@ internal static class Locks
         return what switch
         {
             "attack" => $", except with {cards}",
-            "special" or "special_extra" => $", except {cards}",
+            _ when IsSummonLock(what) || what == "sset" => $", except {cards}",
             _ => $", except those of {cards}",
         };
     }
@@ -97,6 +116,8 @@ internal static class Locks
                 _ => "you cannot add cards from your Deck to your hand except by drawing them",
             };
         if (Names(what)) return $"{Subject(who)} {Named(what, except, args)}";
+        if (what == "bp")
+            return who switch { "both" => "neither player can conduct their Battle Phase", "opponent" => "your opponent cannot conduct their Battle Phase", _ => "you cannot conduct your Battle Phase" };
         return $"{Subject(who)} {Verb(what)}{ExceptText(what, except, args)}";
     }
 
@@ -117,7 +138,8 @@ internal static class Locks
     /// attacks). <paramref name="range"/> is set for a lasting effect of a card on the field; <paramref name="property"/>
     /// adds flags such as EFFECT_FLAG_OATH.
     /// </summary>
-    public static List<string> Lines(BlockContext ctx, string v, string who, string what, CardFilter except, string? range, string? property = null)
+    /// <param name="part">Which of the lock's <see cref="Parts"/>: Normal Summons, Sets, Flip Summons or Special Summons.</param>
+    public static List<string> Lines(BlockContext ctx, string v, string who, string what, CardFilter except, string? range, string? property = null, int part = 0)
     {
         var f = HasExcept(what, except) || Names(what) ? ctx.Script.MaterialFilter(except, "lockfilter") : "nil";
         var (self, opp) = who switch { "both" => ("1", "1"), "opponent" => ("0", "1"), _ => ("1", "0") };
@@ -132,9 +154,37 @@ internal static class Locks
             if (range is not null) lines.Add($"{v}:SetRange({range})");
             lines.Add($"{v}:SetTargetRange({self},{opp})");
         }
+        // Normal Summons, Sets and Flip Summons: the monster is all the engine passes.
+        string? NonSpecial() => (what, part) switch
+        {
+            ("normal", 0) or ("normal_special", 0) or ("summon_any", 0) => "EFFECT_CANNOT_SUMMON",
+            ("normal", 1) => "EFFECT_CANNOT_MSET",
+            ("summon_any", 1) => "EFFECT_CANNOT_FLIP_SUMMON",
+            _ => null,
+        };
+        if (NonSpecial() is { } summonCode)
+        {
+            Player(summonCode);
+            if (f != "nil") lines.Add($"{v}:SetTarget({ctx.Script.AddFunction("nsumlimit", "e,c", [$"return not {f}(c)"])})");
+            return lines;
+        }
         switch (what)
         {
-            case "special" or "special_extra" or "special_of":
+            case "bp":
+                Player("EFFECT_CANNOT_BP");
+                break;
+            case "sset":
+                Player("EFFECT_CANNOT_SSET");
+                if (f != "nil") lines.Add($"{v}:SetTarget({ctx.Script.AddFunction("ssetlimit", "e,c", [$"return not {f}(c)"])})");
+                break;
+            case "special_hand" or "special_deck" or "special_gy":
+            {
+                Player("EFFECT_CANNOT_SPECIAL_SUMMON");
+                var loc = what switch { "special_hand" => "LOCATION_HAND", "special_deck" => "LOCATION_DECK", _ => "LOCATION_GRAVE" };
+                lines.Add($"{v}:SetTarget({ctx.Script.AddFunction("sumlimit", "e,c,sump,sumtype,sumpos,targetp,se", [$"return c:IsLocation({loc})" + Not("c")])})");
+                break;
+            }
+            case "special" or "special_extra" or "special_of" or "normal_special" or "summon_any":
             {
                 Player("EFFECT_CANNOT_SPECIAL_SUMMON");
                 var test = what == "special_extra" ? "c:IsLocation(LOCATION_EXTRA)" + Not("c")
@@ -243,8 +293,12 @@ public sealed class LockPassive : PassiveBlock
 
     public override void Compile(BlockContext ctx)
     {
-        var lines = Locks.Lines(ctx, "{v}", ctx.Args.Choice("who"), Locks.WhatOf(ctx.Args), ctx.Args.Cards("cards"), RangeOf(ctx));
-        ctx.Effect.AddPassive(v => lines.Select(l => l.Replace("{v}", v)));
+        var what = Locks.WhatOf(ctx.Args);
+        for (var part = 0; part < Locks.Parts(what); part++)
+        {
+            var lines = Locks.Lines(ctx, "{v}", ctx.Args.Choice("who"), what, ctx.Args.Cards("cards"), RangeOf(ctx), part: part);
+            ctx.Effect.AddPassive(v => lines.Select(l => l.Replace("{v}", v)));
+        }
     }
 }
 

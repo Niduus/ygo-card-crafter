@@ -45,6 +45,13 @@ public class AllBlocksTests
                 case ParamType.Integer:
                     if (p.Max > 1) yield return ($"{p.Key}=2", def.CreateInstance().With(p.Key, Math.Max(2, p.Min)));
                     break;
+                // "This card itself" in the picker; this card is never targeted.
+                case ParamType.Cards when p.AllowThisCard:
+                    var self = def.CreateInstance();
+                    self.Filters[p.Key].ThisCard = true;
+                    if (def.Param("target") is not null) self.Values["target"] = "false";
+                    yield return ($"{p.Key}=this card", self);
+                    break;
             }
         }
     }
@@ -110,7 +117,7 @@ public class AllBlocksTests
             case "do.negate_unless" or "do.that_card":
                 project.Effects[0].When = new BlockInstance("when.quick").With("timing", "chain_any");
                 break;
-            case "cost.reveal_self":
+            case "cost.reveal_self" or "cost.reveal" when def.Id == "cost.reveal_self" || inst.Filters["cards"].ThisCard:
                 project.Effects[0].When = new BlockInstance("when.ignition").With("zone", "hand");
                 break;
             // A Set Trap's column; a Trap activated from the hand.

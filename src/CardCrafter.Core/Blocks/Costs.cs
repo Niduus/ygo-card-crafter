@@ -136,12 +136,13 @@ public sealed class TributeCost : CostBlock
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Int("count", "How many", 1, 1, 5),
-        ParamSpec.Cards("cards", "Which monsters", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster }, Zone.MonsterZone),
+        ParamSpec.Cards("cards", "Which monsters", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster }, Zone.MonsterZone, thisCard: true),
         ParamSpec.Choice("from", "From", new("field", "", "you control"), new("hand_or_field", "from your hand or field")),
     ];
 
     public override string Describe(BlockArgs args)
     {
+        if (args.Cards("cards").ThisCard) return "Tribute this card";
         var n = args.Int("count");
         var cards = Text.FilterText.Describe(args.Cards("cards"), args.Pack, n != 1, withLocation: args.Choice("from") != "hand_or_field");
         return args.Choice("from") == "hand_or_field" ? $"Tribute {n} {cards} from your hand or field" : $"Tribute {n} {cards}";
@@ -150,6 +151,12 @@ public sealed class TributeCost : CostBlock
     public override void Compile(BlockContext ctx)
     {
         var filter = ctx.Args.Cards("cards").Clone();
+        if (filter.ThisCard)
+        {
+            ctx.Effect.CostChecks.Add("e:GetHandler():IsReleasable()");
+            ctx.Effect.CostLines.Add("Duel.Release(e:GetHandler(),REASON_COST)");
+            return;
+        }
         filter.Owner = CardOwner.You;
         filter.Zones = Zone.MonsterZone;
         var f = ctx.Script.Filter(filter, null, "tributefilter");
@@ -187,7 +194,7 @@ public sealed class MoveCardsCost : CostBlock
             new("deck_bottom", "Place on the bottom of the Deck:"), new("hand", "Return to the hand:"), new("extra", "Return to the Extra Deck:")),
         ParamSpec.Int("count", "How many", 1, 1, 10),
         ParamSpec.Choice("mode", "Exactly / up to", new("exact", "", "exactly"), new("up_to", "up to")),
-        ParamSpec.Cards("cards", "Which cards", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Graveyard }),
+        ParamSpec.Cards("cards", "Which cards", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Graveyard }, thisCard: true),
     ];
 
     private static (string Verb, string Tail, string Able, string Hint, string Call) Way(string how) => how switch
@@ -203,6 +210,12 @@ public sealed class MoveCardsCost : CostBlock
     public override string Describe(BlockArgs args)
     {
         var (verb, tail, _, _, _) = Way(args.Choice("how"));
+        // "banish this card from your GY", "send this card from your hand to the GY".
+        if (args.Cards("cards").ThisCard)
+        {
+            var from = args.TriggerZone is { } z && !(z == "graveyard" && args.Choice("how") == "grave") ? Zones.From(z) : null;
+            return $"{verb} this card{(from is null ? "" : " " + from)}{tail}";
+        }
         return $"{verb} {args.Describe("count")} {args.Describe("cards")}{tail}{args.ExceptText()}";
     }
 
@@ -210,6 +223,16 @@ public sealed class MoveCardsCost : CostBlock
     {
         var how = ctx.Args.Choice("how");
         var filter = ctx.Args.Cards("cards").Clone();
+        if (filter.ThisCard)
+        {
+            var (_, _, selfAble, _, selfCall) = Way(how);
+            if (how == "extra" && !ctx.Card.IsExtraDeck)
+                ctx.Effect.Warn("Only Fusion, Synchro, Xyz and Link Monsters can return to the Extra Deck, so this cost can never be paid.");
+            ctx.Effect.CostChecks.Add(selfAble.Replace("c:", "e:GetHandler():", StringComparison.Ordinal));
+            ctx.Effect.CostLines.Add($"e:SetLabel({string.Format(System.Globalization.CultureInfo.InvariantCulture, selfCall, "e:GetHandler()")})");
+            ctx.Effect.CostCounts = true;
+            return;
+        }
         var zone = how switch { "grave" => Zone.Graveyard, "deck" or "deck_bottom" => Zone.Deck, "hand" => Zone.Hand, "extra" => Zone.ExtraDeck, _ => Zone.Banished };
         if (filter.Zones.HasFlag(zone))
         {

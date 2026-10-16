@@ -18,6 +18,18 @@ public abstract class PassiveBlock : BlockDefinition
     ];
 
     protected static string RangeOf(BlockContext ctx) => ctx.Effect.Range ?? "LOCATION_MZONE";
+
+    /// <summary>
+    /// "{cards} ..." lasting effects whose picker names this card itself: one effect on this card per code, instead of
+    /// an effect over the matching monsters. True when it was written.
+    /// </summary>
+    protected static bool OnThisCard(BlockContext ctx, IEnumerable<string> codes, string value)
+    {
+        if (!ctx.Args.Cards("cards").ThisCard) return false;
+        var range = RangeOf(ctx);
+        foreach (var code in codes) ctx.Effect.AddPassive(v => SelfEffect(v, range, code, value));
+        return true;
+    }
 }
 
 public sealed class BoostCardsPassive : PassiveBlock
@@ -29,7 +41,7 @@ public sealed class BoostCardsPassive : PassiveBlock
     public override string Help => "For example: Dragon monsters you control gain 500 ATK.";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
-        ParamSpec.Cards("cards", "Which monsters", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster }, Zone.MonsterZone),
+        ParamSpec.Cards("cards", "Which monsters", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster }, Zone.MonsterZone, thisCard: true),
         ParamSpec.Choice("dir", "Gain/lose", new("gain", "gain"), new("lose", "lose")),
         ParamSpec.Int("amount", "Amount", 500, 1, 99999),
         ParamSpec.Choice("stat", "Stat", new("atk", "ATK"), new("def", "DEF"), new("both", "ATK/DEF")),
@@ -38,12 +50,16 @@ public sealed class BoostCardsPassive : PassiveBlock
     public override string Describe(BlockArgs args)
     {
         var cards = args.Cards("cards");
+        if (cards.ThisCard) return $"this card {args.Describe("dir")}s {args.Int("amount")} {args.Describe("stat")}";
         var noun = Text.FilterText.Describe(cards, args.Pack, plural: true, preposition: "");
         return $"{noun} {args.Describe("dir")} {args.Int("amount")} {args.Describe("stat")}";
     }
 
     public override void Compile(BlockContext ctx)
     {
+        var self = ctx.Args.Int("amount") * (ctx.Args.Choice("dir") == "lose" ? -1 : 1);
+        if (OnThisCard(ctx, ctx.Args.Choice("stat") switch { "def" => ["EFFECT_UPDATE_DEFENSE"], "both" => ["EFFECT_UPDATE_ATTACK", "EFFECT_UPDATE_DEFENSE"], _ => new[] { "EFFECT_UPDATE_ATTACK" } },
+                self.ToString(System.Globalization.CultureInfo.InvariantCulture))) return;
         var filter = ctx.Args.Cards("cards").Clone();
         filter.Zones = Zone.MonsterZone;
         var f = ctx.Script.Filter(filter);
@@ -199,18 +215,21 @@ public sealed class AttackTargetsPassive : PassiveBlock
     public override string Help => "Tick \"other\" for \"other monsters you control\", so attacks must go at this card.";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
-        ParamSpec.Cards("cards", "Which monsters", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster, ExcludeThisCard = true }, Zone.MonsterZone),
+        ParamSpec.Cards("cards", "Which monsters", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster, ExcludeThisCard = true }, Zone.MonsterZone, thisCard: true),
     ];
 
     public override string Describe(BlockArgs args)
     {
         var cards = args.Cards("cards").Clone();
         cards.Owner = CardOwner.You;
+        if (cards.ThisCard) return "your opponent cannot target this card for attacks";
         return $"your opponent cannot target {Text.FilterText.Describe(cards, args.Pack, plural: true, preposition: "")} for attacks";
     }
 
     public override void Compile(BlockContext ctx)
     {
+        // This card itself: it can't be chosen as an attack target by the opponent.
+        if (OnThisCard(ctx, ["EFFECT_CANNOT_BE_BATTLE_TARGET"], "aux.imval1")) return;
         var filter = ctx.Args.Cards("cards").Clone();
         filter.Owner = CardOwner.You;
         filter.Zones = Zone.MonsterZone;

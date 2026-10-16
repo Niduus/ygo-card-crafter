@@ -107,7 +107,7 @@ public sealed class CardsRulePassive : PassiveBlock
     public override string Sentence => "{cards} {rule}";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
-        ParamSpec.Cards("cards", "Which monsters", () => new CardFilter { Owner = CardOwner.Opponent, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster }, Zone.MonsterZone),
+        ParamSpec.Cards("cards", "Which monsters", () => new CardFilter { Owner = CardOwner.Opponent, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster }, Zone.MonsterZone, thisCard: true),
         ParamSpec.Choice("rule", "Rule",
             new("cannot_attack", "cannot attack"),
             new("negated", "have their effects negated"),
@@ -118,12 +118,41 @@ public sealed class CardsRulePassive : PassiveBlock
             new("pierce", "inflict piercing battle damage")),
     ];
 
-    public override string Describe(BlockArgs args) =>
-        $"{FilterText.Describe(args.Cards("cards"), args.Pack, plural: true, preposition: "")} {args.Describe("rule")}";
+    public override string Describe(BlockArgs args)
+    {
+        if (args.Cards("cards").ThisCard)
+        {
+            // "this card has its effects negated", "this card is unaffected by ...", "this card inflicts piercing battle damage".
+            var rule = args.Choice("rule") switch
+            {
+                "negated" => "has its effects negated",
+                "unaffected" => "is unaffected by your opponent's card effects",
+                "pierce" => "inflicts piercing battle damage",
+                _ => args.Describe("rule"),
+            };
+            return "this card " + rule;
+        }
+        return $"{FilterText.Describe(args.Cards("cards"), args.Pack, plural: true, preposition: "")} {args.Describe("rule")}";
+    }
 
     public override void Compile(BlockContext ctx)
     {
         var filter = ctx.Args.Cards("cards").Clone();
+        if (filter.ThisCard)
+        {
+            var (selfCodes, selfValue) = ctx.Args.Choice("rule") switch
+            {
+                "negated" => (new[] { "EFFECT_DISABLE", "EFFECT_DISABLE_EFFECT" }, "1"),
+                "untargetable" => (["EFFECT_CANNOT_BE_EFFECT_TARGET"], "aux.tgoval"),
+                "untargetable_any" => (["EFFECT_CANNOT_BE_EFFECT_TARGET"], "1"),
+                "not_attack_target" => (["EFFECT_CANNOT_BE_BATTLE_TARGET"], "aux.imval1"),
+                "unaffected" => (["EFFECT_IMMUNE_EFFECT"], ctx.Script.AddFunction("immval", "e,te", ["return te:GetOwnerPlayer()~=e:GetHandlerPlayer()"])),
+                "pierce" => (["EFFECT_PIERCE"], "1"),
+                _ => (["EFFECT_CANNOT_ATTACK"], "1"),
+            };
+            OnThisCard(ctx, selfCodes, selfValue);
+            return;
+        }
         filter.Zones = Zone.MonsterZone;
         var f = ctx.Script.Filter(filter);
         var target = ctx.Script.AddFunction("ruletg", "e,c", [$"return {f.Function}(c,e,e:GetHandlerPlayer())" + (filter.ExcludeThisCard ? " and c~=e:GetHandler()" : "")]);

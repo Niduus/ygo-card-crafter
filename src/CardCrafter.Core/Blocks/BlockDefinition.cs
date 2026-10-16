@@ -64,8 +64,9 @@ public sealed class ParamSpec
     public static ParamSpec Flag(string key, string label, bool def) =>
         new() { Key = key, Label = label, Type = ParamType.Bool, Default = def ? "true" : "false" };
 
-    public static ParamSpec Cards(string key, string label, Func<CardFilter> def, Zone allowed = Zone.None) =>
-        new() { Key = key, Label = label, Type = ParamType.Cards, DefaultFilter = def, AllowedZones = allowed };
+    /// <param name="thisCard">The picker also offers "This card itself".</param>
+    public static ParamSpec Cards(string key, string label, Func<CardFilter> def, Zone allowed = Zone.None, bool thisCard = false) =>
+        new() { Key = key, Label = label, Type = ParamType.Cards, DefaultFilter = def, AllowedZones = allowed, AllowThisCard = thisCard };
 }
 
 /// <summary>

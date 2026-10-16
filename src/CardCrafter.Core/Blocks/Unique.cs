@@ -154,7 +154,7 @@ public sealed class ReplaceDestroyPassive : PassiveBlock
                                    "Tick \"other\" in the picker for \"another monster\".";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
-        ParamSpec.Cards("cards", "Which cards", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster, FaceUpOnly = true, ExcludeThisCard = true }, Zone.Field),
+        ParamSpec.Cards("cards", "Which cards", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster, FaceUpOnly = true, ExcludeThisCard = true }, Zone.Field, thisCard: true),
         ParamSpec.Choice("by", "By", new("any", "by battle or card effect"), new("effect", "by card effect"), new("battle", "by battle")),
         ParamSpec.Choice("how", "Instead",
             new("tribute", "Tribute this card"),
@@ -167,6 +167,9 @@ public sealed class ReplaceDestroyPassive : PassiveBlock
     public override string Describe(BlockArgs args)
     {
         var f = args.Cards("cards");
+        var how = args.Choice("how") == "banish" && args.TriggerZone == "graveyard" ? "banish this card from your GY" : args.Describe("how");
+        // "If this card would be destroyed by battle or card effect, you can detach 1 material from it instead."
+        if (f.ThisCard) return $"if this card would be destroyed {args.Describe("by")}, you can {how.Replace("from this card", "from it", StringComparison.Ordinal)} instead";
         var noun = FilterText.Describe(f, args.Pack, false, "", withLocation: false, withExcept: false);
         if (noun.StartsWith("other ", StringComparison.Ordinal)) noun = noun[6..];
         noun += "(s)";
@@ -174,7 +177,6 @@ public sealed class ReplaceDestroyPassive : PassiveBlock
         var where = FilterText.IsFieldOnly(f)
             ? f.Owner switch { CardOwner.You => " you control", CardOwner.Opponent => " your opponent controls", _ => " on the field" }
             : "";
-        var how = args.Choice("how") == "banish" && args.TriggerZone == "graveyard" ? "banish this card from your GY" : args.Describe("how");
         return $"if {article} {noun}{where} would be destroyed {args.Describe("by")}, you can {how} instead";
     }
 
@@ -186,6 +188,31 @@ public sealed class ReplaceDestroyPassive : PassiveBlock
         var how = ctx.Args.Choice("how");
         if (how == "detach" && !ctx.Card.IsXyz) e.Error("\"Detach 1 material from this card\" needs an Xyz Monster.");
         var reason = ctx.Args.Choice("by") switch { "effect" => "REASON_EFFECT", "battle" => "REASON_BATTLE", _ => "REASON_BATTLE+REASON_EFFECT" };
+        if (f.ThisCard)
+        {
+            // This card itself pays instead: detaching a material, or being Tributed, banished or sent to the GY instead of destroyed.
+            if (how == "destroy") { e.Error("\"If this card would be destroyed, destroy this card instead\" changes nothing. Pick another way."); return; }
+            var (selfCan, selfPay) = how switch
+            {
+                "tribute" => ("c:IsReleasableByEffect()", "Duel.Release(e:GetHandler(),REASON_EFFECT+REASON_REPLACE)"),
+                "banish" => ("c:IsAbleToRemove()", "Duel.Remove(e:GetHandler(),POS_FACEUP,REASON_EFFECT+REASON_REPLACE)"),
+                "grave" => ("c:IsAbleToGrave()", "Duel.SendtoGrave(e:GetHandler(),REASON_EFFECT+REASON_REPLACE)"),
+                _ => ("c:CheckRemoveOverlayCard(tp,1,REASON_EFFECT)", "e:GetHandler():RemoveOverlayCard(tp,1,1,REASON_EFFECT)"),
+            };
+            var selfTg = ctx.Script.AddFunction("selfreptg", "e,tp,eg,ep,ev,re,r,rp,chk",
+            [
+                "local c=e:GetHandler()",
+                $"if chk==0 then return c:IsReason({reason}) and not c:IsReason(REASON_REPLACE) and {selfCan} end",
+                "return Duel.SelectEffectYesNo(tp,c,96)",
+            ]);
+            var selfOp = ctx.Script.AddFunction("selfrepop", "e,tp,eg,ep,ev,re,r,rp", ["Duel.Hint(HINT_CARD,0,id)", selfPay]);
+            e.AddPassive(v =>
+            [
+                $"{v}:SetType(EFFECT_TYPE_SINGLE+EFFECT_TYPE_CONTINUOUS)", $"{v}:SetProperty(EFFECT_FLAG_SINGLE_RANGE)", $"{v}:SetCode(EFFECT_DESTROY_REPLACE)",
+                $"{v}:SetRange({range})", $"{v}:SetTarget({selfTg})", $"{v}:SetOperation({selfOp})",
+            ], limited: true);
+            return;
+        }
         var loc = f.Zones == Zone.MonsterZone ? "LOCATION_MZONE" : "LOCATION_ONFIELD";
         var owner = f.Owner switch { CardOwner.You => " and c:IsControler(tp)", CardOwner.Opponent => " and c:IsControler(1-tp)", _ => "" };
         var rf = ctx.Script.Filter(f, $"c:IsLocation({loc}){owner} and c:IsReason({reason}) and not c:IsReason(REASON_REPLACE)", "repfilter");
@@ -625,6 +652,7 @@ public sealed class ApplyEffectsAction : CardGroupAction
     protected override string Hint => "HINTMSG_FACEUP";
     protected override int MaxCount => 5;
     protected override bool AllowsAll => true;
+    protected override bool AllowsThisCard => true;
     protected override Func<CardFilter> DefaultCards => () => new CardFilter { Owner = CardOwner.Either, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster, FaceUpOnly = true };
 
     private static readonly (string Key, string Label, string Text)[] Effects =
@@ -645,16 +673,16 @@ public sealed class ApplyEffectsAction : CardGroupAction
     ];
 
     private static string List(BlockArgs args) =>
-        string.Join(" ", Effects.Where(x => args.Bool(x.Key)).Select(x => "● " + x.Text));
+        string.Concat(Effects.Where(x => args.Bool(x.Key)).Select(x => Text.EffectTextGenerator.OptionLine + x.Text));
 
     public override string Describe(BlockArgs args)
     {
         var duration = args.Choice("duration") == "turn" ? ", until the end of this turn" : "";
-        return $"apply these effects to {args.Describe("count")} {args.Describe("cards")}{duration}. {List(args)}".TrimEnd('.');
+        return $"apply these effects to {Some(args)}{duration}.{List(args)}".TrimEnd('.');
     }
 
     protected override string TargetedAction(BlockArgs args, string pronoun, bool single) =>
-        $"apply these effects to {pronoun}{(args.Choice("duration") == "turn" ? ", until the end of this turn" : "")}. {List(args)}".TrimEnd('.');
+        $"apply these effects to {pronoun}{(args.Choice("duration") == "turn" ? ", until the end of this turn" : "")}.{List(args)}".TrimEnd('.');
 
     protected override string Apply(string g, BlockContext ctx)
     {
@@ -939,7 +967,7 @@ public sealed class RevealCost : CostBlock
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Int("count", "How many", 1, 1, 5),
-        ParamSpec.Cards("cards", "Which cards", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Hand, CardType = FilterCardType.Monster }, Zone.Hand),
+        ParamSpec.Cards("cards", "Which cards", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Hand, CardType = FilterCardType.Monster }, Zone.Hand, thisCard: true),
     ];
 
     private static CardFilter Hand(BlockArgs args)
@@ -953,6 +981,7 @@ public sealed class RevealCost : CostBlock
 
     public override string Describe(BlockArgs args)
     {
+        if (args.Cards("cards").ThisCard) return "reveal this card in your hand";
         var f = Hand(args);
         var n = args.Int("count");
         return $"reveal {n} {FilterText.Describe(f, args.Pack, plural: n != 1, withLocation: false, ownName: args.CardName)} in your hand";
@@ -960,6 +989,15 @@ public sealed class RevealCost : CostBlock
 
     public override void Compile(BlockContext ctx)
     {
+        // The same as "Reveal this card in your hand".
+        if (ctx.Args.Cards("cards").ThisCard)
+        {
+            if (ctx.Effect.Range is not null && ctx.Effect.Range != "LOCATION_HAND")
+                ctx.Effect.Error("\"Reveal this card in your hand\" needs the effect to be used from the hand.");
+            ctx.Effect.CostChecks.Add("not e:GetHandler():IsPublic()");
+            ctx.Effect.CostLines.Add("Duel.ConfirmCards(1-tp,e:GetHandler())");
+            return;
+        }
         var f = ctx.Script.Filter(Hand(ctx.Args));
         var n = ctx.Args.Int("count");
         var g = ctx.Effect.NewLocal("rg");

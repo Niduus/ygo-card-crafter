@@ -39,6 +39,9 @@ public static partial class EffectTextGenerator
     /// The summoning rule line when no Summon procedure effect already says it: "Cannot be Normal Summoned/Set."
     /// or, for Extra Deck and Ritual monsters, "Must be Fusion Summoned."
     /// </summary>
+    private static bool StartsWithSubject(string body) =>
+        System.Text.RegularExpressions.Regex.IsMatch(body, @"^(this card |this card's |the (ATK|DEF|Level|Levels|battle position)s? of |\d+ )");
+
     /// <summary>What starts each option of "activate 1 of these effects": a new, indented line with a bullet.</summary>
     public const string OptionLine = "\n ● ";
 
@@ -144,6 +147,9 @@ public static partial class EffectTextGenerator
             if (optional && body.StartsWith("you can ", StringComparison.Ordinal)) body = body["you can ".Length..];
             // Murakumo: "You can activate this effect; your opponent can discard 1 card, or that effect is negated."
             if (optional && before.Length == 0 && (body.StartsWith("your opponent can ", StringComparison.Ordinal) || body.StartsWith("your opponent ", StringComparison.Ordinal)))
+                body = "activate this effect; " + body;
+            // "You can activate this effect; this card gains 500 ATK": a first step that names what changes, not a verb.
+            else if (optional && before.Length == 0 && StartsWithSubject(body))
                 body = "activate this effect; " + body;
             body = optional ? "You can " + body : SentenceCase.Upper(body);
             text = head.Length == 0 ? body : $"{SentenceCase.Upper(head)}: {body}";

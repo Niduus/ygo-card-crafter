@@ -220,6 +220,7 @@ public sealed class NegateCardEffectsAction : CardGroupAction
     protected override string Category => "CATEGORY_DISABLE";
     protected override string Hint => "HINTMSG_FACEUP";
     protected override string TargetedWording => "negate {0} effects";
+    protected override bool AllowsThisCard => true;
     protected override Func<CardFilter> DefaultCards => () => new CardFilter { Owner = CardOwner.Opponent, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster, FaceUpOnly = true };
 
     protected override IReadOnlyList<ParamSpec> BuildParams() =>
@@ -279,12 +280,13 @@ public sealed class ChangeStatsAction : CardGroupAction
     protected override string Category => "CATEGORY_ATKCHANGE";
     protected override string Hint => "HINTMSG_FACEUP";
     protected override string TargetedWording => "{0} gains";
+    protected override bool AllowsThisCard => true;
     protected override Func<CardFilter> DefaultCards => () => new CardFilter { Owner = CardOwner.Either, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster, FaceUpOnly = true };
 
     protected override IReadOnlyList<ParamSpec> BuildParams() =>
     [
         ParamSpec.Int("count", "How many", 1, 1, 10),
-        ParamSpec.Cards("cards", "Which monsters", DefaultCards, Zone.MonsterZone),
+        ParamSpec.Cards("cards", "Which monsters", DefaultCards, Zone.MonsterZone, thisCard: true),
         ParamSpec.Flag("target", "(targeting)", false),
         ParamSpec.Choice("dir", "Gain/lose", new("gain", "gain(s)"), new("lose", "lose(s)")),
         ParamSpec.Int("amount", "Amount", 500, 1, 99999),
@@ -294,10 +296,10 @@ public sealed class ChangeStatsAction : CardGroupAction
 
     public override string Describe(BlockArgs args)
     {
-        var n = args.Int("count");
-        var verb = args.Choice("dir") == "gain" ? (n == 1 ? "gains" : "gain") : (n == 1 ? "loses" : "lose");
+        var one = One(args);
+        var verb = args.Choice("dir") == "gain" ? (one ? "gains" : "gain") : (one ? "loses" : "lose");
         var tail = $"{verb} {args.Int("amount")} {args.Describe("stat")} {args.Describe("duration")}".TrimEnd();
-        return $"{n} {args.Describe("cards")} {tail}{args.ExceptText()}";
+        return $"{Some(args)} {tail}{args.ExceptText()}";
     }
 
     protected override string TargetedAction(BlockArgs args, string pronoun, bool single)
@@ -491,7 +493,7 @@ public sealed class ProtectCardsPassive : PassiveBlock
     public override string Help => "For example: monsters this card points to cannot be destroyed by battle.";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
-        ParamSpec.Cards("cards", "Which monsters", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster }, Zone.MonsterZone),
+        ParamSpec.Cards("cards", "Which monsters", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster }, Zone.MonsterZone, thisCard: true),
         ParamSpec.Choice("by", "By",
             new("battle", "by battle"),
             new("effect", "by card effects"),
@@ -500,10 +502,17 @@ public sealed class ProtectCardsPassive : PassiveBlock
     ];
 
     public override string Describe(BlockArgs args) =>
-        $"{FilterText.Describe(args.Cards("cards"), args.Pack, plural: true, preposition: "")} cannot be destroyed {args.Describe("by")}";
+        $"{(args.Cards("cards").ThisCard ? "this card" : FilterText.Describe(args.Cards("cards"), args.Pack, plural: true, preposition: ""))} cannot be destroyed {args.Describe("by")}";
 
     public override void Compile(BlockContext ctx)
     {
+        var selfBy = ctx.Args.Choice("by");
+        if (OnThisCard(ctx, selfBy switch
+            {
+                "effect" or "opponent_effect" => ["EFFECT_INDESTRUCTABLE_EFFECT"],
+                "both" => ["EFFECT_INDESTRUCTABLE_BATTLE", "EFFECT_INDESTRUCTABLE_EFFECT"],
+                _ => new[] { "EFFECT_INDESTRUCTABLE_BATTLE" },
+            }, selfBy == "opponent_effect" ? "aux.indoval" : "1")) return;
         var filter = ctx.Args.Cards("cards").Clone();
         filter.Zones = Zone.MonsterZone;
         var f = ctx.Script.Filter(filter);
