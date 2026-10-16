@@ -72,6 +72,7 @@ public static partial class ScriptTranslator
         lua = UsesPerMaterials(lua);
         lua = EqualToStat(lua);
         lua = MechanicsRewrite(lua);
+        lua = TreatedAsRewrite(lua);
         var pieces = LuaPieces.Split(lua, id, strings);
         _ritualCalls = null;
         foreach (var piece in pieces)
@@ -162,6 +163,8 @@ public static partial class ScriptTranslator
         var result = Translate(project.CustomLua, project.Card.Id, project.Card, project.ScriptStrings);
         if (!result.Complete) return result;
         var effects = result.Pieces.SelectMany(p => p.Effects).ToList();
+        // "(This card is always treated as a "HERO" card.)", which the card text says and the database entry holds.
+        if (AlwaysTreatedAsReminder(project.Card, pack) is { } reminder) effects.Insert(0, reminder);
         // "Must be Special Summoned by its own way" includes "Cannot be Normal Summoned/Set": the strictest rule wins.
         var rule = result.Pieces.Where(p => p.Rule is not null).Select(p => p.Rule!.Value).DefaultIfEmpty(SummonRule.Normal).Max() is var mr && mr != SummonRule.Normal ? mr : (SummonRule?)null;
         var procedure = result.Pieces.LastOrDefault(p => p.Procedure is not null)?.Procedure ?? project.Procedure;
@@ -255,6 +258,8 @@ public static partial class ScriptTranslator
         // Stargazer Magician's "this card's Pendulum Scale becomes 4": its left and right Scales (ScriptTranslator.SummonByEffect.cs).
         if (PendulumScalePieceOf(piece, sets, fns) is { } scales) return scales;
 
+        // "Treated as" a name, archetype, Attribute, Type or Normal Monster, and material treatments (ScriptTranslator.TreatedAs.cs).
+        if (TreatedAsPieceOf(piece, sets, fns, card) is { } treatedAs) return treatedAs;
         // Copies that differ only in what they apply to are one effect on the card ("ATK/DEF", "Normal or Special").
         var merge = Merge.Of(sets);
         if (merge is not null) return TranslateSet(piece, sets[0], merge, fns, card);
@@ -484,6 +489,7 @@ public static partial class ScriptTranslator
         effect.Cost.AddRange(TakeChainLimits());
         if (!set.TryGetValue("Operation", out var op)) throw No("it has no operation");
         effect.Do.AddRange(Operation(op, fns, targeting, card));
+        TreatedAsCostCheck(effect, range);
         if (effect.Do.Count == 0) throw No("its operation does nothing the blocks recognise");
         CounterActivationChecks(effect, targeting, type);
         OneTargetingBlock(effect);
@@ -508,29 +514,7 @@ public static partial class ScriptTranslator
         if ((m = Regex.Match(line, @"^c:SetSPSummonOnce\((id|\d+)\)$")).Success && (m.Groups[1].Value == "id" || Int64(m.Groups[1].Value) == _sourceId))
             return new TranslatedPiece { Piece = null!, Setting = c => c.SpecialSummonOncePerTurn = true };
         // "This card's name becomes "X" while on the field or in the GY."
-        if ((m = Regex.Match(line, @"^aux\.EnableChangeCode\(c,(\d+)(?:,(LOCATION_[\w+]+))?\)$")).Success)
-        {
-            var where = (m.Groups[2].Success ? m.Groups[2].Value : "") switch
-            {
-                "" or "LOCATION_MZONE" or "LOCATION_SZONE" or "LOCATION_ONFIELD" => "field",
-                "LOCATION_MZONE+LOCATION_GRAVE" or "LOCATION_GRAVE+LOCATION_MZONE" or "LOCATION_SZONE+LOCATION_GRAVE" or "LOCATION_GRAVE+LOCATION_SZONE" => "field_gy",
-                "LOCATION_GRAVE" => "gy",
-                "LOCATION_MZONE+LOCATION_HAND" or "LOCATION_HAND+LOCATION_MZONE" => "hand_field",
-                "LOCATION_FZONE" => "field_zone",
-                _ => null,
-            };
-            if (where is not null)
-                return new TranslatedPiece
-                {
-                    Piece = null!,
-                    Effect = new EffectEvent
-                    {
-                        Label = "Name",
-                        When = Block("when.while_face_up"),
-                        Do = [Block(NameBecomesPassive.BlockId).With("where", where).With("card", new CardFilter { CardCode = Int64(m.Groups[1].Value), CardType = FilterCardType.Any })],
-                    },
-                };
-        }
+        if (ChangeCodeStatement(line, card, fns) is { } changeCode) return changeCode;
         // Gemini and Spirit monsters get these lines from the Card tab's abilities.
         if ((line == "aux.EnableDualAttribute(c)" && card.Abilities.HasFlag(MonsterAbility.Gemini))
             || (line == "aux.EnableSpiritReturn(c,EVENT_SUMMON_SUCCESS,EVENT_FLIP)" && card.Abilities.HasFlag(MonsterAbility.Spirit)))
@@ -2515,6 +2499,7 @@ public static partial class ScriptTranslator
             : Regex.IsMatch(d, @"^\d+$") ? Int(d) : throw No($"its amount comes from the duel ({d})");
         if (CounterAction(line, target, targetCard) is { } counter) return counter;
         if (MechanicsAction(line, groups, target, targetCard, card, ref self) is { } mechanicsAction) return mechanicsAction;
+        if (TreatedAsSummonAction(line, groups, target, targetCard) is { } treatedSummon) return treatedSummon;
 
         // "inflict 300 damage for each card in your opponent's hand": an amount worked out when it resolves.
         if ((m = Regex.Match(line, @"^Duel\.(Damage|Recover)\((\w+|1-tp),(.+),REASON_EFFECT\)$")).Success && !Regex.IsMatch(m.Groups[3].Value, @"^(?:\d+|CCEQ_\w+)$")

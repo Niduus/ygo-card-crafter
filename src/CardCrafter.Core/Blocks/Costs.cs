@@ -117,6 +117,8 @@ public sealed class SelfCost : CostBlock
             "deck" => "shuffle this card into the Deck",
             "extra" => "return this card to the Extra Deck",
             "hand" => "return this card to the hand",
+            // "Tribute" is a card term: it stays capitalised ("You can Tribute this card;").
+            "tribute" => "Tribute this card",
             _ => $"{args.Describe("how").ToLowerInvariant()} this card",
         };
     }

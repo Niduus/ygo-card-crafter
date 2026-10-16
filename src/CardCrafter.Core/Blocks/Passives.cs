@@ -399,7 +399,7 @@ public sealed class NameBecomesPassive : PassiveBlock
     public override string Id => BlockId;
     public override string Group => "This card";
     public override string Name => "This card's name becomes another card's name";
-    public override string Sentence => "This card's name becomes {card} while {where}";
+    public override string Sentence => "This card's name becomes {card} while {where} {on_field}";
     public override string Help => "Pick the card by name. Effects that look for that name count this card too.";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
@@ -409,14 +409,17 @@ public sealed class NameBecomesPassive : PassiveBlock
             new("field_gy", "on the field or in the GY"),
             new("gy", "in the GY"),
             new("hand_field", "in the hand or on the field"),
-            new("field_zone", "in the Field Zone")),
+            new("field_zone", "in the Field Zone"),
+            TreatedAsPlaces.Option),
+        .. TreatedAsPlaces.Params(),
     ];
 
     public override string Describe(BlockArgs args)
     {
         var f = args.Cards("card");
         var name = f.CardCode == 0 ? "(pick a card)" : Text.CardNames.Find(f.CardCode, args.Pack) is { } n ? $"\"{n}\"" : $"the name of passcode {f.CardCode}";
-        return $"this card's name becomes {name} while {args.Describe("where")}";
+        var where = args.Choice("where") == TreatedAsPlaces.Choice ? TreatedAsPlaces.Text(args) : args.Describe("where");
+        return $"this card's name becomes {name} while {where}";
     }
 
     public override void Compile(BlockContext ctx)
@@ -430,8 +433,12 @@ public sealed class NameBecomesPassive : PassiveBlock
             "gy" => "LOCATION_GRAVE",
             "hand_field" => "LOCATION_HAND+" + field,
             "field_zone" => "LOCATION_FZONE",
+            TreatedAsPlaces.Choice => TreatedAsPlaces.Range(ctx.Args, ctx.Card),
             _ => field,
         };
+        if (loc is null) { ctx.Effect.Error($"\"{Name}\": tick at least one place where this card's name changes."); return; }
+        // As aux.EnableChangeCode does: the card also counts as mentioning that name.
+        ctx.Script.AddInitialLine($"aux.AddCodeList(c,{Lua.Num(code)})");
         ctx.Effect.AddPassive(v =>
         [
             $"{v}:SetType(EFFECT_TYPE_SINGLE)",

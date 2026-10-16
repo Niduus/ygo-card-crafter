@@ -790,6 +790,83 @@ public static class EffectTemplates
                 };
             },
         },
+        // ---------------------------------------------------------------- treated as (TreatedAs.cs)
+        new()
+        {
+            Name = "Banish from the GY: Fusion Summon treated as", LikeCard = "Absolute Axon Kicker", For = CardKind.Monster, Group = "Extra Deck",
+            Description = "You can banish this card from your GY; Special Summon 1 Fusion Monster from your Extra Deck. (This is treated as a Fusion Summon.) Change Fusion to Synchro, Xyz or Link for the others.",
+            Create = () => new EffectEvent
+            {
+                Label = "Fusion", When = B("when.ignition").With("zone", "graveyard"), Limit = OncePerTurn.Hard,
+                Cost = [B("cost.this_card").With("how", "banish")],
+                Do = [B("do.special_summon").With("as", "fusion").With("cards", new CardFilter { Owner = CardOwner.You, Zones = Zone.ExtraDeck, CardType = FilterCardType.Monster, MonsterKind = MonsterKind.Fusion })],
+            },
+        },
+        new()
+        {
+            Name = "Tribute this card: Synchro Summon treated as", LikeCard = "Bramble Rose Dragon", For = CardKind.Monster, Group = "Extra Deck",
+            Description = "During the Main Phase (Quick Effect): You can Tribute this card; Special Summon 1 Synchro Monster from your Extra Deck. (This is treated as a Synchro Summon.)",
+            Create = () => new EffectEvent
+            {
+                Label = "Synchro", When = B("when.quick").With("timing", "main_phase").With("zone", "monster_zone"), Limit = OncePerTurn.Hard,
+                Cost = [B("cost.this_card").With("how", "tribute")],
+                Do = [B("do.special_summon").With("as", "synchro").With("cards", new CardFilter { Owner = CardOwner.You, Zones = Zone.ExtraDeck, CardType = FilterCardType.Monster, MonsterKind = MonsterKind.Synchro })],
+            },
+        },
+        new()
+        {
+            Name = "Banish from the hand or GY: Ritual Summon treated as", LikeCard = "Infernoble Knight Ricciardetto", For = CardKind.Monster, Group = "Monsters",
+            Description = "You can banish this card from your hand or GY; Special Summon 1 Ritual Monster from your hand or Deck. (This is treated as a Ritual Summon.)",
+            Create = () => new EffectEvent
+            {
+                Label = "Ritual", When = B("when.ignition").With("zone", "hand_or_graveyard"), Limit = OncePerTurn.Hard,
+                Cost = [B("cost.this_card").With("how", "banish")],
+                Do = [B("do.special_summon").With("as", "ritual").With("cards", new CardFilter { Owner = CardOwner.You, Zones = Zone.Hand | Zone.Deck, CardType = FilterCardType.Monster, MonsterKind = MonsterKind.Ritual })],
+            },
+        },
+        new()
+        {
+            Name = "Another Ritual Monster treated as a Ritual Summon", LikeCard = "Conductor of Nephthys", For = CardKind.Monster, Group = "Monsters",
+            Description = "If this card is Ritual Summoned: You can Special Summon 1 Ritual Monster from your hand or Deck, except one with this card's name. (This is treated as a Ritual Summon.) For a Ritual Monster.",
+            Create = () => new EffectEvent
+            {
+                Label = "Ritual", When = B("when.summoned").With("how", "ritual"), Limit = OncePerTurn.Hard,
+                Do = [B("do.special_summon").With("as", "ritual").With("cards", new CardFilter { Owner = CardOwner.You, Zones = Zone.Hand | Zone.Deck, CardType = FilterCardType.Monster, MonsterKind = MonsterKind.Ritual, ExceptOwnName = true })],
+            },
+        },
+        new()
+        {
+            Name = "Always treated as an archetype", LikeCard = "Junoldo the Shadespirit Power Patron", For = CardKind.Monster, Group = "Archetype mechanics",
+            Description = "(This card is always treated as a \"...\" card.) Pick the archetype in the card picker: it goes in the card's database entry, as official cards have it.",
+            Create = () => new EffectEvent { Label = "Treated as", When = B("when.while_face_up"), Do = [B(TreatedAsPassive.BlockId).With("as", new CardFilter { CardType = FilterCardType.Any, Archetype = 0x8 })] },
+        },
+        new()
+        {
+            Name = "Treated as a Normal Monster in the hand and GY", LikeCard = "Dragon Spirit of White", For = CardKind.Monster, Group = "Monsters",
+            Description = "This card is treated as a Normal Monster while in the hand or GY. Tick other places on the block for others.",
+            Create = () => new EffectEvent
+            {
+                Label = "Normal Monster", When = B("when.while_face_up"),
+                Do = [B(TreatedAsPassive.BlockId).With("how", "instead").With("where", TreatedAsPlaces.Choice).With("in_hand", true).With("in_gy", true)
+                    .With("as", new CardFilter { CardType = FilterCardType.Monster, MonsterKind = MonsterKind.Normal })],
+            },
+        },
+        new()
+        {
+            Name = "Xyz Level 3 or 5", LikeCard = "Lantern Shark", For = CardKind.Monster, Group = "Extra Deck",
+            Description = "If this card is used for the Xyz Summon of a WATER monster, it can be treated as a Level 3 or 5 monster.",
+            Create = () => new EffectEvent
+            {
+                Label = "Xyz Level", When = B("when.while_face_up"),
+                Do = [B(MaterialTreatedAsPassive.BlockId).With("kind", "xyz_level").With("level", 3).With("level2", 5).With("for", new CardFilter { CardType = FilterCardType.Monster, Attribute = CardAttribute.Water })],
+            },
+        },
+        new()
+        {
+            Name = "Fusion substitute", LikeCard = "King of the Swamp", For = CardKind.Monster, Group = "Extra Deck",
+            Description = "This card can be used as a substitute for any 1 Fusion Material whose name is specifically listed on the Fusion Monster Card, but the other Fusion Material(s) must be correct.",
+            Create = () => new EffectEvent { Label = "Substitute", When = B("when.while_face_up"), Do = [B(MaterialTreatedAsPassive.BlockId).With("kind", "fusion_substitute").With("where", "any")] },
+        },
     ];
 
     private static CardFilter Narrow(CardFilter f)

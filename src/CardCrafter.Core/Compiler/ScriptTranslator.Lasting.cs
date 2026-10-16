@@ -348,34 +348,12 @@ public static partial class ScriptTranslator
         };
     }
 
-    /// <summary>What an EFFECT_ADD_... value makes this card also count as, as the treated-as block's picker, or null.</summary>
-    private static CardFilter? TreatedAsOf(string code, string value)
-    {
-        var f = new CardFilter { CardType = FilterCardType.Monster };
-        switch (code)
-        {
-            case "EFFECT_ADD_ATTRIBUTE" when Attributes.TryGetValue(value, out var attr): f.Attribute = attr; return f;
-            case "EFFECT_ADD_RACE" when Races.TryGetValue(value, out var race): f.Race = race; return f;
-            case "EFFECT_ADD_TYPE" when value is "TYPE_TUNER" or "TYPE_NORMAL" or "TYPE_EFFECT" or "TYPE_SPIRIT" or "TYPE_UNION" or "TYPE_DUAL" or "TYPE_FLIP" or "TYPE_TOON":
-                f.MonsterKind = value switch
-                {
-                    "TYPE_TUNER" => MonsterKind.Tuner, "TYPE_NORMAL" => MonsterKind.Normal, "TYPE_EFFECT" => MonsterKind.Effect, "TYPE_SPIRIT" => MonsterKind.Spirit,
-                    "TYPE_UNION" => MonsterKind.Union, "TYPE_DUAL" => MonsterKind.Gemini, "TYPE_FLIP" => MonsterKind.Flip, _ => MonsterKind.Toon,
-                };
-                return f;
-            case "EFFECT_ADD_CODE" when long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var cardCode): f.CardType = FilterCardType.Any; f.CardCode = cardCode; return f;
-            case "EFFECT_ADD_SETCODE" when Regex.Match(value, @"^0x([0-9a-fA-F]+)$") is { Success: true } hex:
-                f.CardType = FilterCardType.Any;
-                f.Archetype = int.Parse(hex.Groups[1].Value, NumberStyles.HexNumber, CultureInfo.InvariantCulture);
-                return f;
-        }
-        return null;
-    }
-
     /// <summary>Lasting effects the main reader doesn't know: written on <paramref name="effect"/>, or false.</summary>
     private static bool MoreLasting(EffectEvent effect, HashSet<string> type, string code, Dictionary<string, string> set, string? range, Functions fns, CardData card)
     {
         var value = set.GetValueOrDefault("Value");
+        // "While face-up on the field, this card is also DARK-Attribute", "this card's name is also treated as ..." (ScriptTranslator.TreatedAs.cs).
+        if (TreatedAsLasting(effect, type, code, set, fns, card)) return true;
         // An Equip Spell's "The equipped monster gains 300 DEF".
         if (type.SetEquals(["EFFECT_TYPE_EQUIP"]) && !(card.Kind == CardKind.Spell && card.SpellKind != SpellKind.Equip) && code == "EFFECT_UPDATE_DEFENSE"
             && int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var def) && def != 0 && Only(set, "Code", "Value", "Condition"))
@@ -479,22 +457,6 @@ public static partial class ScriptTranslator
         {
             effect.Do.Add(Block("passive.player_rule").With("rule", playerRule));
             return true;
-        }
-        // "While face-up on the field, this card is also DARK-Attribute", "this card's name is also treated as ...".
-        if (type.SetEquals(["EFFECT_TYPE_SINGLE"]) && code is "EFFECT_ADD_ATTRIBUTE" or "EFFECT_ADD_RACE" or "EFFECT_ADD_TYPE" or "EFFECT_ADD_CODE" or "EFFECT_ADD_SETCODE"
-            && value is not null && Only(set, "Code", "Value", "Range", "Property", "Condition") && TreatedAsOf(code, value) is { } treatedAs)
-        {
-            string? where = null;
-            if (range is null && HasFlags(set, "EFFECT_FLAG_CANNOT_DISABLE", "EFFECT_FLAG_UNCOPYABLE")) where = "always";
-            else if (range == "LOCATION_MZONE" && HasFlags(set, "EFFECT_FLAG_SINGLE_RANGE")) where = "face_up";
-            else if (HasFlags(set, "EFFECT_FLAG_SINGLE_RANGE", "EFFECT_FLAG_CANNOT_DISABLE", "EFFECT_FLAG_UNCOPYABLE"))
-                where = range switch { "LOCATION_MZONE" => "field", "LOCATION_MZONE+LOCATION_GRAVE" => "field_gy", _ => null };
-            if (where is not null)
-            {
-                effect.When = Block("when.while_face_up").With("zone", where == "always" ? "auto" : "monster_zone");
-                effect.Do.Add(Block(TreatedAsPassive.BlockId).With("how", "also").With("where", where).With("as", treatedAs));
-                return true;
-            }
         }
         // "If the equipped monster would be destroyed (by battle), destroy this card instead."
         if (type.SetEquals(["EFFECT_TYPE_EQUIP"]) && !(card.Kind == CardKind.Spell && card.SpellKind != SpellKind.Equip) && code == "EFFECT_DESTROY_SUBSTITUTE"

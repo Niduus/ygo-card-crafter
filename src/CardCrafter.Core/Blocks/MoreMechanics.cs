@@ -134,7 +134,7 @@ public sealed class TrapMonsterAction : ActionBlock
         var a = ctx.Args;
         var normal = a.Choice("kind") == "normal";
         var types = normal ? "TYPES_NORMAL_TRAP_MONSTER" : "TYPES_EFFECT_TRAP_MONSTER";
-        var setcode = Lua.Hex(CdbEncoder.PackSetcodes(ctx.Card.Archetypes));
+        var setcode = Lua.Hex(CdbEncoder.PackSetcodes(TreatedAsPassive.Setcodes(ctx.Script.Project)));
         var can = $"Duel.IsPlayerCanSpecialSummonMonster(tp,id,{setcode},{types},{a.Int("atk")},{a.Int("def")},{a.Int("level")},{EnumNames.LuaConstant(Race(a))},{EnumNames.LuaConstant(Attribute(a))})";
         var pos = a.Choice("position") switch { "defense" => "POS_FACEUP_DEFENSE", "attack" => "POS_FACEUP_ATTACK", _ => "POS_FACEUP" };
         e.AddCategory("CATEGORY_SPECIAL_SUMMON");

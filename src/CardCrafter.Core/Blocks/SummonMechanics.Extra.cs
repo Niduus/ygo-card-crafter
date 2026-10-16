@@ -26,6 +26,8 @@ internal static class SummonWording
     public static string Article(string noun)
     {
         var first = noun.TrimStart('"').FirstOrDefault();
+        // "an Xyz Monster": Xyz is said with a vowel.
+        if (noun.TrimStart('"').StartsWith("Xyz", StringComparison.Ordinal)) return "an";
         return "AEIOUaeiou".Contains(first) && first != default ? "an" : "a";
     }
 }
