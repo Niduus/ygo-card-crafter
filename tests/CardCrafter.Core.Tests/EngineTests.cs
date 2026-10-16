@@ -421,9 +421,10 @@ public class EngineTests
     // Negation needs an opponent's activation to respond to, so it has its own duel below; negating a Summon
     // and Tokens have theirs in ScanBlockEngineTests; Summons using this card have theirs in StaplesTests, placing in PlaceTests.
     public static IEnumerable<object[]> DoBlocks() =>
-        // Responses to an activation, a Trap's column and Ritual Summons have their own duels in UniqueEngineTests.
+        // Responses to an activation, a Trap's column and Ritual Summons have their own duels in UniqueEngineTests; Trap Monsters and End Phase steps in MechanicsTests.
         BlockRegistry.OfKind(BlockKind.Action).Where(b => b.Id is not ("do.negate" or "do.negate_summon" or "do.tokens" or "do.negate_unless" or "do.that_card"
-            or "do.negate_column" or "do.ritual_summon" or "do.fusion_summon" or "do.summon_using_this" or "do.place")).Select(b => new object[] { b.Id, false })
+            or "do.negate_column" or "do.ritual_summon" or "do.fusion_summon" or "do.summon_using_this" or "do.place"
+            or TrapMonsterAction.BlockId or EndPhaseAction.BlockId)).Select(b => new object[] { b.Id, false })
             .Concat(BlockRegistry.OfKind(BlockKind.Action).Where(b => b.Param("target") is not null && b.Id != "do.place").Select(b => new object[] { b.Id, true }));
 
     /// <summary>Every DO block, with its default settings, activated from a monster on a well-stocked board.</summary>

@@ -68,6 +68,7 @@ public static partial class ScriptTranslator
         lua = lua.Replace("\r\n", "\n", StringComparison.Ordinal);
         lua = UsesPerMaterials(lua);
         lua = EqualToStat(lua);
+        lua = MechanicsRewrite(lua);
         var pieces = LuaPieces.Split(lua, id, strings);
         foreach (var piece in pieces)
         {
@@ -128,7 +129,8 @@ public static partial class ScriptTranslator
         return Regex.Replace(lua, @"(?ms)^function ([\w.]+)\(e,tp,eg,ep,ev,re,r,rp\)\n(.*?)^end", fn =>
         {
             var body = fn.Groups[2].Value;
-            var local = Regex.Match(body, @"^[ \t]*local (\w+)=\w+(?::GetFirst\(\))?:(GetTextAttack|GetAttack|GetBaseAttack|GetTextDefense)\(\)[ \t]*\n", RegexOptions.Multiline);
+            // Not this card's own ATK ("c:GetBaseAttack()"): that is no card the step before affected.
+            var local = Regex.Match(body, @"^[ \t]*local (\w+)=(?!c:)\w+(?::GetFirst\(\))?:(GetTextAttack|GetAttack|GetBaseAttack|GetTextDefense)\(\)[ \t]*\n", RegexOptions.Multiline);
             if (!local.Success) return fn.Value;
             var v = local.Groups[1].Value;
             var kind = local.Groups[2].Value switch { "GetAttack" => "atk", "GetTextDefense" => "orig_def", _ => "orig_atk" };
@@ -320,6 +322,7 @@ public static partial class ScriptTranslator
         if (type.SetEquals(["EFFECT_TYPE_ACTIVATE"]) && code == "EVENT_FREE_CHAIN" && !set.ContainsKey("Operation") && !set.ContainsKey("Target")
             && !set.ContainsKey("Cost") && !set.ContainsKey("Condition") && effect.Limit == OncePerTurn.None)
             return new TranslatedPiece { Piece = piece, Ignored = true };
+        if (IsCannotNegateCompanion(type, code, set, card)) return new TranslatedPiece { Piece = piece, Ignored = true };
 
         // "Must be Fusion Summoned" and the like: a rule on the Card tab, not an effect.
         if (type.SetEquals(["EFFECT_TYPE_SINGLE"]) && code == "EFFECT_SPSUMMON_CONDITION"
@@ -437,6 +440,8 @@ public static partial class ScriptTranslator
         if (condition is not null && !usedCondition) effect.If.AddRange(Conditions(condition, fns));
         effect.If.AddRange(TakePendingIf());
         if (set.GetValueOrDefault("Cost") is { } cost) effect.Cost.AddRange(Costs(cost, fns));
+        effect.Cost.AddRange(MechanicsCosts(type, props));
+        if (WholeEffectOf(type, set, fns, card) is { } whole) { effect.Do.Add(whole); return new TranslatedPiece { Piece = piece, Effect = effect }; }
         // Polymerization's family: one Fusion Summon block.
         if (set.TryGetValue("Operation", out var fusionOp) && FusionOf(fusionOp, set.GetValueOrDefault("Target"), fns) is { } fusion)
         {
@@ -445,6 +450,7 @@ public static partial class ScriptTranslator
         }
         _eventCode = code;
         var targeting = set.TryGetValue("Target", out var tg) ? Targeting(tg, fns) : new TargetInfo();
+        effect.Cost.AddRange(TakeChainLimits());
         if (!set.TryGetValue("Operation", out var op)) throw No("it has no operation");
         effect.Do.AddRange(Operation(op, fns, targeting, card));
         if (effect.Do.Count == 0) throw No("its operation does nothing the blocks recognise");
@@ -462,6 +468,7 @@ public static partial class ScriptTranslator
     private static TranslatedPiece? TranslateStatement(string line, CardData card, Functions fns)
     {
         Match m;
+        if (MechanicsStatement(line, fns) is { } mechanics) return mechanics;
         // Lines that only describe the card, or that Card Crafter writes itself from the Card tab.
         if (line == "c:EnableUnsummonable()") return new TranslatedPiece { Piece = null!, Rule = SummonRule.SpecialSummonOnly };
         if ((m = Regex.Match(line, @"^c:SetUniqueOnField\(1,0,(id|\d+)\)$")).Success && (m.Groups[1].Value == "id" || Int64(m.Groups[1].Value) == _sourceId))
@@ -1153,6 +1160,7 @@ public static partial class ScriptTranslator
 
     private static List<BlockInstance> Conditions(string condition, Functions fns)
     {
+        if (MechanicsCondition(condition) is { } gemini) return gemini;
         if (condition == "aux.exccon") return [Block("if.not_sent_this_turn")];
         // Dragoon: "up to the number of Normal Monsters used as material", read by UsesPerMaterials.
         if (Regex.Match(Body(condition, fns), @"^return aux\.CardCrafterUsesPerMaterials\(""(\w+)""\)$") is { Success: true } upm)
@@ -1232,6 +1240,7 @@ public static partial class ScriptTranslator
 
     private static List<BlockInstance> ConditionBody(string body, Functions fns)
     {
+        if (MechanicsConditionBody(body) is { } geminiBody) return geminiBody;
         if (LastingCondition(body) is { } battling) return battling;
         Match m;
         if (body.StartsWith("return ", StringComparison.Ordinal) && AllAreCheck(body[7..], fns) is { } allAre) return [allAre];
@@ -1730,6 +1739,7 @@ public static partial class ScriptTranslator
                 info.Count = Int(m.Groups[4].Value);
             }
             else if (CounterTarget(line, info)) { }
+            else if (ChainLimitLine(line, fns)) { }
             else throw No($"its target step does something the blocks don't ({Short(line)})");
         }
         return info;
@@ -2463,6 +2473,7 @@ public static partial class ScriptTranslator
         int Amount(string d) => d == "d" ? target.Param ?? throw No("its amount is unclear")
             : Regex.IsMatch(d, @"^\d+$") ? Int(d) : throw No($"its amount comes from the duel ({d})");
         if (CounterAction(line, target, targetCard) is { } counter) return counter;
+        if (MechanicsAction(line, groups, target, targetCard, card, ref self) is { } mechanicsAction) return mechanicsAction;
 
         // "inflict 300 damage for each card in your opponent's hand": an amount worked out when it resolves.
         if ((m = Regex.Match(line, @"^Duel\.(Damage|Recover)\((\w+|1-tp),(.+),REASON_EFFECT\)$")).Success && !Regex.IsMatch(m.Groups[3].Value, @"^(?:\d+|CCEQ_\w+)$")
@@ -2751,6 +2762,7 @@ public static partial class ScriptTranslator
             return effect;
         }
         if (MoreLasting(effect, type, code, set, range, fns, card)) return effect;
+        if (MechanicsLasting(effect, type, code, set, fns)) return effect;
         throw No($"its lasting effect isn't one the blocks have ({string.Join("+", type.Select(t => t.Replace("EFFECT_TYPE_", "")))} {code})");
     }
 

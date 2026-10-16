@@ -67,7 +67,10 @@ public static class PackExporter
                 data = PackSerializer.Clone(data);
                 data.Text = suggested;
             }
-            rows.Add(CdbEncoder.Encode(data, compiled.Strings, pack.Ot));
+            var row = CdbEncoder.Encode(data, compiled.Strings, pack.Ot);
+            // A Trap Monster's stats live in its database row, as official ones do.
+            Blocks.TrapMonsterAction.WriteStats(card, row);
+            rows.Add(row);
 
             export.Checks.AddRange(ScriptChecker.Check(compiled.Lua));
             if (compiled.HasErrors || export.Checks.Any(c => c.Severity == Severity.Error))

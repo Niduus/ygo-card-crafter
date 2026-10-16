@@ -143,6 +143,18 @@ public class AllBlocksTests
                 project.Card.Frame = MonsterFrame.Xyz;
                 project.Procedure.Kind = SummonProcedureKind.Xyz;
                 break;
+            // A Gemini monster's effects; a Trap that becomes a monster when activated.
+            case GeminiCondition.BlockId:
+                project.Card.Abilities = MonsterAbility.Gemini;
+                break;
+            case TrapMonsterAction.BlockId:
+                project.Card.Kind = CardKind.Trap;
+                project.Effects[0].When = new BlockInstance("when.activate");
+                break;
+            // "..., but destroy it during the End Phase": after the block that Summons it.
+            case EndPhaseAction.BlockId:
+                project.Effects[0].Do.Insert(0, BlockRegistry.Find("do.special_summon")!.CreateInstance());
+                break;
         }
         // "For each card used for the cost" needs a cost that counts; "for each of those cards" needs an action before.
         if (inst.Values.GetValueOrDefault("per") == "per_cost")

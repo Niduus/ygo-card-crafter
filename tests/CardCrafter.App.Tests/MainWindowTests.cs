@@ -184,7 +184,7 @@ public class MainWindowTests
         var (_, vm) = Open();
         vm.SelectedCard!.AddTemplate(EffectTemplates.All.First(t => t.Name == "Quick banish from GY"));
         var banish = vm.SelectedCard.Effects.Last().Actions.Single();
-        Assert.True(banish.Segments.OfType<BoolSegmentViewModel>().Single().Value);
+        Assert.True(banish.Segments.OfType<BoolSegmentViewModel>().Single(s => s.Label == "(targeting)").Value);
     }
 
     [AvaloniaFact]

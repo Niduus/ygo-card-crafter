@@ -387,22 +387,24 @@ public sealed class BanishAction : CardGroupAction
     protected override string TargetedWording => "banish {0}";
     public override string Id => "do.banish";
     public override string Name => "Banish cards";
-    public override string Sentence => "Banish {count} {cards} {target} {until}";
+    public override string Sentence => "Banish {count} {cards} {target} {facedown} {until}";
     protected override string Category => "CATEGORY_REMOVE";
     protected override string Hint => "HINTMSG_REMOVE";
     protected override Func<CardFilter> DefaultCards => () => CardFilter.OpponentField();
-    protected override string? AbleCheck(BlockContext ctx) => "c:IsAbleToRemove()";
+    protected override string? AbleCheck(BlockContext ctx) => ctx.Args.Bool("facedown") ? "c:IsAbleToRemove(tp,POS_FACEDOWN)" : "c:IsAbleToRemove()";
 
     /// <summary>S:P Little Knight's "banish them until the End Phase": cards banished from the field come back then.</summary>
     protected override IReadOnlyList<ParamSpec> BuildParams() =>
-        [.. base.BuildParams(), ParamSpec.Choice("until", "For how long", new("always", "", "for good"), new("end_phase", "until the End Phase"))];
+        [.. base.BuildParams(), ParamSpec.Choice("until", "For how long", new("always", "", "for good"), new("end_phase", "until the End Phase")),
+         ParamSpec.Flag("facedown", "face-down", false)];
 
     protected override string TargetedAction(BlockArgs args, string pronoun, bool single) =>
-        base.TargetedAction(args, pronoun, single) + (args.Choice("until") == "end_phase" ? " until the End Phase" : "");
+        base.TargetedAction(args, pronoun, single) + (args.Bool("facedown") ? " face-down" : "") + (args.Choice("until") == "end_phase" ? " until the End Phase" : "");
 
     protected override string Apply(string g, BlockContext ctx)
     {
-        if (ctx.Args.Choice("until") != "end_phase") return $"Duel.Remove({g},POS_FACEUP,REASON_EFFECT)";
+        if (ctx.Args.Choice("until") != "end_phase") return $"Duel.Remove({g},{(ctx.Args.Bool("facedown") ? "POS_FACEDOWN" : "POS_FACEUP")},REASON_EFFECT)";
+        if (ctx.Args.Bool("facedown")) ctx.Effect.Error("\"Banish cards\": cards banished face-down don't come back in the End Phase. Untick \"face-down\" or banish them for good.");
         if (!ctx.Args.Cards("cards").ThisCard && (ctx.Args.Cards("cards").Zones & ~Zone.Field) != Zone.None)
             ctx.Effect.Warn("Only cards banished from the field come back in the End Phase.");
         var retFilter = ctx.Script.AddFunction("tmpretfilter", "c,fid", ["return c:GetFlagEffectLabel(id)==fid"]);
