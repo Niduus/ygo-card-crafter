@@ -167,12 +167,13 @@ public class RequirementTranslationTests
     {
         if (Script(21862633) is null || Script(269510) is null) return;
         // Piercing the Darkness: "c:IsType(TYPE_NORMAL) and not c:IsType(TYPE_TOKEN)". The second kind used to replace the first.
+        // It checks who Summoned it (IsSummonPlayer), so the trigger reads "If you Normal or Special Summon".
         var spell = new CardData { Id = 100099070, Name = "Req 100099070", Kind = CardKind.Spell, SpellKind = SpellKind.Continuous };
         var effect = Effect(21862633, spell, f => f.Requirements.Count > 0);
         var f = Filters(effect).First(x => x.Requirements.Count > 0);
         Assert.Equal(MonsterKind.Normal, f.MonsterKind);
         Assert.Equal(("monster_type", RequirementOp.IsNot, 0x4000L), (f.Requirements.Single().Property, f.Requirements.Single().Op, f.Requirements.Single().Values.Single()));
-        Assert.StartsWith("If a face-up non-Token Normal Monster", EffectTextGenerator.Describe(effect, spell));
+        Assert.StartsWith("If you Normal or Special Summon a face-up non-Token Normal Monster", EffectTextGenerator.Describe(effect, spell));
         // Fire Prison: "not c:IsType(TYPE_LINK)".
         var prison = Effect(269510, new CardData { Id = 100099071, Name = "Req 100099071", Kind = CardKind.Spell, SpellKind = SpellKind.Field }, x => x.Requirements.Count > 0);
         Assert.Equal("Face-up non-Link monsters on the field cannot attack.", EffectTextGenerator.Describe(prison, new CardData { Id = 100099071, Name = "Req", Kind = CardKind.Spell }));
