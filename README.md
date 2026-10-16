@@ -111,6 +111,20 @@ monsters, gain 1000 LP"). The **● or instead** link starts another option of *
 option has its own blocks, targets and checks, the player picks one that can be used, and the card text lists them as
 ● bullets.
 
+**Coins, dice and declarations.** **Toss a coin** (once, several times, or "and call it") and **Roll a six-sided die**
+are DO blocks; the IF blocks **The coin toss result is ...** (heads, tails, called right or wrong, how many heads) and
+**The die roll result is ...** (the faces you tick) go after them among the DO blocks, and the blocks after each one
+happen on that result. Linked with ● they read "Toss a coin. ● Heads: Draw 2 cards. ● Tails: ..."; otherwise "toss a
+coin and if the result is heads, ..., or if the result is tails, ...". Value blocks can use **the result** of the roll or
+**the number of heads**: "All monsters your opponent currently controls lose ATK/DEF equal to the result x 100".
+**Declare** a card name, Monster Type, Attribute, Level or card type when the effect is activated, then give a card
+picker the requirement "with the declared Type" (Tribe-Infecting Virus), or lock the declared name: "cards with that
+name, and their effects, cannot be used" (Psi-Blocker, Prohibition), "cannot activate cards ... with that original name",
+"cannot Special Summon monsters with that original name". Card pickers can also ask for "a card that has a coin tossing
+effect" or "that requires a die roll". **Toon monster rule** blocks write each rule Toon monsters print ("Cannot attack
+the turn it is Summoned", "If "Toon World" on the field is destroyed, destroy this card", their direct attacks and the
+older Toons' 500 LP attack cost) as the official Toons script them.
+
 **Archetype mechanics.** Blocks for what makes newer archetypes unusual:
 - *Mitsurugi:* Tributing as an effect ("then Tribute 1 monster you control", "make your opponent Tribute 1 monster they
   control (their choice)"), Tributing from your hand or field as a cost, "If another Reptile monster(s) you control

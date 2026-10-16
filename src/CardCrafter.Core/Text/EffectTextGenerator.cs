@@ -173,6 +173,8 @@ public static partial class EffectTextGenerator
                 if (BlockRegistry.Find(b.BlockId) is ConditionBlock cd && cd.Until(new BlockArgs(cd, b, pack) { Effect = effect, CardName = card.Name }) is { Length: > 0 } until)
                     text += " " + until;
         }
+        // "Toss a coin. ● Heads: ... ● Tails: ...": the results of a coin toss or die roll, each on its own line.
+        else if (Chance.HasResultOptions(effect.Do)) text = ResultOptionsText(effect, pack, head, optional);
         else if (SplitOptions(effect.Do) is { Count: > 1 } options)
         {
             // "You can discard this card, then activate 1 of these effects; ● Draw 2 cards. ● Destroy 1 card."
@@ -199,7 +201,7 @@ public static partial class EffectTextGenerator
             body = optional ? "You can " + body : SentenceCase.Upper(body);
             text = head.Length == 0 ? body : $"{SentenceCase.Upper(head)}: {body}";
         }
-        text = text.TrimEnd() + ".";
+        text = DeclarePolish(effect, text.TrimEnd() + ".");
         foreach (var b in effect.Cost.Concat(effect.Do).Concat(effect.If))
             if (BlockRegistry.Find(b.BlockId) is { } bd && bd.Afterword(new BlockArgs(bd, b, pack) { Effect = effect, CardName = card.Name }) is { Length: > 0 } after)
                 text += " " + after;
@@ -242,7 +244,7 @@ public static partial class EffectTextGenerator
     public static IReadOnlyList<string> OptionTexts(EffectEvent effect, CardData card, CardPack? pack = null)
     {
         _cardName = card.Name;
-        if (effect.When?.BlockId == "when.while_face_up") return [];
+        if (effect.When?.BlockId == "when.while_face_up" || Chance.HasResultOptions(effect.Do)) return [];
         var options = SplitOptions(effect.Do);
         return options.Count > 1 ? options.Select(o => OptionText(o, pack, effect)).ToList() : [];
     }
@@ -366,6 +368,9 @@ public static partial class EffectTextGenerator
         var sb = new System.Text.StringBuilder();
         BlockDefinition? previous = null;
         var previousOnlyIf = false;
+        // A declaration says its part before the semicolon too: "declare 1 Attribute, then target 1 face-up monster; ...".
+        var declared = false;
+        var chanceCases = 0;
         foreach (var b in blocks)
         {
             if (BlockRegistry.Find(b.BlockId) is not { } def) continue;
@@ -375,6 +380,13 @@ public static partial class EffectTextGenerator
             {
                 target = Clean(targeted.Target);
                 t = Clean(targeted.Action);
+                declared = def is DeclareAction;
+            }
+            else if (target is not null && (declared || def is DeclareAction) && def.DescribeTargeting(args) is { } more)
+            {
+                target = def is DeclareAction ? $"{target} and {Clean(more.Target)}" : $"{target}, then {Clean(more.Target)}";
+                t = Clean(more.Action);
+                declared = false;
             }
             else t = Text(b, pack, effect);
             if (t.Length == 0) continue;
@@ -383,8 +395,16 @@ public static partial class EffectTextGenerator
             // "you can Special Summon this card".
             if (b.Optional && def is ActionBlock && !t.StartsWith("you can ", StringComparison.Ordinal)) t = "you can " + t;
             // A floodgate is its own sentence: "Spell Cards ... cannot be activated. Negate all Spell effects on the field."
-            var gate = def is LockPassive or NegateAllPassive or BanishInsteadPassive;
-            var wasGate = previous is LockPassive or NegateAllPassive or BanishInsteadPassive;
+            var gate = def is LockPassive or NegateAllPassive or BanishInsteadPassive or ToonRulesPassive;
+            var wasGate = previous is LockPassive or NegateAllPassive or BanishInsteadPassive or ToonRulesPassive;
+            // "toss a coin and if the result is heads, ..., or if the result is tails, ...".
+            if (ChanceJoiner(b, previous, ref chanceCases) is { } chanceJoin && sb.Length > 0)
+            {
+                sb.Append(chanceJoin).Append(chanceJoin.StartsWith('.') ? SentenceCase.Upper(t) : t);
+                previous = def;
+                previousOnlyIf = true;
+                continue;
+            }
             previous = def;
             // "..., then if you have a Trap in your GY, destroy that card".
             if (sb.Length > 0 && previousOnlyIf)

@@ -159,12 +159,16 @@ public static class ScriptCompiler
         }
         else
         {
-            // "Activate 1 of these effects": each "●" link starts another option.
-            var branch = src.Do.Skip(1).Any(b => b.Link == ActionLink.Option) ? 1 : 0;
+            // "Activate 1 of these effects": each "●" link starts another option. A "●" on a coin toss or die roll's result
+            // ("● Heads: ...") is that result's steps instead, not an option the player picks.
+            Chance.CheckOptions(effect, src.Do);
+            var cases = new Chance.CaseChecks(effect);
+            var branch = src.Do.Skip(1).Any(b => b.Link == ActionLink.Option && !Chance.IsGate(b)) ? 1 : 0;
             for (int i = 0; i < src.Do.Count; i++)
             {
                 var b = src.Do[i];
-                if (i > 0 && b.Link == ActionLink.Option) branch++;
+                if (i > 0 && b.Link == ActionLink.Option && !Chance.IsGate(b)) branch++;
+                cases.Before(b);
                 effect.CurrentBranch = branch;
                 effect.CurrentOptional = b.Optional;
                 var (checks, lines, cats) = (effect.TargetChecks.Count, effect.TargetLines.Count, effect.Categories.Count);
@@ -177,7 +181,7 @@ public static class ScriptCompiler
                     {
                         var gate = effect.Conditions.Skip(before).ToList();
                         effect.Conditions.RemoveRange(before, gate.Count);
-                        effect.AddGate(gate.Count == 0 ? "true" : string.Join(" and ", gate), b.Link);
+                        effect.AddGate(gate.Count == 0 ? "true" : string.Join(" and ", gate), b.Link, Chance.IsGate(b));
                     }
                 }
                 else Run(effect, b, doKind, pack);
@@ -192,6 +196,7 @@ public static class ScriptCompiler
                     foreach (var c in effect.Categories.Skip(cats)) if (!target.Categories.Contains(c)) target.Categories.Add(c);
                 }
             }
+            cases.End();
             effect.CurrentBranch = 0;
             effect.CurrentOptional = false;
         }

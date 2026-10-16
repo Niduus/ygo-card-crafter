@@ -15,6 +15,11 @@ public sealed class OperationStep
     public int Branch { get; init; }
     /// <summary>For an IF block among the DO blocks: the condition the following steps need ("then if you control ...").</summary>
     public string? Gate { get; init; }
+    /// <summary>
+    /// For a gate on a coin toss or die roll's result ("if the result is heads"): it ends the steps of the result before
+    /// it, so "● Heads: ..." and "● Tails: ..." are each their own.
+    /// </summary>
+    public bool Case { get; init; }
 }
 
 /// <summary>What one option of "Activate 1 of these effects" checks and does at activation.</summary>
@@ -130,8 +135,12 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
         AddProperty("EFFECT_FLAG_CARD_TARGET");
     }
 
-    public void AddStep(IEnumerable<string> lines, string? result, ActionLink link) =>
-        _steps.Add(new OperationStep { Lines = lines.ToList(), Result = result, Link = link, Optional = CurrentOptional, Branch = CurrentBranch });
+    public OperationStep AddStep(IEnumerable<string> lines, string? result, ActionLink link)
+    {
+        var step = new OperationStep { Lines = lines.ToList(), Result = result, Link = link, Optional = CurrentOptional, Branch = CurrentBranch };
+        _steps.Add(step);
+        return step;
+    }
 
     private readonly List<string> _finally = [];
 
@@ -142,8 +151,9 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
     public void AddFinally(IEnumerable<string> lines) => _finally.AddRange(lines);
 
     /// <summary>An IF block among the DO blocks: the steps after it in its option happen only if the condition holds.</summary>
-    public void AddGate(string condition, ActionLink link) =>
-        _steps.Add(new OperationStep { Lines = [], Link = link, Branch = CurrentBranch, Gate = condition });
+    /// <param name="isCase">A coin toss or die roll's result: it ends the steps of the result gate before it.</param>
+    public void AddGate(string condition, ActionLink link, bool isCase = false) =>
+        _steps.Add(new OperationStep { Lines = [], Link = link, Branch = CurrentBranch, Gate = condition, Case = isCase });
 
     /// <summary>Adds a lasting effect. The callback writes the effect given its variable name.</summary>
     public void AddPassive(Func<string, IEnumerable<string>> write, bool limited = false) => _passives.Add((write, limited));
@@ -378,6 +388,8 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
         int opened = 0, n = 0;
         string? previous = null;
         var started = false;
+        // How many ifs were open before the current result gate ("if the result is heads"), which the next one closes.
+        int? caseLevel = null;
         void Open(string cond)
         {
             body.Add($"{indent}if {cond} then");
@@ -390,6 +402,18 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
             // The first step of each option links to nothing.
             var link = started && step.Link != ActionLink.Option ? step.Link : ActionLink.And;
             started = true;
+            if (step.Gate is not null && step.Case)
+            {
+                for (; caseLevel is { } level && opened > level; opened--)
+                {
+                    indent = indent[..^1];
+                    body.Add($"{indent}end");
+                }
+                caseLevel = opened;
+                Open($"({step.Gate})");
+                if (link == ActionLink.Then) body.Add($"{indent}Duel.BreakEffect()");
+                continue;
+            }
             if (step.Gate is not null)
             {
                 switch (link)

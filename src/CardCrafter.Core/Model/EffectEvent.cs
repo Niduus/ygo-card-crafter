@@ -28,7 +28,8 @@ public enum ActionLink
     IfYouDont,
     /// <summary>
     /// "● ..." — starts another option of "Activate 1 of these effects": the player picks one option that can be used,
-    /// and only that option's blocks happen.
+    /// and only that option's blocks happen. On a coin toss or die roll's result IF block it starts that result's own
+    /// line instead ("● Heads: ...").
     /// </summary>
     Option,
 }

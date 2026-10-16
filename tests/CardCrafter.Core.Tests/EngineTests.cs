@@ -457,6 +457,8 @@ public class EngineTests
         };
         // Attaching material needs an Xyz Monster to attach to.
         if (blockId == "do.attach") { card.Card.Frame = MonsterFrame.Xyz; card.Procedure.Kind = SummonProcedureKind.Xyz; }
+        // A lock on the declared card name needs the declaration.
+        if (blockId == DeclaredLockAction.BlockId) card.Effects[0].Do.Insert(0, new BlockInstance(DeclareAction.BlockId));
         // Both players start on 8000, so the default "difference between both players' LP" is 0 and can't be used:
         // damage equal to your LP instead (ValueMatrixTests plays every value).
         if (blockId == LifeFromValueAction.BlockId) inst.With("value", "your_lp");

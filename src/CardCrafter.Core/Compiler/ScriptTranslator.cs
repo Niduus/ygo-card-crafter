@@ -87,6 +87,7 @@ public static partial class ScriptTranslator
         }
         CounterPermits(result);
         ContactFusionRules(result);
+        ToonDirectUnless(result);
         // One WHEN block per event, as the editor offers them.
         foreach (var e in result.Pieces.SelectMany(p => p.Effects)) TriggerSplit.Normalize(e);
         return result;
@@ -254,6 +255,8 @@ public static partial class ScriptTranslator
         var sets = registered.Select(r => vars[r]).ToList();
         // Stargazer Magician's "this card's Pendulum Scale becomes 4": its left and right Scales (ScriptTranslator.SummonByEffect.cs).
         if (PendulumScalePieceOf(piece, sets, fns) is { } scales) return scales;
+        // A Toon monster's rules (ScriptTranslator.Chance.cs).
+        if (ToonPieceOf(piece, sets, fns) is { } toon) return toon;
 
         // Copies that differ only in what they apply to are one effect on the card ("ATK/DEF", "Normal or Special").
         var merge = Merge.Of(sets);
@@ -483,7 +486,8 @@ public static partial class ScriptTranslator
         var targeting = set.TryGetValue("Target", out var tg) ? Targeting(tg, fns) : new TargetInfo();
         effect.Cost.AddRange(TakeChainLimits());
         if (!set.TryGetValue("Operation", out var op)) throw No("it has no operation");
-        effect.Do.AddRange(Operation(op, fns, targeting, card));
+        // Coin tosses, die rolls and declarations (ScriptTranslator.Chance.cs).
+        effect.Do.AddRange(ChanceOperation(effect, op, set.GetValueOrDefault("Target"), fns, targeting, card) ?? Operation(op, fns, targeting, card));
         if (effect.Do.Count == 0) throw No("its operation does nothing the blocks recognise");
         CounterActivationChecks(effect, targeting, type);
         OneTargetingBlock(effect);
@@ -1717,6 +1721,7 @@ public static partial class ScriptTranslator
     private static TargetInfo Targeting(string reference, Functions fns)
     {
         var info = new TargetInfo();
+        _declaration = null;
         var (_, body) = fns.Get(reference);
         // Numbers worked out for the operation info or the check ("local ct=Duel.GetMatchingGroupCount(...)").
         var values = new OperationValues { Fns = fns, Target = info };
@@ -1781,6 +1786,7 @@ public static partial class ScriptTranslator
             }
             else if (CounterTarget(line, info)) { }
             else if (ChainLimitLine(line, fns)) { }
+            else if (DeclarationLine(line, $"{fns.Id}:{reference}")) { }
             else throw No($"its target step does something the blocks don't ({Short(line)})");
         }
         return info;
@@ -3271,6 +3277,7 @@ public static partial class ScriptTranslator
         }
         if ((m = Regex.Match(term, @"^c:IsCode\((\d+)\)$")).Success) { f.CardCode = long.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture); return; }
         if (RequirementTerm(term, original, f)) return;
+        if (DeclaredTerm(term, f)) return;
         throw No($"it picks cards by {Short(term)}");
     }
 

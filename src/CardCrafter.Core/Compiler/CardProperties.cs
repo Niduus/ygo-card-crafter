@@ -145,7 +145,28 @@ public static class CardProperties
             IsText: "not in the Extra Monster Zone or the Field Zone", IsNotText: "in the Extra Monster Zone or the Field Zone"),
         new("targetable", "Can be targeted by this effect", PropertyKind.State, "c:IsCanBeEffectTarget(e)", "",
             IsText: "that can be targeted", IsNotText: "that cannot be targeted", NeedsEffect: true),
+        // The engine marks every effect with CATEGORY_COIN or CATEGORY_DICE (the toss and roll blocks give them).
+        new("coin_effect", "Has a coin tossing effect", PropertyKind.State, "c:IsEffectProperty(aux.EffectPropertyFilter(EFFECT_FLAG_COIN))", "",
+            IsText: "that has a coin tossing effect", IsNotText: "that does not have a coin tossing effect"),
+        new("dice_effect", "Requires a die roll", PropertyKind.State, "c:IsEffectProperty(aux.EffectPropertyFilter(EFFECT_FLAG_DICE))", "",
+            IsText: "that requires a die roll", IsNotText: "that does not require a die roll"),
+        // What the effect declared when it was activated ("Declare 1 Monster Type; destroy all monsters with the declared Type").
+        new("declared_name", "Has the declared card name", PropertyKind.State, "c:IsCode(v)", "", IsText: "with the declared name", IsNotText: "without the declared name", NeedsEffect: true),
+        new("declared_orig_name", "Has the declared original name", PropertyKind.State, "c:IsOriginalCodeRule(v)", "",
+            IsText: "with the declared original name", IsNotText: "without the declared original name", NeedsEffect: true),
+        new("declared_race", "Is the declared Monster Type", PropertyKind.State, "c:IsRace(v)", "", IsText: "with the declared Type", IsNotText: "without the declared Type", NeedsEffect: true),
+        new("declared_attribute", "Is the declared Attribute", PropertyKind.State, "c:IsAttribute(v)", "",
+            IsText: "with the declared Attribute", IsNotText: "without the declared Attribute", NeedsEffect: true),
+        new("declared_level", "Has the declared Level", PropertyKind.State, "c:IsLevel(v)", "", IsText: "with the declared Level", IsNotText: "without the declared Level", NeedsEffect: true),
+        new("declared_type", "Is the declared card type", PropertyKind.State, "c:IsType(v)", "",
+            IsText: "of the declared card type", IsNotText: "that is not of the declared card type", NeedsEffect: true),
     ];
+
+    /// <summary>
+    /// The "with the declared ..." properties, which compare with what the effect declared (kept with its chain link). They
+    /// hold until the effect has declared, so its activation checks don't depend on them.
+    /// </summary>
+    public static bool IsDeclared(string key) => key.StartsWith("declared_", StringComparison.Ordinal);
 
     public static CardProperty? Find(string key) => All.FirstOrDefault(p => p.Key == key);
 
@@ -177,6 +198,9 @@ public static class CardProperties
     {
         if (Find(r.Property) is not { } p) return null;
         if (p.NeedsEffect && !hasEffect) return null;
+        if (IsDeclared(p.Key))
+            return "(function(te,v) if te~=e or not v or v==0 then return true end return " + (r.Op == RequirementOp.IsNot ? "not " : "") + p.Lua
+                   + " end)(Duel.GetChainInfo(0,CHAININFO_TRIGGERING_EFFECT,CHAININFO_TARGET_PARAM))";
         string test;
         switch (p.Kind)
         {

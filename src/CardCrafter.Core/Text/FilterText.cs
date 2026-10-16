@@ -111,7 +111,11 @@ public static class FilterText
         }
         // Further requirements: "with 2000 or more original ATK that is not DARK and whose effects are negated" — the
         // "with" ones first, as card text puts them right after the noun.
-        var extra = f.Requirements.Except(prefixed).Except(described).Select(r => Compiler.CardProperties.Text(r, pack)).Where(t => t.Length > 0)
+        // "with the declared Type" comes after where they are, as cards say it: "all face-up monsters on the field with the
+        // declared Type", but "1 card with the declared name from your Deck".
+        var declared = f.AnyRequirement || !withLocation || Location(f, preposition, plural).StartsWith("from ", StringComparison.Ordinal) ? []
+            : f.Requirements.Where(r => Compiler.CardProperties.IsDeclared(r.Property)).ToList();
+        var extra = f.Requirements.Except(prefixed).Except(described).Except(declared).Select(r => Compiler.CardProperties.Text(r, pack)).Where(t => t.Length > 0)
             .Select(t => plural ? Plural(t) : t).ToList();
         static bool IsWith(string t) => t.StartsWith("with ", StringComparison.Ordinal) || t.StartsWith("equipped with ", StringComparison.Ordinal);
         static string Join(List<string> parts, string word) => parts.Count switch
@@ -145,6 +149,7 @@ public static class FilterText
             var where = Location(f, preposition, plural);
             if (where.Length > 0) words.Add(where);
         }
+        words.AddRange(declared.Select(r => Compiler.CardProperties.Text(r, pack)).Where(t => t.Length > 0));
         var text = string.Join(" ", words);
         // "1 Warrior monster from your Deck, except "Card Name"".
         return withExcept ? text + ExceptText(f, pack, ownName) : text;

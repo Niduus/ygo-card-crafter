@@ -17,6 +17,10 @@
 //   spsummon <code>                    its controller uses this card's summon procedure when it can
 //   attack <code>                      in the Battle Phase, this monster attacks once (the first target offered)
 //   announce <code>                    the card name declared for "declare 1 card name" (default 1004)
+//   declare <value>                    the Monster Type or Attribute bit declared, or the number declared from a list
+//                                      ("declare a Level"); default: the first ones offered
+//   option <n>                         the choice taken when the engine offers options (call a coin toss "Heads" 0 or
+//                                      "Tails" 1, declare a card type); default 0
 //   turns <n>                          how many turns to play before checking (default 1)
 //   setup <lua statement>              runs once after the cards are placed, before the duel's first step
 //                                      (e.g. putting counters on a card); repeatable, run in order
@@ -112,6 +116,8 @@ struct Scenario {
 	std::map<uint32_t, int> activate;
 	std::vector<uint32_t> summon, spsummon, attack;
 	uint32_t announce = 0;
+	uint32_t declare = 0;
+	int option = 0;
 	std::vector<std::string> checks;
 	std::vector<std::string> setup;
 	int turns = 1;
@@ -156,6 +162,8 @@ static bool parse_scenario(const char* path, Scenario& sc) {
 		else if (cmd == "spsummon") { uint32_t c; in >> c; sc.spsummon.push_back(c); }
 		else if (cmd == "attack") { uint32_t c; in >> c; sc.attack.push_back(c); }
 		else if (cmd == "announce") { in >> sc.announce; }
+		else if (cmd == "declare") { in >> sc.declare; }
+		else if (cmd == "option") { in >> sc.option; }
 		else if (cmd == "turns") in >> sc.turns;
 		else if (cmd == "expect_activations") in >> sc.expect_activations;
 		else if (cmd == "check") { std::string rest; std::getline(in, rest); sc.checks.push_back(rest); }
@@ -258,8 +266,28 @@ static void respond(intptr_t pd, Scenario& sc) {
 		set_responsei(pd, 1);
 		return;
 	case PROCESSOR_SELECT_OPTION:
-		set_responsei(pd, 0);
+		set_responsei(pd, sc.option >= 0 && sc.option < (int)f->core.select_options.size() ? sc.option : 0);
 		return;
+	case PROCESSOR_ANNOUNCE_RACE:
+	case PROCESSOR_ANNOUNCE_ATTRIB: {
+		// "Declare 1 Monster Type / Attribute": the scenario's choice when it is offered, or the first ones offered.
+		uint32_t available = unit.arg2;
+		int count = (int)(unit.arg1 >> 16);
+		uint32_t pick = sc.declare && (sc.declare & available) == sc.declare ? sc.declare : 0;
+		if (!pick)
+			for (uint32_t bit = 1; bit && count > 0; bit <<= 1)
+				if (available & bit) { pick |= bit; --count; }
+		set_responsei(pd, (int32_t)pick);
+		return;
+	}
+	case PROCESSOR_ANNOUNCE_NUMBER: {
+		// "Declare a Level": the scenario's number when it is offered, or the first one.
+		int index = 0;
+		for (size_t i = 0; i < f->core.select_options.size(); ++i)
+			if (sc.declare && f->core.select_options[i] == sc.declare) index = (int)i;
+		set_responsei(pd, index);
+		return;
+	}
 	case PROCESSOR_SELECT_CARD:
 	case PROCESSOR_SELECT_TRIBUTE:
 	case PROCESSOR_SELECT_TRIBUTE_P: {

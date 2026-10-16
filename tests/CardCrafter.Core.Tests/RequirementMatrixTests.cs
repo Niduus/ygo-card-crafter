@@ -497,7 +497,8 @@ public class RequirementMatrixChoiceTests
         var tested = RequirementMatrixNumberTests.Numbers.Select(n => n.Property)
             .Concat(new[] { Flags(), Options(), States() }.SelectMany(rows => rows).SelectMany(r => ((CardRequirement[])r[2]).Select(q => q.Property)))
             .ToHashSet();
-        foreach (var p in CardProperties.All)
+        // What an effect declared, and coin tossing and die rolling effects: ChanceAndDeclarationTests plays them.
+        foreach (var p in CardProperties.All.Where(p => !CardProperties.IsDeclared(p.Key) && p.Key is not ("coin_effect" or "dice_effect")))
         {
             Assert.Contains(p.Key, tested);
             if (p.Kind == PropertyKind.Number) continue;
@@ -577,6 +578,14 @@ public class RequirementMatrixTextTests
         [Is("main_zone"), "not in the Extra Monster Zone or the Field Zone"],
         [IsNot("main_zone"), "in the Extra Monster Zone or the Field Zone"],
         [Is("targetable"), "that can be targeted"],
+        [Is("declared_name"), "with the declared name"],
+        [IsNot("declared_orig_name"), "without the declared original name"],
+        [Is("declared_race"), "with the declared Type"],
+        [Is("declared_attribute"), "with the declared Attribute"],
+        [IsNot("declared_level"), "without the declared Level"],
+        [Is("declared_type"), "of the declared card type"],
+        [Is("coin_effect"), "that has a coin tossing effect"],
+        [IsNot("dice_effect"), "that does not require a die roll"],
         [Is("counters"), "that has a counter on it"],
         [IsNot("counters"), "that has no counters on it"],
         [R("counter_count", RequirementOp.GreaterOrEqual, 2), "with 2 or more counters on it"],

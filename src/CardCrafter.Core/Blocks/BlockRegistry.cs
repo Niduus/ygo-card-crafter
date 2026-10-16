@@ -190,6 +190,9 @@ public static class BlockRegistry
         new DamageBothAction(),
         new SwapControlAction(),
         new EndPhaseAction(),
+        // Coin tosses, die rolls, declarations and Toon monsters (ChanceAndDeclarations.cs)
+        new TossCoinAction(), new RollDieAction(), new CoinResultCondition(), new DieResultCondition(),
+        new DeclareAction(), new DeclaredLockAction(), new ToonRulesPassive(),
     ];
 
     private static readonly Dictionary<string, BlockDefinition> ById = All.ToDictionary(b => b.Id);

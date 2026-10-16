@@ -160,7 +160,28 @@ public class AllBlocksTests
             case EndPhaseAction.BlockId:
                 project.Effects[0].Do.Insert(0, BlockRegistry.Find("do.special_summon")!.CreateInstance());
                 break;
+            // A coin toss or die roll's result goes among the DO blocks, after the toss or roll.
+            case CoinResultCondition.BlockId:
+            {
+                var result = inst.Values.GetValueOrDefault("result");
+                var toss = BlockRegistry.Find(TossCoinAction.BlockId)!.CreateInstance()
+                    .With("call", result is "right" or "wrong").With("count", result is "heads_n" or "heads_min" or "tails_n" ? 3 : 1);
+                project.Effects[0].If.Clear();
+                project.Effects[0].Do.InsertRange(0, [toss, inst]);
+                break;
+            }
+            case DieResultCondition.BlockId:
+                if (!inst.Values.Any(v => v.Value == "true")) inst.Values["r6"] = "true";
+                project.Effects[0].If.Clear();
+                project.Effects[0].Do.InsertRange(0, [BlockRegistry.Find(RollDieAction.BlockId)!.CreateInstance(), inst]);
+                break;
+            case DeclaredLockAction.BlockId:
+                project.Effects[0].Do.Insert(0, BlockRegistry.Find(DeclareAction.BlockId)!.CreateInstance());
+                break;
         }
+        // "The result" of a die roll and "the number of heads" need the roll or toss before them.
+        if (inst.Values.GetValueOrDefault("value") is "roll" or "heads" && def.Kind == BlockKind.Action)
+            project.Effects[0].Do.Insert(0, BlockRegistry.Find(inst.Values["value"] == "roll" ? RollDieAction.BlockId : TossCoinAction.BlockId)!.CreateInstance());
         // "For each card used for the cost" needs a cost that counts; "for each of those cards" needs an action before.
         if (inst.Values.GetValueOrDefault("per") == "per_cost")
             project.Effects[0].Cost.Add(new BlockInstance("cost.move_cards").With("how", "banish"));

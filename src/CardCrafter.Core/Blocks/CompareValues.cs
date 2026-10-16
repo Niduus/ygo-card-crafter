@@ -18,7 +18,7 @@ public sealed class CompareValuesCondition : ConditionBlock
     public override string Sentence => "{value} {counter} {counter_id} {of} {op} {right} {amount} {amount2} {scale} {value2} {counter2} {counter_id2} {of2}";
     public override string Help => "For example: your LP compared with double your opponent's LP, or the number of cards in your hand with the number in your opponent's.";
 
-    private static IEnumerable<ChoiceOption> NoEvent => ValueSources.Sources.Where(o => o.Value != "event" && !o.Value.StartsWith("its_", StringComparison.Ordinal));
+    private static IEnumerable<ChoiceOption> NoEvent => ValueSources.Sources.Where(o => !ValueSources.AtResolution(o.Value) && !o.Value.StartsWith("its_", StringComparison.Ordinal));
 
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [

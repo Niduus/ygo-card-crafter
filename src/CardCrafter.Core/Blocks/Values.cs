@@ -44,7 +44,12 @@ public static class ValueSources
         new("opp_damage_turn", "the damage your opponent took this turn"),
         new("gained_turn", "the LP you gained this turn"),
         new("event", "that amount (the damage or LP that started this effect)"),
+        new("roll", "the result", "the result of the die roll before it"),
+        new("heads", "the number of heads", "the number of heads of the coin toss before it"),
     ];
+
+    /// <summary>Values known only while the effect resolves: the amount that started it, a die roll's result, a toss's heads.</summary>
+    public static bool AtResolution(string source) => source is "event" or "roll" or "heads";
 
     public static readonly ChoiceOption[] Hows =
     [
@@ -187,8 +192,10 @@ public static class ValueSources
             "opp_damage_turn" => LifeWatch.Total(ctx, $"1-{p}", "damage"),
             "gained_turn" => LifeWatch.Total(ctx, p, "gained"),
             "event" when ev => "ev",
+            "roll" or "heads" when ev => Chance.ValueLua(ctx, source),
             _ => "0",
         };
+        if (source is "roll" or "heads" && !ev) ctx.Effect.Error("A die roll's result or a coin toss's heads only exist while the effect resolves; this block can't use them.");
         if (source == "event" && !ev) ctx.Effect.Error("\"That amount\" only exists while an effect resolves after damage or an LP change; a lasting effect can't use it.");
         else if (source == "event" && ctx.Effect.Code is not ("EVENT_DAMAGE" or "EVENT_BATTLE_DAMAGE" or "EVENT_RECOVER" or "EVENT_PAY_LPCOST"))
             ctx.Effect.Warn("\"That amount\" needs a WHEN that is damage being taken or LP being paid or gained; otherwise it is 0.");
@@ -208,7 +215,7 @@ public static class ValueSources
     [
         ParamSpec.Choice("how", "How much", Hows),
         ParamSpec.Int("amount", "Amount (x, or for each)", amountDefault, 1, 99999).ShowIf(b => b.Values.GetValueOrDefault("how") == "per"),
-        ParamSpec.Choice("value", "Of", withEvent ? Sources : Sources.Where(o => o.Value != "event").ToArray()),
+        ParamSpec.Choice("value", "Of", withEvent ? Sources : Sources.Where(o => !AtResolution(o.Value)).ToArray()),
         ParamSpec.Cards(CardsKey, "Which cards (for counts and totals)", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Hand })
             .ShowIf(b => UsesCards(b.Values.GetValueOrDefault("value", "lp_diff"))),
         // Saved before counters had a kind, "the number of counters on it" is every counter: "any" is the default.
@@ -471,7 +478,7 @@ public sealed class LifeFromValueAction : ActionBlock
         ctx.Effect.TargetLines.Add($"Duel.SetOperationInfo(0,{(damage ? "CATEGORY_DAMAGE" : "CATEGORY_RECOVER")},nil,0,{info},0)");
         var value = ValueSources.Lua(ctx, "e:GetHandler()", "tp");
         // Nothing to do when the amount is 0 ("for each card in your hand" with an empty hand).
-        if (ctx.Args.Choice("value") != "event" && !ctx.Args.Bool("zero_ok")) ctx.Effect.TargetChecks.Add($"{value}>0");
+        if (!ValueSources.AtResolution(ctx.Args.Choice("value")) && !ctx.Args.Bool("zero_ok")) ctx.Effect.TargetChecks.Add($"{value}>0");
         var r = ctx.Effect.NewLocal("r");
         var lv = ctx.Effect.NewLocal("lv");
         if (ctx.Args.Choice("when") == "activate")
@@ -479,6 +486,8 @@ public sealed class LifeFromValueAction : ActionBlock
             // Kept with the chain link, as official cards do (Duel.SetTargetParam), so it is the same when it resolves.
             if (ctx.Effect.TargetLines.Any(l => l.StartsWith("Duel.SetTargetParam(", StringComparison.Ordinal)))
                 ctx.Effect.Error($"\"{Name}\": only one block of an effect can work out its amount when the effect is activated.");
+            if (ctx.Args.Choice("value") is "roll" or "heads")
+                ctx.Effect.Error($"\"{Name}\": a die roll's result or a coin toss's heads are only known when the effect resolves.");
             ctx.Effect.TargetLines.Add($"Duel.SetTargetParam({value})");
             value = "Duel.GetChainInfo(0,CHAININFO_TARGET_PARAM)";
         }

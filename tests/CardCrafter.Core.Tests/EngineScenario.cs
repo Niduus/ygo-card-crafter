@@ -59,6 +59,16 @@ public sealed class EngineScenario
     public EngineScenario SpSummon(long code) { _lines.Add($"spsummon {code}"); return this; }
     public EngineScenario Attack(long code) { _lines.Add($"attack {code}"); return this; }
     public EngineScenario Announce(long code) { _lines.Add($"announce {code}"); return this; }
+    /// <summary>The Monster Type or Attribute (its bit) or the number declared when the duel asks for one (needs a harness that answers them).</summary>
+    public EngineScenario Declare(long value) { _lines.Add($"declare {value}"); return this; }
+    /// <summary>The option taken when the duel offers options: calling a coin toss "Heads" (0) or "Tails" (1), a card type.</summary>
+    public EngineScenario Option(int n) { _lines.Add($"option {n}"); return this; }
+    /// <summary>Every coin toss lands as given (1 heads, 0 tails), as "Second Coin Toss" redoes them: a global effect on the toss.</summary>
+    public EngineScenario Coins(params int[] results) =>
+        Setup($"local fe=Effect.GlobalEffect() fe:SetType(EFFECT_TYPE_FIELD+EFFECT_TYPE_CONTINUOUS) fe:SetCode(EVENT_TOSS_COIN_NEGATE) fe:SetOperation(function() Duel.SetCoinResult({string.Join(",", results)}) end) Duel.RegisterEffect(fe,0)");
+    /// <summary>Every die roll lands as given.</summary>
+    public EngineScenario Dice(params int[] results) =>
+        Setup($"local fe=Effect.GlobalEffect() fe:SetType(EFFECT_TYPE_FIELD+EFFECT_TYPE_CONTINUOUS) fe:SetCode(EVENT_TOSS_DICE_NEGATE) fe:SetOperation(function() Duel.SetDiceResult({string.Join(",", results)}) end) Duel.RegisterEffect(fe,0)");
     public EngineScenario Turns(int n) { _lines.Add($"turns {n}"); return this; }
     public EngineScenario Check(string lua) { _lines.Add($"check {lua}"); return this; }
     /// <summary>Lua run once at the duel's first prompt, before anything is played (e.g. putting counters on a card).</summary>

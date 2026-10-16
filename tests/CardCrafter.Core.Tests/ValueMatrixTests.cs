@@ -125,11 +125,13 @@ public class ValueMatrixTests
         Effects = [Lasting(B("passive.equipped", ("rule", "indestructible_battle")))],
     };
 
-    public static IEnumerable<object[]> SourceKeys() => ValueSources.Sources.Where(o => o.Value != "event").Select(o => new object[] { o.Value });
+    // "That amount", a die roll's result and a toss's heads only exist while an effect resolves: their own tests play them
+    // (this file for "that amount", ChanceAndDeclarationTests for the die and the coin).
+    public static IEnumerable<object[]> SourceKeys() => ValueSources.Sources.Where(o => !ValueSources.AtResolution(o.Value)).Select(o => new object[] { o.Value });
 
     [Fact]
     public void EverySource_HasABoard() =>
-        Assert.Equal(ValueSources.Sources.Select(o => o.Value).Where(v => v != "event").OrderBy(v => v), Sources.Keys.OrderBy(v => v));
+        Assert.Equal(ValueSources.Sources.Select(o => o.Value).Where(v => !ValueSources.AtResolution(v)).OrderBy(v => v), Sources.Keys.OrderBy(v => v));
 
     private static EngineScenario Scenario(Source src, BlockInstance block, bool action)
     {
@@ -534,6 +536,14 @@ public class ValueMatrixTests
 
     // ---------------------------------------------------------------- every combination compiles
 
+    /// <summary>The die roll or coin toss a value block's "the result" or "the number of heads" comes from.</summary>
+    private static BlockInstance[] Before(string source) => source switch
+    {
+        "roll" => [B(RollDieAction.BlockId)],
+        "heads" => [B(TossCoinAction.BlockId, ("count", "3"))],
+        _ => [],
+    };
+
     public static IEnumerable<object[]> AllCombinations()
     {
         foreach (var src in ValueSources.Sources.Select(o => o.Value))
@@ -549,7 +559,7 @@ public class ValueMatrixTests
         foreach (var dir in ValueSources.Dirs.Select(o => o.Value))
         foreach (var stat in ValueSources.Stats.Select(o => o.Value))
         {
-            if (source != "event")
+            if (!ValueSources.AtResolution(source))
             {
                 projects.Add(Mon(Id, null, Lasting(B(StatsFromValuePassive.BlockId, ("value", source), ("how", how), ("dir", dir), ("stat", stat)))));
                 var field = B(StatsFromValuePassive.BlockId, ("value", source), ("how", how), ("dir", dir), ("stat", stat));
@@ -558,14 +568,14 @@ public class ValueMatrixTests
             }
             var when = source == "event" ? new BlockInstance("when.event").With("event", "you_damage") : new BlockInstance("when.ignition");
             foreach (var target in new[] { "false", "true" })
-                projects.Add(Mon(Id, null, new EffectEvent { When = when, Do = [B(StatsFromValueAction.BlockId, ("value", source), ("how", how), ("dir", dir), ("stat", stat), ("target", target))] }));
-            projects.Add(Mon(Id, null, new EffectEvent { When = when, Do = [B(StatsFromValueAction.BlockId, ("value", source), ("how", how), ("dir", dir), ("stat", stat), ("mode", "all"))] }));
+                projects.Add(Mon(Id, null, new EffectEvent { When = when, Do = [.. Before(source), B(StatsFromValueAction.BlockId, ("value", source), ("how", how), ("dir", dir), ("stat", stat), ("target", target))] }));
+            projects.Add(Mon(Id, null, new EffectEvent { When = when, Do = [.. Before(source), B(StatsFromValueAction.BlockId, ("value", source), ("how", how), ("dir", dir), ("stat", stat), ("mode", "all"))] }));
         }
         foreach (var what in new[] { "damage", "gain" })
         foreach (var who in new[] { "opponent", "you", "both" })
         {
             var when = source == "event" ? new BlockInstance("when.event").With("event", "you_damage") : new BlockInstance("when.ignition");
-            projects.Add(Mon(Id, null, new EffectEvent { When = when, Do = [B(LifeFromValueAction.BlockId, ("value", source), ("how", how), ("what", what), ("who", who))] }));
+            projects.Add(Mon(Id, null, new EffectEvent { When = when, Do = [.. Before(source), B(LifeFromValueAction.BlockId, ("value", source), ("how", how), ("what", what), ("who", who))] }));
         }
         foreach (var p in projects)
         {
