@@ -33,15 +33,30 @@ public static class FilterText
         else if (f.Summoned == FilterSummoned.Tribute) words.Add("Tribute Summoned");
         // "non-Tuner WIND monsters": a "non-" kind comes first, before the Level and Attribute.
         if (f.CardCode == 0 && KindNoun(f.MonsterKind) is { Non: true } non) words.Add(non.Noun);
+        // So do the requirements cards say that way: "non-Fairy monsters", "non-"Burning Abyss" monster", "non-Link Monster".
+        var prefixed = f.CardCode != 0 || f.AnyRequirement ? [] : f.Requirements.Where(r => NonWord(r, pack) is not null).ToList();
+        words.AddRange(prefixed.Select(r => NonWord(r, pack)!));
         if (f.LevelMin is { } lo && f.LevelMax is { } hi)
             words.Add(lo == hi ? $"{Lv(f)} {lo}" : $"{Lv(f)} {lo} to {hi}");
         else if (f.LevelMax is { } max) words.Add($"{Lv(f)} {max} or lower");
-        else if (f.LevelMin is { } min) words.Add($"{Lv(f)} {min} or higher");
+        // "Level 1 or higher" is any Level: "a monster with a Level", said after the noun.
+        else if (f.LevelMin is { } min && !(min <= 1 && Lv(f) == "Level")) words.Add($"{Lv(f)} {min} or higher");
+        // "EARTH or LIGHT", "Aqua, Fish, or Sea Serpent", ""Ember" or "Flame"": choices of the requirements, said as the fields say theirs.
+        var described = f.CardCode != 0 || f.AnyRequirement ? [] : f.Requirements.Where(r => r.Op == RequirementOp.Is && r.Property is "attribute" or "race" or "archetype").ToList();
+        described.RemoveAll(prefixed.Contains);
+        void Choices(string property) => words.AddRange(described.Where(r => r.Property == property).Select(r => ChoiceWords(r, pack)));
         if (f.Attribute != CardAttribute.None) words.Add(EnumNames.Display(f.Attribute));
+        Choices("attribute");
         if (f.Race != CardRace.None) words.Add(pack?.TypeName(f.Race) ?? EnumNames.Display(f.Race));
+        Choices("race");
         string Arch(int code) => $"\"{(pack is not null ? pack.ArchetypeName(code) : ArchetypeNames.Find(code) ?? $"0x{code:x}")}\"";
         if (f.Archetype != 0 && f.Archetype2 != 0) words.Add($"{Arch(f.Archetype)} or {Arch(f.Archetype2)}");
         else if (f.Archetype != 0 || f.Archetype2 != 0) words.Add(Arch(f.Archetype != 0 ? f.Archetype : f.Archetype2));
+        Choices("archetype");
+        // "Fusion, Synchro, or Xyz Monster": the kinds a requirement picks, as the noun.
+        var kinds = f.CardCode != 0 || f.AnyRequirement || f.MonsterKind != MonsterKind.Any || f.SpellTrapKind != SpellTrapKind.Any ? null
+            : f.Requirements.FirstOrDefault(r => r.Op == RequirementOp.Is && r.Property == "monster_type" && KindsNoun(r) is not null);
+        if (kinds is not null) described.Add(kinds);
 
         string noun;
         if (f.CardCode != 0)
@@ -62,7 +77,7 @@ public static class FilterText
             };
             noun = stKind is not null && f.CardType is FilterCardType.Spell or FilterCardType.Trap or FilterCardType.SpellTrap or FilterCardType.Any
                 ? $"{stKind} {(f.CardType == FilterCardType.Trap || f.SpellTrapKind == SpellTrapKind.Counter ? "Trap" : f.CardType == FilterCardType.Spell || f.SpellTrapKind is SpellTrapKind.QuickPlay or SpellTrapKind.Field or SpellTrapKind.Equip or SpellTrapKind.Ritual ? "Spell" : "Spell/Trap")}"
-                : KindNoun(f.MonsterKind) is { Non: false } kind ? kind.Noun : f.CardType switch
+                : KindNoun(f.MonsterKind) is { Non: false } kind ? kind.Noun : kinds is not null ? KindsNoun(kinds)! : f.CardType switch
             {
                 FilterCardType.Monster => "monster",
                 FilterCardType.Spell => "Spell",
@@ -71,12 +86,15 @@ public static class FilterText
                 // Only the Monster Zones hold only monsters; only the Spell & Trap Zones, only Spells and Traps.
                 _ when f.Zones == Zone.MonsterZone => "monster",
                 _ when f.Zones == Zone.SpellTrapZone => "Spell/Trap",
+                // ATK, DEF and the numbers only monsters have: "a card with 1000 or more ATK" is a monster.
                 _ => (f.Race != CardRace.None || f.Attribute != CardAttribute.None || f.LevelMin is not null || f.LevelMax is not null
-                      || f.MonsterKind != MonsterKind.Any) ? "monster" : "card",
+                      || f.MonsterKind != MonsterKind.Any || f.AtkMin is not null || f.AtkMax is not null || f.DefMin is not null || f.DefMax is not null
+                      || (f.AnyRequirement ? f.Requirements.Count > 0 && f.Requirements.All(MonsterOnly) : f.Requirements.Any(MonsterOnly))) ? "monster" : "card",
             };
             if (plural) noun += "s";
         }
         words.Add(noun);
+        if (f.CardCode == 0 && f.LevelMin is <= 1 && f.LevelMax is null && Lv(f) == "Level") words.Add("with a Level");
 
         if (f.AtkMin is { } amin && f.AtkMax is { } amax) words.Add(amin == amax ? $"with {amin} ATK" : $"with {amin} to {amax} ATK");
         else if (f.AtkMax is { } amx) words.Add($"with {amx} or less ATK");
@@ -92,7 +110,8 @@ public static class FilterText
         }
         // Further requirements: "with 2000 or more original ATK that is not DARK and whose effects are negated" — the
         // "with" ones first, as card text puts them right after the noun.
-        var extra = f.Requirements.Select(r => Compiler.CardProperties.Text(r, pack)).Where(t => t.Length > 0).ToList();
+        var extra = f.Requirements.Except(prefixed).Except(described).Select(r => Compiler.CardProperties.Text(r, pack)).Where(t => t.Length > 0)
+            .Select(t => plural ? Plural(t) : t).ToList();
         static bool IsWith(string t) => t.StartsWith("with ", StringComparison.Ordinal) || t.StartsWith("equipped with ", StringComparison.Ordinal);
         static string Join(List<string> parts, string word) => parts.Count switch
         {
@@ -129,6 +148,77 @@ public static class FilterText
         // "1 Warrior monster from your Deck, except "Card Name"".
         return withExcept ? text + ExceptText(f, pack, ownName) : text;
     }
+
+    /// <summary>
+    /// "non-Fairy", "non-DARK", "non-"Burning Abyss"", "non-Link": a requirement that leaves out one Type, Attribute,
+    /// archetype or monster card type, as cards write it before the noun. "An Attribute other than EARTH" is "non-EARTH" too.
+    /// </summary>
+    private static string? NonWord(CardRequirement r, CardPack? pack)
+    {
+        if (r.Op == RequirementOp.Is && r.Property == "attribute" && r.Values.Count == 6 && r.Values.Distinct().Count() == 6)
+        {
+            var missing = Enum.GetValues<CardAttribute>().Where(a => a != CardAttribute.None && !r.Values.Contains((long)a)).ToList();
+            return missing.Count == 1 ? $"non-{EnumNames.Display(missing[0])}" : null;
+        }
+        if (r.Op != RequirementOp.IsNot || r.Values.Count != 1) return null;
+        var v = r.Values[0];
+        return r.Property switch
+        {
+            "race" when Enum.IsDefined((CardRace)v) => $"non-{pack?.TypeName((CardRace)v) ?? EnumNames.Display((CardRace)v)}",
+            "attribute" when Enum.IsDefined((CardAttribute)v) => $"non-{EnumNames.Display((CardAttribute)v)}",
+            "archetype" when v != 0 => $"non-\"{(pack is not null ? pack.ArchetypeName((int)v) : ArchetypeNames.Find((int)v) ?? $"0x{v:x}")}\"",
+            "monster_type" when Compiler.CardProperties.Find("monster_type")!.Choices!.FirstOrDefault(c => c.Value == v).Label is { } label =>
+                "non-" + label.Replace(" Monster", "", StringComparison.Ordinal).Replace(" monster", "", StringComparison.Ordinal),
+            _ => null,
+        };
+    }
+
+    /// <summary>"EARTH or LIGHT", "Aqua, Fish, or Sea Serpent", ""Ember" or "Flame"": the choices of an Attribute, Type or archetype requirement.</summary>
+    private static string ChoiceWords(CardRequirement r, CardPack? pack)
+    {
+        var names = r.Property switch
+        {
+            "archetype" => r.Values.Where(v => v != 0).Select(v => $"\"{(pack is not null ? pack.ArchetypeName((int)v) : ArchetypeNames.Find((int)v) ?? $"0x{v:x}")}\"").ToList(),
+            "race" => r.Values.Select(v => pack?.TypeName((CardRace)v) ?? EnumNames.Display((CardRace)v)).ToList(),
+            _ => r.Values.Select(v => EnumNames.Display((CardAttribute)v)).ToList(),
+        };
+        return names.Count switch
+        {
+            1 => names[0],
+            2 => $"{names[0]} or {names[1]}",
+            _ => string.Join(", ", names.Take(names.Count - 1)) + ", or " + names[^1],
+        };
+    }
+
+    /// <summary>"Fusion, Synchro, or Xyz Monster" for a requirement that picks kinds whose names end in "Monster"; null for others.</summary>
+    private static string? KindsNoun(CardRequirement r)
+    {
+        var choices = Compiler.CardProperties.Find("monster_type")!.Choices!;
+        var labels = r.Values.Select(v => choices.FirstOrDefault(c => c.Value == v).Label).ToList();
+        if (labels.Count == 0 || labels.Any(l => l is null || !l.EndsWith(" Monster", StringComparison.Ordinal))) return null;
+        var kinds = labels.Select(l => l![..^" Monster".Length]).ToList();
+        return (kinds.Count switch
+        {
+            1 => kinds[0],
+            2 => $"{kinds[0]} or {kinds[1]}",
+            _ => string.Join(", ", kinds.Take(kinds.Count - 1)) + ", or " + kinds[^1],
+        }) + " Monster";
+    }
+
+    /// <summary>A requirement's words for several cards: "that are face-down", "that were Summoned this turn".</summary>
+    private static string Plural(string text)
+    {
+        foreach (var (one, many) in new[] { ("that is ", "that are "), ("that was ", "that were "), ("that has ", "that have "), ("that does ", "that do "), ("that points ", "that point ") })
+            text = text.Replace(one, many, StringComparison.Ordinal);
+        return text;
+    }
+
+    /// <summary>A requirement only a monster can meet: a number it has, or a monster card type it is.</summary>
+    private static bool MonsterOnly(CardRequirement r) =>
+        r.Property is "atk" or "def" or "base_atk" or "base_def" or "level" or "orig_level" or "rank" or "link" or "materials" or "linked"
+        || r.Op == RequirementOp.Is && r.Property is "race" or "attribute" or "monster_type" or "orig_race" or "orig_attribute" or "has_materials" or "is_linked"
+            or "summon" or "summoned_from" or "summoned_turn" or "spsummoned_turn" or "attacked_turn" or "battled_turn" or "changed_atk"
+        || r.Op == RequirementOp.Is && r.Property == "card_type" && r.Values.All(v => v == 0x1);
 
     /// <summary>
     /// The card-text name of a monster kind: "Effect Monster", "Tuner", "Flip monster". "Non-" kinds give the word

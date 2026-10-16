@@ -73,7 +73,7 @@ public static partial class ScriptTranslator
         {
             try
             {
-                result.Pieces.Add(TranslatePiece(piece, card));
+                result.Pieces.Add(SettleRequirements(TranslatePiece(piece, card)));
             }
             catch (Untranslatable ex)
             {
@@ -1381,16 +1381,16 @@ public static partial class ScriptTranslator
                 throw No("its cost puts an effect on the turn the blocks don't have");
             }
             // Cards picked first, then moved: "local g=Duel.SelectMatchingCard(...)" then "Duel.Remove(g,POS_FACEUP,REASON_COST)".
-            if ((m = Regex.Match(line, @"^local (\w+)=Duel\.SelectMatchingCard\(tp,([\w.()]+),tp,([\w+]+),0,(\d+),(\d+),(nil|e:GetHandler\(\)|c)(?:,[\w,]+)?\)$")).Success)
+            if ((m = Regex.Match(line, @"^local (\w+)=Duel\.SelectMatchingCard\(tp,([\w.()]+),tp,([\w+]+),0,(\d+),(\d+),(nil|e:GetHandler\(\)|c)(?:,([\w,]+))?\)$")).Success)
             {
-                var f = Filter(m.Groups[2].Value, fns);
+                var f = FilterWith(m.Groups[2].Value, m.Groups[7].Value, fns);
                 Locate(f, m.Groups[3].Value, "0");
                 picked = (m.Groups[1].Value, f, Int(m.Groups[4].Value), Int(m.Groups[5].Value));
                 continue;
             }
-            if ((m = Regex.Match(line, @"^local (\w+)=Duel\.SelectReleaseGroup\(tp,([\w.()]+),(\d+),\3,(nil|e:GetHandler\(\)|c)(?:,[\w,]+)?\)$")).Success)
+            if ((m = Regex.Match(line, @"^local (\w+)=Duel\.SelectReleaseGroup\(tp,([\w.()]+),(\d+),\3,(nil|e:GetHandler\(\)|c)(?:,([\w,]+))?\)$")).Success)
             {
-                var f = Filter(m.Groups[2].Value, fns);
+                var f = FilterWith(m.Groups[2].Value, m.Groups[5].Value, fns);
                 f.Owner = CardOwner.You;
                 f.Zones = Model.Zone.MonsterZone;
                 picked = (m.Groups[1].Value, f, Int(m.Groups[3].Value), -Int(m.Groups[3].Value));
@@ -3040,6 +3040,7 @@ public static partial class ScriptTranslator
         reference = reference.Trim();
         var unwrap = Regex.Match(reference, @"^aux\.NecroValleyFilter\(([\w.]+)\)$");
         if (unwrap.Success) reference = unwrap.Groups[1].Value;
+        if (KnownFilter(reference, f, fns)) return f;
         if (reference is "nil" or "aux.TRUE" or "Card.IsAbleToHand" or "Card.IsAbleToGrave" or "Card.IsAbleToRemove" or "Card.IsAbleToDeck"
             or "Card.IsDestructable" or "Card.IsDiscardable" or "Card.IsAbleToHandAsCost" or "Card.IsAbleToGraveAsCost")
             return f;
@@ -3062,9 +3063,9 @@ public static partial class ScriptTranslator
         // "not immune to this effect", which the game checks anyway when it moves the card.
         text = Regex.Replace(text, @"(?: and )?\(not e or not c:IsImmuneToEffect\(e\)\)|(?: and )?not c:IsImmuneToEffect\(e\)", "").Replace("return  and ", "return ").Replace("return and ", "return ");
         if (text.Trim() == "return") return f;
+        text = InlineLocals(text);
         var m = Regex.Match(text, @"^return (.+)$");
-        if (!m.Success || text.Contains(" or ", StringComparison.Ordinal)) throw No($"it picks cards in a way the blocks can't ({Short(Regex.Replace(text, @"c\d+\.|s\.", "s."))})");
-        foreach (var term in m.Groups[1].Value.Split(" and ")) Term(term.Trim(), f);
+        if (!m.Success || !Conjunction(m.Groups[1].Value, f)) throw No($"it picks cards in a way the blocks can't ({Short(Regex.Replace(text, @"c\d+\.|s\.", "s."))})");
         return f;
     }
 
@@ -3072,8 +3073,10 @@ public static partial class ScriptTranslator
     {
         Match m;
         if (CounterTerm(term, f)) return;
+        var original = term;
         // Materials are checked with their material forms (IsLinkRace, IsFusionSetCard...); the filter says what they must be.
         term = Regex.Replace(term, @"^(not )?c:Is(?:Fusion|Link|Synchro|Xyz)(Type|Attribute|Race|SetCard|Code)\(", "$1c:Is$2(");
+        if (Overwrites(term, original, f)) return;
         if (Regex.IsMatch(term, @"^c:(IsAbleTo\w+|IsDiscardable|IsDestructable|IsSSetable|IsCanBeSpecialSummoned|IsCanChangePosition|IsCanTurnSet|IsSummonable|IsMSetable|IsControlerCanBeChanged|IsCanOverlay|IsReleasable|IsReleasableByEffect|IsCanBeFusionMaterial|IsCanBeSynchroMaterial|IsCanBeXyzMaterial|IsCanBeLinkMaterial|IsCanBeRitualMaterial|IsCanAddCounter)\(.*\)$")) return;
         // The checks the blocks make themselves: "can be placed", "isn't a Token you can't move".
         if (term is "not c:IsForbidden()" or "c:IsCanBeEffectTarget(e)" or "Duel.GetLocationCountFromEx(tp,tp,nil,c)>0" or "Duel.GetLocationCountFromEx(tp)>0") return;
@@ -3189,6 +3192,7 @@ public static partial class ScriptTranslator
             return;
         }
         if ((m = Regex.Match(term, @"^c:IsCode\((\d+)\)$")).Success) { f.CardCode = long.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture); return; }
+        if (RequirementTerm(term, original, f)) return;
         throw No($"it picks cards by {Short(term)}");
     }
 
