@@ -13,6 +13,21 @@ public sealed class TempDir : IDisposable
 public class DatabaseTests
 {
     [Fact]
+    public void ATrapMonstersStats_SurviveARoundTrip()
+    {
+        // A Trap Monster read from a database keeps the stats its row holds, and writes them back.
+        var row = new CdbRow { Id = 100000051, Type = TypeBits.Trap | TypeBits.Continuous, Atk = 1800, Def = 1000, Level = 4, Race = (long)CardRace.Machine, Attribute = (long)CardAttribute.Earth };
+        var card = CdbEncoder.Decode(row);
+        Assert.Equal(new TrapMonsterStats(1800, 1000, 4, (long)CardRace.Machine, (long)CardAttribute.Earth), card.TrapStats);
+        var back = CdbEncoder.Encode(card, [], 3);
+        Assert.Equal((1800L, 1000L, 4L, (long)CardRace.Machine, (long)CardAttribute.Earth), (back.Atk, back.Def, back.Level, back.Race, back.Attribute));
+        // An ordinary Trap has none, and writes none.
+        var plain = CdbEncoder.Decode(new CdbRow { Id = 100000052, Type = TypeBits.Trap });
+        Assert.Null(plain.TrapStats);
+        Assert.Equal((0L, 0L, 0L), (CdbEncoder.Encode(plain, [], 3).Atk, CdbEncoder.Encode(plain, [], 3).Def, CdbEncoder.Encode(plain, [], 3).Level));
+    }
+
+    [Fact]
     public void Monster_RoundTripsThroughCdb()
     {
         using var tmp = new TempDir();

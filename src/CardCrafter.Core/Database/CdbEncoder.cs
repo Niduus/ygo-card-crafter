@@ -32,6 +32,8 @@ public static class CdbEncoder
         if (asRead) foreach (var (banlist, limit) in card.BanlistLimits) row.Limits[banlist] = limit;
         else if (card.Limitation != Limitation.Unlimited) row.Limits[CdbFile.AllBanlists] = (int)card.Limitation;
 
+        if (card.Kind == CardKind.Trap && card.TrapStats is { } trap)
+            (row.Atk, row.Def, row.Level, row.Race, row.Attribute) = (trap.Atk, trap.Def, trap.Level, trap.Race, trap.Attribute);
         if (card.IsMonster)
         {
             row.Atk = card.Atk;
@@ -176,6 +178,9 @@ public static class CdbEncoder
         {
             card.Kind = CardKind.Trap;
             card.TrapKind = (t & Continuous) != 0 ? TrapKind.Continuous : (t & Counter) != 0 ? TrapKind.Counter : TrapKind.Normal;
+            // A Trap Monster's stats are in its row; keep them so saving writes them back.
+            if (row.Atk != 0 || row.Def != 0 || row.Level != 0 || row.Race != 0 || row.Attribute != 0)
+                card.TrapStats = new TrapMonsterStats(row.Atk, row.Def, row.Level, row.Race, row.Attribute);
             return card;
         }
 

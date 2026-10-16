@@ -51,6 +51,11 @@ public sealed class CardData
     public long Category { get; set; }
     /// <summary>Card-type bits the editor has no setting for, such as Token or Trap Monster.</summary>
     public long ExtraTypeBits { get; set; }
+    /// <summary>
+    /// A Trap's monster stats as read from a database (a Trap Monster keeps them in its row), so they are written back.
+    /// Null for Traps without any; the Trap Monster block writes its own.
+    /// </summary>
+    public TrapMonsterStats? TrapStats { get; set; }
     /// <summary>YGO Omega's card flags, support codes, release dates (Unix seconds) and in-database script, kept as read.</summary>
     public long OmegaFlags { get; set; }
     public long Support { get; set; }
@@ -94,3 +99,6 @@ public sealed class CardData
     /// <summary>The engine's offset for "hard once per turn" codes: 1 for official-range ids, 100 for 9-digit ids.</summary>
     public long CountCodeOffset => Id < 100000000 ? 1 : 100;
 }
+
+/// <summary>The database stats of a Trap Monster: ATK, DEF, Level, Type and Attribute.</summary>
+public sealed record TrapMonsterStats(long Atk, long Def, long Level, long Race, long Attribute);
