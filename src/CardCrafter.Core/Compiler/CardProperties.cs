@@ -22,7 +22,7 @@ public enum PropertyKind
 }
 
 /// <param name="Lua">Numbers: the getter on <c>c</c>. Flags: the test with {0} for the mask. Options: one test per choice. States: the test.</param>
-/// <param name="Guard">A test the card must pass for the property to apply at all (Level needs a monster that has one).</param>
+/// <param name="Guard">A test the card must pass for the property to apply at all (Level needs a monster that has one), whichever the comparison.</param>
 /// <param name="Noun">How the card text names it: "ATK", "original ATK", "Level", "materials attached".</param>
 /// <param name="Choices">For flags and options: the values the picker offers.</param>
 /// <param name="NeedsEffect">Uses the effect or its player (e, tp), which material filters don't have.</param>
@@ -74,11 +74,11 @@ public static class CardProperties
         new("rank", "Rank", PropertyKind.Number, "GetRank()", "Rank", Guard: "c:IsType(TYPE_XYZ)"),
         new("link", "Link Rating", PropertyKind.Number, "GetLink()", "Link Rating", Guard: "c:IsType(TYPE_LINK)"),
         new("scale", "Pendulum Scale", PropertyKind.Number, "GetLeftScale()", "Pendulum Scale", Guard: "c:IsType(TYPE_PENDULUM)"),
-        new("materials", "Materials attached (Xyz)", PropertyKind.Number, "GetOverlayCount()", "materials attached"),
-        new("counters", "Counters on it", PropertyKind.Number, "GetCounter(0)", "counters on it"),
-        new("equips", "Equip Cards equipped to it", PropertyKind.Number, "GetEquipCount()", "Equip Cards equipped to it"),
-        new("linked", "Monsters it points to (Link)", PropertyKind.Number, "GetLinkedGroupCount()", "monsters it points to"),
-        new("attacks", "Attacks it declared this turn", PropertyKind.Number, "GetAttackAnnouncedCount()", "attacks it declared this turn"),
+        // Counts only mean something for the cards that can have them: "with no material" is an Xyz Monster's.
+        new("materials", "Materials attached (Xyz)", PropertyKind.Number, "GetOverlayCount()", "materials attached", Guard: "c:IsType(TYPE_XYZ)"),
+        new("equips", "Equip Cards equipped to it", PropertyKind.Number, "GetEquipCount()", "Equip Cards equipped to it", Guard: "c:IsType(TYPE_MONSTER)"),
+        new("linked", "Monsters it points to (Link)", PropertyKind.Number, "GetLinkedGroupCount()", "monsters it points to", Guard: "c:IsType(TYPE_LINK)"),
+        new("attacks", "Attacks it declared this turn", PropertyKind.Number, "GetAttackAnnouncedCount()", "attacks it declared this turn", Guard: "c:IsType(TYPE_MONSTER)"),
         // ---- choices
         new("attribute", "Attribute", PropertyKind.Flags, "c:IsAttribute({0})", "Attribute", Choices: Attributes(), IsText: "that is {0}", IsNotText: "that is not {0}"),
         new("orig_attribute", "Original Attribute", PropertyKind.Flags, "c:GetOriginalAttribute()&{0}~=0", "original Attribute", Choices: Attributes(),
@@ -91,7 +91,7 @@ public static class CardProperties
             Choices: [(0x1, "monster", ""), (0x2, "Spell", ""), (0x4, "Trap", "")], IsText: "that is a {0}", IsNotText: "that is not a {0}"),
         new("position", "Battle position", PropertyKind.Flags, "c:IsPosition({0})", "position",
             Choices: [(0x3, "Attack Position", ""), (0xc, "Defense Position", ""), (0x5, "face-up", ""), (0xa, "face-down", "")],
-            IsText: "in {0}", IsNotText: "not in {0}"),
+            IsText: "that is {0}", IsNotText: "that is not {0}"),
         new("summoned_from", "Summoned from", PropertyKind.Flags, "c:IsSummonLocation({0})", "where it was Summoned from",
             Choices: [(0x2, "the hand", ""), (0x1, "the Deck", ""), (0x10, "the GY", ""), (0x20, "banishment", ""), (0x40, "the Extra Deck", "")],
             IsText: "that was Summoned from {0}", IsNotText: "that was not Summoned from {0}"),
@@ -118,13 +118,15 @@ public static class CardProperties
             IsText: "that declared an attack this turn", IsNotText: "that has not declared an attack this turn"),
         new("battled_turn", "Battled this turn", PropertyKind.State, "c:GetBattledGroupCount()>0", "",
             IsText: "that battled this turn", IsNotText: "that has not battled this turn"),
-        new("changed_atk", "ATK differs from its original ATK", PropertyKind.State, "c:IsType(TYPE_MONSTER) and c:GetAttack()~=c:GetBaseAttack()", "",
-            IsText: "whose ATK is different from its original ATK", IsNotText: "whose ATK is its original ATK"),
-        new("linked", "Is linked (Link Arrows)", PropertyKind.State, "c:IsLinkState()", "", IsText: "that is linked", IsNotText: "that is not linked"),
+        new("changed_atk", "ATK differs from its original ATK", PropertyKind.State, "c:GetAttack()~=c:GetBaseAttack()", "", Guard: "c:IsType(TYPE_MONSTER)",
+            IsText: "whose ATK is different from its original ATK", IsNotText: "whose ATK is the same as its original ATK"),
+        new("is_linked", "Is linked (Link Arrows)", PropertyKind.State, "c:IsLinkState()", "", IsText: "that is linked", IsNotText: "that is not linked"),
+        // The engine only tells how many kinds of counters a card has (GetCounter(0)), not how many counters: a yes/no.
+        new("counters", "Has a counter on it", PropertyKind.State, "c:GetCounter(0)>0", "", IsText: "that has a counter on it", IsNotText: "that has no counters on it"),
         new("equipped", "Has an Equip Card", PropertyKind.State, "c:GetEquipCount()>0", "", IsText: "that is equipped with an Equip Card", IsNotText: "that is not equipped with an Equip Card"),
         new("has_materials", "Has materials attached (Xyz)", PropertyKind.State, "c:GetOverlayCount()>0", "", IsText: "that has material", IsNotText: "that has no material"),
         new("extra_zone", "In an Extra Monster Zone", PropertyKind.State, "c:IsLocation(LOCATION_MZONE) and c:GetSequence()>4", "",
-            IsText: "in the Extra Monster Zone", IsNotText: "in a Main Monster Zone"),
+            IsText: "in the Extra Monster Zone", IsNotText: "not in the Extra Monster Zone"),
         new("targetable", "Can be targeted by this effect", PropertyKind.State, "c:IsCanBeEffectTarget(e)", "",
             IsText: "that can be targeted", IsNotText: "that cannot be targeted", NeedsEffect: true),
     ];
@@ -206,7 +208,9 @@ public static class CardProperties
                 test = p.Lua;
                 break;
         }
-        return r.Op == RequirementOp.IsNot ? $"not ({test})" : $"({test})";
+        // A guard holds either way: "whose ATK is the same as its original ATK" is still only a monster.
+        var result = r.Op == RequirementOp.IsNot ? $"not ({test})" : $"({test})";
+        return p.Guard is null ? result : $"({p.Guard} and {result})";
     }
 
     /// <summary>"with 2000 or more original ATK", "that is not DARK", "whose effects are negated", or "" when incomplete.</summary>
@@ -215,26 +219,7 @@ public static class CardProperties
         if (Find(r.Property) is not { } p) return "";
         string N(int n) => n.ToString(CultureInfo.InvariantCulture);
         var (lo, hi) = (Math.Min(r.Value, r.Value2), Math.Max(r.Value, r.Value2));
-        if (p.Kind == PropertyKind.Number)
-        {
-            var stat = p.Key is "atk" or "def" or "base_atk" or "base_def";
-            var level = p.Key is "level" or "orig_level" or "rank" or "link" or "scale";
-            // "with 2000 or more ATK", as cards say it; "whose Level is 4 or lower"; "with 2 or more materials attached".
-            var amount = r.Op switch
-            {
-                RequirementOp.Equal => N(r.Value),
-                RequirementOp.NotEqual => $"other than {N(r.Value)}",
-                RequirementOp.Greater => $"more than {N(r.Value)}",
-                RequirementOp.Less => $"less than {N(r.Value)}",
-                RequirementOp.LessOrEqual => level ? $"{N(r.Value)} or lower" : $"{N(r.Value)} or less",
-                RequirementOp.Between => $"{N(lo)} to {N(hi)}",
-                RequirementOp.Outside => $"less than {N(lo)} or more than {N(hi)}",
-                _ => level ? $"{N(r.Value)} or higher" : $"{N(r.Value)} or more",
-            };
-            if (stat) return r.Op is RequirementOp.NotEqual or RequirementOp.Outside ? $"whose {p.Noun} is {amount}" : $"with {amount} {p.Noun}";
-            if (level) return $"whose {p.Noun} is {amount}";
-            return r.Op is RequirementOp.NotEqual or RequirementOp.Outside ? $"whose number of {p.Noun} is {amount}" : $"with {amount} {p.Noun}";
-        }
+        if (p.Kind == PropertyKind.Number) return NumberText(p, r, N(r.Value), N(lo), N(hi));
         if (p.Kind == PropertyKind.State) return (r.Op == RequirementOp.IsNot ? p.IsNotText : p.IsText) ?? "";
         var names = p.Kind switch
         {
@@ -248,14 +233,100 @@ public static class CardProperties
             foreach (var v in r.Values.Where(v => (v & EnumNames.StandardRaceMask) == 0 && v != 0)) names.Add(pack.TypeName((CardRace)v));
         if (names.Count == 0) return "";
         var not = r.Op == RequirementOp.IsNot;
-        var joined = names.Count == 1 ? names[0]
-            : not ? string.Join(" nor ", names) : string.Join(" or ", names);
-        if (not && names.Count > 1)
-            return (p.IsNotText ?? "not {0}").Replace(" not ", " neither ", StringComparison.Ordinal).Replace("{0}", joined, StringComparison.Ordinal);
-        var text = (not ? p.IsNotText : p.IsText) ?? "{0}";
+        // "in Attack Position", "face-up": a position is "in" one, a face isn't.
+        if (p.Key == "position") names = names.Select(n => n.EndsWith(" Position", StringComparison.Ordinal) ? "in " + n : n).ToList();
+        var template = (not ? p.IsNotText : p.IsText) ?? "{0}";
+        // "that is neither LIGHT nor DARK", "that was neither Fusion nor Synchro Summoned": "neither" where "not" is
+        // right before the choices; otherwise "that was not Summoned from the hand or the GY".
+        string joined;
+        if (not && names.Count > 1 && template.Contains("not {0}", StringComparison.Ordinal))
+        {
+            template = template.Replace("not {0}", "neither {0}", StringComparison.Ordinal);
+            joined = Join(names, "nor");
+        }
+        else joined = Join(names, "or");
         if (p.Key == "owner")
-            text = text.Replace("own(s)", names.Count == 1 && names[0] == "your opponent" ? "owns" : "own", StringComparison.Ordinal)
+            template = template.Replace("own(s)", names.Count == 1 && names[0] == "your opponent" ? "owns" : "own", StringComparison.Ordinal)
                 .Replace("do(es)", names.Count == 1 && names[0] == "your opponent" ? "does" : "do", StringComparison.Ordinal);
-        return text.Replace("{0}", joined, StringComparison.Ordinal);
+        // "that is an Xyz Monster", "that is an Aqua monster", "that is an "Elemental HERO" card".
+        template = template.Replace("a {0}", Article(joined) + " {0}", StringComparison.Ordinal);
+        return template.Replace("{0}", joined, StringComparison.Ordinal);
+    }
+
+    /// <summary>"LIGHT", "LIGHT or DARK", "LIGHT, DARK, or EARTH".</summary>
+    private static string Join(IReadOnlyList<string> names, string word) => names.Count switch
+    {
+        1 => names[0],
+        2 => $"{names[0]} {word} {names[1]}",
+        _ => string.Join(", ", names.Take(names.Count - 1)) + $", {word} " + names[^1],
+    };
+
+    /// <summary>"a" or "an" before a word, as card text spells it: "an Xyz Monster", "an Effect Monster", "a Union monster".</summary>
+    private static string Article(string word)
+    {
+        var w = word.TrimStart('"');
+        if (w.Length == 0) return "a";
+        if (w.StartsWith("Xyz", StringComparison.Ordinal)) return "an";
+        if (w.StartsWith("Uni", StringComparison.OrdinalIgnoreCase) || w.StartsWith("Uto", StringComparison.OrdinalIgnoreCase)
+            || w.StartsWith("Use", StringComparison.OrdinalIgnoreCase) || w.StartsWith("One", StringComparison.OrdinalIgnoreCase)) return "a";
+        return "aeiouAEIOU".Contains(w[0]) ? "an" : "a";
+    }
+
+    private static string NumberText(CardProperty p, CardRequirement r, string v, string lo, string hi)
+    {
+        // ATK and DEF, as cards say them: "with 2000 or more ATK", "with 1500 to 2500 ATK".
+        if (p.Key is "atk" or "def" or "base_atk" or "base_def")
+        {
+            var amount = r.Op switch
+            {
+                RequirementOp.Equal => v,
+                RequirementOp.NotEqual => $"other than {v}",
+                RequirementOp.Greater => $"more than {v}",
+                RequirementOp.Less => $"less than {v}",
+                RequirementOp.LessOrEqual => $"{v} or less",
+                RequirementOp.Between => $"{lo} to {hi}",
+                RequirementOp.Outside => $"less than {lo} or more than {hi}",
+                _ => $"{v} or more",
+            };
+            return r.Op is RequirementOp.NotEqual or RequirementOp.Outside ? $"whose {p.Noun} is {amount}" : $"with {amount} {p.Noun}";
+        }
+        // Levels and the like go up and down: "whose Level is 4 or lower", "whose Rank is higher than 4".
+        if (p.Key is "level" or "orig_level" or "rank" or "link" or "scale")
+        {
+            var amount = r.Op switch
+            {
+                RequirementOp.Equal => v,
+                RequirementOp.NotEqual => $"other than {v}",
+                RequirementOp.Greater => $"higher than {v}",
+                RequirementOp.Less => $"lower than {v}",
+                RequirementOp.LessOrEqual => $"{v} or lower",
+                RequirementOp.Between => $"between {lo} and {hi}",
+                RequirementOp.Outside => $"lower than {lo} or higher than {hi}",
+                _ => $"{v} or higher",
+            };
+            return $"whose {p.Noun} is {amount}";
+        }
+        // Counts of things: "with 2 or more materials attached", "that points to no monsters", "equipped with 1 Equip Card".
+        var (with, without, one, many) = p.Key switch
+        {
+            "materials" => ("with {0} attached", "that does not have exactly {0} attached", "material", "materials"),
+            "equips" => ("equipped with {0}", "that is not equipped with exactly {0}", "Equip Card", "Equip Cards"),
+            "linked" => ("that points to {0}", "that does not point to exactly {0}", "monster", "monsters"),
+            "attacks" => ("that declared {0} this turn", "that did not declare exactly {0} this turn", "attack", "attacks"),
+            _ => ("with {0}", "that does not have exactly {0}", p.Noun, p.Noun),
+        };
+        string Count(string n) => n == "1" ? $"1 {one}" : $"{n} {many}";
+        var count = r.Op switch
+        {
+            RequirementOp.Equal => r.Value == 0 ? $"no {many}" : Count(v),
+            RequirementOp.NotEqual => Count(v),
+            RequirementOp.Greater => $"more than {Count(v)}",
+            RequirementOp.Less => $"less than {Count(v)}",
+            RequirementOp.LessOrEqual => $"{v} or less {many}",
+            RequirementOp.Between => $"{lo} to {hi} {many}",
+            RequirementOp.Outside => $"less than {lo} or more than {hi} {many}",
+            _ => $"{v} or more {many}",
+        };
+        return (r.Op == RequirementOp.NotEqual ? without : with).Replace("{0}", count, StringComparison.Ordinal);
     }
 }
