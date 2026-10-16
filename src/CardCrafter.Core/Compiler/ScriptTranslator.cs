@@ -438,10 +438,15 @@ public static partial class ScriptTranslator
             effect.Do.Add(fusion);
             return new TranslatedPiece { Piece = piece, Effect = effect };
         }
+        _eventCode = code;
         var targeting = set.TryGetValue("Target", out var tg) ? Targeting(tg, fns) : new TargetInfo();
         if (!set.TryGetValue("Operation", out var op)) throw No("it has no operation");
         effect.Do.AddRange(Operation(op, fns, targeting, card));
         if (effect.Do.Count == 0) throw No("its operation does nothing the blocks recognise");
+        // Value blocks: the activation must ask what the blocks ask, or IF blocks say the rest.
+        if (effect.Do.Any(b => b.BlockId is StatsFromValueAction.BlockId or LifeFromValueAction.BlockId))
+            effect.If.AddRange(ValueActivationChecks(effect, targeting, tg is not null, fns));
+        else if (targeting.CheckOnItsOwnLines is { } ownLines) throw No($"its target step does something the blocks don't ({ownLines})");
         return new TranslatedPiece { Piece = piece, Effect = effect };
     }
 
@@ -1471,6 +1476,14 @@ public static partial class ScriptTranslator
         public int Count { get; set; }
         public string? Player { get; set; }
         public int? Param { get; set; }
+        /// <summary>Duel.SetTargetParam(ev): the amount of damage or LP that started the effect.</summary>
+        public bool ParamEvent { get; set; }
+        /// <summary>Duel.SetTargetParam(ct*300): an amount worked out at activation.</summary>
+        public bool ParamDynamic { get; set; }
+        /// <summary>What "if chk==0 then return ... end" asks before the effect can be activated, with its locals in place.</summary>
+        public string? Check { get; set; }
+        /// <summary>The check when it is written over lines of its own, which only the value blocks read.</summary>
+        public string? CheckOnItsOwnLines { get; set; }
     }
 
     /// <summary>
@@ -1629,9 +1642,46 @@ public static partial class ScriptTranslator
     {
         var info = new TargetInfo();
         var (_, body) = fns.Get(reference);
+        // Numbers worked out for the operation info or the check ("local ct=Duel.GetMatchingGroupCount(...)").
+        var values = new OperationValues { Fns = fns, Target = info };
+        string? check = null, block = null;
         foreach (var raw in body)
         {
             var line = raw.Trim();
+            // "if chk==0 then" / "return ..." / "end" on lines of their own.
+            if (block is not null)
+            {
+                if (line == "end")
+                {
+                    if (!block.StartsWith("return ", StringComparison.Ordinal) || block.Contains(" end", StringComparison.Ordinal))
+                        throw No($"its target step does something the blocks don't ({Short(block)})");
+                    info.Check = Substitute(block["return ".Length..], values.Locals).Trim();
+                    info.CheckOnItsOwnLines = Short(block);
+                    block = null;
+                    continue;
+                }
+                block = (block + " " + line).Trim();
+                continue;
+            }
+            if (line == "if chk==0 then") { block = ""; continue; }
+            if (check is not null && !check.EndsWith(" end", StringComparison.Ordinal))
+            {
+                check += " " + line;
+                if (check.EndsWith(" end", StringComparison.Ordinal)) info.Check = Substitute(check[..^4], values.Locals).Trim();
+            }
+            else if (line.StartsWith("if chk==0 then return ", StringComparison.Ordinal))
+            {
+                check = line["if chk==0 then return ".Length..];
+                if (check.EndsWith(" end", StringComparison.Ordinal)) info.Check = Substitute(check[..^4], values.Locals).Trim();
+            }
+            if (RecordValueLocal(line, values)) continue;
+            if (Regex.Match(line, @"^Duel\.SetTargetParam\((.+)\)$") is { Success: true } tpm && !Regex.IsMatch(tpm.Groups[1].Value, @"^\d+$"))
+            {
+                var param = Squash(Substitute(tpm.Groups[1].Value, values.Locals));
+                if (param == "ev") { info.ParamEvent = true; continue; }
+                if (OperationValue(param, "c", values) is not null) { info.ParamDynamic = true; continue; }
+            }
+            if (Regex.Match(line, @"^if (\w+)(?:>0|~=0) then$") is { Success: true } zm && values.Locals.Any(l => l.Key == zm.Groups[1].Value)) continue;
             if (line.Length == 0 || line.StartsWith("if chkc then", StringComparison.Ordinal) || line.StartsWith("if chk==0 then", StringComparison.Ordinal)
                 || line.StartsWith("and ", StringComparison.Ordinal) || line == "end" || line.EndsWith(" end", StringComparison.Ordinal) && line.StartsWith("and ", StringComparison.Ordinal)
                 || line.StartsWith("Duel.Hint(", StringComparison.Ordinal) || line.StartsWith("Duel.SetOperationInfo(", StringComparison.Ordinal)
@@ -2045,6 +2095,7 @@ public static partial class ScriptTranslator
             }
             if (parts.Count == 1 && codes[0] is "EFFECT_CHANGE_LEVEL" or "EFFECT_UPDATE_LEVEL" && Int(value, out var lv))
                 return Block("do.self_level").With("mode", codes[0] == "EFFECT_CHANGE_LEVEL" ? "becomes" : lv < 0 ? "down" : "up").With("amount", Math.Abs(lv)).With("duration", duration);
+            if (LiveTempStats(temp, target, targetCard) is { } liveSelf) return liveSelf;
             throw No($"it gives this card an effect the blocks don't have ({codes[0]})");
         }
         // The target.
@@ -2063,6 +2114,7 @@ public static partial class ScriptTranslator
         if (parts.Count == 1 && codes[0] == "EFFECT_CANNOT_ATTACK" && duration == "turn") return OnTarget("do.battle_rule").With("rule", "cannot_attack");
         if (parts.Count == 1 && codes[0] == "EFFECT_CHANGE_LEVEL" && Int(value, out var tlv))
             return OnTarget("do.change_level").With("mode", "becomes").With("amount", tlv).With("duration", duration);
+        if (LiveTempStats(temp, target, targetCard) is { } liveTarget) return liveTarget;
         throw No($"it gives the target an effect the blocks don't have ({codes[0]})");
     }
 
@@ -2113,9 +2165,18 @@ public static partial class ScriptTranslator
             optional = false;
             return block;
         }
-        foreach (var raw in body)
+        // Numbers and groups the steps work out ("local ct=Duel.GetMatchingGroupCount(...)") for the value blocks.
+        var values = _opValues = new OperationValues { Fns = fns, Target = target };
+        var sawIf = false;
+        for (int index = 0; index < body.Count; index++)
         {
-            var line = raw.Trim();
+            values.Blocks = blocks.Count;
+            var line = body[index].Trim();
+            if (RecordValueLocal(line, values)) continue;
+            line = WithoutZeroCheck(line, body, index, temps, values);
+            // A check before this step ("if c:IsRelateToEffect(e) then"), which the LP blocks don't make.
+            values.Guarded = sawIf;
+            if (line.StartsWith("if ", StringComparison.Ordinal)) sawIf = true;
             Match ym;
             if ((ym = Regex.Match(line, @"^if (.*?)Duel\.SelectYesNo\(tp,aux\.Stringid\((?:id|\d+),\d+\)\) then$")).Success && !IsCompound(line, body, fns))
             {
@@ -2364,6 +2425,11 @@ public static partial class ScriptTranslator
         int Amount(string d) => d == "d" ? target.Param ?? throw No("its amount is unclear")
             : Regex.IsMatch(d, @"^\d+$") ? Int(d) : throw No($"its amount comes from the duel ({d})");
 
+        // "inflict 300 damage for each card in your opponent's hand": an amount worked out when it resolves.
+        if ((m = Regex.Match(line, @"^Duel\.(Damage|Recover)\((\w+|1-tp),(.+),REASON_EFFECT\)$")).Success && !Regex.IsMatch(m.Groups[3].Value, @"^(?:\d+|CCEQ_\w+)$")
+            && (m.Groups[3].Value != "d" || target.ParamEvent || target.ParamDynamic) && _opValues is { } ov
+            && LifeValue(m.Groups[1].Value, Who(m.Groups[2].Value), m.Groups[3].Value, ov) is { } life)
+            return life;
         if ((m = Regex.Match(line, @"^Duel\.Draw\((\w+|1-tp),(\w+),REASON_EFFECT\)$")).Success)
             return Block("do.draw").With("who", Who(m.Groups[1].Value)).With("count", Amount(m.Groups[2].Value));
         // "equal to that monster's original ATK", from EqualToStat.
@@ -2638,6 +2704,12 @@ public static partial class ScriptTranslator
                 case "EFFECT_CANNOT_ATTACK": effect.Do.Add(Block("passive.equipped").With("rule", "cannot_attack")); return effect;
             }
         }
+        // "This card gains 300 ATK for each ...", "monsters you control gain ATK equal to ...": a value worked out live.
+        if (LiveStatsPassive(type, code, set, range, props, fns) is { } live)
+        {
+            effect.Do.Add(live);
+            return effect;
+        }
         throw No($"its lasting effect isn't one the blocks have ({string.Join("+", type.Select(t => t.Replace("EFFECT_TYPE_", "")))} {code})");
     }
 
@@ -2718,9 +2790,10 @@ public static partial class ScriptTranslator
         try { body = Body(value, fns).Replace("c:GetControler()", "tp", StringComparison.Ordinal).Replace("e:GetHandler():", "c:", StringComparison.Ordinal); }
         catch (Untranslatable) { return null; }
         Match m;
-        // "for each material attached to it", "for each of its Levels", "for each monster it points to", "for each counter".
-        if ((m = Regex.Match(body, @"^return c:(GetOverlayCount|GetLevel|GetLinkedGroupCount|GetCounter)\((?:0x[0-9a-fA-F]+|\d+)?\)\*(-?\d+)$")).Success)
-            return (null, m.Groups[1].Value switch { "GetOverlayCount" => "materials", "GetLevel" => "level", "GetLinkedGroupCount" => "linked", _ => "counters" }, Int(m.Groups[2].Value));
+        // "for each material attached to it", "for each of its Levels", "for each monster it points to". Not "for each
+        // counter": the block counts with c:GetCounter(0), which the engine answers with the number of kinds of counters.
+        if ((m = Regex.Match(body, @"^return c:(GetOverlayCount|GetLevel|GetLinkedGroupCount)\(\)\*(-?\d+)$")).Success)
+            return (null, m.Groups[1].Value switch { "GetOverlayCount" => "materials", "GetLevel" => "level", _ => "linked" }, Int(m.Groups[2].Value));
         // "for each Dragon monster in your GY": a filter, or a Card function with its argument.
         if ((m = Regex.Match(body, @"^return Duel\.GetMatchingGroupCount\(([\w.]+),tp,([\w+]+),([\w+]+),(nil|c|e:GetHandler\(\))(?:,(\w+))?\)\*(-?\d+)$")).Success)
         {

@@ -448,6 +448,8 @@ public class EngineTests
         };
         // Attaching material needs an Xyz Monster to attach to.
         if (blockId == "do.attach") { card.Card.Frame = MonsterFrame.Xyz; card.Procedure.Kind = SummonProcedureKind.Xyz; }
+        // Damage equal to the difference in LP (the default) needs a difference: both players start at 8000.
+        if (blockId == LifeFromValueAction.BlockId) inst.With("value", "opp_lp");
         new EngineScenario(card)
             .Card(card.Card.Id, 0, fromHand ? "hand" : "mzone")
             // A monster to Normal Summon, and cards in the opponent's hand to discard.

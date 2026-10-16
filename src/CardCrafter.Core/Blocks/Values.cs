@@ -188,15 +188,20 @@ public static class ValueSources
         var dir = args.Choice("dir");
         var unit = stat == "level" ? "" : " " + args.Describe("stat");
         var how = Phrase(args, stat == "level" || dir == "becomes" ? "" : unit);
+        // "Monsters you control gain 100 ATK for each of their Levels", "... for each material attached to them".
+        if (plural)
+            how = System.Text.RegularExpressions.Regex.Replace(how, @"\bits\b", "their")
+                .Replace(" to it", " to them", StringComparison.Ordinal).Replace(" on it", " on them", StringComparison.Ordinal)
+                .Replace(" it points to", " they point to", StringComparison.Ordinal);
         if (stat == "level")
         {
-            var whose = subject == "this card" ? "this card's Level" : $"the Levels of {subject}";
+            var whose = subject switch { "this card" => "this card's Level", "it" => "its Level", "they" => "their Levels", _ => $"the Levels of {subject}" };
             var verb = dir switch { "lose" => plural ? "decrease by" : "decreases by", "becomes" => plural ? "become" : "becomes", _ => plural ? "increase by" : "increases by" };
             return $"{whose} {verb} {how.Replace("equal to ", dir == "becomes" ? "equal to " : "", StringComparison.Ordinal)}";
         }
         if (dir == "becomes")
         {
-            var whose = subject == "this card" ? $"this card's{unit}" : $"the{unit} of {subject}";
+            var whose = subject switch { "this card" => $"this card's{unit}", "it" => $"its{unit}", "they" => $"their{unit}", _ => $"the{unit} of {subject}" };
             return $"{whose} {(plural ? "become" : "becomes")} {how}";
         }
         var gain = dir == "lose" ? (plural ? "lose" : "loses") : (plural ? "gain" : "gains");
@@ -314,6 +319,8 @@ public sealed class StatsFromValueAction : CardGroupAction
         var lose = ctx.Args.Choice("dir") == "lose";
         var codes = ValueSources.Codes(ctx.Args.Choice("stat"), ctx.Args.Choice("dir"));
         var value = ValueSources.Lua(ctx, "tc", "tp");
+        // What this card gives itself is lost when its effects are negated, like "This card gains or loses ATK/DEF".
+        var reset = Resets.Of(ctx) + (ctx.Args.Cards("cards").ThisCard ? "+RESET_DISABLE" : "");
         var lines = new List<string> { "local n=0", "for tc in aux.Next(g) do", "\tif tc:IsFaceup() then", $"\t\tlocal v={value}" };
         foreach (var code in codes)
         {
@@ -321,7 +328,7 @@ public sealed class StatsFromValueAction : CardGroupAction
             lines.Add("\t\tse:SetType(EFFECT_TYPE_SINGLE)");
             lines.Add($"\t\tse:SetCode({code})");
             lines.Add($"\t\tse:SetValue({(lose ? "-v" : "v")})");
-            lines.Add($"\t\tse:SetReset({Resets.Of(ctx)})");
+            lines.Add($"\t\tse:SetReset({reset})");
             lines.Add("\t\ttc:RegisterEffect(se)");
         }
         lines.AddRange(["\t\tn=n+1", "\tend", "end", "return n"]);
@@ -348,6 +355,12 @@ public sealed class LifeFromValueAction : ActionBlock
     public override string Describe(BlockArgs args)
     {
         var amount = ValueSources.Phrase(args, "");
+        // "gain 500 LP for each ...", not "gain LP 500 for each ...".
+        if (args.Choice("what") == "gain" && args.Choice("how") == "per")
+        {
+            var each = amount.Replace(" for each", " LP for each", StringComparison.Ordinal);
+            return args.Choice("who") switch { "opponent" => $"your opponent gains {each}", "both" => $"both players gain {each}", _ => $"gain {each}" };
+        }
         if (args.Choice("what") == "gain")
             return args.Choice("who") switch
             {
