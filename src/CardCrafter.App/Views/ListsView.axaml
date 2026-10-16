@@ -64,12 +64,14 @@
           <TextBlock Classes="h2" Text="Custom Types" />
           <StackPanel Spacing="4">
             <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource MutedBrush}"
-                       Text="Monster Types beyond the standard ones. The value must match what YGO Omega uses for that Type." />
+                       Text="Monster Types beyond the standard ones. YGO Omega only has names for its own Types (up to Galaxy, 0x80000000): any other value shows as &quot;None&quot; on its Type line, and the name you give is used in Card Crafter's card text and preview." />
             <ItemsControl ItemsSource="{Binding CustomTypes}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate DataType="vm:CustomTypeViewModel">
-                  <Grid ColumnDefinitions="*,8,130,4,Auto,4,Auto" RowDefinitions="Auto,Auto" Margin="0,2">
-                    <TextBlock Grid.Row="1" Grid.ColumnSpan="7" Text="{Binding Warning}" IsVisible="{Binding HasWarning}"
+                  <Grid ColumnDefinitions="*,8,130,4,Auto,4,Auto" RowDefinitions="Auto,Auto,Auto" Margin="0,2">
+                    <TextBlock Grid.Row="1" Grid.ColumnSpan="7" Text="{Binding InOmega}" TextWrapping="Wrap" FontSize="11"
+                               Foreground="{StaticResource MutedBrush}" Margin="0,2,0,0" />
+                    <TextBlock Grid.Row="2" Grid.ColumnSpan="7" Text="{Binding Warning}" IsVisible="{Binding HasWarning}"
                                TextWrapping="Wrap" FontSize="11" Foreground="#FCD34D" Margin="0,2,0,0" />
                     <TextBox Grid.Column="0" Text="{Binding Name}" />
                     <TextBox Grid.Column="2" Text="{Binding Value}" FontFamily="{StaticResource CodeFont}" />

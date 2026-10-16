@@ -57,8 +57,11 @@ public class PackCodesTests
         Assert.Contains("Zombie", why);
         Assert.Contains("Machine", why);
         Assert.Contains("0x230", why);
-        Assert.Contains("0x100000000", why);
         Assert.Null(PackCodes.TypeValueProblem(0x100000000));
-        Assert.Null(PackCodes.TypeValueProblem(0x4000000));
+        // Omega names its Rush Duel Types itself.
+        Assert.Contains("Cyborg", PackCodes.TypeValueProblem(0x4000000, "Infested"));
+        Assert.Equal("Zombie, Machine, Winged Beast", PackCodes.OmegaShows(0x100000230));
+        Assert.Equal("None", PackCodes.OmegaShows(0x100000000));
+        Assert.Equal("Galaxy", PackCodes.OmegaShows(0x80000000));
     }
 }

@@ -30,18 +30,41 @@ public static class PackCodes
     }
 
     /// <summary>
-    /// Why a custom Type's value won't show as that Type in the game, or null when it is fine. A card's Type is a set of
-    /// bits, so a value with standard Types' bits in it (0x100000230 has 0x10, 0x20 and 0x200) shows as those Types.
+    /// What YGO Omega prints on the Type line for a Type value: the names of the Types it knows (the standard ones and
+    /// the Rush Duel ones up to Galaxy, 0x80000000), or "None" when it knows none of its bits. Omega has no way to be
+    /// given new Type names.
     /// </summary>
-    public static string? TypeValueProblem(long value)
+    public static string OmegaShows(long value)
+    {
+        var names = new List<string>();
+        for (var bit = 0; bit < 32; bit++)
+        {
+            var v = 1L << bit;
+            if ((value & v) == 0) continue;
+            if ((v & EnumNames.StandardRaceMask) != 0) names.Add(EnumNames.Display((CardRace)v));
+            else if (Omega.UnknownType.LikelyNames.TryGetValue(v, out var rush)) names.Add(rush);
+        }
+        return names.Count == 0 ? "None" : string.Join(", ", names);
+    }
+
+    /// <summary>
+    /// Why a custom Type won't read as <paramref name="name"/> in YGO Omega, or null when it is a value nothing else
+    /// uses that Omega can't name either way. A card's Type is a set of bits, so a value holding standard Types' bits
+    /// (0x100000230 has 0x10, 0x20 and 0x200) shows as those Types.
+    /// </summary>
+    public static string? TypeValueProblem(long value, string? name = null)
     {
         var standard = value & EnumNames.StandardRaceMask;
-        if (standard == 0) return null;
-        var names = Enum.GetValues<CardRace>().Where(r => r != CardRace.None && (standard & (long)r) != 0).Select(EnumNames.Display).ToList();
-        var own = value & ~EnumNames.StandardRaceMask;
-        var instead = own != 0 ? $" 0x{(own & -own):x}" : " one";
-        return $"0x{value:x} contains the bits of {string.Join(", ", names)} (0x{standard:x}), so YGO Omega shows the card as {(names.Count == 1 ? "that Type" : "those Types")}. " +
-               $"A custom Type needs a value none of the standard Types use, such as{instead}: click 🎲 for a free one.";
+        var called = string.IsNullOrWhiteSpace(name) ? "the custom Type" : $"\"{name}\"";
+        if (standard != 0)
+        {
+            var names = Enum.GetValues<CardRace>().Where(r => r != CardRace.None && (standard & (long)r) != 0).Select(EnumNames.Display).ToList();
+            return $"0x{value:x} contains the bits of {string.Join(", ", names)} (0x{standard:x}), so YGO Omega shows the card as {(names.Count == 1 ? "that Type" : "those Types")} " +
+                   $"and treats it as {(names.Count == 1 ? "that Type" : "those Types")} in duels. Click 🎲 for a value without them.";
+        }
+        if (OmegaShows(value) is var shown && shown != "None")
+            return $"YGO Omega shows 0x{value:x} as {shown}, its own Rush Duel Type, not as {called}.";
+        return null;
     }
 
     /// <summary>Changes archetype <paramref name="from"/> to <paramref name="to"/> on every card and filter; how many changed.</summary>

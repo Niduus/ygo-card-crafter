@@ -17,9 +17,11 @@ public sealed partial class CustomTypeViewModel(CustomType model, Action changed
 {
     public CustomType Model { get; } = model;
     /// <summary>Why the game won't show this value as the Type: it holds standard Types' bits.</summary>
-    public string Warning => PackCodes.TypeValueProblem(Model.Value) ?? "";
+    public string Warning => PackCodes.TypeValueProblem(Model.Value, Model.Name) ?? "";
     public bool HasWarning => Warning.Length > 0;
-    public string Name { get => Model.Name; set { if (Model.Name == value) return; Model.Name = value; OnPropertyChanged(); changed(); } }
+    /// <summary>What YGO Omega's Type line shows for this value: it can't be taught new Type names.</summary>
+    public string InOmega => $"In YGO Omega's Type line: {PackCodes.OmegaShows(Model.Value)}";
+    public string Name { get => Model.Name; set { if (Model.Name == value) return; Model.Name = value; OnPropertyChanged(); OnPropertyChanged(nameof(Warning)); changed(); } }
     public string Value
     {
         get => $"0x{Model.Value:x}";
@@ -44,6 +46,7 @@ public sealed partial class CustomTypeViewModel(CustomType model, Action changed
         OnPropertyChanged(nameof(Value));
         OnPropertyChanged(nameof(Warning));
         OnPropertyChanged(nameof(HasWarning));
+        OnPropertyChanged(nameof(InOmega));
     }
 }
 
