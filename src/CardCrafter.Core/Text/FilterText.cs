@@ -90,15 +90,20 @@ public static class FilterText
             if (withAtk) words[^1] += " and " + def;
             else words.Add("with " + def);
         }
-        // Further requirements: "with 2000 or more original ATK, that is not DARK, and whose effects are negated".
+        // Further requirements: "with 2000 or more original ATK that is not DARK and whose effects are negated" — the
+        // "with" ones first, as card text puts them right after the noun.
         var extra = f.Requirements.Select(r => Compiler.CardProperties.Text(r, pack)).Where(t => t.Length > 0).ToList();
-        if (extra.Count > 0)
-            words.Add(extra.Count switch
-            {
-                1 => extra[0],
-                2 => $"{extra[0]} and {extra[1]}",
-                _ => string.Join(", ", extra.Take(extra.Count - 1)) + ", and " + extra[^1],
-            });
+        static bool IsWith(string t) => t.StartsWith("with ", StringComparison.Ordinal) || t.StartsWith("equipped with ", StringComparison.Ordinal);
+        static string And(List<string> parts) => parts.Count switch
+        {
+            1 => parts[0],
+            2 => $"{parts[0]} and {parts[1]}",
+            _ => string.Join(", ", parts.Take(parts.Count - 1)) + ", and " + parts[^1],
+        };
+        var withs = extra.Where(IsWith).ToList();
+        var others = extra.Where(t => !IsWith(t)).ToList();
+        if (withs.Count > 0) words.Add(And(withs));
+        if (others.Count > 0) words.Add(And(others));
         if (f.Summoned == FilterSummoned.FromExtra) words.Add("Special Summoned from the Extra Deck");
         else if (f.Summoned == FilterSummoned.ThisTurn) words.Add("Summoned this turn");
         if (f.MentionsCode != 0)
