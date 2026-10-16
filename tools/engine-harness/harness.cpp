@@ -259,7 +259,8 @@ static void respond(intptr_t pd, Scenario& sc) {
 		set_responsei(pd, 0);
 		return;
 	case PROCESSOR_SELECT_CARD:
-	case PROCESSOR_SELECT_TRIBUTE: {
+	case PROCESSOR_SELECT_TRIBUTE:
+	case PROCESSOR_SELECT_TRIBUTE_P: {
 		int min = (unit.arg2) & 0xff;
 		int n = std::max(1, min);
 		n = std::min<int>(n, (int)f->core.select_cards.size());

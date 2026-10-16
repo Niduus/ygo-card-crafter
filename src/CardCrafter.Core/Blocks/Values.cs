@@ -388,6 +388,8 @@ public sealed class StatsFromValueAction : CardGroupAction
         var lose = ctx.Args.Choice("dir") == "lose";
         var codes = ValueSources.Codes(ctx.Args.Choice("stat"), ctx.Args.Choice("dir"));
         var value = ValueSources.Lua(ctx, "tc", "tp");
+        // What this card gives itself is lost when its effects are negated, like "This card gains or loses ATK/DEF".
+        var reset = Resets.Of(ctx) + (ctx.Args.Cards("cards").ThisCard ? "+RESET_DISABLE" : "");
         var lines = new List<string> { "local n=0", "for tc in aux.Next(g) do", "\tif tc:IsFaceup() then", $"\t\tlocal v={value}" };
         foreach (var code in codes)
         {
@@ -395,7 +397,7 @@ public sealed class StatsFromValueAction : CardGroupAction
             lines.Add("\t\tse:SetType(EFFECT_TYPE_SINGLE)");
             lines.Add($"\t\tse:SetCode({code})");
             lines.Add($"\t\tse:SetValue({(lose ? "-v" : "v")})");
-            lines.Add($"\t\tse:SetReset({Resets.Of(ctx)})");
+            lines.Add($"\t\tse:SetReset({reset})");
             lines.Add("\t\ttc:RegisterEffect(se)");
         }
         lines.AddRange(["\t\tn=n+1", "\tend", "end", "return n"]);
