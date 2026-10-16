@@ -61,6 +61,8 @@ public static partial class TranslationVerdict
             return new(PieceColor.Yellow, "Done another way", "Becomes \"Cannot be Special Summoned\" on the Card tab.");
         if (t.EquipTo is not null)
             return new(PieceColor.Yellow, "Done another way", "Becomes the Equip Spell's \"Equip to\" picker on the Card tab, which writes its activation and equip limit.");
+        if (t.ProcedureSetting is not null)
+            return new(PieceColor.Yellow, "Done another way", "Becomes the Summoning conditions on the Card tab: this monster's Contact Fusion.");
         if (t.Setting is not null)
             return new(PieceColor.Yellow, "Done another way", "Becomes a setting on the Card tab, such as \"You can only control 1\" or \"You can only Special Summon once per turn\".");
         if (t.Ignored)

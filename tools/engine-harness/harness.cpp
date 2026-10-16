@@ -10,7 +10,8 @@
 //   cdb <path>                         card database to read card data from (repeatable)
 //   card <code> <player> <location> [count]
 //                                      put cards in place before the duel; location is
-//                                      deck|hand|mzone|szone|grave|removed|extra
+//                                      deck|hand|mzone|szone|grave|removed|extra|pzone
+//                                      (pzone: face-up in a Pendulum Zone, the left one first)
 //   activate <code> [times]            whoever controls this card activates its effects whenever offered
 //   summon <code>                      its controller Normal Summons this card when it can
 //   spsummon <code>                    its controller uses this card's summon procedure when it can
@@ -104,7 +105,7 @@ static bool load_cdb(const std::string& path) {
 	return true;
 }
 
-struct Placement { uint32_t code; int player; uint8_t location; int count; };
+struct Placement { uint32_t code; int player; uint8_t location; int count; bool pzone; };
 
 struct Scenario {
 	std::vector<Placement> cards;
@@ -145,7 +146,8 @@ static bool parse_scenario(const char* path, Scenario& sc) {
 			Placement p{}; std::string loc; p.count = 1;
 			in >> p.code >> p.player >> loc >> p.count;
 			if (p.count <= 0) p.count = 1;
-			p.location = parse_location(loc);
+			p.pzone = loc == "pzone";
+			p.location = p.pzone ? LOCATION_SZONE : parse_location(loc);
 			if (!p.location) { std::printf("bad location %s\n", loc.c_str()); return false; }
 			sc.cards.push_back(p);
 		}
@@ -412,12 +414,24 @@ int main(int argc, char** argv) {
 	set_player_info(pd, 0, 8000, 0, 1);
 	set_player_info(pd, 1, 8000, 0, 1);
 	uint8_t seq[2][0x80]{};
+	int pzones[2]{};
+	field* placed = ((duel*)pd)->game_field;
 	for (auto& p : sc.cards) {
 		for (int i = 0; i < p.count; ++i) {
 			uint8_t pos = POS_FACEDOWN_DEFENSE;
 			if (p.location == LOCATION_MZONE || p.location == LOCATION_GRAVE || p.location == LOCATION_REMOVED) pos = POS_FACEUP_ATTACK;
 			if (p.location == LOCATION_SZONE) pos = POS_FACEDOWN;
+			if (p.pzone) {
+				// Master Rule 5: the Pendulum Zones are the leftmost and rightmost Spell & Trap Zones.
+				if (pzones[p.player] >= 2) continue;
+				uint8_t s = pzones[p.player]++ ? 4 : 0;
+				new_card(pd, p.code, (uint8_t)p.player, (uint8_t)p.player, LOCATION_SZONE, s, POS_FACEUP);
+				if (card* c = placed->player[p.player].list_szone[s]) c->current.pzone = 1;
+				continue;
+			}
 			uint8_t s = (p.location == LOCATION_MZONE || p.location == LOCATION_SZONE) ? seq[p.player][p.location]++ : 0;
+			// Spell & Trap Zones a Pendulum card already takes are skipped.
+			while (p.location == LOCATION_SZONE && s < 5 && placed->player[p.player].list_szone[s]) s = seq[p.player][p.location]++;
 			new_card(pd, p.code, (uint8_t)p.player, (uint8_t)p.player, p.location, s, pos);
 		}
 	}
