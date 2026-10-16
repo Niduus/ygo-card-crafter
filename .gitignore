@@ -9,3 +9,4 @@ engine/
 screenshots/
 private/
 publish-private/
+.claude/worktrees/
