@@ -40,7 +40,7 @@ public static partial class EffectTextGenerator
     /// or, for Extra Deck and Ritual monsters, "Must be Fusion Summoned."
     /// </summary>
     private static bool StartsWithSubject(string body) =>
-        System.Text.RegularExpressions.Regex.IsMatch(body, @"^(this card |this card's |the (ATK|DEF|Level|Levels|battle position)s? of |\d+ )");
+        System.Text.RegularExpressions.Regex.IsMatch(body, @"^(this card |this card's |the (ATK|DEF|ATK/DEF|Level|Levels|battle position)s? of |\d+ |up to \d+ |all |each |both players |you take )");
 
     /// <summary>What starts each option of "activate 1 of these effects": a new, indented line with a bullet.</summary>
     public const string OptionLine = "\n ● ";
