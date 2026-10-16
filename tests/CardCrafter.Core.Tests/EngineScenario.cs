@@ -61,6 +61,8 @@ public sealed class EngineScenario
     public EngineScenario Announce(long code) { _lines.Add($"announce {code}"); return this; }
     public EngineScenario Turns(int n) { _lines.Add($"turns {n}"); return this; }
     public EngineScenario Check(string lua) { _lines.Add($"check {lua}"); return this; }
+    /// <summary>Lua run once at the duel's first prompt, before anything is played (e.g. putting counters on a card).</summary>
+    public EngineScenario Setup(string lua) { _lines.Add($"setup {lua}"); return this; }
     public EngineScenario ExpectActivations(int n) { _lines.Add($"expect_activations {n}"); return this; }
 
     public (int ExitCode, string Log) Run()

@@ -516,7 +516,8 @@ public sealed class SelfStatsPerCardPassive : PassiveBlock
             case "materials": count = "c:GetOverlayCount()"; break;
             case "level": count = "c:GetLevel()"; break;
             case "linked": count = "c:GetLinkedGroupCount()"; break;
-            case "counters": count = "c:GetCounter(0)"; break;
+            // GetCounter(0) is how many kinds of counter there are, not how many counters.
+            case "counters": count = $"{ValueSources.CounterTotal(ctx.Script)}(c)"; break;
             default:
                 var f = ctx.Script.Filter(ctx.Args.Cards("cards"));
                 count = $"Duel.GetMatchingGroupCount({f.Function},e:GetHandlerPlayer(),{f.Self},{f.Opp},{(f.Exclude == "nil" ? "nil" : "e:GetHandler()")},e,e:GetHandlerPlayer())";

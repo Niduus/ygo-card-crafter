@@ -50,31 +50,44 @@ public static class ValueSources
         new("equal", "equal to"),
         new("half", "equal to half of"),
         new("double", "equal to double"),
-        new("per", "for each (amount below)"),
+        new("per", "x / for each (amount below)"),
     ];
 
     public static bool UsesCards(string source) => source is "count" or "different_attr" or "different_race" or "different_name" or "sum_atk" or "sum_def" or "sum_level";
 
-    /// <summary>The value's own words for "for each": "card in your hand", "of its Levels", "counter on it".</summary>
-    private static string Each(string source, CardFilter cards, CardPack? pack, string? ownName) => source switch
+    /// <summary>Values about the monster itself ("its Level", "materials attached to it").</summary>
+    public static bool IsOwn(string source) => source.StartsWith("its_", StringComparison.Ordinal);
+
+    /// <summary>
+    /// Values that count things, which read "300 ATK for each card in your hand". The others (LP, totals, Levels, original
+    /// ATK, damage) read "ATK equal to its Level x 300" instead.
+    /// </summary>
+    public static bool IsCountable(string source) => source is "count" or "different_attr" or "different_race" or "different_name"
+        or "its_materials" or "its_counters" or "its_equips" or "its_linked" or "its_used";
+
+    /// <summary>"its" for "it", "this card's" for "this card".</summary>
+    private static string Poss(string owner) => owner == "it" ? "its" : owner + "'s";
+
+    /// <summary>The value's own words for "for each": "card in your hand", "material attached to it", "counter on it".</summary>
+    private static string Each(string source, CardFilter cards, CardPack? pack, string owner) => source switch
     {
         "count" => CardCounts.Group(cards, pack, plural: false),
         "different_attr" => $"different Attribute among the {CardCounts.Group(cards, pack)}",
         "different_race" => $"different Type among the {CardCounts.Group(cards, pack)}",
-        "different_name" => $"card with a different name among the {CardCounts.Group(cards, pack)}",
-        "its_level" => "of its Levels",
-        "its_rank" => "of its Ranks",
-        "its_link" => "point of its Link Rating",
-        "its_materials" => "material attached to it",
-        "its_counters" => "counter on it",
-        "its_equips" => "Equip Card equipped to it",
-        "its_linked" => "monster it points to",
-        "its_used" => "material used for its Summon",
-        _ => "1 of " + Of(source, cards, pack),
+        "different_name" => $"different card name among the {CardCounts.Group(cards, pack)}",
+        "its_materials" => $"material attached to {owner}",
+        "its_counters" => $"counter on {owner}",
+        "its_equips" => $"Equip Card equipped to {owner}",
+        "its_linked" => $"monster {owner} points to",
+        "its_used" => $"material used for {Poss(owner)} Summon",
+        _ => Of(source, cards, pack, owner),
     };
 
-    /// <summary>The value itself: "the number of cards in your hand", "the total ATK of monsters you control".</summary>
-    public static string Of(string source, CardFilter cards, CardPack? pack) => source switch
+    /// <summary>
+    /// The value itself: "the number of cards in your hand", "the total ATK of monsters you control", "its Level".
+    /// <paramref name="owner"/> is the monster "its" means: "it", or "this card" where nothing else is affected.
+    /// </summary>
+    public static string Of(string source, CardFilter cards, CardPack? pack, string owner = "it") => source switch
     {
         "count" => $"the number of {CardCounts.Group(cards, pack)}",
         "different_attr" => $"the number of different Attributes among the {CardCounts.Group(cards, pack)}",
@@ -83,24 +96,53 @@ public static class ValueSources
         "sum_atk" => $"the total ATK of the {CardCounts.Group(cards, pack)}",
         "sum_def" => $"the total DEF of the {CardCounts.Group(cards, pack)}",
         "sum_level" => $"the total Levels of the {CardCounts.Group(cards, pack)}",
+        "its_level" => $"{Poss(owner)} Level",
+        "its_rank" => $"{Poss(owner)} Rank",
+        "its_link" => $"{Poss(owner)} Link Rating",
+        "its_materials" => $"the number of materials attached to {owner}",
+        "its_counters" => $"the number of counters on {owner}",
+        "its_equips" => $"the number of Equip Cards equipped to {owner}",
+        "its_linked" => $"the number of monsters {owner} points to",
+        "its_used" => $"the number of materials used for {Poss(owner)} Summon",
+        "its_orig_atk" => $"{Poss(owner)} original ATK",
+        "its_orig_def" => $"{Poss(owner)} original DEF",
         "event" => "that amount",
         var s => Sources.First(o => o.Value == s).Label,
     };
 
-    /// <summary>"equal to the difference between both players' LP", "300 for each card in your hand", "equal to half its original ATK".</summary>
-    public static string Phrase(BlockArgs args, string unit)
+    /// <summary>True when the amount reads "300 ... for each card in your hand": a count, used "for each".</summary>
+    public static bool ForEach(BlockArgs args) => args.Choice("how") == "per" && IsCountable(args.Choice("value"));
+
+    /// <summary>"card in your hand", for "300 damage for each card in your hand".</summary>
+    public static string EachText(BlockArgs args, string owner = "it") => Each(args.Choice("value"), args.Cards(CardsKey), args.Pack, owner);
+
+    /// <summary>
+    /// "ATK equal to the difference between both players' LP", "300 ATK for each card in your hand", "ATK equal to half
+    /// its original ATK", "ATK equal to its Level x 300". <paramref name="unit"/> is " ATK" or "".
+    /// With <paramref name="forEach"/> false, a count is "equal to the number of ... x 300" too ("its ATK becomes ...").
+    /// </summary>
+    public static string Phrase(BlockArgs args, string unit, string owner = "it", bool forEach = true)
     {
-        var source = args.Choice("value");
-        var cards = args.Cards(CardsKey);
-        var of = Of(source, cards, args.Pack);
+        var of = Of(args.Choice("value"), args.Cards(CardsKey), args.Pack, owner);
+        var n = args.Int("amount").ToString(CultureInfo.InvariantCulture);
         return args.Choice("how") switch
         {
-            "per" => $"{args.Int("amount").ToString(CultureInfo.InvariantCulture)}{unit} for each {Each(source, cards, args.Pack, args.CardName)}",
-            "half" => $"{unit.Trim()} equal to half {(of.StartsWith("the ", StringComparison.Ordinal) ? of : of)}".Trim(),
-            "double" => $"{unit.Trim()} equal to double {of}".Trim(),
-            _ => $"{unit.Trim()} equal to {of}".Trim(),
+            "per" when forEach && ForEach(args) => $"{n}{unit} for each {EachText(args, owner)}",
+            "per" => $"{unit} equal to {of} x {n}".Trim(),
+            "half" => $"{unit} equal to half {of}".Trim(),
+            "double" => $"{unit} equal to double {of}".Trim(),
+            _ => $"{unit} equal to {of}".Trim(),
         };
     }
+
+    /// <summary>The Lua function that adds up every counter on a card: GetCounter(0) only says how many kinds it has.</summary>
+    public static string CounterTotal(ScriptBuilder script) => script.AddFunction("allcounters", "c",
+    [
+        "if c:GetCounter(0)==0 then return 0 end",
+        "local n=0",
+        "for t=1,0xff do n=n+c:GetCounter(t)+c:GetCounter(t|0x1000) end",
+        "return n",
+    ]);
 
     /// <summary>
     /// The Lua number: <paramref name="card"/> is the monster "its" means and <paramref name="p"/> the player "you" means.
@@ -132,7 +174,7 @@ public static class ValueSources
             "its_rank" => $"{card}:GetRank()",
             "its_link" => $"{card}:GetLink()",
             "its_materials" => $"{card}:GetOverlayCount()",
-            "its_counters" => $"{card}:GetCounter(0)",
+            "its_counters" => $"{CounterTotal(ctx.Script)}({card})",
             "its_equips" => $"{card}:GetEquipCount()",
             "its_linked" => $"{card}:GetLinkedGroupCount()",
             "its_used" => $"{card}:GetMaterialCount()",
@@ -145,6 +187,8 @@ public static class ValueSources
             _ => "0",
         };
         if (source == "event" && !ev) ctx.Effect.Error("\"That amount\" only exists while an effect resolves after damage or an LP change; a lasting effect can't use it.");
+        else if (source == "event" && ctx.Effect.Code is not ("EVENT_DAMAGE" or "EVENT_BATTLE_DAMAGE" or "EVENT_RECOVER" or "EVENT_PAY_LPCOST"))
+            ctx.Effect.Warn("\"That amount\" needs a WHEN that is damage being taken or LP being paid or gained; otherwise it is 0.");
         return ctx.Args.Choice("how") switch
         {
             "half" => $"math.floor(({raw})/2)",
@@ -159,7 +203,7 @@ public static class ValueSources
     public static IEnumerable<ParamSpec> Params(int amountDefault = 300, bool withEvent = true) =>
     [
         ParamSpec.Choice("how", "How much", Hows),
-        ParamSpec.Int("amount", "Amount for each", amountDefault, 1, 99999).ShowIf(b => b.Values.GetValueOrDefault("how") == "per"),
+        ParamSpec.Int("amount", "Amount (x, or for each)", amountDefault, 1, 99999).ShowIf(b => b.Values.GetValueOrDefault("how") == "per"),
         ParamSpec.Choice("value", "Of", withEvent ? Sources : Sources.Where(o => o.Value != "event").ToArray()),
         ParamSpec.Cards(CardsKey, "Which cards (for counts and totals)", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Hand })
             .ShowIf(b => UsesCards(b.Values.GetValueOrDefault("value", "lp_diff"))),
@@ -181,27 +225,44 @@ public static class ValueSources
     public static readonly ChoiceOption[] Dirs = [new("gain", "gain(s)"), new("lose", "lose(s)"), new("becomes", "becomes")];
     public static readonly ChoiceOption[] Stats = [new("atk", "ATK"), new("def", "DEF"), new("both", "ATK/DEF"), new("level", "Level")];
 
-    /// <summary>"this card gains ATK equal to ...", "the Level of monsters you control becomes equal to ...".</summary>
-    public static string Sentence(BlockArgs args, string subject, bool plural)
+    /// <summary>
+    /// "this card gains ATK equal to ...", "the Levels of monsters you control become equal to ...", "its ATK becomes ...".
+    /// <paramref name="subject"/> is "this card", "it", "they" or a description of the monsters. When the value is the
+    /// monster's own ("its Level") and the subject is plural, <paramref name="each"/> ("each monster you control", "each
+    /// of them") is used instead, so "its" has one monster to mean.
+    /// </summary>
+    public static string Sentence(BlockArgs args, string subject, bool plural, string? each = null)
     {
         var stat = args.Choice("stat");
         var dir = args.Choice("dir");
-        var unit = stat == "level" ? "" : " " + args.Describe("stat");
-        var how = Phrase(args, stat == "level" || dir == "becomes" ? "" : unit);
+        if (plural && each is not null && IsOwn(args.Choice("value")))
+        {
+            subject = each;
+            plural = false;
+        }
+        // "this card's ATK", "its Level", "their ATK", "the Levels of monsters you control".
+        string Whose(string noun) => subject switch
+        {
+            "this card" => $"this card's {noun}",
+            "it" => $"its {noun}",
+            "they" => $"their {noun}",
+            _ => $"the {noun} of {subject}",
+        };
         if (stat == "level")
         {
-            var whose = subject == "this card" ? "this card's Level" : $"the Levels of {subject}";
-            var verb = dir switch { "lose" => plural ? "decrease by" : "decreases by", "becomes" => plural ? "become" : "becomes", _ => plural ? "increase by" : "increases by" };
-            return $"{whose} {verb} {how.Replace("equal to ", dir == "becomes" ? "equal to " : "", StringComparison.Ordinal)}";
+            var whose = Whose(plural ? "Levels" : "Level");
+            if (dir == "becomes") return $"{whose} {(plural ? "become" : "becomes")} {Phrase(args, "", forEach: false)}";
+            // "increases by the number of ...", "increases by 1 for each ...", "decreases by half ...".
+            var by = Phrase(args, "");
+            if (by.StartsWith("equal to ", StringComparison.Ordinal)) by = by["equal to ".Length..];
+            return $"{whose} {(dir == "lose" ? plural ? "decrease" : "decreases" : plural ? "increase" : "increases")} by {by}";
         }
-        if (dir == "becomes")
-        {
-            var whose = subject == "this card" ? $"this card's{unit}" : $"the{unit} of {subject}";
-            return $"{whose} {(plural ? "become" : "becomes")} {how}";
-        }
+        var unit = " " + args.Describe("stat");
+        // "the ATK of monsters you control becomes ...", but "its ATK/DEF become ...".
+        if (dir == "becomes") return $"{Whose(unit.Trim())} {(stat == "both" ? "become" : "becomes")} {Phrase(args, "", forEach: false)}";
         var gain = dir == "lose" ? (plural ? "lose" : "loses") : (plural ? "gain" : "gains");
-        // "gains ATK equal to ..." but "gains 300 ATK for each ...".
-        return args.Choice("how") == "per" ? $"{subject} {gain} {how}" : $"{subject} {gain}{unit} {how.Replace(unit.Trim() + " equal", "equal", StringComparison.Ordinal)}";
+        // "gains ATK equal to ...", "gains 300 ATK for each ...".
+        return $"{subject} {gain} {Phrase(args, unit)}";
     }
 }
 
@@ -231,7 +292,8 @@ public sealed class StatsFromValuePassive : PassiveBlock
         var f = args.Cards("cards");
         return f.ThisCard
             ? ValueSources.Sentence(args, "this card", false)
-            : ValueSources.Sentence(args, FilterText.Describe(f, args.Pack, plural: true, preposition: ""), true);
+            : ValueSources.Sentence(args, FilterText.Describe(f, args.Pack, plural: true, preposition: ""), true,
+                "each " + FilterText.Describe(f, args.Pack, plural: false, preposition: ""));
     }
 
     public override void Compile(BlockContext ctx)
@@ -299,15 +361,25 @@ public sealed class StatsFromValueAction : CardGroupAction
     {
         if (args.IsThisCard) return ValueSources.Sentence(args, "this card", false) + Tail(args);
         var all = Param("mode") is not null && args.Choice("mode") == "all";
-        var n = args.Int("count");
         var subject = all ? $"all {args.Describe("cards")}" : Some(args);
-        return ValueSources.Sentence(args, subject, all || n != 1) + Tail(args) + args.ExceptText();
+        // "each face-up monster you control gains ATK equal to its Level", "each of 2 face-up monsters you control ...".
+        var each = all
+            ? "each " + FilterText.Describe(args.Cards("cards"), args.Pack, plural: false, ownName: args.CardName, withExcept: false)
+            : $"each of {args.Describe("count")} {args.Describe("cards")}";
+        return ValueSources.Sentence(args, subject, args.IsPlural, each) + Tail(args) + args.ExceptText();
     }
 
     protected override string TargetedAction(BlockArgs args, string pronoun, bool single) =>
-        ValueSources.Sentence(args, pronoun == "it" ? "it" : "they", !single) + Tail(args);
+        ValueSources.Sentence(args, pronoun == "it" ? "it" : "they", !single, "each of them") + Tail(args);
 
-    protected override string? AbleCheck(BlockContext ctx) => "c:IsFaceup()";
+    // Monsters without a Level (Xyz, Link) can't have it changed.
+    protected override string? AbleCheck(BlockContext ctx) => ctx.Args.Choice("stat") == "level" ? "c:IsFaceup() and c:IsLevelAbove(1)" : "c:IsFaceup()";
+
+    public override void Compile(BlockContext ctx)
+    {
+        if (ctx.Args.Choice("stat") is "def" or "both") ctx.Effect.AddCategory("CATEGORY_DEFCHANGE");
+        base.Compile(ctx);
+    }
 
     protected override string Apply(string g, BlockContext ctx)
     {
@@ -347,16 +419,29 @@ public sealed class LifeFromValueAction : ActionBlock
 
     public override string Describe(BlockArgs args)
     {
-        var amount = ValueSources.Phrase(args, "");
+        // "Its" is this card: no other monster is involved.
+        var amount = ValueSources.Phrase(args, "", "this card");
+        var n = args.Int("amount").ToString(CultureInfo.InvariantCulture);
+        var each = ValueSources.ForEach(args) ? " for each " + ValueSources.EachText(args, "this card") : null;
         if (args.Choice("what") == "gain")
+        {
+            // "gain 300 LP for each card in your hand", "your opponent gains LP equal to ...".
+            var lp = each is null ? $"LP {amount}" : $"{n} LP{each}";
             return args.Choice("who") switch
             {
-                "opponent" => $"your opponent gains LP {amount}",
-                "both" => $"both players gain LP {amount}",
-                _ => $"gain LP {amount}",
+                "opponent" => $"your opponent gains {lp}",
+                "both" => $"both players gain {lp}",
+                _ => $"gain {lp}",
             };
-        var who = args.Choice("who") switch { "you" => "you", "both" => "both players", _ => "your opponent" };
-        return args.Choice("how") == "per" ? $"inflict {amount.Replace(" for each", " damage to " + who + " for each", StringComparison.Ordinal)}" : $"inflict damage to {who} {amount}";
+        }
+        // "inflict 300 damage to your opponent for each card in your hand", but "you take damage equal to ...", as
+        // cards say it ("both players take damage equal to its ATK").
+        return args.Choice("who") switch
+        {
+            "you" => each is null ? $"you take damage {amount}" : $"you take {n} damage{each}",
+            "both" => each is null ? $"both players take damage {amount}" : $"both players take {n} damage{each}",
+            _ => each is null ? $"inflict damage to your opponent {amount}" : $"inflict {n} damage to your opponent{each}",
+        };
     }
 
     public override void Compile(BlockContext ctx)
@@ -371,8 +456,12 @@ public sealed class LifeFromValueAction : ActionBlock
         // Nothing to do when the amount is 0 ("for each card in your hand" with an empty hand).
         if (ctx.Args.Choice("value") != "event") ctx.Effect.TargetChecks.Add($"{value}>0");
         var r = ctx.Effect.NewLocal("r");
-        var body = new List<string> { $"local {r}=0", $"local lv={value}", "if lv>0 then" };
-        foreach (var p in players) body.Add($"\t{r}={r}+Duel.{(damage ? "Damage" : "Recover")}({p},lv,REASON_EFFECT)");
+        var lv = ctx.Effect.NewLocal("lv");
+        var body = new List<string> { $"local {r}=0", $"local {lv}={value}", $"if {lv}>0 then" };
+        // Both players at the same time, as official cards do it: a step for each, then both together.
+        var step = players.Length > 1 ? ",true" : "";
+        foreach (var p in players) body.Add($"\t{r}={r}+Duel.{(damage ? "Damage" : "Recover")}({p},{lv},REASON_EFFECT{step})");
+        if (players.Length > 1) body.Add("\tDuel.RDComplete()");
         body.Add("end");
         ctx.Effect.AddStep(body, r, ctx.Link);
     }

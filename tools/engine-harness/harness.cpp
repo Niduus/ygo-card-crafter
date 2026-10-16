@@ -17,6 +17,8 @@
 //   attack <code>                      in the Battle Phase, this monster attacks once (the first target offered)
 //   announce <code>                    the card name declared for "declare 1 card name" (default 1004)
 //   turns <n>                          how many turns to play before checking (default 1)
+//   setup <lua statement>              runs once after the cards are placed, before the duel's first step
+//                                      (e.g. putting counters on a card); repeatable, run in order
 //   check <lua expression>             must be true after the last turn; player 0 is "0"
 //   expect_activations <n>             how many activations must have happened (default: no check)
 
@@ -110,6 +112,7 @@ struct Scenario {
 	std::vector<uint32_t> summon, spsummon, attack;
 	uint32_t announce = 0;
 	std::vector<std::string> checks;
+	std::vector<std::string> setup;
 	int turns = 1;
 	int expect_activations = -1;
 };
@@ -154,6 +157,7 @@ static bool parse_scenario(const char* path, Scenario& sc) {
 		else if (cmd == "turns") in >> sc.turns;
 		else if (cmd == "expect_activations") in >> sc.expect_activations;
 		else if (cmd == "check") { std::string rest; std::getline(in, rest); sc.checks.push_back(rest); }
+		else if (cmd == "setup") { std::string rest; std::getline(in, rest); sc.setup.push_back(rest); }
 		else { std::printf("unknown command %s\n", cmd.c_str()); return false; }
 	}
 	return true;
@@ -353,6 +357,17 @@ static void respond(intptr_t pd, Scenario& sc) {
 	}
 }
 
+static void run_setup(intptr_t pd, const std::string& code) {
+	lua_State* L = ((duel*)pd)->lua->lua_state;
+	if (luaL_loadstring(L, code.c_str()) != LUA_OK || lua_pcall(L, 0, 0, 0) != LUA_OK) {
+		std::printf("SETUP ERROR: %s -> %s\n", code.c_str(), lua_tostring(L, -1));
+		lua_pop(L, 1);
+		++g_errors;
+		return;
+	}
+	std::printf("SETUP:%s\n", code.c_str());
+}
+
 static bool run_check(intptr_t pd, const std::string& expr) {
 	lua_State* L = ((duel*)pd)->lua->lua_state;
 	std::string code = "return (" + expr + ")";
@@ -392,6 +407,8 @@ int main(int argc, char** argv) {
 	}
 	// Master Rule 5, deterministic shuffles.
 	start_duel(pd, (5u << 16) | DUEL_PSEUDO_SHUFFLE);
+	// Setup Lua runs once the cards are in place, before the first step of the duel.
+	for (auto& s : sc.setup) run_setup(pd, s);
 
 	std::vector<uint8_t> msg(0x20000);
 	bool finished = false;
