@@ -139,7 +139,10 @@ public static class FilterCompiler
         if (f.PointedToByThisCard) parts.Add($"e:GetHandler():GetLinkedGroup():IsContains({card})");
         if (f.CenterZone) parts.Add($"{card}:IsLocation(LOCATION_MZONE) and {card}:GetSequence()==2");
         // The filter's further requirements, from the property catalog: "original ATK 2000 or more", "not DARK".
-        var tests = f.Requirements.Select(r => CardProperties.Lua(r, hasEffect)).OfType<string>()
+        // A material's Type, Attribute, archetype or name in its material form, as the filter's own fields check them.
+        string Material(string test) => material == SummonProcedureKind.None ? test : System.Text.RegularExpressions.Regex.Replace(test, @"\bc:Is(Type|Attribute|Race|SetCard|Code)\(",
+            m => "c:" + m.Groups[1].Value switch { "Type" => isType, "Attribute" => isAttr, "Race" => isRace, "SetCard" => isSet, _ => isCode } + "(");
+        var tests = f.Requirements.Select(r => CardProperties.Lua(r, hasEffect)).OfType<string>().Select(Material)
             .Select(test => card == "c" ? test : System.Text.RegularExpressions.Regex.Replace(test, @"\bc:", card + ":")).ToList();
         if (f.AnyRequirement && tests.Count > 1) parts.Add("(" + string.Join(" or ", tests) + ")");
         else parts.AddRange(tests);

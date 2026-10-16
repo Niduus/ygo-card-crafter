@@ -245,6 +245,8 @@ public static class RequirementMatrix
         ["battle"] = Battle(true, () => Monsters()),
         ["battle_attacked"] = Battle(true, () => Monsters(CardOwner.Opponent)),
         ["no_attack"] = new([Mon(Attacker, "Matrix Attacker", 2000, 1000)], s => s.Card(Attacker, 1, "mzone").SpSummon(1).Turns(2), () => Monsters(), Player: 1, Turns: 2),
+        // The subject in the GY, looked for there (the tester is in the GY too, so the filter names the subject).
+        ["in_grave"] = new([Subject()], s => s.Card(S, 0, "grave"), () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Graveyard, CardCode = S }),
     };
 
     private static string Equip(int n) => $$"""
@@ -402,6 +404,18 @@ public class RequirementMatrixChoiceTests
         Row("xyz_summoned", true, Is("summoned_from", 0x40)), Row("xyz_summoned", false, IsNot("summoned_from", 0x40)), Row("xyz_summoned", true, IsNot("summoned_from", 0x2, 0x1)),
         // Never Summoned (put on the field as the duel starts): not Summoned from anywhere.
         Row("stat", false, Is("summoned_from", 0x2, 0x1, 0x10, 0x20, 0x40)), Row("stat", true, IsNot("summoned_from", 0x2)),
+        // What the card is printed as: a Pendulum Monster in the Pendulum Zone is a Spell now, but originally a monster.
+        Row("stat", true, Is("orig_card_type", 0x1)), Row("stat", false, Is("orig_card_type", 0x2, 0x4)), Row("stat", true, Is("orig_card_type", 0x4, 0x1)),
+        Row("stat", false, IsNot("orig_card_type", 0x1)), Row("stat", false, IsNot("orig_card_type", 0x2, 0x1)), Row("stat", true, IsNot("orig_card_type", 0x2, 0x4)),
+        Row("spell_any", true, Is("orig_card_type", 0x2)), Row("spell_any", false, Is("orig_card_type", 0x1)), Row("trap_any", true, Is("orig_card_type", 0x4)),
+        Row("xyz", true, Is("orig_card_type", 0x800000)), Row("stat", false, Is("orig_card_type", 0x800000)),
+        Row("pzone_any", true, Is("orig_card_type", 0x1)), Row("pzone_any", true, Is("orig_card_type", 0x1000000)), Row("pzone_any", false, Is("card_type", 0x1)),
+        // Where it is.
+        Row("stat", true, Is("location", 0x4)), Row("stat", false, Is("location", 0x10, 0x2)), Row("stat", true, Is("location", 0x10, 0x4)),
+        Row("stat", false, IsNot("location", 0x4)), Row("stat", false, IsNot("location", 0x8, 0x4)), Row("stat", true, IsNot("location", 0x8, 0x10)),
+        Row("spell_any", true, Is("location", 0x8)), Row("spell_any", false, Is("location", 0x4)),
+        Row("in_grave", true, Is("location", 0x10)), Row("in_grave", false, Is("location", 0x4, 0x2)), Row("in_grave", false, IsNot("location", 0x10)),
+        Row("in_grave", true, IsNot("location", 0x20)),
     ];
 
     public static IEnumerable<object[]> Options() =>
@@ -439,6 +453,9 @@ public class RequirementMatrixChoiceTests
         Row("negated_rig", true, Is("negated")), Row("negated_rig", false, IsNot("negated")),
         Row("normal_summoned", true, Is("summoned_turn")), Row("normal_summoned", false, IsNot("summoned_turn")), Row("sp_from_grave", true, Is("summoned_turn")),
         Row("xyz_summoned", true, Is("summoned_turn")), Row("stat", false, Is("summoned_turn")), Row("stat", true, IsNot("summoned_turn")),
+        // Special Summoned this turn: not a Normal Summon.
+        Row("sp_from_grave", true, Is("spsummoned_turn")), Row("sp_from_grave", false, IsNot("spsummoned_turn")), Row("xyz_summoned", true, Is("spsummoned_turn")),
+        Row("normal_summoned", false, Is("spsummoned_turn")), Row("normal_summoned", true, IsNot("spsummoned_turn")), Row("stat", false, Is("spsummoned_turn")),
         // Declared an attack / battled. To the engine (and the rulings: Gladiator Beasts tag out after attacking directly)
         // a direct attack is a battle too; the attacked monster battled without attacking.
         Row("direct_attack", true, Is("attacked_turn")), Row("no_attack", false, Is("attacked_turn")), Row("battle", true, Is("attacked_turn")),
@@ -520,13 +537,13 @@ public class RequirementMatrixTextTests
         [R("attacks", RequirementOp.Equal, 2), "that declared 2 attacks this turn"],
         [R("attacks", RequirementOp.Outside, 1, 2), "that declared less than 1 or more than 2 attacks this turn"],
         [Is("attribute", (long)CardAttribute.Dark, (long)CardAttribute.Light, (long)CardAttribute.Earth), "that is EARTH, LIGHT, or DARK"],
-        [IsNot("attribute", (long)CardAttribute.Dark), "that is not DARK"],
+        [IsNot("attribute", (long)CardAttribute.Dark, (long)CardAttribute.Earth), "that is neither EARTH nor DARK"],
         [IsNot("orig_attribute", (long)CardAttribute.Dark, (long)CardAttribute.Light), "whose original Attribute is neither LIGHT nor DARK"],
         [Is("race", (long)CardRace.Aqua), "that is an Aqua monster"],
         [IsNot("race", (long)CardRace.Warrior, (long)CardRace.Spellcaster), "that is not a Warrior or Spellcaster monster"],
         [Is("orig_race", (long)CardRace.Dragon), "whose original Type is Dragon"],
         [Is("monster_type", 0x800000), "that is an Xyz Monster"],
-        [IsNot("monster_type", 0x20), "that is not an Effect Monster"],
+        [IsNot("monster_type", 0x20, 0x40), "that is not an Effect Monster or Fusion Monster"],
         [Is("monster_type", 0x400), "that is a Union monster"],
         [Is("monster_type", 0x40, 0x2000), "that is a Fusion Monster or Synchro Monster"],
         [Is("card_type", 0x2, 0x4), "that is a Spell or Trap"],
@@ -541,11 +558,12 @@ public class RequirementMatrixTextTests
         [Is("owner", 1), "that your opponent owns"],
         [IsNot("owner", 0), "that you do not own"],
         [Is("archetype", 0x7a1), "that is an \"Ember\" card"],
-        [IsNot("archetype", 0x7a2), "that is not a \"Flame\" card"],
+        [IsNot("archetype", 0x7a2, 0x7a1), "that is not a \"Flame\" or \"Ember\" card"],
         [Is("name", RequirementMatrix.S), "that is \"Subject\""],
         [IsNot("name", RequirementMatrix.S, RequirementMatrix.Other), "that is neither \"Subject\" nor \"Other\""],
         [Is("negated"), "whose effects are negated"],
         [IsNot("summoned_turn"), "that was not Summoned this turn"],
+        [Is("spsummoned_turn"), "that was Special Summoned this turn"],
         [Is("attacked_turn"), "that declared an attack this turn"],
         [IsNot("battled_turn"), "that has not battled this turn"],
         [IsNot("changed_atk"), "whose ATK is the same as its original ATK"],
@@ -556,6 +574,10 @@ public class RequirementMatrixTextTests
         [Is("targetable"), "that can be targeted"],
         [Is("counters"), "that has a counter on it"],
         [IsNot("counters"), "that has no counters on it"],
+        [Is("orig_card_type", 0x1), "that is originally a monster"],
+        [IsNot("orig_card_type", 0x1000000), "that is not originally a Pendulum Monster"],
+        [Is("location", 0x10), "in the GY"],
+        [IsNot("location", 0x2, 0x10), "not in the hand or the GY"],
     ];
 
     private static CardPack Pack() => new()
@@ -568,9 +590,64 @@ public class RequirementMatrixTextTests
     [MemberData(nameof(Texts))]
     public void Reads(CardRequirement r, string phrase)
     {
+        Assert.Equal(phrase, CardProperties.Text(r, Pack()));
+        // Choices cards write before the noun ("EARTH or LIGHT monster", "Xyz Monster", "non-DARK monster"): see BeforeTheNoun.
+        if (r.Property is "attribute" or "race" or "archetype" or "monster_type" && (r.Op == RequirementOp.Is || r.Values.Count == 1)) return;
         var filter = RequirementMatrix.Monsters();
         filter.Requirements = [r];
         Assert.Equal("monster " + phrase, FilterText.Describe(filter, Pack(), withLocation: false));
+    }
+
+    public static IEnumerable<object[]> BeforeTheNoun() =>
+    [
+        [Is("attribute", (long)CardAttribute.Earth, (long)CardAttribute.Light), "EARTH or LIGHT monster"],
+        [Is("race", (long)CardRace.Aqua, (long)CardRace.Fish, (long)CardRace.SeaSerpent), "Aqua, Fish, or Sea Serpent monster"],
+        [Is("archetype", 0x7a1, 0x7a2), "\"Ember\" or \"Flame\" monster"],
+        [Is("monster_type", 0x800000), "Xyz Monster"],
+        [Is("monster_type", 0x40, 0x2000, 0x800000), "Fusion, Synchro, or Xyz Monster"],
+        [Is("monster_type", 0x400), "monster that is a Union monster"],
+        [IsNot("attribute", (long)CardAttribute.Dark), "non-DARK monster"],
+        [IsNot("race", (long)CardRace.Fairy), "non-Fairy monster"],
+        [IsNot("monster_type", 0x4000000), "non-Link monster"],
+        [IsNot("monster_type", 0x4000), "non-Token monster"],
+        [IsNot("archetype", 0x7a2), "non-\"Flame\" monster"],
+        // An Attribute other than EARTH (IsNonAttribute).
+        [Is("attribute", 0x2, 0x4, 0x8, 0x10, 0x20, 0x40), "non-EARTH monster"],
+    ];
+
+    /// <summary>A requirement that leaves out one Type, Attribute, archetype or kind reads as cards write it: "non-Fairy monster".</summary>
+    [Theory]
+    [MemberData(nameof(BeforeTheNoun))]
+    public void SaysNonBeforeTheNoun(CardRequirement r, string text)
+    {
+        var filter = RequirementMatrix.Monsters();
+        filter.Requirements = [r];
+        Assert.Equal(text, FilterText.Describe(filter, Pack(), withLocation: false));
+    }
+
+    [Fact]
+    public void AnyOfTheRequirements_ReadsWithOr_AndAgreesWithSeveralCards()
+    {
+        var filter = RequirementMatrix.Monsters();
+        filter.Requirements = [Is("position", 0xa), IsNot("archetype", 0x7a1)];
+        filter.AnyRequirement = true;
+        Assert.Equal("monster that is face-down or that is not an \"Ember\" card", FilterText.Describe(filter, Pack(), withLocation: false));
+        Assert.Equal("monsters that are face-down or that are not an \"Ember\" card", FilterText.Describe(filter, Pack(), plural: true, withLocation: false));
+        // Every Attribute but one, among other choices.
+        filter.Requirements = [Is("position", 0xa), Is("attribute", 0x2, 0x4, 0x8, 0x10, 0x20, 0x40)];
+        Assert.Equal("monster that is face-down or that is non-EARTH", FilterText.Describe(filter, Pack(), withLocation: false));
+    }
+
+    [Fact]
+    public void ANumberOnlyMonstersHave_MakesTheCardAMonster()
+    {
+        var filter = RequirementMatrix.AnyCard();
+        filter.Zones = Zone.Graveyard;
+        filter.AtkMin = 1;
+        Assert.Equal("monster with 1 or more ATK", FilterText.Describe(filter, Pack(), withLocation: false));
+        filter.AtkMin = null;
+        filter.LevelMin = 1;
+        Assert.Equal("monster with a Level", FilterText.Describe(filter, Pack(), withLocation: false));
     }
 
     [Fact]
@@ -586,7 +663,7 @@ public class RequirementMatrixTextTests
         var filter = RequirementMatrix.Monsters();
         filter.FaceUpOnly = true;
         filter.Requirements = [Is("monster_type", 0x800000), R("materials", RequirementOp.Equal, 0)];
-        Assert.Contains("you control a face-up monster with no materials attached that is an Xyz Monster: ",
+        Assert.Contains("you control a face-up Xyz Monster with no materials attached: ",
             EffectTextGenerator.Generate(RequirementMatrix.TesterCard(RequirementMatrix.Exists(filter))));
     }
 

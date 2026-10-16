@@ -89,6 +89,15 @@ public static class CardProperties
         new("monster_type", "Monster card type", PropertyKind.Flags, "c:IsType({0})", "card type", Choices: MonsterTypes, IsText: "that is a {0}", IsNotText: "that is not a {0}"),
         new("card_type", "Monster / Spell / Trap", PropertyKind.Flags, "c:IsType({0})", "card type",
             Choices: [(0x1, "monster", ""), (0x2, "Spell", ""), (0x4, "Trap", "")], IsText: "that is a {0}", IsNotText: "that is not a {0}"),
+        // What the card is printed as, whatever it is treated as now: a monster card that is a Continuous Spell for now.
+        new("orig_card_type", "Original card type", PropertyKind.Flags, "c:GetOriginalType()&{0}~=0", "original card type",
+            Choices: [(0x1, "monster", ""), (0x2, "Spell", ""), (0x4, "Trap", ""), .. MonsterTypes],
+            IsText: "that is originally a {0}", IsNotText: "that is not originally a {0}"),
+        // Where it is among the places the filter looks: "in the GY", "in the hand or the GY".
+        new("location", "Where it is", PropertyKind.Flags, "c:IsLocation({0})", "location",
+            Choices: [(0x2, "the hand", ""), (0x1, "the Deck", ""), (0x4, "a Monster Zone", ""), (0x8, "a Spell & Trap Zone", ""), (0x10, "the GY", ""),
+                (0x20, "banishment", ""), (0x40, "the Extra Deck", "")],
+            IsText: "in {0}", IsNotText: "not in {0}"),
         new("position", "Battle position", PropertyKind.Flags, "c:IsPosition({0})", "position",
             Choices: [(0x3, "Attack Position", ""), (0xc, "Defense Position", ""), (0x5, "face-up", ""), (0xa, "face-down", "")],
             IsText: "that is {0}", IsNotText: "that is not {0}"),
@@ -114,6 +123,8 @@ public static class CardProperties
         new("negated", "Its effects are negated", PropertyKind.State, "c:IsDisabled()", "", IsText: "whose effects are negated", IsNotText: "whose effects are not negated"),
         new("summoned_turn", "Summoned this turn", PropertyKind.State, "c:IsStatus(STATUS_SUMMON_TURN+STATUS_FLIP_SUMMON_TURN+STATUS_SPSUMMON_TURN)", "",
             IsText: "that was Summoned this turn", IsNotText: "that was not Summoned this turn"),
+        new("spsummoned_turn", "Special Summoned this turn", PropertyKind.State, "c:IsStatus(STATUS_SPSUMMON_TURN)", "",
+            IsText: "that was Special Summoned this turn", IsNotText: "that was not Special Summoned this turn"),
         new("attacked_turn", "Declared an attack this turn", PropertyKind.State, "c:GetAttackAnnouncedCount()>0", "",
             IsText: "that declared an attack this turn", IsNotText: "that has not declared an attack this turn"),
         new("battled_turn", "Battled this turn", PropertyKind.State, "c:GetBattledGroupCount()>0", "",
@@ -221,6 +232,9 @@ public static class CardProperties
         var (lo, hi) = (Math.Min(r.Value, r.Value2), Math.Max(r.Value, r.Value2));
         if (p.Kind == PropertyKind.Number) return NumberText(p, r, N(r.Value), N(lo), N(hi));
         if (p.Kind == PropertyKind.State) return (r.Op == RequirementOp.IsNot ? p.IsNotText : p.IsText) ?? "";
+        // Every Attribute but one: "that is non-EARTH", as cards say an Attribute other than EARTH.
+        if (p.Key == "attribute" && r.Op == RequirementOp.Is && p.Choices!.Where(c => !r.Values.Contains(c.Value)).ToList() is [var missing] && r.Values.Distinct().Count() == p.Choices!.Count - 1)
+            return $"that is non-{missing.Label}";
         var names = p.Kind switch
         {
             PropertyKind.Archetype => r.Values.Where(v => v != 0).Select(v => $"\"{(pack is not null ? pack.ArchetypeName((int)v) : ArchetypeNames.Find((int)v) ?? $"0x{v:x}")}\"").ToList(),

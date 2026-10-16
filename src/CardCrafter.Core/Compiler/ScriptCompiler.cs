@@ -312,8 +312,10 @@ public static class ScriptCompiler
         var opp = f.Owner == CardOwner.You ? "0" : "LOCATION_MZONE";
         var conds = FilterCompiler.Conditions(new CardFilter
         {
-            CardType = FilterCardType.Monster, MonsterKind = f.MonsterKind, Race = f.Race, Attribute = f.Attribute, Archetype = f.Archetype,
-            CardCode = f.CardCode, LevelMin = f.LevelMin, LevelMax = f.LevelMax, AtkMin = f.AtkMin, AtkMax = f.AtkMax, Requirements = f.Requirements,
+            CardType = FilterCardType.Monster, MonsterKind = f.MonsterKind, Race = f.Race, Attribute = f.Attribute, Archetype = f.Archetype, Archetype2 = f.Archetype2,
+            CardCode = f.CardCode, AltCodes = f.AltCodes, ExceptOwnName = f.ExceptOwnName, ExceptCode = f.ExceptCode, LevelMin = f.LevelMin, LevelMax = f.LevelMax,
+            AtkMin = f.AtkMin, AtkMax = f.AtkMax, DefMin = f.DefMin, DefMax = f.DefMax, MentionsCode = f.MentionsCode, MentionsOrIs = f.MentionsOrIs,
+            Requirements = f.Requirements, AnyRequirement = f.AnyRequirement,
         }, hasEffect: false);
         conds.Remove("c:IsType(TYPE_MONSTER)");
         var test = conds.Count == 0 ? "true" : string.Join(" and ", conds);

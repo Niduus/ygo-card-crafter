@@ -42,7 +42,7 @@ public class RequirementTests
         yield return [R("atk", RequirementOp.Between, 1500, 2500), "with 1500 to 2500 ATK"];
         yield return [R("atk", RequirementOp.NotEqual, 2000), "whose ATK is other than 2000"];
         yield return [R("level", RequirementOp.LessOrEqual, 4), "whose Level is 4 or lower"];
-        yield return [R("attribute", RequirementOp.IsNot, 0, 0, (long)CardAttribute.Dark), "that is not DARK"];
+        yield return [R("orig_attribute", RequirementOp.IsNot, 0, 0, (long)CardAttribute.Dark), "whose original Attribute is not DARK"];
         yield return [R("attribute", RequirementOp.IsNot, 0, 0, (long)CardAttribute.Dark, (long)CardAttribute.Light), "that is neither LIGHT nor DARK"];
         yield return [R("summon", RequirementOp.Is, 0, 0, 4, 5), "that was Fusion or Synchro Summoned"];
         yield return [R("negated", RequirementOp.Is), "whose effects are negated"];
@@ -111,7 +111,7 @@ public class RequirementTests
     {
         var dark = Mine(R("attribute", RequirementOp.Is, 0, 0, (long)CardAttribute.Dark));
         var strong = Mine(R("atk", RequirementOp.Equal, 2000));
-        Assert.StartsWith("If you control a face-up monster that is DARK and a different face-up monster with 2000 ATK: ",
+        Assert.StartsWith("If you control a face-up DARK monster and a different face-up monster with 2000 ATK: ",
             EffectTextGenerator.Generate(Card(TwoCards(dark, strong))));
     }
 }
