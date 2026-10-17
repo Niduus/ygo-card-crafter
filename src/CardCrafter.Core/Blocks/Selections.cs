@@ -434,6 +434,10 @@ public abstract partial class CardGroupAction
 /// (as the effect is activated, the default without this block), "apply 1 of these effects" (as it resolves), "your
 /// opponent chooses 1 of these effects for you to apply", and "(but you can only use each effect of "X" once per turn)".
 /// Under it, an IF block that starts an option is what that option needs to be chosen: "● If you control no monsters: ...".
+/// Its style can also write the options in one sentence ("it loses 1000 ATK, or, if ..., you can destroy that monster
+/// instead"), apply every option that can be ("Apply these effects in sequence"), or take the one for where this card
+/// was sent from ("activate this effect based on where it was sent from; ● Field: ..."). "Target cards" blocks before
+/// it are targets every option shares: "Target 1 face-down monster your opponent controls; your opponent chooses ...".
 /// </summary>
 public sealed class ChooseEffectsAction : ActionBlock
 {
@@ -441,39 +445,72 @@ public sealed class ChooseEffectsAction : ActionBlock
     public override string Id => BlockId;
     public override string Group => "Options";
     public override string Name => "Choose 1 of these effects (how the \"●\" options are chosen)";
-    public override string Sentence => "The \"●\" options below: {who} {count} of them {when}";
-    public override string Help => "Put it first among the DO blocks, then link each option's first block with \"●\". Without it, you choose an option as " +
-                                   "the effect is activated. \"When it resolves\" reads \"apply 1 of these effects\"; your opponent always chooses as it resolves. " +
+    public override string Sentence => "The \"●\" options below: {who} {count} of them {when} {style}";
+    public override string Help => "Put it first among the DO blocks (after any \"Target cards\" blocks the options share), then link each option's first block with \"●\". " +
+                                   "Without it, you choose an option as the effect is activated. \"When it resolves\" reads \"apply 1 of these effects\"; your opponent always chooses as it resolves. " +
                                    "An IF block that starts an option is what that option needs: \"● If you control no monsters: ...\". " +
-                                   "A COST block that starts an option is that option's own cost: \"● Discard 1 card; draw 1 card\".";
+                                   "A COST block that starts an option is that option's own cost: \"● Discard 1 card; draw 1 card\". " +
+                                   "A WHEN block that starts an option is that option's own timing: \"● When your opponent activates a monster effect: Negate that effect\".";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
-        ParamSpec.Choice("who", "Who chooses", new("you", "", "you choose"), new("opponent", "", "your opponent chooses")),
+        ParamSpec.Choice("who", "Who chooses", new("you", "", "you choose"), new("opponent", "", "your opponent chooses"))
+            .ShowIf(b => b.Values.GetValueOrDefault("style", "list") is "list" or "instead"),
         // "Activate 1 or both of these effects": with 2 options, both can be chosen, applied one after the other.
         ParamSpec.Choice("count", "How many", new("one", "1"), new("both", "1 or both"))
-            .ShowIf(b => b.Values.GetValueOrDefault("who", "you") == "you"),
+            .ShowIf(b => b.Values.GetValueOrDefault("who", "you") == "you" && b.Values.GetValueOrDefault("style", "list") == "list"),
         ParamSpec.Choice("when", "When", new("activate", "", "as the effect is activated"), new("apply", "", "as the effect resolves"))
-            .ShowIf(b => b.Values.GetValueOrDefault("who", "you") == "you"),
+            .ShowIf(b => b.Values.GetValueOrDefault("who", "you") == "you" && b.Values.GetValueOrDefault("style", "list") is "list" or "instead"),
         ParamSpec.Flag("once_each", "you can only use each option once per turn", false),
+        // Saved before these were offered: a list of "●" lines the player chooses from.
+        ParamSpec.Choice("style", "Written and used as",
+            new("list", "", "a \"●\" list, 1 of them is chosen"),
+            new("instead", "", "\"X, or, if ..., you can Y instead\" (1 is chosen)"),
+            new("sequence", "", "\"Apply these effects in sequence\" (each that can be)"),
+            new("sent_from", "", "\"based on where it was sent from\" (the option for where this card was)")),
     ];
 
-    /// <summary>The header block of these DO blocks, or null.</summary>
-    public static BlockInstance? Header(IReadOnlyList<BlockInstance> blocks) => blocks.Count > 0 && blocks[0].BlockId == BlockId ? blocks[0] : null;
+    /// <summary>Where the header is among the DO blocks: first, or after the "Target cards" blocks the options share; -1 without one.</summary>
+    private static int HeaderAt(IReadOnlyList<BlockInstance> blocks)
+    {
+        for (var i = 0; i < blocks.Count; i++)
+        {
+            if (blocks[i].BlockId == BlockId) return i;
+            if (blocks[i].BlockId != TargetCardsAction.BlockId) return -1;
+        }
+        return -1;
+    }
 
-    /// <summary>The DO blocks without the header: the options themselves.</summary>
-    public static List<BlockInstance> Options(IReadOnlyList<BlockInstance> blocks) => Header(blocks) is null ? blocks.ToList() : blocks.Skip(1).ToList();
+    /// <summary>The header block of these DO blocks, or null.</summary>
+    public static BlockInstance? Header(IReadOnlyList<BlockInstance> blocks) => HeaderAt(blocks) is var at and >= 0 ? blocks[at] : null;
+
+    /// <summary>The "Target cards" blocks before the header: targets every option shares, chosen as the effect is activated.</summary>
+    public static List<BlockInstance> Shared(IReadOnlyList<BlockInstance> blocks) => blocks.Take(Math.Max(0, HeaderAt(blocks))).ToList();
+
+    /// <summary>The DO blocks without the header (and the targets before it): the options themselves.</summary>
+    public static List<BlockInstance> Options(IReadOnlyList<BlockInstance> blocks) => HeaderAt(blocks) is var at and >= 0 ? blocks.Skip(at + 1).ToList() : blocks.ToList();
+
+    /// <summary>"list", "instead", "sequence" or "sent_from": how the options are written and used; "list" without a header.</summary>
+    public static string Style(IReadOnlyList<BlockInstance> blocks) => Header(blocks)?.Values.GetValueOrDefault("style", "list") switch
+    {
+        "instead" => "instead", "sequence" => "sequence", "sent_from" => "sent_from", _ => "list",
+    };
+
+    private static bool Listed(BlockInstance header) => header.Values.GetValueOrDefault("style", "list") is not ("sequence" or "sent_from");
 
     /// <summary>"Activate 1 or both of these effects".</summary>
     public static bool Both(BlockInstance header) =>
-        header.Values.GetValueOrDefault("count") == "both" && header.Values.GetValueOrDefault("who", "you") == "you";
+        header.Values.GetValueOrDefault("count") == "both" && header.Values.GetValueOrDefault("who", "you") == "you"
+        && header.Values.GetValueOrDefault("style", "list") == "list";
 
     /// <summary>"1 or both" for the effect's options: the option name the game lists for choosing both.</summary>
     public static bool ChoosesBoth(EffectEvent effect) => Header(effect.Do) is { } h && Both(h);
 
     public const string BothText = "Both of these effects.";
 
+    private static bool Opponent(BlockInstance header) => header.Values.GetValueOrDefault("who") == "opponent" && Listed(header);
+
     private static bool Resolving(BlockInstance header) =>
-        header.Values.GetValueOrDefault("who") == "opponent" || header.Values.GetValueOrDefault("when") == "apply";
+        Opponent(header) || header.Values.GetValueOrDefault("when") == "apply" && Listed(header) || header.Values.GetValueOrDefault("style") == "sequence";
 
     /// <summary>The header itself reads as nothing: <see cref="Lead"/> is its wording before the options.</summary>
     public override string Describe(BlockArgs args) => "";
@@ -481,32 +518,68 @@ public sealed class ChooseEffectsAction : ActionBlock
     /// <summary>
     /// The words before the options, with their punctuation: "You can activate 1 of these effects (but you can only use
     /// each effect of "X" once per turn);", "Apply 1 of these effects.", "You can activate this effect; your opponent
-    /// chooses 1 of these effects for you to apply." Null without a header.
+    /// chooses 1 of these effects for you to apply.", "Target 1 face-down monster your opponent controls; your opponent
+    /// chooses ...", "Apply these effects in sequence.". <paramref name="target"/> is the targets the options share.
+    /// Null without a header.
     /// </summary>
-    public static string? Lead(EffectEvent effect, string costs, bool optional, string cardName)
+    public static string? Lead(EffectEvent effect, string costs, string? target, bool optional, string cardName)
     {
         if (Header(effect.Do) is not { } h) return null;
         var once = h.Values.GetValueOrDefault("once_each") == "true";
+        // "Discard 1 card, then target 1 monster; ...": what is paid and targeted before the semicolon.
+        var before = target is null ? costs : costs.Length == 0 ? target : $"{costs}, then {target}";
         string choose;
-        if (h.Values.GetValueOrDefault("who") == "opponent")
+        switch (h.Values.GetValueOrDefault("style", "list"))
+        {
+            case "sequence":
+                choose = "apply these effects in sequence";
+                return Said(before.Length == 0 ? choose : $"{before}{(target is null ? ", then" : ";")} {choose}", optional) + ".";
+            case "sent_from":
+                choose = "activate this effect based on where it was sent from";
+                return Said(before.Length == 0 ? choose : $"{before}{(target is null ? ", then" : ";")} {choose}", optional) + ";";
+        }
+        if (Opponent(h))
         {
             choose = "your opponent chooses 1 of these effects for you to apply";
             if (once) choose += $", but you cannot apply that same effect of \"{cardName}\" again this turn";
-            var lead = costs.Length > 0 ? $"{costs}; {choose}" : optional ? $"activate this effect; {choose}" : choose;
-            return (optional ? "You can " + lead : SentenceCase.Upper(lead)) + ".";
+            var lead = before.Length > 0 ? $"{before}; {choose}" : optional ? $"activate this effect; {choose}" : choose;
+            return Said(lead, optional) + ".";
         }
         var apply = h.Values.GetValueOrDefault("when") == "apply";
         var count = Both(h) ? "1 or both" : "1";
         choose = apply ? $"apply {count} of these effects" : $"activate {count} of these effects";
         if (once) choose += apply ? $", but you cannot apply that same effect of \"{cardName}\" again this turn" : $" (but you can only use each effect of \"{cardName}\" once per turn)";
-        var body = costs.Length == 0 ? choose : $"{costs}, then {choose}";
-        return (optional ? "You can " + body : SentenceCase.Upper(body)) + (apply ? "." : ";");
+        var body = before.Length == 0 ? choose : target is null ? $"{before}, then {choose}" : $"{before}; {choose}";
+        return Said(body, optional) + (apply ? "." : ";");
     }
 
-    /// <summary>True for an IF block that starts an option under a header: the option's own condition ("● If ...:").</summary>
+    private static string Said(string body, bool optional) => optional ? "You can " + body : SentenceCase.Upper(body);
+
+    /// <summary>
+    /// True for an IF block that is what its option needs, under a header: it starts the option ("● If ...:"), or follows
+    /// the option's own WHEN ("● When an opponent's monster declares an attack while they control more monsters than you do:").
+    /// </summary>
     public static bool IsOptionCondition(IReadOnlyList<BlockInstance> doBlocks, BlockInstance b)
     {
-        if (Header(doBlocks) is null || Chance.IsGate(b) || BlockRegistry.Find(b.BlockId) is not ConditionBlock) return false;
+        if (Chance.IsGate(b) || BlockRegistry.Find(b.BlockId) is not ConditionBlock) return false;
+        var options = Options(doBlocks);
+        var at = options.IndexOf(b);
+        if (at < 0) return false;
+        // The IF blocks right after an option's own WHEN are what that timing needs (with or without a header).
+        if (at > 0 && b.Link != ActionLink.Option)
+            for (var i = at - 1; i >= 0; i--)
+            {
+                if (BlockRegistry.Find(options[i].BlockId) is { Kind: BlockKind.Trigger }) return i == 0 || options[i].Link == ActionLink.Option;
+                if (BlockRegistry.Find(options[i].BlockId) is not ConditionBlock || options[i].Link == ActionLink.Option) break;
+            }
+        if (Header(doBlocks) is null) return false;
+        return at == 0 || b.Link == ActionLink.Option;
+    }
+
+    /// <summary>True for a WHEN block that starts an option: that option's own timing.</summary>
+    public static bool IsOptionTrigger(IReadOnlyList<BlockInstance> doBlocks, BlockInstance b)
+    {
+        if (BlockRegistry.Find(b.BlockId) is not { Kind: BlockKind.Trigger }) return false;
         var options = Options(doBlocks);
         var at = options.IndexOf(b);
         return at == 0 || at > 0 && b.Link == ActionLink.Option;
@@ -522,17 +595,26 @@ public sealed class ChooseEffectsAction : ActionBlock
         var e = ctx.Effect;
         if (!ReferenceEquals(Header(e.Source.Do), ctx.Args.Instance))
         {
-            e.Error("\"Choose 1 of these effects\" goes first among the DO blocks, before the \"●\" options.");
+            e.Error("\"Choose 1 of these effects\" goes first among the DO blocks, before the \"●\" options (only \"Target cards\" blocks the options share can come before it).");
             return;
         }
         if (ctx.Args.Instance.Optional) e.Warn("\"Choose 1 of these effects\" can't be optional; make the effect optional instead (its WHEN).");
         var options = Options(e.Source.Do);
         if (options.Count == 0 || options.Skip(1).Count(b => b.Link == ActionLink.Option) == 0)
             e.Warn("\"Choose 1 of these effects\" needs at least 2 options: link each option's first DO block with \"●\".");
-        e.OptionsOnResolution = Resolving(ctx.Args.Instance);
-        e.OptionChooser = ctx.Args.Choice("who") == "opponent" ? "1-tp" : "tp";
+        var header = ctx.Args.Instance;
+        var style = Style(e.Source.Do);
+        e.OptionsOnResolution = Resolving(header);
+        e.OptionChooser = Opponent(header) ? "1-tp" : "tp";
+        e.OptionsInSequence = style == "sequence";
+        // Where this card was sent from decides the option: there is nothing to choose.
+        e.OptionsAutomatic = style == "sent_from";
         if (ctx.Args.Bool("once_each")) e.OptionFlag = branch => Flag(e, branch);
-        if (Both(ctx.Args.Instance))
+        if (style == "sent_from" && options.Where((b, i) => i == 0 || b.Link == ActionLink.Option).Any(b => b.BlockId != SentFromCondition.BlockId))
+            e.Error("\"Based on where it was sent from\": start each option with a \"Where this card was sent from\" IF block (\"● Field: ...\").");
+        if (style == "instead" && options.Count > 0 && BlockRegistry.Find(options[0].BlockId) is ConditionBlock)
+            e.Warn("\"X, or, if ..., you can Y instead\": the first option is the one without a condition; start the later ones with their IF block.");
+        if (Both(header))
         {
             if (options.Count == 0 || 1 + options.Skip(1).Count(b => b.Link == ActionLink.Option && !Chance.IsGate(b)) != 2)
                 e.Error("\"1 or both\" of these effects needs exactly 2 options.");
@@ -549,6 +631,8 @@ public sealed class ChooseEffectsAction : ActionBlock
             e.Error("An option chosen as the effect resolves can't target: targets are chosen when the effect is activated. Choose the option as the effect is activated, or turn off targeting.");
         if (e.OptionsOnResolution && e.Branches.Values.Any(b => b.CostLines.Count > 0))
             e.Error("An option's own cost is paid as the effect is activated: choose the option as the effect is activated (\"activate 1 of these effects\").");
+        if (e.Chkc is not null && e.Branches.Values.Any(b => b.Chkc is not null))
+            e.Error("The options share a target (\"Target cards\" before the options), so an option can't target as well. Turn off targeting in the options and use \"this effect's target\".");
         if (!e.OptionBoth || e.Branches.Count != 2) return;
         // "1 or both": a third choice that needs, sets up and does what both options do.
         var (one, two) = (e.Branches.Values.First(), e.Branches.Values.Last());
@@ -565,6 +649,39 @@ public sealed class ChooseEffectsAction : ActionBlock
         foreach (var c in one.Categories.Concat(two.Categories)) if (!both.Categories.Contains(c)) both.Categories.Add(c);
         both.Chkc = one.Chkc ?? two.Chkc;
         both.Combines = [e.Branches.Keys.Min(), e.Branches.Keys.Min() + 1];
+    }
+
+    /// <summary>
+    /// "● When your opponent activates a monster effect: Negate that effect": an option's own timing. The WHEN block is
+    /// compiled on its own; the effect is also registered for its event (a clone, as official cards register an effect
+    /// for another timing), and the option can only be chosen when the effect was activated at that timing. While the
+    /// option's blocks compile, the effect's event is the option's, and what they need of it is the option's to check.
+    /// False when the WHEN can't start an option.
+    /// </summary>
+    public static bool OptionTrigger(EffectBuilder effect, EffectBuilder timing, int branch)
+    {
+        if (timing.IsPassive || timing.IsSummonProcedure || timing.Code is null)
+        {
+            effect.Error("An option's own WHEN must be a timing the effect is activated at, like \"When your opponent activates a card or effect\".");
+            return false;
+        }
+        if (!timing.Types.ToHashSet().SetEquals(effect.Types))
+        {
+            effect.Error("An option's own WHEN must activate the effect the same way as its WHEN: both \"activate this card\" (a Spell/Trap), or both Quick Effects.");
+            return false;
+        }
+        var codes = new[] { timing.Code }.Concat(timing.ExtraCodes).Distinct().ToList();
+        var target = effect.BranchOf(branch);
+        target.Checks.Add(codes.Count == 1 ? $"e:GetCode()=={codes[0]}" : "(" + string.Join(" or ", codes.Select(c => $"e:GetCode()=={c}")) + ")");
+        target.Checks.AddRange(timing.Conditions);
+        foreach (var p in timing.Properties) effect.AddProperty(p);
+        if (codes[0] != effect.Code && !effect.Variants.Any(v => v.Code == codes[0]))
+            effect.Variants.Add(new TriggerVariant
+            {
+                Types = timing.Types.ToList(), Code = codes[0], ExtraCodes = codes.Skip(1).ToList(), Range = timing.Range ?? effect.Range,
+                Properties = timing.Properties.ToList(), HintTiming = timing.HintTiming,
+            });
+        return true;
     }
 }
 

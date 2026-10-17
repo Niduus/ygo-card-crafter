@@ -25,6 +25,8 @@ public static class CardRefs
         (CardRef.Cost, "The card(s) used for the cost"),
         (CardRef.BattleTarget, "The monster this card is battling (or destroyed by battle)"),
         (CardRef.Battling, "Your monster that is battling"),
+        (CardRef.Equipped, "The monster this card is equipped to"),
+        (CardRef.Event, "The cards that started this effect (\"those monsters\")"),
     ];
 
     /// <summary>
@@ -82,6 +84,9 @@ public static class CardRefs
                 return Previous(args) is { } prev && !prev.IsThisCard && prev.Definition.Id != "do.special_summon_self" && prev.IsPlural;
             case CardRef.Cost:
                 return CostBlock(args.Effect) is { } c && int.TryParse(c.Values.GetValueOrDefault("count", "1"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) && n > 1;
+            // "If your opponent Special Summons a monster(s)": the event may be about several cards.
+            case CardRef.Event:
+                return true;
             default:
                 return false;
         }
@@ -127,6 +132,8 @@ public static class CardRefs
             CardRef.Cost => CostNoun(args.Effect, plural),
             CardRef.BattleTarget => DestroysByBattle(args.Effect) ? "that monster" : "the monster this card is battling",
             CardRef.Battling => "your battling monster",
+            CardRef.Equipped => "the equipped monster",
+            CardRef.Event => EventNoun(f, plural: true),
             _ => "",
         };
         return Plus(args) == "this" ? $"both {words} and this card" : words;
@@ -148,11 +155,22 @@ public static class CardRefs
         };
     }
 
+    /// <summary>"those monsters", "those Link Monsters", "those cards": the cards that started the effect, as the picker names them.</summary>
+    public static string EventNoun(CardFilter f, bool plural)
+    {
+        var what = f.Clone();
+        what.That = CardRef.None;
+        what.Zones = Zone.None;
+        var noun = FilterText.Describe(what, null, plural: plural, withLocation: false, withExcept: false);
+        return (plural ? "those " : "that ") + noun;
+    }
+
     /// <summary>"the targeted monster's", "the sent monster's", "that monster's": whose stat a value reads.</summary>
     public static string Whose(CardRef that, EffectEvent? effect) => that switch
     {
         CardRef.Target => "the targeted monster's",
         CardRef.Cost => CostNoun(effect) + "'s",
+        CardRef.Equipped => "the equipped monster's",
         _ => "that monster's",
     };
 
@@ -178,6 +196,15 @@ public static class CardRefs
             case CardRef.Cost:
                 if (CostBlock(e.Source) is null) { e.Error($"\"{name}\": \"the cards used for the cost\" needs a COST block that discards, Tributes, banishes, sends or detaches cards."); return null; }
                 return "(e:GetLabelObject() or Group.CreateGroup())";
+            case CardRef.Equipped:
+                if (e.IsPassive) { e.Error($"\"{name}\": \"the monster this card is equipped to\" is for effects that activate; lasting effects use \"The equipped monster ...\"."); return null; }
+                return $"({Card(that)} and Group.FromCards({Card(that)}) or Group.CreateGroup())";
+            case CardRef.Event:
+                // The cards are related to the effect as it is activated, so one that left in the meantime is not used.
+                if (!e.TargetLines.Contains(EventRelateLine)) e.TargetLines.Add(EventRelateLine);
+                if (e.Code is null or "EVENT_FREE_CHAIN" or "EVENT_CHAINING")
+                    e.Warn($"\"{name}\": \"the cards that started this effect\" needs a WHEN about cards, like \"If your opponent Special Summons a monster(s)\".");
+                return "(eg or Group.CreateGroup()):Filter(Card.IsRelateToEffect,nil,e)";
             case CardRef.BattleTarget or CardRef.Battling:
                 if (!e.TargetLines.Contains(RelateLine(that))) e.TargetLines.Add(RelateLine(that));
                 if (!IsBattle(e)) e.Warn($"\"{name}\": a battling monster is only there during battle; use a WHEN about battle, like \"If this card destroys a monster by battle\".");
@@ -192,9 +219,19 @@ public static class CardRefs
         e.Code is { } code && (code.Contains("BATTLE", StringComparison.Ordinal) || code.Contains("ATTACK", StringComparison.Ordinal) || code.Contains("DAMAGE", StringComparison.Ordinal))
         || e.Source.When?.BlockId is "when.destroys_by_battle" or "when.battle" or "when.attack_declared";
 
-    /// <summary>The battling monster: this card's battle target, or your monster that is battling (one of the two Duel.GetBattleMonster gives).</summary>
-    public static string Card(CardRef that, string self = "e:GetHandler()") =>
-        that == CardRef.BattleTarget ? $"{self}:GetBattleTarget()" : "(Duel.GetBattleMonster(tp))";
+    /// <summary>
+    /// The battling monster: this card's battle target, or your monster that is battling (one of the two Duel.GetBattleMonster
+    /// gives); or the monster this card is equipped to.
+    /// </summary>
+    public static string Card(CardRef that, string self = "e:GetHandler()") => that switch
+    {
+        CardRef.BattleTarget => $"{self}:GetBattleTarget()",
+        CardRef.Equipped => "e:GetHandler():GetEquipTarget()",
+        _ => "(Duel.GetBattleMonster(tp))",
+    };
+
+    /// <summary>Relates the cards that started the effect to it as it is activated.</summary>
+    private const string EventRelateLine = "if eg then for rc in aux.Next(eg) do rc:CreateEffectRelation(e) end end";
 
     /// <summary>Relates the battling monster to the effect as it is activated.</summary>
     private static string RelateLine(CardRef that) => $"if {Card(that)} then {Card(that)}:CreateEffectRelation(e) end";
@@ -204,7 +241,7 @@ public static class CardRefs
     /// official scripts check it); targets, the cards the step before affects and cost cards are not, so there is none.
     /// </summary>
     public static string? ActivationCheck(CardRef that, string function) =>
-        that is CardRef.BattleTarget or CardRef.Battling ? $"{Card(that)}~=nil and {function}({Card(that)},e,tp)" : null;
+        that is CardRef.BattleTarget or CardRef.Battling or CardRef.Equipped ? $"{Card(that)}~=nil and {function}({Card(that)},e,tp)" : null;
 
     /// <summary>
     /// The group a picker requirement compares with ("with a different Attribute from that monster"), or nil while the
@@ -215,6 +252,7 @@ public static class CardRefs
         CardRef.Target => "(function(te,tg) if te~=e or not tg then return nil end return tg:Filter(Card.IsRelateToEffect,nil,e) end)(Duel.GetChainInfo(0,CHAININFO_TRIGGERING_EFFECT,CHAININFO_TARGET_CARDS))",
         CardRef.Affected => "(function(te) if te~=e then return nil end return Duel.GetOperatedGroup() end)(Duel.GetChainInfo(0,CHAININFO_TRIGGERING_EFFECT))",
         CardRef.Cost => "(function(te) if te~=e then return nil end return e:GetLabelObject() end)(Duel.GetChainInfo(0,CHAININFO_TRIGGERING_EFFECT))",
+        // The equipped monster and a battling monster are known whenever the effect is used.
         _ => $"(function(bc) return bc and Group.FromCards(bc) or nil end)({Card(that)})",
     };
 
@@ -245,7 +283,8 @@ public static class CardRefs
 
     /// <summary>The choices of a requirement on "that card": which card it compares with (the card text calls it "that monster").</summary>
     public static IReadOnlyList<(long Value, string Label, string Lua)> RequirementChoices() =>
-        Choices.Where(c => c.Ref != CardRef.None).Select(c => ((long)c.Ref, c.Ui[0..1].ToLowerInvariant() + c.Ui[1..], "")).ToList();
+        // The cards that started the effect are only known to its functions (eg), not to a card's filter.
+        Choices.Where(c => c.Ref is not (CardRef.None or CardRef.Event)).Select(c => ((long)c.Ref, c.Ui[0..1].ToLowerInvariant() + c.Ui[1..], "")).ToList();
 
     /// <summary>
     /// Whether the effect reads the cards used for its cost (a picker, a requirement or a value), which its cost then

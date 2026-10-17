@@ -376,13 +376,48 @@ public sealed class PlayerRulePassive : PassiveBlock
 /// <summary>What an Equip Spell gives the monster it is equipped to.</summary>
 public sealed class EquippedPassive : PassiveBlock
 {
-    public override string Id => "passive.equipped";
+    public const string BlockId = "passive.equipped";
+    public override string Id => BlockId;
     public override string Group => "Equip";
     public override string Name => "The equipped monster gains ATK / is protected...";
-    public override string Sentence => "The equipped monster {rule} {amount}";
-    public override string Help => "For Equip Spells (Card tab: Spell kind \"Equip\"). Card Crafter writes the activation that equips the card.";
+    public override string Sentence => "The equipped monster {only} {equipped} {rule} {amount}";
+    public override string Help => "For Equip Spells (Card tab: Spell kind \"Equip\"). Card Crafter writes the activation that equips the card. " +
+                                   "\"Only one like this\" applies it only while the equipped monster is such a monster: \"A \"Therion\" monster equipped with this card gains 700 ATK\".";
+
+    /// <summary>"A "Therion" monster equipped with this card": only while the equipped monster is one. Saved before this was offered: any monster.</summary>
+    public static ParamSpec OnlyParam => ParamSpec.Choice("only", "Which equipped monster", new("any", "", "(any monster)"), new("cards", "", "only one like this:"));
+
+    public static ParamSpec EquippedParam => ParamSpec.Cards("equipped", "The equipped monster",
+            () => new CardFilter { Owner = CardOwner.Either, Zones = Zone.None, CardType = FilterCardType.Monster })
+        .Unprinted().ShowIf(b => b.Values.GetValueOrDefault("only") == "cards");
+
+    /// <summary>"the equipped monster", or "a "Therion" monster equipped with this card".</summary>
+    public static string Subject(BlockArgs args)
+    {
+        if (args.Choice("only") != "cards") return "the equipped monster";
+        var f = args.Cards("equipped").Clone();
+        f.Zones = Zone.None;
+        f.CardType = FilterCardType.Monster;
+        var noun = FilterText.Describe(f, args.Pack, withLocation: false, ownName: args.CardName);
+        var article = noun.Length > 0 && "AEIOUaeiou".Contains(noun.TrimStart('"')[0]) && !noun.StartsWith("Us", StringComparison.Ordinal) ? "an" : "a";
+        return $"{article} {noun} equipped with this card";
+    }
+
+    /// <summary>The Lua test that <paramref name="card"/> is the monster the picker allows, or null for any monster.</summary>
+    public static string? EquippedTest(BlockContext ctx, string card)
+    {
+        if (ctx.Args.Choice("only") != "cards") return null;
+        var f = ctx.Args.Cards("equipped").Clone();
+        f.Zones = Zone.None;
+        f.Owner = CardOwner.Either;
+        f.CardType = FilterCardType.Monster;
+        return $"{ctx.Script.Filter(f, null, "eqmfilter").Function}({card},e,e:GetHandlerPlayer())";
+    }
+
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
+        OnlyParam,
+        EquippedParam,
         ParamSpec.Choice("rule", "Rule",
             new("gain_atk", "gains", "gains ATK"),
             new("lose_atk", "loses", "loses ATK"),
@@ -404,13 +439,13 @@ public sealed class EquippedPassive : PassiveBlock
 
     public override string Describe(BlockArgs args) => args.Choice("rule") switch
     {
-        "gain_atk" => $"the equipped monster gains {args.Int("amount")} ATK",
-        "lose_atk" => $"the equipped monster loses {args.Int("amount")} ATK",
-        "gain_both" => $"the equipped monster gains {args.Int("amount")} ATK/DEF",
-        "gain_def" => $"the equipped monster gains {args.Int("amount")} DEF",
-        "lose_def" => $"the equipped monster loses {args.Int("amount")} DEF",
-        "substitute" or "substitute_battle" => $"if the equipped monster {args.Describe("rule")}",
-        _ => $"the equipped monster {args.Describe("rule")}",
+        "gain_atk" => $"{Subject(args)} gains {args.Int("amount")} ATK",
+        "lose_atk" => $"{Subject(args)} loses {args.Int("amount")} ATK",
+        "gain_both" => $"{Subject(args)} gains {args.Int("amount")} ATK/DEF",
+        "gain_def" => $"{Subject(args)} gains {args.Int("amount")} DEF",
+        "lose_def" => $"{Subject(args)} loses {args.Int("amount")} DEF",
+        "substitute" or "substitute_battle" => $"if {Subject(args)} {args.Describe("rule")}",
+        _ => $"{Subject(args)} {args.Describe("rule")}",
     };
 
     public override void Compile(BlockContext ctx)
@@ -419,11 +454,13 @@ public sealed class EquippedPassive : PassiveBlock
         if (ctx.Card.Kind == CardKind.Spell && ctx.Card.SpellKind != SpellKind.Equip)
             ctx.Effect.Error("\"The equipped monster ...\" needs an Equip Spell: set the Spell kind to Equip on the Card tab.");
         var n = ctx.Args.Int("amount");
+        // "A "Therion" monster equipped with this card gains 700 ATK": only while the equipped monster is one.
+        var only = EquippedTest(ctx, "ec") is { } test ? $"(function(ec) return ec~=nil and {test} end)(e:GetHandler():GetEquipTarget())" : null;
         // "If the equipped monster would be destroyed, destroy this card instead": it works even against effects the monster is immune to.
         if (ctx.Args.Choice("rule") is "substitute" or "substitute_battle")
         {
             var value = ctx.Args.Choice("rule") == "substitute" ? "1" : ctx.Script.AddFunction("substval", "e,re,r,rp", ["return bit.band(r,REASON_BATTLE)~=0"]);
-            ctx.Effect.AddPassive(v => [$"{v}:SetType(EFFECT_TYPE_EQUIP)", $"{v}:SetProperty(EFFECT_FLAG_IGNORE_IMMUNE)", $"{v}:SetCode(EFFECT_DESTROY_SUBSTITUTE)", $"{v}:SetValue({value})"]);
+            ctx.Effect.AddPassive(v => [$"{v}:SetType(EFFECT_TYPE_EQUIP)", $"{v}:SetProperty(EFFECT_FLAG_IGNORE_IMMUNE)", $"{v}:SetCode(EFFECT_DESTROY_SUBSTITUTE)", $"{v}:SetValue({value})"], condition: only);
             return;
         }
         var codes = ctx.Args.Choice("rule") switch
@@ -443,7 +480,7 @@ public sealed class EquippedPassive : PassiveBlock
             _ => [("EFFECT_CANNOT_BE_EFFECT_TARGET", "aux.tgoval")],
         };
         foreach (var (code, value) in codes)
-            ctx.Effect.AddPassive(v => [$"{v}:SetType(EFFECT_TYPE_EQUIP)", $"{v}:SetCode({code})", $"{v}:SetValue({value})"]);
+            ctx.Effect.AddPassive(v => [$"{v}:SetType(EFFECT_TYPE_EQUIP)", $"{v}:SetCode({code})", $"{v}:SetValue({value})"], condition: only);
     }
 }
 

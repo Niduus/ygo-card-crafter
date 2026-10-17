@@ -430,7 +430,9 @@ public class EngineTests
             // Remembering and delayed steps need a step before them: MemoryTests plays them.
             or RememberAction.BlockId or LaterAction.BlockId
             // Attaching this card needs an Xyz Monster you control: XyzMaterialBlockTests plays it.
-            or AttachSelfAction.BlockId)).Select(b => new object[] { b.Id, false })
+            or AttachSelfAction.BlockId
+            // Equipping a card to the monster a step before Summoned: ChoicesAndEquipsTests plays it.
+            or EquipAction.BlockId)).Select(b => new object[] { b.Id, false })
             .Concat(BlockRegistry.OfKind(BlockKind.Action).Where(b => b.Param("target") is not null && b.Id is not ("do.place" or AttachSelfAction.BlockId)).Select(b => new object[] { b.Id, true }));
 
     /// <summary>Every DO block, with its default settings, activated from a monster on a well-stocked board.</summary>
@@ -520,8 +522,8 @@ public class EngineTests
     }
 
     public static IEnumerable<object[]> PassiveBlocks() =>
-        // A Trap activated from the hand has its own duel in UniqueEngineTests.
-        BlockRegistry.OfKind(BlockKind.Passive).Where(b => b.Id is not (ActivateFromHandPassive.BlockId or ActivateSetTurnPassive.BlockId)).SelectMany(def =>
+        // A Trap activated from the hand has its own duel in UniqueEngineTests; an effect given to the equipped monster, in ChoicesAndEquipsTests.
+        BlockRegistry.OfKind(BlockKind.Passive).Where(b => b.Id is not (ActivateFromHandPassive.BlockId or ActivateSetTurnPassive.BlockId or GrantEffectPassive.BlockId)).SelectMany(def =>
             new[] { def.CreateInstance() }
                 .Concat(def.Params.Where(p => p.Type == ParamType.Choice).SelectMany(p => Samples.OtherChoices(p).Select(c => def.CreateInstance().With(p.Key, c.Value))))
                 .Select(inst => new object[] { def.Id, string.Join(",", inst.Values.Select(kv => $"{kv.Key}={kv.Value}")) }));

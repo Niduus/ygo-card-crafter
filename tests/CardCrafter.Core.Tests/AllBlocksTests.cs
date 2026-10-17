@@ -201,8 +201,30 @@ public class AllBlocksTests
             case RevealPickAction.BlockId when inst.Values.GetValueOrDefault("then") == "set":
                 inst.Filters["cards"].CardType = FilterCardType.SpellTrap;
                 break;
+            // "Based on where it was sent from": each option starts with where this card was.
+            case ChooseEffectsAction.BlockId when inst.Values.GetValueOrDefault("style") == "sent_from":
+                project.Effects[0].Do.AddRange(
+                [
+                    new BlockInstance(SentFromCondition.BlockId).With("from", "field"), new BlockInstance("do.draw"),
+                    new BlockInstance(SentFromCondition.BlockId).With("from", "hand").Linked(ActionLink.Option), new BlockInstance("do.gain_lp"),
+                ]);
+                break;
             case ChooseEffectsAction.BlockId:
                 project.Effects[0].Do.AddRange([new BlockInstance("do.draw").Linked(ActionLink.Option), new BlockInstance("do.gain_lp").Linked(ActionLink.Option)]);
+                break;
+            // "Its owner draws": the owner of the card the step before moved.
+            case "do.draw" when inst.Values.GetValueOrDefault("who") == "owner":
+                project.Effects[0].Do.Insert(0, BlockRegistry.Find("do.destroy")!.CreateInstance());
+                break;
+            // Equipped to the monster this card is equipped to: something else than this card is equipped.
+            case EquipAction.BlockId when inst.Filters["to"].That == CardRef.Equipped:
+                inst.Filters["cards"] = new CardFilter { Owner = CardOwner.You, Zones = Zone.Graveyard, CardType = FilterCardType.Monster };
+                break;
+            // Giving one of this card's effects: effects listed before it to give.
+            case GrantEffectPassive.BlockId:
+                project.Effects.InsertRange(0, [
+                    new EffectEvent { When = new BlockInstance("when.ignition"), Do = [new BlockInstance("do.draw")] },
+                    new EffectEvent { When = new BlockInstance("when.ignition"), Do = [new BlockInstance("do.gain_lp")] }]);
                 break;
         }
         // "That card", "the targeted monster's ATK", "and the target": a block before that targets, affects cards, a cost, a battle.

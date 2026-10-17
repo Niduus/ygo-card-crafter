@@ -212,6 +212,10 @@ public static class BlockRegistry
         new ChooseEffectsAction(), new RevealPickAction(), new PairTargetAction(),
         // Targeting for the steps after, which act on "that card" (CardRefs.cs)
         new TargetCardsAction(),
+        // Doing one thing or another to the picked cards, and where this card was sent from (Choices.cs)
+        new EitherAction(), new SentFromCondition(),
+        // Equipping a card to a monster, and giving the equipped monster one of this card's effects (Equips.cs)
+        new EquipAction(), new GrantEffectPassive(),
     ];
 
     private static readonly Dictionary<string, BlockDefinition> ById = All.ToDictionary(b => b.Id);

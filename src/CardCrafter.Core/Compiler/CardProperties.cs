@@ -62,6 +62,18 @@ public static class CardProperties
         (0x800, "Gemini monster", ""), (0x4000, "Token", ""),
     ];
 
+    /// <summary>"Spell/Trap kind": Equip Spell, Field Spell, Counter Trap... a requirement with "is not" reads ", except Equip Spells".</summary>
+    public const string SpellTrapKind = "st_kind";
+
+    private static readonly (long, string, string)[] SpellTrapKinds =
+    [
+        (0, "Normal Spell", "c:GetType()==TYPE_SPELL"), (1, "Quick-Play Spell", "c:IsType(TYPE_QUICKPLAY)"),
+        (2, "Continuous Spell", "c:IsType(TYPE_SPELL) and c:IsType(TYPE_CONTINUOUS)"), (3, "Equip Spell", "c:IsType(TYPE_EQUIP)"),
+        (4, "Field Spell", "c:IsType(TYPE_FIELD)"), (5, "Ritual Spell", "c:IsType(TYPE_SPELL) and c:IsType(TYPE_RITUAL)"),
+        (6, "Normal Trap", "c:GetType()==TYPE_TRAP"), (7, "Continuous Trap", "c:IsType(TYPE_TRAP) and c:IsType(TYPE_CONTINUOUS)"),
+        (8, "Counter Trap", "c:IsType(TYPE_COUNTER)"),
+    ];
+
     public static readonly IReadOnlyList<CardProperty> All =
     [
         // ---- numbers
@@ -123,6 +135,9 @@ public static class CardProperties
         new("owner", "Who owns it", PropertyKind.Options, "", "owner",
             Choices: [(0, "you", "c:GetOwner()==tp"), (1, "your opponent", "c:GetOwner()==1-tp")],
             IsText: "that {0} own(s)", IsNotText: "that {0} do(es) not own", NeedsEffect: true),
+        // Salamangreat Gearblade: "3 "Salamangreat" cards from your GY ..., except Equip Spells" (said with the card's "except").
+        new(SpellTrapKind, "Spell/Trap kind (Equip Spell, Field Spell...)", PropertyKind.Options, "", "kind", Choices: SpellTrapKinds,
+            IsText: "that is a {0}", IsNotText: "that is not a {0}"),
         new("archetype", "Archetype", PropertyKind.Archetype, "", "archetype", IsText: "that is a {0} card", IsNotText: "that is not a {0} card"),
         // Hope for the Future: "1 Fusion Monster that mentions a "HERO" monster as material" (the archetypes its materials name).
         new("material_archetype", "Mentions an archetype's monster as material (Fusion)", PropertyKind.Archetype, "aux.IsMaterialListSetCard(c,{0})", "material archetype",

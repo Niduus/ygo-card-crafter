@@ -73,6 +73,24 @@ public partial class EffectSheetView : UserControl
             }
             menu.Items.Add(costs);
         }
+        // An option can also start with a timing of its own.
+        if (kind == BlockKind.Action && effect.AvailableOptionTimings.Any())
+        {
+            var timings = new MenuItem { Header = "An option's own timing (WHEN)" };
+            ToolTip.SetTip(timings, "Put it at the start of an option: that option can only be chosen at that timing, like \"● When your opponent activates a monster effect: Negate that effect\".");
+            foreach (var group in effect.AvailableOptionTimings.GroupBy(b => b.Group))
+            {
+                var header = new MenuItem { Header = group.Key };
+                foreach (var def in group)
+                {
+                    var item = new MenuItem { Header = def.Name };
+                    item.Click += (_, _) => effect.AddGate(def);
+                    header.Items.Add(item);
+                }
+                timings.Items.Add(header);
+            }
+            menu.Items.Add(timings);
+        }
         menu.ShowAt(button);
     }
 
