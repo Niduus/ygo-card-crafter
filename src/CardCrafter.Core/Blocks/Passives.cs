@@ -213,9 +213,15 @@ public sealed class BattleAbilityPassive : PassiveBlock
             new("extra2", "can make up to 3 attacks during each Battle Phase"),
             new("extra_monster", "can make up to 2 attacks on monsters during each Battle Phase"),
             new("extra_monster2", "can make up to 3 attacks on monsters during each Battle Phase"),
+            // Juggernaut Liebe: "During each Battle Phase, this card can make attacks on monsters up to the number of materials it has +1."
+            new("extra_monster_materials", "can make attacks on monsters up to the number of materials it has +1"),
             new("defense_attack", "can attack while in face-up Defense Position. If it does, apply its DEF for damage calculation"),
             new("defense_attack_atk", "can attack while in face-up Defense Position. If it does, apply its ATK for damage calculation")),
     ];
+
+    public override string Describe(BlockArgs args) => args.Choice("ability") == "extra_monster_materials"
+        ? "during each Battle Phase, this card " + args.Describe("ability")
+        : base.Describe(args);
 
     public override void Compile(BlockContext ctx)
     {
@@ -228,6 +234,7 @@ public sealed class BattleAbilityPassive : PassiveBlock
             "extra2" => ("EFFECT_EXTRA_ATTACK", "2"),
             "extra_monster" => ("EFFECT_EXTRA_ATTACK_MONSTER", "1"),
             "extra_monster2" => ("EFFECT_EXTRA_ATTACK_MONSTER", "2"),
+            "extra_monster_materials" => ("EFFECT_EXTRA_ATTACK_MONSTER", ctx.Script.AddFunction("extraatkval", "e,c", ["return e:GetHandler():GetOverlayCount()"])),
             // A value of 1 makes the damage calculation use its DEF; 0 keeps its ATK.
             "defense_attack" => ("EFFECT_DEFENSE_ATTACK", "1"),
             "defense_attack_atk" => ("EFFECT_DEFENSE_ATTACK", "0"),

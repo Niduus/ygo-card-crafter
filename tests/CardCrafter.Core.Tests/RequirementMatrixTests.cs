@@ -21,6 +21,7 @@ public static class RequirementMatrix
     public const long SummonXyz = 100130020, SummonLink = 100130021, SummonSynchro = 100130022, SummonFusion = 100130023, Poly = 100130024;
     public const long TunerId = 100130025, RitualId = 100130026, TributeId = 100130027, ZeroId = 100130028, Silencer = 100130029, Attacker = 100130030;
     public const int Arch = 0x7a1, OtherArch = 0x7a2;
+    public const long MentionsId = 100049301;
 
     public static CardRequirement R(string property, RequirementOp op, int value = 0, int value2 = 0, params long[] values) =>
         new() { Property = property, Op = op, Value = value, Value2 = value2, Values = [.. values] };
@@ -131,6 +132,13 @@ public static class RequirementMatrix
         return p;
     }
 
+    private static CardProject MentioningFusion(long id, MaterialSlot[] slots)
+    {
+        var p = Mon(id, "Mentioning Fusion", 2400, 1000, 6, frame: MonsterFrame.Fusion);
+        p.Procedure = new SummonProcedure { Kind = SummonProcedureKind.Fusion, Materials = [.. slots] };
+        return p;
+    }
+
     private static CardProject ProcFusion()
     {
         var p = Mon(SummonFusion, "Summoned Fusion", 2400, 1000, 6, frame: MonsterFrame.Fusion);
@@ -208,6 +216,9 @@ public static class RequirementMatrix
         ["synchro_summoned"] = new([ProcSynchro(), Mon(TunerId, "Matrix Tuner", 500, 500, 2, abilities: MonsterAbility.Tuner)],
             s => s.Card(TunerId, 0, "mzone").Card(Warrior, 0, "mzone").Card(SummonSynchro, 0, "extra").SpSummon(SummonSynchro), () => Monsters(kind: MonsterKind.Synchro),
             Checks: [$"Duel.IsExistingMatchingCard(Card.IsCode,0,LOCATION_MZONE,0,1,nil,{SummonSynchro})"]),
+        // A Fusion Monster whose materials name the archetype ("1 "Ember" monster + 1 monster"), and one whose don't.
+        ["fusion_mentions"] = Simple(() => Monsters(kind: MonsterKind.Fusion), MentioningFusion(MentionsId, [new MaterialSlot { Filter = new CardFilter { CardType = FilterCardType.Monster, Archetype = Arch } }, new MaterialSlot()])),
+        ["fusion_plain"] = Simple(() => Monsters(kind: MonsterKind.Fusion), MentioningFusion(MentionsId, [new MaterialSlot(), new MaterialSlot()])),
         ["fusion_summoned"] = new([ProcFusion(), PolyCard()],
             s => s.Card(Poly, 0, "hand").Card(Warrior, 0, "hand", 2).Card(SummonFusion, 0, "extra").Activate(Poly), () => Monsters(kind: MonsterKind.Fusion), Others: 1,
             Checks: [$"Duel.IsExistingMatchingCard(Card.IsCode,0,LOCATION_MZONE,0,1,nil,{SummonFusion})"]),
@@ -447,6 +458,10 @@ public class RequirementMatrixChoiceTests
         Row("stat", true, IsNot("archetype", RequirementMatrix.OtherArch)), Row("effect", false, Is("archetype", RequirementMatrix.Arch)),
         Row("stat", true, Is("name", RequirementMatrix.S)), Row("stat", false, Is("name", RequirementMatrix.Other)), Row("stat", true, Is("name", RequirementMatrix.Other, RequirementMatrix.S)),
         Row("stat", false, IsNot("name", RequirementMatrix.S)), Row("stat", false, IsNot("name", RequirementMatrix.Other, RequirementMatrix.S)), Row("stat", true, IsNot("name", RequirementMatrix.Other)),
+        // The archetypes a Fusion Monster's materials name.
+        Row("fusion_mentions", true, Is("material_archetype", RequirementMatrix.Arch)), Row("fusion_mentions", false, Is("material_archetype", RequirementMatrix.OtherArch)),
+        Row("fusion_mentions", false, IsNot("material_archetype", RequirementMatrix.Arch)), Row("fusion_mentions", true, IsNot("material_archetype", RequirementMatrix.OtherArch)),
+        Row("fusion_plain", false, Is("material_archetype", RequirementMatrix.Arch)), Row("fusion_plain", true, IsNot("material_archetype", RequirementMatrix.Arch)),
     ];
 
     public static IEnumerable<object[]> States() =>
@@ -563,6 +578,7 @@ public class RequirementMatrixTextTests
         [IsNot("owner", 0), "that you do not own"],
         [Is("archetype", 0x7a1), "that is an \"Ember\" card"],
         [IsNot("archetype", 0x7a2, 0x7a1), "that is not a \"Flame\" or \"Ember\" card"],
+        [Is("material_archetype", 0x7a1), "that mentions an \"Ember\" monster as material"],
         [Is("name", RequirementMatrix.S), "that is \"Subject\""],
         [IsNot("name", RequirementMatrix.S, RequirementMatrix.Other), "that is neither \"Subject\" nor \"Other\""],
         [Is("negated"), "whose effects are negated"],

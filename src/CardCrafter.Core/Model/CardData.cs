@@ -16,6 +16,8 @@ public sealed class CardData
     public MonsterAbility Abilities { get; set; }
     /// <summary>The monster can only be Special Summoned by its own procedure, never by other effects.</summary>
     public bool OnlyByOwnProcedure { get; set; }
+    /// <summary>"Must be Special Summoned by a card effect." (Machina Citadel), with the "Special Summon" type bit.</summary>
+    public bool OnlyByCardEffect { get; set; }
     /// <summary>"Cannot be Special Summoned.", like the Egyptian Gods.</summary>
     public bool CannotBeSpecialSummoned { get; set; }
     /// <summary>"You can only control 1 "Card Name"."</summary>
@@ -80,15 +82,20 @@ public sealed class CardData
     public bool IsExtraDeck => IsMonster && Frame is MonsterFrame.Fusion or MonsterFrame.Synchro or MonsterFrame.Xyz or MonsterFrame.Link;
     public bool IsEffectMonster => IsMonster && Frame is not (MonsterFrame.Normal or MonsterFrame.Token);
 
-    /// <summary>How the monster may be Summoned. Stored as the "Special Summon" type bit plus <see cref="OnlyByOwnProcedure"/>.</summary>
+    /// <summary>
+    /// How the monster may be Summoned. Stored as the "Special Summon" type bit plus <see cref="OnlyByOwnProcedure"/> or
+    /// <see cref="OnlyByCardEffect"/>.
+    /// </summary>
     [System.Text.Json.Serialization.JsonIgnore]
     public SummonRule SummonRule
     {
         get => OnlyByOwnProcedure ? SummonRule.ProcedureOnly
+            : OnlyByCardEffect && Abilities.HasFlag(MonsterAbility.SpecialSummonOnly) ? SummonRule.ByCardEffect
             : Abilities.HasFlag(MonsterAbility.SpecialSummonOnly) ? SummonRule.SpecialSummonOnly : SummonRule.Normal;
         set
         {
             OnlyByOwnProcedure = value == SummonRule.ProcedureOnly;
+            OnlyByCardEffect = value == SummonRule.ByCardEffect;
             Abilities = value == SummonRule.Normal
                 ? Abilities & ~MonsterAbility.SpecialSummonOnly
                 : Abilities | MonsterAbility.SpecialSummonOnly;

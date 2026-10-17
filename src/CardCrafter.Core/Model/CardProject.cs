@@ -2,6 +2,12 @@ namespace CardCrafter.Core.Model;
 
 public enum SummonProcedureKind { None, Fusion, Synchro, Xyz, Link }
 
+/// <summary>
+/// A rule for the materials as a group: "2+ monsters with different names" (Apollousa), "2 monsters with different Types
+/// and different Attributes" (Aleister the Invoker of Madness), "2+ Fusion Monsters with different Attributes" (Hyperinvoked Aeon).
+/// </summary>
+public enum MaterialGroupRule { None, DifferentNames, DifferentTypesAndAttributes, DifferentAttributes, DifferentTypes }
+
 /// <summary>What a Contact Fusion does with its materials: shuffles them into the Deck, banishes, sends to the GY or Tributes them.</summary>
 public enum ContactFusionMove { ShuffleIntoDeck, Banish, SendToGrave, Tribute }
 
@@ -24,6 +30,15 @@ public sealed class SummonProcedure
     /// <summary>Xyz: the Level of the materials, 0 for the same as the Rank.</summary>
     public int XyzMaterialLevel { get; set; }
     /// <summary>
+    /// Xyz: the materials need no Level but must all have the same Rank: "2 Xyz Monsters with the same Rank, except
+    /// "Number" monsters" (Number F0: Utopic Future).
+    /// </summary>
+    public bool XyzSameRank { get; set; }
+    /// <summary>Link, Fusion (one material that takes several cards) and level-free Xyz: what the materials must be as a group.</summary>
+    public MaterialGroupRule MaterialRule { get; set; }
+    /// <summary>Synchro: "For this card's Synchro Summon, you can treat 1 Link-1 monster you control as a Level 1 Tuner." (Lollipo★Yummy Way).</summary>
+    public bool SynchroLinkAsTuner { get; set; }
+    /// <summary>
     /// Xyz: "You can also Xyz Summon this card by using 1 <see cref="XyzAlternateFilter"/> you control" (its materials go to
     /// this card), as on Number C39 or Divine Arsenal AA-ZEUS - Sky Thunder.
     /// </summary>
@@ -35,6 +50,13 @@ public sealed class SummonProcedure
     public bool XyzAlternateAfterXyzBattle { get; set; }
     /// <summary>"...by using 1 Xyz Monster you control and detaching 2 materials from it": materials detached first.</summary>
     public int XyzAlternateDetach { get; set; }
+    /// <summary>"...by discarding 1 card and using 1 "Superdreadnought Rail Cannon Gustav Max" you control" (Gustav Rocket): cards discarded first.</summary>
+    public int XyzAlternateDiscard { get; set; }
+    /// <summary>
+    /// "..., if an effect of "Kashtira Shangri-Ira" was successfully activated this turn" (Kashtira Arise-Heart): the passcode
+    /// whose effect must have been activated this turn by either player, 0 for none.
+    /// </summary>
+    public long XyzAlternateAfterActivationOf { get; set; }
     /// <summary>Link: the materials must include at least one card <see cref="IncludeFilter"/> allows ("including a "Sky Striker" monster").</summary>
     public bool Including { get; set; }
     public CardFilter IncludeFilter { get; set; } = new() { CardType = FilterCardType.Monster };

@@ -281,6 +281,10 @@
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
               <Button Name="AddFusionSlotButton" Content="+ Add a material" Command="{Binding AddFusionSlotCommand}" />
+              <StackPanel Orientation="Horizontal" Spacing="8" ToolTip.Tip="For one material that takes several cards: &quot;2+ Fusion Monsters with different Attributes&quot;">
+                <TextBlock Text="As a group:" VerticalAlignment="Center" />
+                <ComboBox ItemsSource="{Binding MaterialRuleOptions}" SelectedItem="{Binding MaterialRuleChoice}" />
+              </StackPanel>
               <TextBlock Classes="label" TextWrapping="Wrap"
                          Text="For a specific card, enter its passcode in &quot;Only this card&quot;. One material may take more than 1 card (e.g. at most 0 = &quot;1+ Fiend monsters&quot;)." />
               <!-- Contact Fusion: "Must first be Special Summoned (from your Extra Deck) by shuffling the above cards you control into the Deck." -->
@@ -309,6 +313,8 @@
               <Button Classes="chip" Content="{Binding TunerFilter.Summary}">
                 <Button.Flyout><Flyout><views:FilterEditorView DataContext="{Binding TunerFilter}" /></Flyout></Button.Flyout>
               </Button>
+              <CheckBox Content="you can treat 1 Link-1 monster you control as a Level 1 Tuner" IsChecked="{Binding SynchroLinkAsTuner}" Margin="0,4,0,0"
+                        ToolTip.Tip="Like Lollipo★Yummy Way: for this card's Synchro Summon, a Link-1 monster is a Level 1 Tuner." />
             </StackPanel>
 
             <!-- Synchro non-Tuners, Xyz and Link materials -->
@@ -328,8 +334,15 @@
                 </StackPanel>
                 <StackPanel IsVisible="{Binding IsXyz}">
                   <TextBlock Classes="label" Text="Their Level (0 = the Rank)" />
-                  <NumericUpDown Name="XyzLevelBox" Value="{Binding XyzMaterialLevel}" Minimum="0" Maximum="13" FormatString="0" Width="120" />
+                  <NumericUpDown Name="XyzLevelBox" Value="{Binding XyzMaterialLevel}" Minimum="0" Maximum="13" FormatString="0" Width="120" IsEnabled="{Binding !XyzSameRank}" />
                 </StackPanel>
+              </StackPanel>
+              <CheckBox IsVisible="{Binding IsXyz}" Content="no Level: Xyz Monsters with the same Rank" IsChecked="{Binding XyzSameRank}"
+                        ToolTip.Tip="Like Number F0: Utopic Future: &quot;2 Xyz Monsters with the same Rank&quot;. Pick Xyz Monsters in the material picker." />
+              <StackPanel IsVisible="{Binding ShowMaterialRule}" Orientation="Horizontal" Spacing="8">
+                <TextBlock Text="As a group:" VerticalAlignment="Center" />
+                <ComboBox ItemsSource="{Binding MaterialRuleOptions}" SelectedItem="{Binding MaterialRuleChoice}"
+                          ToolTip.Tip="Like Apollousa's &quot;2+ monsters with different names&quot;" />
               </StackPanel>
               <!-- "You can also Xyz Summon this card by using 1 Xyz Monster you control" (Number C39, Sky Thunder) -->
               <StackPanel IsVisible="{Binding IsXyz}" Spacing="4" Margin="0,4,0,0">
@@ -348,6 +361,17 @@
                     <TextBlock Text="detaching" VerticalAlignment="Center" />
                     <NumericUpDown Value="{Binding XyzAlternateDetach}" Minimum="0" Maximum="5" FormatString="0" Width="110" />
                     <TextBlock Text="of its materials" VerticalAlignment="Center" />
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="6" Margin="12,0,0,0">
+                    <TextBlock Text="discarding" VerticalAlignment="Center" />
+                    <NumericUpDown Value="{Binding XyzAlternateDiscard}" Minimum="0" Maximum="5" FormatString="0" Width="110" />
+                    <TextBlock Text="card(s)" VerticalAlignment="Center" />
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,4,0,0"
+                              ToolTip.Tip="Like Kashtira Arise-Heart: only if either player activated an effect of this card (by passcode) this turn. 0 for none.">
+                    <TextBlock Text="only if an effect of the card with passcode" VerticalAlignment="Center" />
+                    <NumericUpDown Value="{Binding XyzAlternateAfterActivationOf}" Minimum="0" Maximum="999999999" FormatString="0" Width="150" ShowButtonSpinner="False" />
+                    <TextBlock Text="was activated this turn" VerticalAlignment="Center" />
                   </StackPanel>
                 </WrapPanel>
               </StackPanel>

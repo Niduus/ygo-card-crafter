@@ -434,6 +434,9 @@ public sealed class RitualSummonAction : ActionBlock
 /// or field as Fusion Material", by banishing materials from the GY (Miracle Fusion), from the Deck (Fusion Destiny),
 /// by shuffling them into the Deck, using the opponent's monsters (Super Polymerization), the Pendulum Zones or the Extra
 /// Deck (Odd-Eyes Fusion), and "including this card". Written out like Polymerization's script, Chain Material included.
+/// The materials can also be counted per place ("1 monster from your hand or field and 1 monster from your Deck",
+/// "up to 1 each from"), include a monster you control of a kind, and come from more places for some Fusion Monsters
+/// ("If Summoning an "Invoked" Fusion Monster this way, you can also ...").
 /// </summary>
 public sealed class FusionSummonAction : ActionBlock
 {
@@ -441,10 +444,11 @@ public sealed class FusionSummonAction : ActionBlock
     public override string Id => BlockId;
     public override string Group => "Summon";
     public override string Name => "Fusion Summon a monster";
-    public override string Sentence => "Fusion Summon 1 {cards} from your Extra Deck, {mats} (materials: {matcards}){self}{after}";
+    public override string Sentence => "Fusion Summon 1 {cards} from your Extra Deck, {mats} (materials: {matcards}){each}{self}{including}{inccards}{after}{also}{alsocards}";
     public override string Help => "Polymerization's effect. Pick the Fusion Monster (an archetype, an Attribute...), where the materials come from, and " +
                                    "which monsters may be materials (\"using only \"HERO\" monsters\"). Add \"Players can't respond to this activation\" for " +
-                                   "Super Polymerization's \"Cards and effects cannot be activated in response\".";
+                                   "Super Polymerization's \"Cards and effects cannot be activated in response\". \"Up to 1 each\" takes at most 1 material " +
+                                   "from each place (Splendor of the Winter Raven Witch); \"If Summoning ...\" lets some Fusion Monsters use more materials (Invocation).";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Cards("cards", "Fusion Monster", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.ExtraDeck, CardType = FilterCardType.Monster, MonsterKind = MonsterKind.Fusion }, Zone.ExtraDeck),
@@ -473,10 +477,26 @@ public sealed class FusionSummonAction : ActionBlock
             new("extra_field", "using monsters from your Extra Deck and/or field"),
             new("hand_field_extra", "using monsters from your hand, field, and/or Extra Deck"),
             new("extra", "using monsters from your Extra Deck"),
-            new("deck_extra", "using monsters from your Deck and/or Extra Deck")),
+            new("deck_extra", "using monsters from your Deck and/or Extra Deck"),
+            // Invocation - "Chalice": exactly 2 materials, 1 from each place.
+            new("hand_field_and_deck_banish", "by banishing 1 monster from your hand or field and 1 monster from your Deck"),
+            new("field_and_opponent_banish", "by banishing 1 monster you control and 1 face-up monster your opponent controls")),
         ParamSpec.Cards("matcards", "Which monsters can be material", () => new CardFilter { CardType = FilterCardType.Monster }, Zone.MonsterZone),
+        // Splendor of the Winter Raven Witch: "using up to 1 "White Crow" monster each from your hand, Extra Deck, and/or field".
+        ParamSpec.Flag("each", "up to 1 material each from each place", false).Unprinted(),
         ParamSpec.Flag("self", ", including this card", false),
+        // Omega Vidolium: "using monsters from either field, including a "Power Patron" monster you control".
+        ParamSpec.Flag("including", "including a monster you control (pick below)", false).Unprinted(),
+        ParamSpec.Cards("inccards", "Including a monster you control", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster }, Zone.MonsterZone)
+            .Unprinted().WhenUsed().ShowIf(b => b.Values.GetValueOrDefault("including") == "true"),
         SummonedMonsterAfter.Param,
+        // Invocation: "If Summoning an "Invoked" Fusion Monster this way, you can also banish monsters from your field and/or either player's GY as material."
+        ParamSpec.Choice("also", "If Summoning the monster picked below this way, you can also",
+            new("none", "", "(nothing more)"),
+            new("banish_field_gy", "banish monsters from your field and/or either player's GY as material"),
+            new("return_banished", "return monsters from any banishment to the GY as material")).Unprinted(),
+        ParamSpec.Cards("alsocards", "If Summoning", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.ExtraDeck, CardType = FilterCardType.Monster, MonsterKind = MonsterKind.Fusion }, Zone.ExtraDeck)
+            .Unprinted().WhenUsed().ShowIf(b => b.Values.GetValueOrDefault("also", "none") != "none"),
     ];
 
     /// <summary>Where one way of Fusion Summoning takes its materials from, and what it does with them.</summary>
@@ -507,18 +527,35 @@ public sealed class FusionSummonAction : ActionBlock
         "hand_field_extra" => new("Duel.GetFusionMaterial(tp)", null, false, false, false, false, "grave", Extra: true),
         "extra" => new(null, null, false, false, false, false, "grave", Extra: true),
         "deck_extra" => new(null, null, false, false, true, false, "grave", Extra: true),
+        "hand_field_and_deck_banish" => new("Duel.GetFusionMaterial(tp)", null, false, false, true, false, "banish"),
+        "field_and_opponent_banish" => new("Duel.GetFusionMaterial(tp)", "c:IsLocation(LOCATION_MZONE)", false, false, false, true, "banish"),
         _ => new("Duel.GetFusionMaterial(tp)", null, false, false, false, false, "grave"),
     };
 
-    private static CardFilter Fusion(BlockArgs args)
+    /// <summary>The places materials come from, for "up to 1 each": the hand, the field (with the Pendulum Zones), the Deck, the GY, banishment, the Extra Deck.</summary>
+    private static List<string> Places(Sources src, string mats)
     {
-        var f = args.Cards("cards").Clone();
+        var places = new List<string>();
+        if (src.Core is not null && src.CoreOnly is null or "c:IsLocation(LOCATION_HAND)") places.Add("LOCATION_HAND");
+        if (src.Core is not null && src.CoreOnly is null or "c:IsOnField()" or "c:IsLocation(LOCATION_MZONE)" || src.Pzone || src.Opponent) places.Add("LOCATION_ONFIELD");
+        if (src.Deck) places.Add("LOCATION_DECK");
+        if (src.Gy) places.Add("LOCATION_GRAVE");
+        if (src.Banished) places.Add("LOCATION_REMOVED");
+        if (src.Extra) places.Add("LOCATION_EXTRA");
+        return places.Distinct().ToList();
+    }
+
+    private static CardFilter Fusion(BlockArgs args, string key = "cards")
+    {
+        var f = args.Cards(key).Clone();
         f.MonsterKind = MonsterKind.Fusion;
         f.CardType = FilterCardType.Monster;
         f.Owner = CardOwner.You;
         f.Zones = Zone.ExtraDeck;
         return f;
     }
+
+    private static string Also(BlockArgs args) => args.Definition.Param("also") is null ? "none" : args.Choice("also");
 
     public override string Describe(BlockArgs args)
     {
@@ -528,15 +565,40 @@ public sealed class FusionSummonAction : ActionBlock
         var how = args.Describe("mats");
         // "using "HERO" monsters from your hand or field as Fusion Material", "by shuffling Spellcaster monsters from your GY...".
         if (mons != "monsters") how = how.Replace("using monsters", $"using {mons}", StringComparison.Ordinal).Replace("Fusion Materials", mons, StringComparison.Ordinal);
+        // "using up to 1 "White Crow" monster each from your hand, field, and/or Extra Deck".
+        if (args.Bool("each") && how.StartsWith("using ", StringComparison.Ordinal) && how.Contains(" from ", StringComparison.Ordinal))
+        {
+            var from = how[how.IndexOf(" from ", StringComparison.Ordinal)..];
+            how = $"using up to 1 {FilterText.Describe(mats, args.Pack, plural: false, withLocation: false)} each{from}";
+        }
         var self = args.Bool("self") ? ", including this card" : "";
-        return $"Fusion Summon 1 {fusion} from your Extra Deck, {how}{self}{args.Describe("after")}";
+        var including = args.Bool("including") ? ", including " + Article(FilterText.Describe(Including(args), args.Pack, withLocation: false)) + " you control" : "";
+        var text = $"Fusion Summon 1 {fusion} from your Extra Deck, {how}{self}{including}{args.Describe("after")}";
+        // ". If Summoning an "Invoked" Fusion Monster this way, you can also banish monsters from your field and/or either player's GY as material".
+        if (Also(args) != "none")
+            text += $". If Summoning {Article(FilterText.Describe(Fusion(args, "alsocards"), args.Pack, withLocation: false))} this way, you can also {args.Definition.Param("also")!.Choices.First(c => c.Value == Also(args)).Label}";
+        return text;
+    }
+
+    /// <summary>"a "Power Patron" monster", "an "Invoked" Fusion Monster".</summary>
+    private static string Article(string noun) => $"{SummonWording.Article(noun)} {noun}";
+
+    private static CardFilter Including(BlockArgs args)
+    {
+        var f = args.Cards("inccards").Clone();
+        f.CardType = FilterCardType.Monster;
+        f.Owner = CardOwner.You;
+        f.Zones = Zone.MonsterZone;
+        return f;
     }
 
     public override void Compile(BlockContext ctx)
     {
         var script = ctx.Script;
-        var src = Of(ctx.Args.Choice("mats"));
+        var mode = ctx.Args.Choice("mats");
+        var src = Of(mode);
         var self = ctx.Args.Bool("self");
+        var also = Also(ctx.Args);
         var matConds = FilterCompiler.Conditions(ctx.Args.Cards("matcards")).Where(c => c != "c:IsType(TYPE_MONSTER)").ToList();
         string Join(IEnumerable<string> parts) => string.Join(" and ", parts);
         var able = src.Send switch { "banish" => "c:IsAbleToRemove()", "deck" => "c:IsAbleToDeck()", _ => null };
@@ -568,7 +630,8 @@ public sealed class FusionSummonAction : ActionBlock
         }
         if (src.Deck)
         {
-            var f = script.AddFunction("fusdeckfilter", "c,e,tp,chk", [$"return {Join([.. Base("c:IsType(TYPE_MONSTER)"), "c:IsAbleToGrave()"])}"]);
+            // Sent to the GY, or banished by "Chalice".
+            var f = script.AddFunction("fusdeckfilter", "c,e,tp,chk", [$"return {Join([.. Base("c:IsType(TYPE_MONSTER)"), .. src.Send == "banish" ? [] : new[] { "c:IsAbleToGrave()" }])}"]);
             body.Add($"mg:Merge(Duel.GetMatchingGroup({f},tp,LOCATION_DECK,0,nil,e,tp,chk))");
             ctx.Effect.AddCategory("CATEGORY_DECKDES");
         }
@@ -586,9 +649,89 @@ public sealed class FusionSummonAction : ActionBlock
         body.Add("return mg");
         var mats = script.AddFunction("fusmat", "e,tp,chk", body);
 
+        // "If Summoning an "Invoked" Fusion Monster this way, you can also ...": the materials those monsters may also use.
+        string? mats2 = null;
+        if (also != "none")
+        {
+            var more = new List<string> { $"local mg={mats}(e,tp,chk)" };
+            if (also == "banish_field_gy")
+            {
+                var ff = script.AddFunction("fusalsofilter", "c,e,tp,chk", [$"return {Join(["c:IsOnField()", "c:IsCanBeFusionMaterial()", .. matConds, "c:IsAbleToRemove()", "(chk or not c:IsImmuneToEffect(e))"])}"]);
+                var gf = script.AddFunction("fusalsogyfilter", "c,e,tp,chk", [$"return {Join(["c:IsType(TYPE_MONSTER)", "c:IsCanBeFusionMaterial()", .. matConds, "c:IsAbleToRemove()"])}"]);
+                more.Add($"mg:Merge(Duel.GetFusionMaterial(tp):Filter({ff},nil,e,tp,chk))");
+                more.Add($"mg:Merge(Duel.GetMatchingGroup(aux.NecroValleyFilter({gf}),tp,LOCATION_GRAVE,LOCATION_GRAVE,nil,e,tp,chk))");
+                ctx.Effect.AddCategory("CATEGORY_REMOVE");
+            }
+            else
+            {
+                var rf = script.AddFunction("fusalsormfilter", "c,e,tp,chk", [$"return {Join(["c:IsFaceup()", "c:IsType(TYPE_MONSTER)", "c:IsCanBeFusionMaterial()", .. matConds])}"]);
+                more.Add($"mg:Merge(Duel.GetMatchingGroup({rf},tp,LOCATION_REMOVED,LOCATION_REMOVED,nil,e,tp,chk))");
+            }
+            more.Add("return mg");
+            mats2 = script.AddFunction("fusmat2", "e,tp,chk", more);
+        }
+
+        // Checks on the materials as a whole, made while the Fusion Monster's materials are checked and picked. The engine
+        // checks a group being picked with FCheckAdditional, so what a part of the materials may break goes there
+        // ("at most 1 from your Deck"); what only all of them can meet goes in FGoalCheckAdditional ("exactly 1").
+        var limits = new List<string>();
+        var goals = new List<string>();
+        void Exactly(string count)
+        {
+            limits.Add($"{count}<=1");
+            goals.Add($"{count}==1");
+        }
+        switch (mode)
+        {
+            case "hand_field_and_deck_banish":
+                Exactly("sg:FilterCount(Card.IsLocation,nil,LOCATION_HAND+LOCATION_ONFIELD)");
+                Exactly("sg:FilterCount(Card.IsLocation,nil,LOCATION_DECK)");
+                break;
+            case "field_and_opponent_banish":
+                Exactly("sg:FilterCount(Card.IsControler,nil,tp)");
+                Exactly("sg:FilterCount(Card.IsControler,nil,1-tp)");
+                break;
+        }
+        if (ctx.Args.Bool("each"))
+        {
+            var places = Places(src, mode);
+            if (places.Count < 2) ctx.Effect.Warn("\"Up to 1 material each from each place\" needs materials from more than one place.");
+            limits.AddRange(places.Select(l => $"sg:FilterCount(Card.IsLocation,nil,{l})<=1"));
+        }
+        if (ctx.Args.Bool("including"))
+        {
+            var inc = FilterCompiler.Conditions(Including(ctx.Args), "c", SummonProcedureKind.None, hasEffect: false).Where(c => c != "c:IsType(TYPE_MONSTER)").ToList();
+            var incf = script.AddFunction("fusincfilter", "c,tp", [$"return {Join(["c:IsLocation(LOCATION_MZONE)", "c:IsControler(tp)", .. inc])}"]);
+            goals.Add($"sg:IsExists({incf},1,nil,tp)");
+        }
+        var fcheck = limits.Count == 0 ? null : script.AddFunction("fuscheck", "tp,sg,fc", [$"return {Join(limits)}"]);
+        var fgoal = goals.Count == 0 ? null : script.AddFunction("fusgoalcheck", "tp,sg,fc", [$"return {Join(goals)}"]);
+        IEnumerable<string> Checked(string line, string indent = "") =>
+        [
+            .. fcheck is null ? [] : new[] { $"{indent}aux.FCheckAdditional={fcheck}" },
+            .. fgoal is null ? [] : new[] { $"{indent}aux.FGoalCheckAdditional={fgoal}" },
+            indent + line,
+            .. fcheck is null ? [] : new[] { $"{indent}aux.FCheckAdditional=nil" },
+            .. fgoal is null ? [] : new[] { $"{indent}aux.FGoalCheckAdditional=nil" },
+        ];
+        var whole = fcheck is not null || fgoal is not null;
+
         var fusConds = FilterCompiler.Conditions(Fusion(ctx.Args)).Where(c => c is not "c:IsType(TYPE_MONSTER)" and not "c:IsType(TYPE_FUSION)").ToList();
-        var fus = script.AddFunction("fusfilter", "c,e,tp,m,f,gc,chkf",
-            [$"return {Join(["c:IsType(TYPE_FUSION)", .. fusConds, "(not f or f(c))", "c:IsCanBeSpecialSummoned(e,SUMMON_TYPE_FUSION,tp,false,false)", "c:CheckFusionMaterial(m,gc,chkf)"])}"]);
+        string FusFilter(string name, List<string> conds)
+        {
+            var head = Join(["c:IsType(TYPE_FUSION)", .. conds, "(not f or f(c))", "c:IsCanBeSpecialSummoned(e,SUMMON_TYPE_FUSION,tp,false,false)"]);
+            if (!whole) return script.AddFunction(name, "c,e,tp,m,f,gc,chkf", [$"return {head} and c:CheckFusionMaterial(m,gc,chkf)"]);
+            return script.AddFunction(name, "c,e,tp,m,f,gc,chkf",
+                [$"if not ({head}) then return false end", .. Checked("local res=c:CheckFusionMaterial(m,gc,chkf)"), "return res"]);
+        }
+        var fus = FusFilter("fusfilter", fusConds);
+        string? alsoFus = null, alsoIs = null;
+        if (mats2 is not null)
+        {
+            var alsoConds = FilterCompiler.Conditions(Fusion(ctx.Args, "alsocards")).Where(c => c is not "c:IsType(TYPE_MONSTER)" and not "c:IsType(TYPE_FUSION)").ToList();
+            alsoFus = FusFilter("fusalsofusfilter", [.. fusConds, .. alsoConds]);
+            alsoIs = script.AddFunction("fusalsois", "c", [$"return {Join(["c:IsType(TYPE_FUSION)", .. alsoConds])}"]);
+        }
         var gc = self ? "c" : "nil";
         var handler = self ? new[] { "local c=e:GetHandler()" } : [];
 
@@ -598,6 +741,10 @@ public sealed class FusionSummonAction : ActionBlock
             .. handler,
             $"local mg={mats}(e,tp,true)",
             $"local res=Duel.IsExistingMatchingCard({fus},tp,LOCATION_EXTRA,0,1,nil,e,tp,mg,nil,{gc},chkf)",
+            .. mats2 is null ? Array.Empty<string>() :
+            [
+                $"if not res then res=Duel.IsExistingMatchingCard({alsoFus},tp,LOCATION_EXTRA,0,1,nil,e,tp,{mats2}(e,tp,true),nil,{gc},chkf) end",
+            ],
             "if not res then",
             "\tlocal ce=Duel.GetChainMaterial(tp)",
             "\tif ce~=nil then",
@@ -629,6 +776,31 @@ public sealed class FusionSummonAction : ActionBlock
             case "banish": ctx.Effect.AddCategory("CATEGORY_REMOVE"); break;
             case "deck": ctx.Effect.AddCategory("CATEGORY_TODECK"); break;
         }
+
+        // The materials picked: from the usual places, or with the other places too for the monsters that may use them;
+        // the ones from those other places are banished, or returned to the GY.
+        var pick = new List<string>();
+        if (mats2 is null)
+        {
+            pick.AddRange(Checked($"local mat1=Duel.SelectFusionMaterial(tp,tc,mg1,{gc},chkf)", "\t"));
+            pick.Add("\ttc:SetMaterial(mat1)");
+            pick.AddRange(send.Select(l => "\t" + l));
+        }
+        else
+        {
+            pick.Add($"\tlocal mg=mg1");
+            pick.Add($"\tif {alsoIs}(tc) then mg=mgx end");
+            pick.AddRange(Checked($"local mat1=Duel.SelectFusionMaterial(tp,tc,mg,{gc},chkf)", "\t"));
+            pick.Add("\ttc:SetMaterial(mat1)");
+            pick.Add("\tlocal xmat=mat1:Clone()");
+            pick.Add("\txmat:Sub(mg1)");
+            pick.Add("\tmat1:Sub(xmat)");
+            pick.AddRange(send.Select(l => "\t" + l));
+            pick.Add(also == "banish_field_gy"
+                ? "\tif #xmat>0 then Duel.Remove(xmat,POS_FACEUP,REASON_EFFECT+REASON_MATERIAL+REASON_FUSION) end"
+                : "\tif #xmat>0 then Duel.SendtoGrave(xmat,REASON_EFFECT+REASON_RETURN+REASON_MATERIAL+REASON_FUSION) end");
+        }
+
         var op = script.AddFunction("fusop", "e,tp",
         [
             "local chkf=tp",
@@ -637,6 +809,11 @@ public sealed class FusionSummonAction : ActionBlock
             .. self ? new[] { "if not c:IsRelateToEffect(e) or c:IsImmuneToEffect(e) then return nil end" } : [],
             $"local mg1={mats}(e,tp,false)",
             $"local sg1=Duel.GetMatchingGroup({fus},tp,LOCATION_EXTRA,0,nil,e,tp,mg1,nil,{gc},chkf)",
+            .. mats2 is null ? Array.Empty<string>() :
+            [
+                $"local mgx={mats2}(e,tp,false)",
+                $"sg1:Merge(Duel.GetMatchingGroup({alsoFus},tp,LOCATION_EXTRA,0,nil,e,tp,mgx,nil,{gc},chkf))",
+            ],
             "local mg2=nil",
             "local sg2=nil",
             "local ce=Duel.GetChainMaterial(tp)",
@@ -654,13 +831,11 @@ public sealed class FusionSummonAction : ActionBlock
             // With Extra Deck materials, the Fusion Monster is taken out of them first, as Odd-Eyes Fusion does.
             .. src.Extra ? new[] { "mg1:RemoveCard(tc)" } : [],
             "if sg1:IsContains(tc) and (sg2==nil or not sg2:IsContains(tc) or not Duel.SelectYesNo(tp,ce:GetDescription())) then",
-            $"\tlocal mat1=Duel.SelectFusionMaterial(tp,tc,mg1,{gc},chkf)",
-            "\ttc:SetMaterial(mat1)",
-            .. send.Select(l => "\t" + l),
+            .. pick,
             "\tDuel.BreakEffect()",
             "\tDuel.SpecialSummon(tc,SUMMON_TYPE_FUSION,tp,tp,false,false,POS_FACEUP)",
             "else",
-            $"\tlocal mat2=Duel.SelectFusionMaterial(tp,tc,mg2,{gc},chkf)",
+            .. Checked($"local mat2=Duel.SelectFusionMaterial(tp,tc,mg2,{gc},chkf)", "\t"),
             "\tlocal fop=ce:GetOperation()",
             "\tfop(ce,e,tp,tc,mat2)",
             "end",

@@ -508,7 +508,7 @@ public static class ScriptCompiler
             d.Add(new(Severity.Warning, "Normal monsters have no effects. Change the frame to Effect so the game runs them."));
         if (card.IsLink && card.LinkMarkers == LinkMarker.None)
             d.Add(new(Severity.Error, "Link monsters need at least one Link Arrow."));
-        if (card.IsMonster && card.SummonRule != SummonRule.Normal && card.IsMainDeckNonRitual
+        if (card.IsMonster && card.SummonRule is not (SummonRule.Normal or SummonRule.ByCardEffect) && card.IsMainDeckNonRitual
             && !project.Effects.Any(e => e.When?.BlockId == SummonProcedureTrigger.BlockId))
         {
             d.Add(new(Severity.Warning, card.SummonRule == SummonRule.ProcedureOnly

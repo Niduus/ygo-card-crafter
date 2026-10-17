@@ -238,13 +238,15 @@ public sealed class AttachMaterialAction : CardGroupAction
     public override string Id => "do.attach";
     public override string Group => "Monsters";
     public override string Name => "Attach cards to this card as material";
-    public override string Sentence => "Attach {count} {cards} {target} to this card as material";
+    public override string Sentence => "Attach {amount} {count_cards} {count} {cards} {pick} {sum} {target} to this card as material {chooser}";
     public override string Help => "Xyz Monsters only: the cards go under this card as Xyz Materials.";
     protected override string Category => "";
     protected override string Hint => "HINTMSG_XMATERIAL";
     protected override string TargetedWording => "attach {0} to this card as material";
     protected override Func<CardFilter> DefaultCards => () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Graveyard, CardType = FilterCardType.Monster };
     protected override string? AbleCheck(BlockContext ctx) => "c:IsCanOverlay()";
+    // Tantrum Toddler: "attach up to 1 card each from your GY and your opponent's GY to this card as material".
+    protected override bool OffersSelections => true;
 
     protected override string Apply(string g, BlockContext ctx)
     {

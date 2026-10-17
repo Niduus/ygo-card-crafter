@@ -428,8 +428,10 @@ public class EngineTests
             or ExtraDeckSummonAction.BlockId or RankUpAction.BlockId
             or TrapMonsterAction.BlockId or EndPhaseAction.BlockId
             // Remembering and delayed steps need a step before them: MemoryTests plays them.
-            or RememberAction.BlockId or LaterAction.BlockId)).Select(b => new object[] { b.Id, false })
-            .Concat(BlockRegistry.OfKind(BlockKind.Action).Where(b => b.Param("target") is not null && b.Id != "do.place").Select(b => new object[] { b.Id, true }));
+            or RememberAction.BlockId or LaterAction.BlockId
+            // Attaching this card needs an Xyz Monster you control: XyzMaterialBlockTests plays it.
+            or AttachSelfAction.BlockId)).Select(b => new object[] { b.Id, false })
+            .Concat(BlockRegistry.OfKind(BlockKind.Action).Where(b => b.Param("target") is not null && b.Id is not ("do.place" or AttachSelfAction.BlockId)).Select(b => new object[] { b.Id, true }));
 
     /// <summary>Every DO block, with its default settings, activated from a monster on a well-stocked board.</summary>
     [EngineTheory]

@@ -396,7 +396,8 @@ public sealed partial class CardViewModel : ObservableObject
         ? Options.Of(
             (SummonRule.Normal, "Can be Normal Summoned"),
             (SummonRule.SpecialSummonOnly, "Can't be Normal Summoned: must first be Special Summoned"),
-            (SummonRule.ProcedureOnly, "Can only be Special Summoned by its own procedure"))
+            (SummonRule.ProcedureOnly, "Can only be Special Summoned by its own procedure"),
+            (SummonRule.ByCardEffect, "Can't be Normal Summoned: must be Special Summoned by a card effect"))
         : Options.Of(
             (SummonRule.Normal, $"{C.Frame} Summon, can be revived once properly Summoned"),
             (SummonRule.ProcedureOnly, $"Must be {C.Frame} Summoned: can't be Special Summoned other ways"));
@@ -436,6 +437,7 @@ public sealed partial class CardViewModel : ObservableObject
     public string SummonRuleHelp => (C.IsMainDeckNonRitual, C.SummonRule) switch
     {
         (true, SummonRule.Normal) => "To also let it Special Summon itself, like Cyber Dragon, add an effect with the WHEN block \"Special Summon procedure\".",
+        (true, SummonRule.ByCardEffect) => "Like Machina Citadel: only card effects can Special Summon it, but then from anywhere, even if it was never properly Summoned.",
         (true, _) => "Say how it is Special Summoned with an effect that uses the WHEN block \"Special Summon procedure\" (Effects tab, or the \"Summon procedure\" templates).",
         _ => "",
     };
@@ -496,7 +498,7 @@ public sealed partial class CardViewModel : ObservableObject
             nameof(ShowDef), nameof(IsPendulum), nameof(IsExtraDeck), nameof(IsFusion), nameof(IsSynchro), nameof(ShowMaterialFilter),
             nameof(ProcedureTitle), nameof(MinMaterialsLabel), nameof(LevelLabel), nameof(LinkRatingText),
             nameof(SummonRuleOptions), nameof(SummonRuleChoice), nameof(SummonRuleHelp),
-            nameof(IsXyz), nameof(IsLinkProcedure), nameof(IsEquipSpell), nameof(MaterialsText), nameof(HasMaterialsText),
+            nameof(IsXyz), nameof(IsLinkProcedure), nameof(IsEquipSpell), nameof(MaterialsText), nameof(HasMaterialsText), nameof(ShowMaterialRule),
         }) OnPropertyChanged(n);
     }
 
@@ -547,6 +549,57 @@ public sealed partial class CardViewModel : ObservableObject
         get => Project.Procedure.XyzAlternateDetach;
         set { var v = Math.Max(0, (int)(value ?? 0)); if (Project.Procedure.XyzAlternateDetach == v) return; Project.Procedure.XyzAlternateDetach = v; OnPropertyChanged(); Changed(); }
     }
+
+    /// <summary>"by discarding 1 card and using ..." (Gustav Rocket).</summary>
+    public decimal? XyzAlternateDiscard
+    {
+        get => Project.Procedure.XyzAlternateDiscard;
+        set { var v = Math.Max(0, (int)(value ?? 0)); if (Project.Procedure.XyzAlternateDiscard == v) return; Project.Procedure.XyzAlternateDiscard = v; OnPropertyChanged(); Changed(); }
+    }
+
+    /// <summary>"if an effect of "Kashtira Shangri-Ira" was successfully activated this turn": its passcode, 0 for none.</summary>
+    public decimal? XyzAlternateAfterActivationOf
+    {
+        get => Project.Procedure.XyzAlternateAfterActivationOf;
+        set { var v = Math.Max(0, (long)(value ?? 0)); if (Project.Procedure.XyzAlternateAfterActivationOf == v) return; Project.Procedure.XyzAlternateAfterActivationOf = v; OnPropertyChanged(); Changed(); }
+    }
+
+    /// <summary>Xyz: "2 Xyz Monsters with the same Rank": the materials need no Level.</summary>
+    public bool XyzSameRank
+    {
+        get => Project.Procedure.XyzSameRank;
+        set { if (Project.Procedure.XyzSameRank == value) return; Project.Procedure.XyzSameRank = value; OnPropertyChanged(); Changed(); }
+    }
+
+    /// <summary>Synchro: "you can treat 1 Link-1 monster you control as a Level 1 Tuner".</summary>
+    public bool SynchroLinkAsTuner
+    {
+        get => Project.Procedure.SynchroLinkAsTuner;
+        set { if (Project.Procedure.SynchroLinkAsTuner == value) return; Project.Procedure.SynchroLinkAsTuner = value; OnPropertyChanged(); Changed(); }
+    }
+
+    /// <summary>"with different names", "with different Types and different Attributes": the materials as a group.</summary>
+    public IReadOnlyList<Option<MaterialGroupRule>> MaterialRuleOptions { get; } = Options.Of(
+        (MaterialGroupRule.None, "any materials together"),
+        (MaterialGroupRule.DifferentNames, "with different names"),
+        (MaterialGroupRule.DifferentTypesAndAttributes, "with different Types and different Attributes"),
+        (MaterialGroupRule.DifferentAttributes, "with different Attributes"),
+        (MaterialGroupRule.DifferentTypes, "with different Types"));
+
+    public Option<MaterialGroupRule> MaterialRuleChoice
+    {
+        get => Options.Find(MaterialRuleOptions, Project.Procedure.MaterialRule);
+        set
+        {
+            if (value is null || value.Value == Project.Procedure.MaterialRule) return;
+            Project.Procedure.MaterialRule = value.Value;
+            OnPropertyChanged();
+            Changed();
+        }
+    }
+
+    /// <summary>The group rule is offered for Link, Xyz and Fusion materials.</summary>
+    public bool ShowMaterialRule => C.IsMonster && C.Frame is MonsterFrame.Link or MonsterFrame.Xyz or MonsterFrame.Fusion;
 
     /// <summary>Link: the materials must include a card the include filter allows.</summary>
     public bool Including
