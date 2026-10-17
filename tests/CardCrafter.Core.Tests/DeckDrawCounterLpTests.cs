@@ -540,7 +540,7 @@ public class DeckDrawCounterLpTests
     [Fact]
     public void DiscardAnyNumber_ThenThatMany()
     {
-        Assert.Equal("You can discard any number of Warrior monsters from your hand; send that many face-up monsters your opponent controls to the GY.", Text(RaDiscards()));
+        Assert.Equal("You can discard any number of Warrior monsters; send that many face-up monsters your opponent controls to the GY.", Text(RaDiscards()));
         var lua = Compiles(RaDiscards());
         Assert.Contains("e:SetLabel(Duel.DiscardHand(tp,s.discardfilter,1,", lua);
     }
