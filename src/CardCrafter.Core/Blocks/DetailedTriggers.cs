@@ -1000,11 +1000,9 @@ public sealed class ThisCardDetailTrigger : BlockDefinition
             case "material":
             {
                 var kind = Materials.First(m => m.Key == args.Choice("material"));
-                var summoner = args.Cards("summoner");
-                var of = FilterCompiler.Conditions(summoner).All(c => c == "c:IsType(TYPE_MONSTER)") && summoner.CardCode == 0 ? ""
-                    : " of " + A(FilterText.Describe(summoner, args.Pack, false, "", withLocation: false));
-                var summon = kind.Key == "any" ? "a Summon" : $"a {kind.Label} Summon";
-                verb = now == "gy" ? $"is sent to the GY as material for {summon}{of}" : $"is used as material for {summon}{of}";
+                // "for the Link Summon of a WATER monster", as official cards say it.
+                var summon = MaterialFor.Summon(kind.Label, args.Cards("summoner"), args.Pack);
+                verb = now == "gy" ? $"is sent to the GY as material for {summon}" : $"is used as material for {summon}";
                 break;
             }
             default:

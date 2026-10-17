@@ -66,7 +66,7 @@ public static class BlockRegistry
         new PhaseCondition(),
         new PositionCondition(),
         new HandCountCondition(),
-        new SummonedByCondition(),
+        new SummonedByCondition(), new UsedAsMaterialCondition(),
         new NotSentThisTurnCondition(),
         new CanBattleCondition(),
         new CompareLifePointsCondition(),

@@ -125,7 +125,7 @@ public sealed class UsedAsMaterialTrigger : SelfTriggerBlock
     public const string BlockId = "when.used_as_material";
     public override string Id => BlockId;
     public override string Name => "This card is used as material";
-    public override string Sentence => "If this card is used as material for a {kind} Summon";
+    public override string Sentence => "If this card is used as material for a {kind} Summon of {summoner}";
     public override string Help => "Fusion, Synchro, Link and Ritual materials go to the GY, so they can activate. Xyz Materials go under the Xyz monster and can't. " +
                                    "For \"a Fusion or Synchro Summon\", add the other with \"+ Or when...\".";
     public override IReadOnlyList<ParamSpec> Params { get; } =
@@ -136,15 +136,21 @@ public sealed class UsedAsMaterialTrigger : SelfTriggerBlock
             new("link", "Link"),
             new("ritual", "Ritual")),
         ParamSpec.Flag("gy", "only if sent to the GY", false),
+        // "as material for the Ritual Summon of a LIGHT Reptile monster" (MaterialFor.cs).
+        MaterialFor.Picker(),
         OptionalParam,
     ];
 
-    public override string Describe(BlockArgs args) => args.Bool("gy")
-        ? $"If this card is sent to the GY as material for a {args.Describe("kind")} Summon"
-        : $"If this card is used as material for a {args.Describe("kind")} Summon";
+    private static string For(BlockArgs args) => MaterialFor.Summon(args.Describe("kind"), args.Cards("summoner"), args.Pack);
 
-    public override EventPhrase? Phrase(BlockArgs args) =>
-        new("If", args.Bool("gy") ? "this card is sent to the GY as material for a {0} Summon" : "this card is used as material for a {0} Summon", args.Describe("kind"));
+    public override string Describe(BlockArgs args) => args.Bool("gy")
+        ? $"If this card is sent to the GY as material for {For(args)}"
+        : $"If this card is used as material for {For(args)}";
+
+    // Without a picked monster the Summon stays the phrase's argument, so "Or when" merges it: "for a Fusion or Synchro Summon".
+    public override EventPhrase? Phrase(BlockArgs args) => MaterialFor.Picks(args.Cards("summoner"))
+        ? new("If", args.Bool("gy") ? "this card is sent to the GY as material for {0}" : "this card is used as material for {0}", For(args))
+        : new("If", args.Bool("gy") ? "this card is sent to the GY as material for a {0} Summon" : "this card is used as material for a {0} Summon", args.Describe("kind"));
 
     public override void Compile(BlockContext ctx)
     {
@@ -159,6 +165,7 @@ public sealed class UsedAsMaterialTrigger : SelfTriggerBlock
             _ => "REASON_FUSION",
         };
         ctx.Effect.Conditions.Add($"e:GetHandler():IsReason({reason})");
+        if (MaterialFor.Test(ctx, "e:GetHandler()") is { } of) ctx.Effect.Conditions.Add(of);
     }
 }
 
