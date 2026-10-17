@@ -57,6 +57,7 @@ public static partial class EffectTextGenerator
         // Printed cards keep the materials on their own line; everything else is one paragraph.
         var paragraph = new List<string>();
         if (MaterialText.Alternate(project, pack) is { Length: > 0 } alternate) paragraph.Add(alternate);
+        if (MaterialText.SynchroLinkTuner(project) is { Length: > 0 } tuner) paragraph.Add(tuner);
         if (EquipText(project, pack) is { Length: > 0 } equip) paragraph.Add(equip);
         if (ContactFusion.Text(project) is { Length: > 0 } contact) paragraph.Add(contact);
         else if (RuleText(project) is { Length: > 0 } rule) paragraph.Add(rule);
@@ -99,8 +100,10 @@ public static partial class EffectTextGenerator
     {
         var card = project.Card;
         if (!card.IsMonster || card.SummonRule == SummonRule.Normal) return "";
+        // "Must be either Fusion Summoned, or Special Summoned by ...": the procedure from the Extra Deck says it.
         if (!card.IsMainDeckNonRitual)
-            return card.SummonRule == SummonRule.ProcedureOnly ? $"Must be {card.Frame} Summoned." : "";
+            return card.SummonRule == SummonRule.ProcedureOnly && !project.Effects.Any(IsExtraDeckProcedure) ? $"Must be {card.Frame} Summoned." : "";
+        if (card.SummonRule == SummonRule.ByCardEffect) return "Cannot be Normal Summoned/Set. Must be Special Summoned by a card effect.";
         bool hasProcedure = project.Effects.Any(e => e.When?.BlockId == SummonProcedureTrigger.BlockId);
         return hasProcedure ? "" : "Cannot be Normal Summoned/Set.";
     }
@@ -180,7 +183,13 @@ public static partial class EffectTextGenerator
         // Lasting effects with nothing before them read as separate sentences, like "Neither player can ... Negate all ...".
         var (targetClause, actions) = Actions(effect.Do, pack, effect, sentences: passive && head.Length == 0);
         string text;
-        if (passive)
+        // "An Xyz Monster whose original Type is Machine and has this card as material gains this effect.\n ● This card ...".
+        if (passive && WhileFaceUpTrigger.ForXyz(effect.When))
+        {
+            var lead = WhileFaceUpTrigger.XyzLead(new BlockArgs(trigger, effect.When, pack) { Effect = effect, CardName = card.Name }, effect.Do.Count > 1);
+            text = $"{lead}.{OptionLine}{(head.Length == 0 ? SentenceCase.Upper(actions) : $"{SentenceCase.Upper(head)}, {actions}")}";
+        }
+        else if (passive)
         {
             text = head.Length == 0 ? SentenceCase.Upper(actions) : $"{SentenceCase.Upper(head)}, {actions}";
             // "If this card attacks, ... until the end of the Damage Step."
@@ -284,12 +293,23 @@ public static partial class EffectTextGenerator
     {
         var from = SummonProcedureTrigger.FromText(effect.When!.Values.GetValueOrDefault("zone") ?? "hand");
         if (effect.When!.Values.GetValueOrDefault("to") == "center") from += " to your center Main Monster Zone";
+        if (effect.When!.Values.GetValueOrDefault("position") is "attack" or "defense" && BlockRegistry.Find(SummonProcedureTrigger.BlockId) is { } proc)
+            from += " " + new BlockArgs(proc, effect.When).Describe("position");
         var costs = string.Join(" and ", effect.Cost.Select(b => Gerund(Text(b, pack))).Where(t => t.Length > 0));
         var cond = string.Join(" and ", effect.If.Select(b => Text(b, pack)).Where(t => t.Length > 0));
         var by = costs.Length == 0 ? "" : " by " + costs;
 
         string text;
-        if (card.SummonRule == SummonRule.Normal)
+        if (IsExtraDeckProcedure(effect))
+        {
+            // Snake-Eyes Doomed Dragon: "Must be either Fusion Summoned, or Special Summoned by sending 2 face-up Monster Cards ..."
+            text = card.SummonRule == SummonRule.ProcedureOnly
+                ? $"Must be either {card.Frame} Summoned, or Special Summoned{(by.Length > 0 ? by : " " + from)}"
+                : $"Must first be either {card.Frame} Summoned, or Special Summoned from your Extra Deck{by}";
+            if (cond.Length > 0) text += (by.Length > 0 ? ", " : " ") + Clause(cond, "while");
+            text += ".";
+        }
+        else if (card.SummonRule == SummonRule.Normal)
         {
             var body = $"you can Special Summon this card {from}{by}";
             text = cond.Length == 0 ? SentenceCase.Upper(body) : $"{SentenceCase.Upper(Clause(cond, "if"))}, {body}";
@@ -316,6 +336,10 @@ public static partial class EffectTextGenerator
             text += " You can only Special Summon this card once per turn this way.";
         return text;
     }
+
+    /// <summary>An Extra Deck monster's own way to Special Summon itself "from your Extra Deck", besides its usual Summon.</summary>
+    private static bool IsExtraDeckProcedure(EffectEvent e) =>
+        e.When?.BlockId == SummonProcedureTrigger.BlockId && e.When.Values.GetValueOrDefault("zone") == "extra";
 
     /// <summary>"discard 1 card" becomes "discarding 1 card"; "Tribute 1 monster" becomes "Tributing 1 monster".</summary>
     private static string Gerund(string phrase)

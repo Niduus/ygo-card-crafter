@@ -482,18 +482,22 @@ public sealed class SummonProcedureTrigger : BlockDefinition
     public override BlockKind Kind => BlockKind.Trigger;
     public override string Group => "This card";
     public override string Name => "Special Summon procedure";
-    public override string Sentence => "You can Special Summon this card {zone} {to} (Summon procedure)";
+    public override string Sentence => "You can Special Summon this card {zone} {to} {position} (Summon procedure)";
     public override string Help =>
         "A built-in way to Special Summon this card, like Cyber Dragon or Chaos Sorcerer. It doesn't start a chain, " +
         "so it can't be responded to or negated. Add IF blocks for when it's allowed and COST blocks for what you pay. " +
-        "It has no DO blocks: the Summon is what it does.";
+        "It has no DO blocks: the Summon is what it does. Extra Deck monsters can have one \"from your Extra Deck\" besides their usual Summon " +
+        "(Snake-Eyes Doomed Dragon).";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Choice("zone", "From",
             new("hand", "from your hand"),
             new("graveyard", "from your GY"),
-            new("banished", "from your banishment")),
+            new("banished", "from your banishment"),
+            new("extra", "from your Extra Deck")),
         ParamSpec.Choice("to", "To", new("any", "", "to any zone"), new("center", "to your center Main Monster Zone")),
+        // Jester Confit: "You can Special Summon this card (from your hand) in Attack Position."
+        ParamSpec.Choice("position", "Position", new("any", "", "in either position"), new("attack", "in Attack Position"), new("defense", "in Defense Position")),
     ];
 
     public override string Describe(BlockArgs args) => "";
@@ -503,20 +507,31 @@ public sealed class SummonProcedureTrigger : BlockDefinition
     {
         "graveyard" => "(from your GY)",
         "banished" => "(from your banishment)",
+        "extra" => "(from your Extra Deck)",
         _ => "(from your hand)",
     };
 
     public override void Compile(BlockContext ctx)
     {
         Zones.RequireMonster(ctx, Name);
-        if (ctx.Card.IsExtraDeck)
-            ctx.Effect.Error($"{ctx.Card.Frame} monsters are Summoned by the procedure on the Card tab, not by a \"{Name}\" effect.");
+        var zone = ctx.Args.Choice("zone");
+        // An Extra Deck monster's own way "from your Extra Deck" (Snake-Eyes Doomed Dragon), besides its usual Summon.
+        if (ctx.Card.IsExtraDeck && zone != "extra")
+            ctx.Effect.Error($"{ctx.Card.Frame} monsters are Summoned by the procedure on the Card tab; a \"{Name}\" effect of theirs must be \"from your Extra Deck\".");
+        if (!ctx.Card.IsExtraDeck && zone == "extra")
+            ctx.Effect.Error($"Only Fusion, Synchro, Xyz and Link Monsters are in the Extra Deck; pick another place for \"{Name}\".");
         ctx.Effect.IsSummonProcedure = true;
         ctx.Effect.Types.Add("EFFECT_TYPE_FIELD");
         ctx.Effect.Code = "EFFECT_SPSUMMON_PROC";
         ctx.Effect.AddProperty("EFFECT_FLAG_UNCOPYABLE");
         if (ctx.Card.SummonRule != SummonRule.Normal) ctx.Effect.AddProperty("EFFECT_FLAG_CANNOT_DISABLE");
-        ctx.Effect.Range = Zones.Resolve(ctx.Args.Choice("zone"), ctx.Card);
+        ctx.Effect.Range = zone == "extra" ? "LOCATION_EXTRA" : Zones.Resolve(zone, ctx.Card);
+        if (zone == "extra") ctx.Effect.ProcedureFromExtra = true;
+        if (ctx.Args.Choice("position") is "attack" or "defense")
+        {
+            ctx.Effect.AddProperty("EFFECT_FLAG_SPSUM_PARAM");
+            ctx.Effect.ProcedurePosition = ctx.Args.Choice("position") == "attack" ? "POS_FACEUP_ATTACK" : "POS_FACEUP_DEFENSE";
+        }
         // Elfnote: "You can Special Summon this card (from your hand) to your center Main Monster Zone."
         if (ctx.Args.Choice("to") == "center") ctx.Effect.ProcedureZone = "0x4";
     }
@@ -1137,15 +1152,51 @@ public sealed class WhileFaceUpTrigger : BlockDefinition
     public override BlockKind Kind => BlockKind.Trigger;
     public override string Group => "Lasting";
     public override string Name => "While this card is face-up (lasting effect)";
-    public override string Sentence => "While this card is face-up {zone}";
-    public override string Help => "A lasting effect that is always on and never activates, like an ATK boost or protection.";
-    public override IReadOnlyList<ParamSpec> Params { get; } = [ParamSpec.Choice("zone", "Where", Zones.RangeChoices)];
+    public override string Sentence => "While this card is face-up {zone} {as} {xyz}";
+    public override string Help => "A lasting effect that is always on and never activates, like an ATK boost or protection. \"An Xyz Monster that has this " +
+                                   "card as material gains this effect\" gives it to the Xyz Monster this card is under instead (Infinitrack Goliath): " +
+                                   "\"this card\" in its DO blocks is that Xyz Monster.";
+    public override IReadOnlyList<ParamSpec> Params { get; } =
+    [
+        ParamSpec.Choice("zone", "Where", Zones.RangeChoices).ShowIf(b => b.Values.GetValueOrDefault("as") != "xyz"),
+        ParamSpec.Choice("as", "Whose effect", new("self", "", "this card's own"), new("xyz", "", "an Xyz Monster that has this card as material gains it")),
+        ParamSpec.Cards("xyz", "The Xyz Monster", () => new CardFilter { Owner = CardOwner.Either, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster, MonsterKind = MonsterKind.Xyz }, Zone.MonsterZone)
+            .WhenUsed().ShowIf(b => b.Values.GetValueOrDefault("as") == "xyz"),
+    ];
 
     public override string Describe(BlockArgs args) => "";
+
+    /// <summary>True when the effect is one an Xyz Monster gains while this card is its material (EFFECT_TYPE_XMATERIAL).</summary>
+    public static bool ForXyz(BlockInstance? when) => when?.BlockId == "when.while_face_up" && when.Values.GetValueOrDefault("as") == "xyz";
+
+    private static CardFilter XyzFilter(BlockArgs args)
+    {
+        var f = args.Cards("xyz").Clone();
+        f.CardType = FilterCardType.Monster;
+        f.MonsterKind = MonsterKind.Xyz;
+        return f;
+    }
+
+    /// <summary>"An Xyz Monster whose original Type is Machine and has this card as material gains this effect".</summary>
+    public static string XyzLead(BlockArgs args, bool several)
+    {
+        var noun = FilterText.Describe(XyzFilter(args), args.Pack, withLocation: false);
+        var has = noun.Contains(" whose ", StringComparison.Ordinal) || noun.Contains(" that ", StringComparison.Ordinal) ? " and has this card as material" : " that has this card as material";
+        return $"{SentenceCase.Upper(SummonWording.Article(noun))} {noun}{has} gains {(several ? "these effects" : "this effect")}";
+    }
 
     public override void Compile(BlockContext ctx)
     {
         ctx.Effect.IsPassive = true;
+        if (ctx.Args.Choice("as") == "xyz")
+        {
+            // The Xyz Monster gains the effects: their handler is that monster, which must be what the picker says.
+            var parts = FilterCompiler.Conditions(XyzFilter(ctx.Args), "c", SummonProcedureKind.None, hasEffect: false);
+            var fn = ctx.Script.AddFunction("xmatfilter", "c", [$"return {string.Join(" and ", parts)}"]);
+            ctx.Effect.XyzMaterialCondition = $"{fn}(e:GetHandler())";
+            ctx.Effect.Range = "LOCATION_MZONE";
+            return;
+        }
         ctx.Effect.Range = Zones.Resolve(ctx.Args.Choice("zone"), ctx.Card);
     }
 }

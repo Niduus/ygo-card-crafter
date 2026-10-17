@@ -22,16 +22,28 @@ public static class MaterialText
             {
                 var min = Math.Max(1, proc.MinMaterials);
                 var max = proc.MaxMaterials > 0 ? proc.MaxMaterials : Math.Max(min, card.LinkRating);
-                var text = $"{Count(min, max)} {F(proc.MaterialFilter, max != 1)}";
+                var rule = RuleText(proc.MaterialRule);
+                // "2+ monsters with different names, except Tokens" (Apollousa).
+                var except = "";
+                var f = rule.Length > 0 ? WithoutExcept(proc.MaterialFilter, out except, pack) : proc.MaterialFilter;
+                var text = $"{Count(min, max)} {F(f, max != 1)}{rule}{except}";
                 if (proc.Including) text += ", including " + Article(F(proc.IncludeFilter, false));
                 return text;
             }
             case SummonProcedureKind.Xyz:
             {
+                var min = Math.Max(2, proc.MinMaterials);
+                var count = Count(min, proc.MaxMaterials > min ? proc.MaxMaterials : min);
+                var rule = RuleText(proc.MaterialRule);
+                // "2 Xyz Monsters with the same Rank, except "Number" monsters" (Number F0: Utopic Future): no Level.
+                if (proc.XyzSameRank)
+                {
+                    var same = WithoutExcept(proc.MaterialFilter, out var except, pack);
+                    return $"{count} {F(same, true)} with the same Rank{(rule.Length > 0 ? " and" + rule[" with".Length..] : "")}{except}";
+                }
                 var f = proc.MaterialFilter.Clone();
                 f.LevelMin = f.LevelMax = Procedures.XyzLevel(proc, card);
-                var min = Math.Max(2, proc.MinMaterials);
-                return $"{Count(min, proc.MaxMaterials > min ? proc.MaxMaterials : min)} {F(f, true)}";
+                return $"{count} {F(f, true)}{rule}";
             }
             case SummonProcedureKind.Synchro:
             {
@@ -45,6 +57,9 @@ public static class MaterialText
             }
             default:
             {
+                // "2+ Fusion Monsters with different Attributes" (Hyperinvoked Aeon).
+                if (proc.Materials.Count == 1 && RuleText(proc.MaterialRule) is { Length: > 0 } rule)
+                    return Slot(proc.Materials[0], pack) + rule;
                 if (proc.Materials.Count > 0)
                     return string.Join(" + ", proc.Materials.Select(m => Slot(m, pack)));
                 if (proc.FusionMaterialCodes.Count >= 2)
@@ -77,7 +92,55 @@ public static class MaterialText
             1 => " and detaching 1 material from it",
             var n => $" and detaching {n} materials from it",
         };
-        return $"{lead} can also Xyz Summon {name} by using {Using(proc, pack)}{detach}. (Transfer its materials to this card.)";
+        // Gustav Rocket: "by discarding 1 card and using 1 "Superdreadnought Rail Cannon Gustav Max" you control".
+        var discard = proc.XyzAlternateDiscard switch
+        {
+            0 => "",
+            1 => "discarding 1 card and ",
+            var n => $"discarding {n} cards and ",
+        };
+        // Kashtira Arise-Heart: "..., if an effect of "Kashtira Shangri-Ira" was successfully activated this turn."
+        var after = proc.XyzAlternateAfterActivationOf > 0 ? $", if an effect of {Name(proc.XyzAlternateAfterActivationOf, pack)} was successfully activated this turn" : "";
+        return $"{lead} can also Xyz Summon {name} by {discard}using {Using(proc, pack)}{detach}{after}. (Transfer its materials to this card.)";
+    }
+
+    /// <summary>"For this card's Synchro Summon, you can treat 1 Link-1 monster you control as a Level 1 Tuner."; "" without it.</summary>
+    public static string SynchroLinkTuner(CardProject project) =>
+        project.Card.IsExtraDeck && project.Procedure is { Kind: SummonProcedureKind.Synchro, SynchroLinkAsTuner: true }
+            ? "For this card's Synchro Summon, you can treat 1 Link-1 monster you control as a Level 1 Tuner."
+            : "";
+
+    /// <summary>" with different names", " with different Types and different Attributes"..., or "".</summary>
+    private static string RuleText(MaterialGroupRule rule) => rule switch
+    {
+        MaterialGroupRule.DifferentNames => " with different names",
+        MaterialGroupRule.DifferentTypesAndAttributes => " with different Types and different Attributes",
+        MaterialGroupRule.DifferentAttributes => " with different Attributes",
+        MaterialGroupRule.DifferentTypes => " with different Types",
+        _ => "",
+    };
+
+    /// <summary>
+    /// The filter without what material lines say last with "except": not a Token (", except Tokens"), not of an
+    /// archetype (", except "Number" monsters").
+    /// </summary>
+    private static CardFilter WithoutExcept(CardFilter filter, out string except, CardPack? pack)
+    {
+        var f = filter.Clone();
+        var parts = new List<string>();
+        if (f.MonsterKind == MonsterKind.NonToken)
+        {
+            f.MonsterKind = MonsterKind.Any;
+            parts.Add("Tokens");
+        }
+        if (!f.AnyRequirement)
+            foreach (var r in f.Requirements.Where(r => r is { Property: "archetype", Op: RequirementOp.IsNot } && r.Values.Any(v => v != 0)).ToList())
+            {
+                f.Requirements.Remove(r);
+                parts.AddRange(r.Values.Where(v => v != 0).Select(v => $"\"{(pack is not null ? pack.ArchetypeName((int)v) : ArchetypeNames.Find((int)v) ?? $"0x{v:x}")}\" monsters"));
+            }
+        except = parts.Count == 0 ? "" : ", except " + string.Join(" or ", parts);
+        return f;
     }
 
     /// <summary>The prompt asking which way to Xyz Summon: "Xyz Summon by using 1 Xyz Monster you control".</summary>

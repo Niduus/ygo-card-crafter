@@ -124,6 +124,9 @@ public static class CardProperties
             Choices: [(0, "you", "c:GetOwner()==tp"), (1, "your opponent", "c:GetOwner()==1-tp")],
             IsText: "that {0} own(s)", IsNotText: "that {0} do(es) not own", NeedsEffect: true),
         new("archetype", "Archetype", PropertyKind.Archetype, "", "archetype", IsText: "that is a {0} card", IsNotText: "that is not a {0} card"),
+        // Hope for the Future: "1 Fusion Monster that mentions a "HERO" monster as material" (the archetypes its materials name).
+        new("material_archetype", "Mentions an archetype's monster as material (Fusion)", PropertyKind.Archetype, "aux.IsMaterialListSetCard(c,{0})", "material archetype",
+            IsText: "that mentions a {0} monster as material", IsNotText: "that does not mention a {0} monster as material"),
         new("name", "Card name", PropertyKind.CardName, "", "name", IsText: "that is {0}", IsNotText: "that is not {0}"),
         // ---- states
         new("negated", "Its effects are negated", PropertyKind.State, "c:IsDisabled()", "", IsText: "whose effects are negated", IsNotText: "whose effects are not negated"),
@@ -248,7 +251,9 @@ public static class CardProperties
             {
                 var codes = r.Values.Where(v => v != 0).ToList();
                 if (codes.Count == 0) return null;
-                test = string.Join(" or ", codes.Select(code => $"c:IsSetCard(0x{code:x})"));
+                test = string.Join(" or ", codes.Select(code => p.Lua.Length > 0
+                    ? string.Format(CultureInfo.InvariantCulture, p.Lua, $"0x{code:x}")
+                    : $"c:IsSetCard(0x{code:x})"));
                 break;
             }
             case PropertyKind.CardName:

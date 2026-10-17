@@ -134,7 +134,7 @@ public class ZoneWordingTests
     [Theory]
     [InlineData(Zone.Field, "Send 3 cards your opponent controls to the GY")]
     [InlineData(Zone.MonsterZone, "Send 3 monsters your opponent controls to the GY")]
-    [InlineData(Zone.SpellTrapZone, "Send 3 Spell/Traps your opponent controls to the GY")]
+    [InlineData(Zone.SpellTrapZone, "Send 3 Spells/Traps your opponent controls to the GY")]
     public void PickingZones_ChangesTheWording(Zone zones, string expected)
     {
         var b = BlockRegistry.Find("do.send_to_gy")!.CreateInstance();

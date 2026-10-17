@@ -409,6 +409,8 @@ public static partial class ScriptTranslator
                 ("EFFECT_EXTRA_ATTACK", "2") => "extra2",
                 ("EFFECT_EXTRA_ATTACK_MONSTER", "1") => "extra_monster",
                 ("EFFECT_EXTRA_ATTACK_MONSTER", "2") => "extra_monster2",
+                // Juggernaut Liebe: "attacks on monsters up to the number of materials it has +1".
+                ("EFFECT_EXTRA_ATTACK_MONSTER", { } fv) when !Regex.IsMatch(fv, @"^\d+$") && Regex.Replace(Body(fv, fns), @"\s+", " ") == "return e:GetHandler():GetOverlayCount()" => "extra_monster_materials",
                 ("EFFECT_DEFENSE_ATTACK", "1") => "defense_attack",
                 ("EFFECT_DEFENSE_ATTACK", null or "0") => "defense_attack_atk",
                 _ => null,

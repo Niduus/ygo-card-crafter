@@ -26,7 +26,9 @@ public static class Selection
     /// monsters you control": at least 1, and at most that many.
     /// </summary>
     public static ParamSpec AmountParam => ParamSpec.Choice("amount", "Number",
-        new("count", "", "a number:"), new("any", "", "any number"), new("number_of", "", "up to the number of:"));
+        new("count", "", "a number:"), new("any", "", "any number"), new("number_of", "", "up to the number of:"),
+        // Flying Launcher: "detach any number of materials from this card, then target that many Spells/Traps on the field".
+        new("cost", "", "that many (as many as the cost used)"));
 
     /// <summary>The cards counted for "up to the number of ...", said at the end of the sentence (<see cref="EachText"/>).</summary>
     public static ParamSpec NumberOfParam => ParamSpec.Cards("count_cards", "The number of",
@@ -63,7 +65,7 @@ public static class Selection
 
     /// <summary>The block may take more than 1 card, so the group blanks mean something.</summary>
     private static bool Several(BlockInstance b) =>
-        b.Values.GetValueOrDefault("amount") is "any" or "number_of"
+        b.Values.GetValueOrDefault("amount") is "any" or "number_of" or "cost"
         || b.Values.GetValueOrDefault("mode") != "all" && b.Values.GetValueOrDefault("count_mode") != "all"
         && int.TryParse(b.Values.GetValueOrDefault("count", "1"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) && n > 1;
 
@@ -74,8 +76,11 @@ public static class Selection
     /// <summary>"up to the number of ...": how many is counted as the effect is used.</summary>
     public static bool NumberOf(BlockArgs a) => a.Definition.Param("amount") is not null && a.Choice("amount") == "number_of";
 
-    /// <summary>"any number of" or "up to the number of": the count blank says nothing, and the cards are plural.</summary>
-    public static bool Uncounted(BlockArgs a) => AnyNumber(a) || NumberOf(a);
+    /// <summary>"that many": as many cards as the effect's cost used.</summary>
+    public static bool ThatMany(BlockArgs a) => a.Definition.Param("amount") is not null && a.Choice("amount") == "cost";
+
+    /// <summary>"any number of", "up to the number of" or "that many": the count blank says nothing, and the cards are plural.</summary>
+    public static bool Uncounted(BlockArgs a) => AnyNumber(a) || NumberOf(a) || ThatMany(a);
 
     private static bool Several(BlockArgs a) => Uncounted(a) || a.CountMode != "all" && a.Int("count") > 1;
 
@@ -83,6 +88,12 @@ public static class Selection
     private static string Pick(BlockArgs a) => Offers(a.Definition) && Several(a) && !a.Cards("cards").ThisCard ? a.Choice("pick") : "any";
 
     private static bool Each(BlockArgs a) => Offers(a.Definition) && Several(a) && a.Bool("each_zone") && Parts(a.Cards("cards")).Count > 1;
+
+    /// <summary>
+    /// "up to 1 card each from your GY and your opponent's GY" (Tantrum Toddler): up to as many cards as there are places,
+    /// 1 each, said as one card from each.
+    /// </summary>
+    private static bool UpToOneEach(BlockArgs a) => Each(a) && !Uncounted(a) && a.CountMode == "up_to" && a.Int("count") == Parts(a.Cards("cards")).Count;
 
     private static string Chooser(BlockArgs a) => Offers(a.Definition) && !a.Cards("cards").ThisCard ? a.Choice("chooser") : "you";
 
@@ -95,7 +106,9 @@ public static class Selection
         if (!Offers(a.Definition) || a.Cards("cards").ThisCard) return null;
         if (AnyNumber(a)) return "any number of";
         if (NumberOf(a)) return "";
+        if (ThatMany(a)) return "that many";
         if (Chooser(a) == "random" && a.CountMode == "exact") return $"{a.Int("count").ToString(CultureInfo.InvariantCulture)} random";
+        if (UpToOneEach(a)) return "up to 1";
         return null;
     }
 
@@ -157,6 +170,9 @@ public static class Selection
             _ => null,
         };
         var each = Each(a);
+        if (UpToOneEach(a))
+            return FilterText.Describe(f, a.Pack, plural: false, preposition: preposition, ownName: a.CardName, withExcept: false, beforeLocation: before, withLocation: false)
+                   + " each " + EachPlaces(f);
         var text = FilterText.Describe(f, a.Pack, plural: a.IsPlural, preposition: preposition, ownName: a.CardName, withExcept: false, beforeLocation: before, withLocation: !each);
         var sum = Num(a.Int("sum"));
         return pick switch
@@ -175,15 +191,23 @@ public static class Selection
         var text = Offers(a.Definition) && NumberOf(a) && !a.Cards("cards").ThisCard
             ? ", up to the number of " + FilterText.Describe(a.Cards("count_cards"), a.Pack, plural: true, ownName: a.CardName)
             : "";
-        if (!Each(a)) return text;
-        var f = a.Cards("cards");
-        if (Places(f.Zones).Count == 1) return text + ", 1 each from " + BothSides(f.Zones);
-        return text + ", 1 each " + FilterText.LocationText(f, "from", true).Replace(", or ", ", and ", StringComparison.Ordinal).Replace(" or ", " and ", StringComparison.Ordinal);
+        if (!Each(a) || UpToOneEach(a)) return text;
+        return text + ", 1 each " + EachPlaces(a.Cards("cards"));
     }
+
+    /// <summary>"from your hand, Deck, and GY", "from your GY and your opponent's GY": the places "1 each" takes from.</summary>
+    private static string EachPlaces(CardFilter f) => Places(f.Zones).Count == 1
+        ? "from " + BothSides(f.Zones)
+        : FilterText.LocationText(f, "from", true).Replace(", or ", ", and ", StringComparison.Ordinal).Replace(" or ", " and ", StringComparison.Ordinal);
 
     /// <summary>"up to the number of ...": the Lua count of those cards, or null.</summary>
     internal static string? NumberOfLua(BlockContext ctx)
     {
+        if (ThatMany(ctx.Args))
+        {
+            if (!ctx.Effect.CostCounts) ctx.Effect.Error("\"That many\" needs a COST block that detaches, discards, sends or banishes cards (\"any number\" or \"up to\").");
+            return "e:GetLabel()";
+        }
         if (!NumberOf(ctx.Args)) return null;
         var c = ctx.Script.Filter(ctx.Args.Cards("count_cards"), null, "ctfilter");
         return $"Duel.GetMatchingGroupCount({c.Function},tp,{c.Self},{c.Opp},{c.Exclude},e,tp)";
@@ -319,7 +343,14 @@ public abstract partial class CardGroupAction
         var counted = Selection.NumberOfLua(ctx);
         var ct = counted is null ? null : e.NewLocal("ct");
         var max = ct ?? Num(n);
-        if (counted is not null) e.TargetChecks.Add($"{counted}>0");
+        // "that many": exactly as many as the cost used, which is only known once it is paid.
+        var thatMany = Selection.ThatMany(a);
+        var least = thatMany && ct is not null ? ct : Num(min);
+        if (counted is not null && !thatMany) e.TargetChecks.Add($"{counted}>0");
+        // The cost takes no more than there are cards to take (as Flying Launcher detaches at most that many).
+        if (thatMany) e.CostCap = targeting
+            ? $"Duel.GetTargetCount({f.Function},tp,{f.Self},{f.Opp},{f.Exclude},e,tp)"
+            : $"Duel.GetMatchingGroupCount({f.ForSelection},tp,{f.Self},{f.Opp},{f.Exclude},e,tp)";
         var rule = Selection.Rule(ctx, min, max, who, counted);
         if (Category.Length > 0) e.AddCategory(Category);
         foreach (var c in ExtraCategories(filter)) e.AddCategory(c);
@@ -354,7 +385,7 @@ public abstract partial class CardGroupAction
             {
                 e.TargetChecks.Add($"Duel.IsExistingTarget({f.Function},tp,{f.Self},{f.Opp},{min},{f.Exclude},e,tp)");
                 if (ct is not null) e.TargetLines.Add($"local {ct}={counted}");
-                e.TargetLines.Add($"local {tg}=Duel.SelectTarget(tp,{f.Function},tp,{f.Self},{f.Opp},{min},{max},{f.Exclude},e,tp)");
+                e.TargetLines.Add($"local {tg}=Duel.SelectTarget(tp,{f.Function},tp,{f.Self},{f.Opp},{least},{max},{f.Exclude},e,tp)");
             }
             if (Category.Length > 0) e.TargetLines.Add($"Duel.SetOperationInfo(0,{Category},{tg},{tg}:GetCount(),0,0)");
             body.Add($"local {g}=Duel.GetChainInfo(0,CHAININFO_TARGET_CARDS):Filter(Card.IsRelateToEffect,nil,e)");
@@ -382,7 +413,7 @@ public abstract partial class CardGroupAction
             body.Add($"{ind}Duel.Hint(HINT_SELECTMSG,{who},{Hint})");
             body.Add(rule is { } picked
                 ? $"{ind}local {g}={picked.Select(pg)}"
-                : $"{ind}local {g}=Duel.SelectMatchingCard({who},{f.ForSelection},tp,{f.Self},{f.Opp},{min},{max},{f.Exclude},e,tp)");
+                : $"{ind}local {g}=Duel.SelectMatchingCard({who},{f.ForSelection},tp,{f.Self},{f.Opp},{least},{max},{f.Exclude},e,tp)");
         }
         // A group the cards don't fit is no pick at all.
         body.Add($"{ind}if {g} and {g}:GetCount()>0 then");

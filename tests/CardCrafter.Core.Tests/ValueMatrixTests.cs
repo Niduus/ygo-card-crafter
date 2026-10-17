@@ -584,6 +584,8 @@ public class ValueMatrixTests
         }
         // "The LP paid" is paid by the effect's cost.
         if (source == "lp_paid") foreach (var p in projects) p.Effects[0].Cost.Add(B("cost.pay_lp", ("how", "multiple")));
+        // "The number of cards used for the cost": a cost that detaches any number.
+        if (source == "cost_count") foreach (var p in projects) p.Effects[0].Cost.Add(B("cost.detach", ("amount", "any")));
         foreach (var p in projects)
         {
             var r = ScriptCompiler.Compile(p);

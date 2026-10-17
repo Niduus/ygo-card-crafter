@@ -198,6 +198,19 @@ public class AllBlocksTests
         }
         // "The LP paid" needs the cost that pays LP in multiples.
         if (inst.Values.GetValueOrDefault("value") == "lp_paid") project.Effects[0].Cost.Add(new BlockInstance("cost.pay_lp").With("how", "multiple"));
+        // "The number of cards used for the cost" and "that many" need a cost that counts: detaching any number.
+        if (inst.Values.GetValueOrDefault("value") == "cost_count" || inst.Values.GetValueOrDefault("amount") == "cost" && def.Kind == BlockKind.Action)
+        {
+            project.Card.Frame = MonsterFrame.Xyz;
+            project.Procedure.Kind = SummonProcedureKind.Xyz;
+            project.Effects[0].Cost.Add(new BlockInstance("cost.detach").With("amount", "any"));
+        }
+        // An Extra Deck monster's own procedure "from your Extra Deck".
+        if (def.Id == SummonProcedureTrigger.BlockId && inst.Values.GetValueOrDefault("zone") == "extra")
+        {
+            project.Card.Frame = MonsterFrame.Fusion;
+            project.Procedure.Kind = SummonProcedureKind.Fusion;
+        }
         // "The result" of a die roll and "the number of heads" need the roll or toss before them.
         if (inst.Values.GetValueOrDefault("value") is "roll" or "heads" && def.Kind == BlockKind.Action)
             project.Effects[0].Do.Insert(0, BlockRegistry.Find(inst.Values["value"] == "roll" ? RollDieAction.BlockId : TossCoinAction.BlockId)!.CreateInstance());

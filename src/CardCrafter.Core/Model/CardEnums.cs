@@ -27,6 +27,11 @@ public enum SummonRule
     SpecialSummonOnly,
     /// <summary>"Must be Special Summoned by its own procedure, and cannot be Special Summoned by other ways."</summary>
     ProcedureOnly,
+    /// <summary>
+    /// "Cannot be Normal Summoned/Set. Must be Special Summoned by a card effect." (Machina Citadel): only effects Special
+    /// Summon it, and it has no revive limit, so any effect can, from anywhere.
+    /// </summary>
+    ByCardEffect,
 }
 
 /// <summary>Extra monster abilities that map to card-type bits.</summary>

@@ -55,6 +55,8 @@ public static class ValueSources
         new("heads", "the number of heads", "the number of heads of the coin toss before it"),
         // What this card remembers, and the LP paid for the cost (Memory.cs).
         new("lp_paid", "the LP paid", "the LP paid for the cost (pay LP in multiples)"),
+        // Lyrilusc - Promenade Thrush: "300 ATK for each material detached" (a cost that detaches, discards or banishes any number).
+        new("cost_count", "the number of cards used for the cost", "the number of cards used for the cost (detached, discarded, banished...)"),
         new("mem", "the remembered number", "the number this card remembers (Memory below)"),
         new("mem_count", "the number of remembered cards", "the number of remembered cards (Memory below)"),
         new("mem_atk", "the remembered monster's ATK", "the remembered monster's ATK (Memory below)"),
@@ -63,7 +65,7 @@ public static class ValueSources
     ];
 
     /// <summary>Values known only while the effect resolves: the amount that started it, a die roll's result, a toss's heads, the LP paid.</summary>
-    public static bool AtResolution(string source) => source is "event" or "roll" or "heads" or "lp_paid" || Affected(source);
+    public static bool AtResolution(string source) => source is "event" or "roll" or "heads" or "lp_paid" or "cost_count" || Affected(source);
 
     /// <summary>Values about the card(s) the DO step before affected ("that monster's original ATK").</summary>
     public static bool Affected(string source) => source.StartsWith("that_", StringComparison.Ordinal);
@@ -92,7 +94,7 @@ public static class ValueSources
     /// ATK, damage) read "ATK equal to its Level x 300" instead.
     /// </summary>
     public static bool IsCountable(string source) => source is "count" or "different_attr" or "different_race" or "different_name"
-        or "its_materials" or "its_counters" or "its_equips" or "its_linked" or "its_used" or "sum_counters" or "mem_count";
+        or "its_materials" or "its_counters" or "its_equips" or "its_linked" or "its_used" or "sum_counters" or "mem_count" or "cost_count";
 
     /// <summary>"its" for "it", "this card's" for "this card".</summary>
     private static string Poss(string owner) => owner == "it" ? "its" : owner + "'s";
@@ -148,7 +150,21 @@ public static class ValueSources
     public static bool ForEach(BlockArgs args) => args.Choice("how") == "per" && IsCountable(args.Choice("value"));
 
     /// <summary>"card in your hand", for "300 damage for each card in your hand".</summary>
-    public static string EachText(BlockArgs args, string owner = "it") => Each(args.Choice("value"), args.Cards(CardsKey), args.Pack, owner, Counters.Name(args));
+    public static string EachText(BlockArgs args, string owner = "it") =>
+        args.Choice("value") == "cost_count" ? CostNoun(args.Effect, plural: false) : Each(args.Choice("value"), args.Cards(CardsKey), args.Pack, owner, Counters.Name(args));
+
+    /// <summary>"material detached", "card discarded": the cards the effect's cost used, for "for each" and "the number of".</summary>
+    public static string CostNoun(EffectEvent? effect, bool plural)
+    {
+        var (one, many) = effect?.Cost.Select(b => b.BlockId).FirstOrDefault() switch
+        {
+            "cost.detach" => ("material detached", "materials detached"),
+            "cost.discard" => ("card discarded", "cards discarded"),
+            "cost.tribute" => ("monster Tributed", "monsters Tributed"),
+            _ => ("card used for the cost", "cards used for the cost"),
+        };
+        return plural ? many : one;
+    }
 
     /// <summary>
     /// "ATK equal to the difference between both players' LP", "300 ATK for each card in your hand", "ATK equal to half
@@ -157,7 +173,8 @@ public static class ValueSources
     /// </summary>
     public static string Phrase(BlockArgs args, string unit, string owner = "it", bool forEach = true)
     {
-        var of = Of(args.Choice("value"), args.Cards(CardsKey), args.Pack, owner, Counters.Name(args));
+        var of = args.Choice("value") == "cost_count" ? "the number of " + CostNoun(args.Effect, plural: true)
+            : Of(args.Choice("value"), args.Cards(CardsKey), args.Pack, owner, Counters.Name(args));
         var n = args.Int("amount").ToString(CultureInfo.InvariantCulture);
         return args.Choice("how") switch
         {
@@ -219,11 +236,13 @@ public static class ValueSources
             "event" when ev => "ev",
             "roll" or "heads" when ev => Chance.ValueLua(ctx, source),
             "lp_paid" when ev => LpPaid(ctx),
+            "cost_count" when ev => CostCount(ctx),
             "mem" or "mem_count" or "mem_atk" or "mem_orig_atk" or "mem_level" => RememberedLua(ctx, source, "mem" + counterSuffix),
             _ => "0",
         };
         if (Affected(source) && !ev) ctx.Effect.Error("\"That monster\" means the card a DO step before affected; a lasting effect has none.");
         if (source == "lp_paid" && !ev) ctx.Effect.Error("\"The LP paid\" only exists while the effect that paid them resolves; this block can't use it.");
+        if (source == "cost_count" && !ev) ctx.Effect.Error("\"The number of cards used for the cost\" only exists while the effect that paid it resolves; this block can't use it.");
         if (source is "roll" or "heads" && !ev) ctx.Effect.Error("A die roll's result or a coin toss's heads only exist while the effect resolves; this block can't use them.");
         if (source == "event" && !ev) ctx.Effect.Error("\"That amount\" only exists while an effect resolves after damage or an LP change; a lasting effect can't use it.");
         else if (source == "event" && ctx.Effect.Code is not ("EVENT_DAMAGE" or "EVENT_BATTLE_DAMAGE" or "EVENT_RECOVER" or "EVENT_PAY_LPCOST"))
@@ -262,6 +281,14 @@ public static class ValueSources
     }
 
     /// <summary>"The LP paid": the amount a "pay LP in multiples" cost kept in the effect's label.</summary>
+    /// <summary>How many cards the cost detached, discarded or banished, which a COST block keeps in the effect's label.</summary>
+    private static string CostCount(BlockContext ctx)
+    {
+        if (!ctx.Effect.CostCounts)
+            ctx.Effect.Error("\"The number of cards used for the cost\" needs a COST block that detaches, discards, sends or banishes cards (\"any number\" or \"up to\").");
+        return "e:GetLabel()";
+    }
+
     private static string LpPaid(BlockContext ctx)
     {
         if (!PayLifePointsCost.PaysMultiple(ctx.Effect.Source))

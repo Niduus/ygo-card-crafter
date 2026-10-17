@@ -86,11 +86,18 @@ public sealed class DetachCost : CostBlock
     public override string Id => "cost.detach";
     public override string Group => "This card";
     public override string Name => "Detach Xyz Materials";
-    public override string Sentence => "Detach {count} material(s) from this card";
-    public override IReadOnlyList<ParamSpec> Params { get; } = [ParamSpec.Int("count", "How many", 1, 1, 10)];
+    public override string Sentence => "Detach {amount} {count} material(s) from this card";
+    public override string Help => "\"Any number\" detaches as many as the player likes (at least 1); a DO block can then use how many: \"target that many\" " +
+                                   "(Flying Launcher), or \"for each\" with \"the number of cards used for the cost\" (Lyrilusc - Promenade Thrush).";
+    public override IReadOnlyList<ParamSpec> Params { get; } =
+    [
+        ParamSpec.Choice("amount", "Number", new("count", "", "a number:"), new("any", "any number of", "any number")),
+        ParamSpec.Int("count", "How many", 1, 1, 10).ShowIf(b => b.Values.GetValueOrDefault("amount") != "any"),
+    ];
 
     public override string Describe(BlockArgs args)
     {
+        if (args.Choice("amount") == "any") return "detach any number of materials from this card";
         var n = args.Int("count");
         return n == 1 ? "detach 1 material from this card" : $"detach {n} materials from this card";
     }
@@ -98,6 +105,15 @@ public sealed class DetachCost : CostBlock
     public override void Compile(BlockContext ctx)
     {
         if (!ctx.Card.IsXyz) ctx.Effect.Warn("Only Xyz monsters have materials to detach.");
+        if (ctx.Args.Choice("amount") == "any")
+        {
+            // How many were detached is kept for "target that many" and "for each material detached".
+            ctx.Effect.CostChecks.Add("e:GetHandler():CheckRemoveOverlayCard(tp,1,REASON_COST)");
+            ctx.Effect.CostLines.Add($"e:SetLabel(e:GetHandler():RemoveOverlayCard(tp,1,{EffectBuilder.CostCapToken},REASON_COST))");
+            ctx.Effect.CostCapFallback = "e:GetHandler():GetOverlayCount()";
+            ctx.Effect.CostCounts = true;
+            return;
+        }
         var n = ctx.Args.Int("count");
         ctx.Effect.CostChecks.Add($"e:GetHandler():CheckRemoveOverlayCard(tp,{n},REASON_COST)");
         ctx.Effect.CostLines.Add($"e:GetHandler():RemoveOverlayCard(tp,{n},{n},REASON_COST)");

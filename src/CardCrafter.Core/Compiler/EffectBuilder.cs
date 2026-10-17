@@ -89,10 +89,19 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
     public bool IsActivation { get; set; }
     /// <summary>True for "while face-up" effects that never activate.</summary>
     public bool IsPassive { get; set; }
+    /// <summary>
+    /// For lasting effects an Xyz Monster gains while this card is its material (EFFECT_TYPE_XMATERIAL): what that Xyz
+    /// Monster must be, as a check of e:GetHandler(); null for this card's own lasting effects.
+    /// </summary>
+    public string? XyzMaterialCondition { get; set; }
     /// <summary>True for a Special Summon procedure (EFFECT_SPSUMMON_PROC), which never starts a chain.</summary>
     public bool IsSummonProcedure { get; set; }
     /// <summary>For a Summon procedure: the zones it Summons to, as a mask ("0x4" is the center Main Monster Zone), or null for any.</summary>
     public string? ProcedureZone { get; set; }
+    /// <summary>For a Summon procedure: it Summons this card from the Extra Deck, so it needs a zone an Extra Deck monster can go to.</summary>
+    public bool ProcedureFromExtra { get; set; }
+    /// <summary>For a Summon procedure: the position it Summons in ("POS_FACEUP_ATTACK"), or null for the player's choice.</summary>
+    public string? ProcedurePosition { get; set; }
 
     public List<string> Categories { get; } = [];
     public List<string> Properties { get; } = [];
@@ -182,11 +191,21 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
 
     /// <summary>True once a COST block has stored how many cards it used (in the effect's label).</summary>
     public bool CostCounts { get; set; }
+
+    /// <summary>
+    /// In a COST line, the most cards a cost of "any number" may take: what a later "target that many" block can take
+    /// (<see cref="CostCap"/>), or the cost's own most (<see cref="CostCapFallback"/>).
+    /// </summary>
+    public const string CostCapToken = "%costcap%";
+    public string? CostCap { get; set; }
+    public string? CostCapFallback { get; set; }
     public bool HasPassives => _passives.Count > 0;
 
     /// <summary>Writes the lines that go inside initial_effect for this effect.</summary>
     public List<string> Build(string? countLimit)
     {
+        for (var i = 0; i < CostLines.Count; i++)
+            CostLines[i] = CostLines[i].Replace(CostCapToken, CostCap ?? CostCapFallback ?? "1", StringComparison.Ordinal);
         return IsPassive ? BuildPassives(countLimit) : IsSummonProcedure ? BuildProcedure(countLimit) : BuildActivated(countLimit);
     }
 
@@ -201,15 +220,22 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
         lines.Add($"{Var}:SetType({Lua.Join(Types)})");
         lines.Add($"{Var}:SetCode({Code})");
         if (Properties.Count > 0) lines.Add($"{Var}:SetProperty({Lua.Join(Properties)})");
+        if (ProcedurePosition is not null) lines.Add($"{Var}:SetTargetRange({ProcedurePosition},0)");
         if (Range is not null) lines.Add($"{Var}:SetRange({Range})");
         if (countLimit is not null) lines.Add($"{Var}:SetCountLimit({countLimit})");
 
         var payLines = CostLines.Select(l => l.Replace("REASON_COST", "REASON_SPSUMMON")).ToList();
         // Tributing frees a zone, so only check for an empty one when nothing on the field is Tributed.
         var checks = new List<string>();
-        if (ProcedureZone is not null)
+        var tributes = payLines.Any(l => l.Contains("Duel.Release(", StringComparison.Ordinal));
+        if (ProcedureFromExtra)
+        {
+            // From the Extra Deck: a Main Monster Zone it may use (a Link Arrow's) or an Extra Monster Zone.
+            if (!tributes) checks.Add("Duel.GetLocationCountFromEx(tp,tp,nil,c)>0");
+        }
+        else if (ProcedureZone is not null)
             checks.Add($"Duel.GetLocationCount(tp,LOCATION_MZONE,tp,LOCATION_REASON_TOFIELD,{ProcedureZone})>0");
-        else if (!payLines.Any(l => l.Contains("Duel.Release(", StringComparison.Ordinal)))
+        else if (!tributes)
             checks.Add("Duel.GetLocationCount(tp,LOCATION_MZONE)>0");
         checks.AddRange(Conditions);
         checks.AddRange(CostChecks);
@@ -388,10 +414,11 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
     {
         var lines = new List<string> { $"--{Lua.Comment(Source.Label)}" };
         string? con = null;
-        if (Conditions.Count > 0)
+        var conditions = XyzMaterialCondition is null ? Conditions : [XyzMaterialCondition, .. Conditions];
+        if (conditions.Count > 0)
         {
             var body = new List<string> { "local tp=e:GetHandlerPlayer()" };
-            body.AddRange(ReturnAll(Conditions));
+            body.AddRange(ReturnAll(conditions));
             con = Script.AddFunction($"e{Index}con", "e", body);
         }
         char suffix = 'a';
@@ -399,6 +426,11 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
         {
             var v = _passives.Count == 1 ? Var : $"{Var}{suffix++}";
             var body = write(v).ToList();
+            // An Xyz Monster that has this card as material gains it: the same effect, given to that monster.
+            if (XyzMaterialCondition is not null)
+                body = body.Select(l => l.StartsWith($"{v}:SetType(", StringComparison.Ordinal)
+                    ? l.Replace("EFFECT_TYPE_SINGLE", "EFFECT_TYPE_XMATERIAL", StringComparison.Ordinal).Replace("EFFECT_TYPE_FIELD", "EFFECT_TYPE_XMATERIAL+EFFECT_TYPE_FIELD", StringComparison.Ordinal)
+                    : l).ToList();
             lines.Add($"local {v}=Effect.CreateEffect(c)");
             lines.AddRange(body);
             if (limited && countLimit is not null) lines.Add($"{v}:SetCountLimit({countLimit})");

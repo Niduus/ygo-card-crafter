@@ -354,6 +354,12 @@ public static partial class ScriptTranslator
             return new TranslatedPiece { Piece = piece, Ignored = true };
         if (IsCannotNegateCompanion(type, code, set, card)) return new TranslatedPiece { Piece = piece, Ignored = true };
 
+        // Yummy Way's "you can treat 1 Link-1 monster you control as a Level 1 Tuner": the Card tab's Synchro procedure writes it.
+        if (type.SetEquals(["EFFECT_TYPE_FIELD"]) && code == "EFFECT_SYNCHRO_LEVEL_EX" && range == "LOCATION_EXTRA"
+            && (set.GetValueOrDefault("TargetRange") ?? "").Replace(" ", "") == "LOCATION_MZONE,LOCATION_MZONE"
+            && set.GetValueOrDefault("Target") is { } stg && Regex.Replace(Body(stg, fns), @"\s+", " ") == "return c:IsType(TYPE_LINK) and c:IsLink(1)"
+            && set.GetValueOrDefault("Value") is { } sval && Regex.Replace(Body(sval, fns), @"\s+", " ") == "if e:GetHandler()==syncard then return 1 else return 0 end")
+            return new TranslatedPiece { Piece = piece, Ignored = true };
         // "Must be Fusion Summoned" and the like: a rule on the Card tab, not an effect.
         if (type.SetEquals(["EFFECT_TYPE_SINGLE"]) && code == "EFFECT_SPSUMMON_CONDITION"
             && set.GetValueOrDefault("Value") is "aux.FALSE" or "aux.fuslimit" or "aux.synlimit" or "aux.xyzlimit" or "aux.linklimit" or "aux.ritlimit")
@@ -446,6 +452,19 @@ public static partial class ScriptTranslator
 
         // "Each time a Spell Card is activated, place 1 Spell Counter on this card when that Spell resolves."
         if (CounterAccumulator(piece, effect, type, code, set, range, props, fns) is { } accumulator) return accumulator;
+        // "An Xyz Monster whose original Type is Machine and has this card as material gains this effect": the same lasting
+        // effect, given to the Xyz Monster this card is under; its condition says what that monster must be.
+        if (type.Contains("EFFECT_TYPE_XMATERIAL") && !type.Overlaps(["EFFECT_TYPE_IGNITION", "EFFECT_TYPE_QUICK_O", "EFFECT_TYPE_QUICK_F", "EFFECT_TYPE_TRIGGER_O", "EFFECT_TYPE_TRIGGER_F", "EFFECT_TYPE_CONTINUOUS"]))
+        {
+            var inner = type.Where(t => t != "EFFECT_TYPE_XMATERIAL").ToHashSet();
+            if (inner.Count == 0) inner.Add("EFFECT_TYPE_SINGLE");
+            var rest = new Dictionary<string, string>(set);
+            var xyz = rest.Remove("Condition", out var xcon) ? XyzGainer(xcon, fns)
+                : new CardFilter { Owner = CardOwner.Either, Zones = Model.Zone.MonsterZone, CardType = FilterCardType.Monster, MonsterKind = MonsterKind.Xyz };
+            var gained = Passive(effect, inner, code, rest, range, props, fns, card, merge);
+            gained.When = Block("when.while_face_up").With("as", "xyz").With("xyz", xyz);
+            return new TranslatedPiece { Piece = piece, Effect = gained };
+        }
         // Lasting effects: no activation at all.
         if (!type.Overlaps(["EFFECT_TYPE_ACTIVATE", "EFFECT_TYPE_IGNITION", "EFFECT_TYPE_QUICK_O", "EFFECT_TYPE_QUICK_F", "EFFECT_TYPE_TRIGGER_O", "EFFECT_TYPE_TRIGGER_F", "EFFECT_TYPE_FLIP"]))
             return new TranslatedPiece { Piece = piece, Effect = Passive(effect, type, code, set, range, props, fns, card, merge) };
@@ -605,6 +624,8 @@ public static partial class ScriptTranslator
         Match m;
         if (expr is "nil" or "aux.TRUE") return f;
         if (Regex.IsMatch(expr, @"^\d+$")) { f.CardCode = Int64(expr); return f; }
+        // Apollousa: "2+ monsters ..., except Tokens".
+        if (expr == "aux.NOT(aux.FilterBoolFunction(Card.IsLinkType,TYPE_TOKEN))") { f.MonsterKind = MonsterKind.NonToken; return f; }
         if ((m = Regex.Match(expr, @"^aux\.FilterBoolFunction\(Card\.(\w+),([\w+]+)\)$")).Success) { Term($"c:{m.Groups[1].Value}({m.Groups[2].Value})", f); f.CardType = FilterCardType.Monster; return f; }
         if ((m = Regex.Match(expr, @"^Card\.(Is\w+)$")).Success && m.Groups[1].Value != "IsFaceup") throw No($"its materials are picked by {expr}");
         var filter = Filter(expr, fns);
@@ -631,7 +652,7 @@ public static partial class ScriptTranslator
     /// <summary>The Synchro, Xyz, Link and Fusion procedure lines of Extra Deck monsters, as the Summoning conditions section.</summary>
     private static SummonProcedure? MaterialProcedure(string line, CardData card, Functions fns)
     {
-        var m = Regex.Match(line, @"^aux\.(AddSynchroProcedure|AddXyzProcedure|AddLinkProcedure|AddFusionProcFun2|AddFusionProcFunRep|AddFusionProcFunRep2|AddFusionProcCodeFun|AddFusionProcCodeRep|AddFusionProcMix)\(c,(.*)\)$");
+        var m = Regex.Match(line, @"^aux\.(AddSynchroProcedure|AddSynchroMixProcedure|AddXyzProcedure|AddXyzProcedureLevelFree|AddLinkProcedure|AddFusionProcFun2|AddFusionProcFunRep|AddFusionProcFunRep2|AddFusionProcCodeFun|AddFusionProcCodeRep|AddFusionProcMix)\(c,(.*)\)$");
         if (!m.Success) return null;
         var args = SplitArgs(m.Groups[2].Value);
         int Num(int i) => args.Count > i && Regex.IsMatch(args[i], @"^\d+$") ? Int(args[i]) : throw No("its material count is unusual");
@@ -688,17 +709,63 @@ public static partial class ScriptTranslator
                 var proc = new SummonProcedure { Kind = SummonProcedureKind.Link, MaterialFilter = Material(args[0], fns), MinMaterials = Num(1), MaxMaterials = Absent(2) ? 0 : Num(2) };
                 if (args.Count == 4)
                 {
-                    // "including a "Sky Striker" monster": the group check asks for one card of a kind.
+                    // "including a "Sky Striker" monster", "with different names": the group check, part by part.
                     var (_, body) = fns.Get(args[3]);
                     var text = string.Join(" ", body.Select(l => l.Trim()));
-                    var inc = Regex.Match(text, @"^return g:IsExists\(([\w.]+)(?:,1,nil(?:,([\w+]+))?)?\)$");
-                    if (!inc.Success) throw No("its materials are checked as a group in a way the blocks can't");
-                    proc.Including = true;
-                    proc.IncludeFilter = inc.Groups[1].Value.StartsWith("Card.", StringComparison.Ordinal)
-                        ? Material($"aux.FilterBoolFunction({inc.Groups[1].Value},{(inc.Groups[2].Success ? inc.Groups[2].Value : throw No("its materials are checked as a group in a way the blocks can't"))})", fns)
-                        : Material(inc.Groups[1].Value, fns);
+                    if (!text.StartsWith("return ", StringComparison.Ordinal)) throw No("its materials are checked as a group in a way the blocks can't");
+                    var distinct = new HashSet<string>();
+                    foreach (var part in SplitTopLevelAnd(text["return ".Length..]))
+                    {
+                        Match dm;
+                        if ((dm = Regex.Match(part, @"^g:GetClassCount\(Card\.(GetLinkCode|GetLinkRace|GetLinkAttribute)\)==(?:g:GetCount\(\)|#g)$")).Success) { distinct.Add(dm.Groups[1].Value); continue; }
+                        var inc = Regex.Match(part, @"^g:IsExists\(([\w.]+)(?:,1,nil(?:,([\w+]+))?)?\)$");
+                        if (!inc.Success || proc.Including) throw No("its materials are checked as a group in a way the blocks can't");
+                        proc.Including = true;
+                        proc.IncludeFilter = inc.Groups[1].Value.StartsWith("Card.", StringComparison.Ordinal)
+                            ? Material($"aux.FilterBoolFunction({inc.Groups[1].Value},{(inc.Groups[2].Success ? inc.Groups[2].Value : throw No("its materials are checked as a group in a way the blocks can't"))})", fns)
+                            : Material(inc.Groups[1].Value, fns);
+                    }
+                    proc.MaterialRule = (distinct.Contains("GetLinkCode"), distinct.Contains("GetLinkRace"), distinct.Contains("GetLinkAttribute")) switch
+                    {
+                        (false, false, false) => MaterialGroupRule.None,
+                        (true, false, false) => MaterialGroupRule.DifferentNames,
+                        (false, true, true) => MaterialGroupRule.DifferentTypesAndAttributes,
+                        (false, false, true) => MaterialGroupRule.DifferentAttributes,
+                        (false, true, false) => MaterialGroupRule.DifferentTypes,
+                        _ => throw No("its materials are checked as a group in a way the blocks can't"),
+                    };
                 }
                 return proc;
+            }
+            // "2 Xyz Monsters with the same Rank" (Number F0: Utopic Future), maybe with the other way to Xyz Summon.
+            case "AddXyzProcedureLevelFree" when args.Count is 4 or 6 or 7:
+            {
+                if (Regex.Replace(Body(args[1], fns), @"\s+", " ") != "return g:GetClassCount(Card.GetRank)==1") throw No("its Xyz materials are checked as a group in a way the blocks can't");
+                var min = Num(2);
+                var max = Num(3);
+                var proc = new SummonProcedure { Kind = SummonProcedureKind.Xyz, MaterialFilter = Material(args[0], fns), MinMaterials = min, MaxMaterials = max > min ? max : 0, XyzSameRank = true };
+                if (args.Count >= 6)
+                {
+                    var alt = Filter(args[4], fns);
+                    alt.Owner = CardOwner.You;
+                    alt.Zones = Model.Zone.MonsterZone;
+                    alt.FaceUpOnly = false;
+                    if (alt.CardType == FilterCardType.Any) alt.CardType = FilterCardType.Monster;
+                    proc.XyzAlternate = true;
+                    proc.XyzAlternateFilter = alt;
+                    if (args.Count == 7 && !Absent(6)) XyzAlternateOp(args[6], fns, proc);
+                }
+                return proc;
+            }
+            // "For this card's Synchro Summon, you can treat 1 Link-1 monster you control as a Level 1 Tuner" (Yummy Way):
+            // the Level the Link monster has for it is its own effect (EFFECT_SYNCHRO_LEVEL_EX), which the Card tab writes too.
+            case "AddSynchroMixProcedure" when args.Count == 6 && Absent(1) && Absent(2):
+            {
+                if (Regex.Replace(Body(args[0], fns), @"\s+", " ") != "return c:IsTuner(syncard) or c:IsType(TYPE_LINK) and c:IsLink(1)"
+                    || Regex.Replace(Body(args[3], fns), @"\s+", " ") != "return c:IsNotTuner(syncard) and not c:IsType(TYPE_LINK)")
+                    throw No("its Synchro materials are picked in a way the blocks can't");
+                var max = Num(5);
+                return new SummonProcedure { Kind = SummonProcedureKind.Synchro, MinMaterials = Num(4), MaxMaterials = max >= 99 ? 0 : max, SynchroLinkAsTuner = true };
             }
             // The helpers that take no "sub" can't use Fusion substitutes for named materials.
             case "AddFusionProcFun2" when args.Count == 3:
@@ -740,11 +807,27 @@ public static partial class ScriptTranslator
         var m = Regex.Match(text, @"^if chk==0 then return (.+?) end(.*)$");
         if (!m.Success) throw No("its other way to Xyz Summon is checked in a way the blocks can't");
         string? once = null;
+        string? discard = null;
         foreach (var raw in SplitTopLevelAnd(m.Groups[1].Value))
         {
             var t = raw.Trim();
             Match tm;
             if (t == "true") continue;
+            // "by discarding 1 card and using ..." (Gustav Rocket).
+            if ((tm = Regex.Match(t, @"^Duel\.IsExistingMatchingCard\(([\w.]+),tp,LOCATION_HAND,0,(\d+),nil\)$")).Success
+                && Regex.Replace(Body(tm.Groups[1].Value, fns), @"\s+", " ") == "return c:IsDiscardable(REASON_SPSUMMON)")
+            {
+                discard = tm.Groups[1].Value;
+                proc.XyzAlternateDiscard = Int(tm.Groups[2].Value);
+                continue;
+            }
+            // "if an effect of "Kashtira Shangri-Ira" was successfully activated this turn" (Kashtira Arise-Heart).
+            if (Regex.IsMatch(t, @"^\(Duel\.GetCustomActivityCount\((?:id|\d+),tp,ACTIVITY_CHAIN\)>0 or Duel\.GetCustomActivityCount\((?:id|\d+),1-tp,ACTIVITY_CHAIN\)>0\)$")
+                && _chainCounter is { } counted && Regex.Match(counted, @"^return not re:GetHandler\(\):IsCode\((\d+)\)$") is { Success: true } cm)
+            {
+                proc.XyzAlternateAfterActivationOf = Int64(cm.Groups[1].Value);
+                continue;
+            }
             if ((tm = Regex.Match(t, @"^Duel\.GetFlagEffect\(tp,([\w+]+)\)==0$")).Success) { once = tm.Groups[1].Value; continue; }
             if (Regex.IsMatch(t, @"^Duel\.GetFlagEffect\(tp,[\w+]+\)>0$")) { proc.XyzAlternateAfterXyzBattle = true; continue; }
             if ((tm = Regex.Match(t, @"^mc:CheckRemoveOverlayCard\(tp,(\d+),REASON_COST\)$")).Success) { proc.XyzAlternateDetach = Int(tm.Groups[1].Value); continue; }
@@ -756,6 +839,13 @@ public static partial class ScriptTranslator
             var detach = $"mc:RemoveOverlayCard(tp,{proc.XyzAlternateDetach},{proc.XyzAlternateDetach},REASON_COST)";
             if (!pay.Contains(detach, StringComparison.Ordinal)) throw No("its other way to Xyz Summon has a cost the blocks can't");
             pay = pay.Replace(detach, "", StringComparison.Ordinal);
+        }
+        if (discard is not null)
+        {
+            var n = proc.XyzAlternateDiscard;
+            var pays = $"Duel.DiscardHand(tp,{discard},{n},{n},REASON_COST+REASON_DISCARD)";
+            if (!pay.Contains(pays, StringComparison.Ordinal)) throw No("its other way to Xyz Summon has a cost the blocks can't");
+            pay = pay.Replace(pays, "", StringComparison.Ordinal);
         }
         if (once is not null)
         {
@@ -1152,7 +1242,8 @@ public static partial class ScriptTranslator
         if (!card.IsMonster || card.IsExtraDeck) throw No("its own Special Summon procedure is for an Extra Deck monster");
         // "to your center Main Monster Zone": a value of 0,0x4.
         var toCenter = false;
-        if (set.GetValueOrDefault("Value") is { } pval)
+        // "Special Summoned this way": Card Crafter's procedures carry SUMMON_VALUE_SELF too.
+        if (set.GetValueOrDefault("Value") is { } pval && pval != "SUMMON_VALUE_SELF")
         {
             if (Body(pval, fns) != "return 0,0x4") throw No("its Summon procedure picks cards in a way the blocks don't");
             toCenter = true;
@@ -1181,6 +1272,17 @@ public static partial class ScriptTranslator
             _ => throw No($"its Summon procedure works from {range ?? "nowhere"}"),
         };
         effect.When = Block("when.summon_procedure").With("zone", zone).With("to", toCenter ? "center" : "any");
+        // "You can Special Summon this card (from your hand) in Attack Position." (Jester Confit).
+        if (set.GetValueOrDefault("Property") is { } pprop && pprop.Contains("EFFECT_FLAG_SPSUM_PARAM", StringComparison.Ordinal))
+        {
+            var position = (set.GetValueOrDefault("TargetRange") ?? "").Replace(" ", "") switch
+            {
+                "POS_FACEUP_ATTACK,0" => "attack",
+                "POS_FACEUP_DEFENSE,0" => "defense",
+                _ => throw No("its Summon procedure Summons in a way the blocks don't"),
+            };
+            effect.When = effect.When.With("position", position);
+        }
         if (set.GetValueOrDefault("Condition") is { } cond)
         {
             var body = Body(cond, fns).Replace("if c==nil then return true end", "").Replace("local tp=c:GetControler()", "")
@@ -1198,6 +1300,29 @@ public static partial class ScriptTranslator
         if (set.GetValueOrDefault("Operation") is { } op) effect.Cost.AddRange(Costs(op, fns, picks));
         else if (picks is not null) throw No("its Summon procedure picks cards and does nothing with them");
         return effect;
+    }
+
+    /// <summary>
+    /// What an Xyz Monster must be to gain this card's effect while this card is its material: the condition on the
+    /// effect's handler ("e:GetHandler():GetOriginalRace()==RACE_MACHINE", "c:IsSetCard(0xba)") as a card picker.
+    /// </summary>
+    private static CardFilter XyzGainer(string condition, Functions fns)
+    {
+        var body = Body(condition, fns).Replace("e:GetHandler():", "c:", StringComparison.Ordinal);
+        if (!body.StartsWith("return ", StringComparison.Ordinal)) throw No("its Xyz Monster gains the effect under a condition the blocks don't have");
+        var f = new CardFilter { Owner = CardOwner.Either, Zones = Model.Zone.MonsterZone, CardType = FilterCardType.Monster, MonsterKind = MonsterKind.Xyz };
+        foreach (var part in SplitTopLevelAnd(body["return ".Length..]))
+        {
+            // A single original Type or Attribute, compared as the card is printed.
+            var t = Regex.Replace(part, @"^c:GetOriginalRace\(\)==(RACE_\w+)$", "c:IsOriginalRace($1)");
+            t = Regex.Replace(t, @"^c:GetOriginalAttribute\(\)==(ATTRIBUTE_\w+)$", "c:IsOriginalAttribute($1)");
+            if (t == "c:IsType(TYPE_XYZ)") continue;
+            if (!t.StartsWith("c:", StringComparison.Ordinal) || t.Contains("tp", StringComparison.Ordinal) || t.Contains("Duel.", StringComparison.Ordinal))
+                throw No($"its Xyz Monster gains the effect under a condition the blocks don't have ({Short(part)})");
+            Term(t, f);
+        }
+        f.MonsterKind = MonsterKind.Xyz;
+        return f;
     }
 
     private static List<BlockInstance> Conditions(string condition, Functions fns)
@@ -3058,6 +3183,8 @@ public static partial class ScriptTranslator
         if (Regex.IsMatch(body, $"^return {kind}$")) return SummonRule.ProcedureOnly;
         // "Must first be Special Summoned (from your Extra Deck) ...": never from the Extra Deck except its own way, then free.
         if (Regex.IsMatch(body, $"^return {notExtra}(?: or {kind})?$")) return SummonRule.SpecialSummonOnly;
+        // "Must be Special Summoned by a card effect" (Machina Citadel).
+        if (body == "return se:IsHasType(EFFECT_TYPE_ACTIONS)") return SummonRule.ByCardEffect;
         return null;
     }
 

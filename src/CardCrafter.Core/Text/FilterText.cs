@@ -25,6 +25,17 @@ public static class FilterText
         string? beforeLocation = null)
     {
         if (f.ThisCard) return "this card";
+        // Snake-Eyes Doomed Dragon: "2 face-up Monster Cards from your Spell & Trap Zone": monsters placed there as Spells.
+        if (f is { Zones: Zone.SpellTrapZone, CardType: FilterCardType.Any, Owner: CardOwner.You, AnyRequirement: false }
+            && f.Requirements.FindIndex(r => r is { Property: "orig_card_type", Op: RequirementOp.Is } && r.Values.SequenceEqual([0x1L])) is var mi and >= 0)
+        {
+            var rest = f.Clone();
+            rest.Requirements.RemoveAt(mi);
+            rest.CardType = FilterCardType.SpellTrap;
+            var mon = Describe(rest, pack, plural, preposition, withLocation: false, ownName, withExcept, beforeLocation);
+            mon = mon.Replace(plural ? "Spells/Traps" : "Spell/Trap", plural ? "Monster Cards" : "Monster Card", StringComparison.Ordinal);
+            return withLocation ? $"{mon} {(preposition.Length == 0 ? "" : preposition + " ")}your Spell & Trap Zone" : mon;
+        }
         var words = new List<string>();
         // "a card in your other Pendulum Zone": "other" goes with the zone there.
         if (f.ExcludeThisCard && !OtherPendulumZone(f)) words.Add("other");
@@ -97,7 +108,8 @@ public static class FilterText
                       || f.MonsterKind != MonsterKind.Any || f.AtkMin is not null || f.AtkMax is not null || f.DefMin is not null || f.DefMax is not null
                       || (f.AnyRequirement ? f.Requirements.Count > 0 && f.Requirements.All(MonsterOnly) : f.Requirements.Any(MonsterOnly))) ? "monster" : "card",
             };
-            if (plural) noun += "s";
+            // "Spells/Traps", as card text writes several of them.
+            if (plural) noun = noun.EndsWith("Spell/Trap", StringComparison.Ordinal) ? noun[..^"Spell/Trap".Length] + "Spells/Traps" : noun + "s";
         }
         words.Add(noun);
         if (f.CardCode == 0 && f.LevelMin is <= 1 && f.LevelMax is null && Lv(f) == "Level") words.Add("with a Level");
