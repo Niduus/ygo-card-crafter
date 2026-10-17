@@ -126,7 +126,7 @@ public sealed class AssistantSession : IAssistantChat
             // The last message holds tool answers Claude hasn't read; a note lets the next message follow on from them.
             _messages.Add(new BetaMessageParam { Role = Role.Assistant, Content = "I stopped after many steps; tell me to go on if you want me to continue." });
         }
-        catch (Exception ex) when (ex is OperationCanceledException or AnthropicException or HttpRequestException)
+        catch (Exception ex) when (ex is OperationCanceledException or AnthropicException or HttpRequestException or JsonException or InvalidOperationException or FormatException)
         {
             _messages.RemoveRange(start, _messages.Count - start);
             update(new(AssistantUpdateKind.Problem, Explain(ex)));
@@ -206,6 +206,6 @@ public sealed class AssistantSession : IAssistantChat
         AnthropicBadRequestException bad => $"The request was refused: {bad.Message}",
         Anthropic5xxException => "Anthropic's servers had a problem. Try again in a moment.",
         AnthropicIOException or HttpRequestException => "Couldn't reach api.anthropic.com. Check the internet connection (and any proxy or firewall).",
-        _ => ex.Message,
+        _ => $"The service sent an answer Card Crafter didn't expect: {ex.Message}",
     };
 }

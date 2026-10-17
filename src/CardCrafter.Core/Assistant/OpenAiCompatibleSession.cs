@@ -68,9 +68,10 @@ public sealed class OpenAiCompatibleSession : IAssistantChat
             for (var round = 0; round < AssistantSession.MaxRounds; round++)
             {
                 var reply = await Complete(cancel);
-                var choice = reply["choices"]?[0];
-                if (choice?["message"] is not JsonObject message) throw new ProviderException("The service answered without a message.");
-                Count(reply["usage"]);
+                var choice = Item(Field(reply, "choices"), 0);
+                if (Field(choice, "message") is not JsonObject message)
+                    throw new ProviderException(Detail(reply) is { Length: > 0 } why ? why : "The service answered without a message.");
+                Count(Field(reply, "usage"));
 
                 // The reply goes back exactly as it came, with its tool calls.
                 var echo = new JsonObject { ["role"] = "assistant", ["content"] = message["content"]?.DeepClone() };
@@ -81,17 +82,17 @@ public sealed class OpenAiCompatibleSession : IAssistantChat
                 if (Text(message["content"]) is { Length: > 0 } said) update(new(AssistantUpdateKind.Reply, said));
                 if (calls is not { Count: > 0 })
                 {
-                    if ((string?)choice["finish_reason"] == "length") update(new(AssistantUpdateKind.Problem, "The reply was cut off because it got too long. Ask it to continue."));
-                    else if ((string?)choice["finish_reason"] == "content_filter") update(new(AssistantUpdateKind.Problem, "The service's content filter stopped the reply."));
+                    if (Str(Field(choice, "finish_reason")) == "length") update(new(AssistantUpdateKind.Problem, "The reply was cut off because it got too long. Ask it to continue."));
+                    else if (Str(Field(choice, "finish_reason")) == "content_filter") update(new(AssistantUpdateKind.Problem, "The service's content filter stopped the reply."));
                     return;
                 }
 
                 foreach (var call in calls)
                 {
                     cancel.ThrowIfCancellationRequested();
-                    var id = (string?)call?["id"] ?? "";
-                    var name = (string?)call?["function"]?["name"] ?? "";
-                    var outcome = Arguments((string?)call?["function"]?["arguments"]) is { } input
+                    var id = Str(Field(call, "id")) ?? "";
+                    var name = Str(Field(Field(call, "function"), "name")) ?? "";
+                    var outcome = Arguments(Field(Field(call, "function"), "arguments")) is { } input
                         ? _tools.Run(name, input)
                         : new ToolOutcome("The arguments weren't valid JSON. Send the call again with a JSON object.", true);
                     if (outcome.Activity is { } did) update(new(AssistantUpdateKind.Activity, did));
@@ -106,7 +107,8 @@ public sealed class OpenAiCompatibleSession : IAssistantChat
             update(new(AssistantUpdateKind.Problem, $"The model used {AssistantSession.MaxRounds} rounds of tools without finishing. Send another message to let it go on."));
             _messages.Add(new JsonObject { ["role"] = "assistant", ["content"] = "I stopped after many steps; tell me to go on if you want me to continue." });
         }
-        catch (Exception ex) when (ex is OperationCanceledException or HttpRequestException or ProviderException or JsonException)
+        // Anything else (a reply in a shape no service should send) is reported too, never left to crash the app.
+        catch (Exception ex) when (ex is OperationCanceledException or HttpRequestException or ProviderException or JsonException or InvalidOperationException or FormatException)
         {
             _messages.RemoveRange(start, _messages.Count - start);
             update(new(AssistantUpdateKind.Problem, Explain(ex)));
@@ -121,9 +123,9 @@ public sealed class OpenAiCompatibleSession : IAssistantChat
         using var response = await (http ?? Shared).SendAsync(request, cancel);
         var body = await response.Content.ReadAsStringAsync(cancel);
         if (!response.IsSuccessStatusCode) throw Failure(response.StatusCode, body);
-        var models = JsonNode.Parse(body)?["data"] as JsonArray ?? [];
+        var models = Field(Unwrap(JsonNode.Parse(body)), "data") as JsonArray ?? [];
         // Gemini lists its models as "models/gemini-…"; requests take the name without the prefix.
-        return models.Select(m => (string?)m?["id"]).OfType<string>().Select(id => id.StartsWith("models/", StringComparison.Ordinal) ? id[7..] : id)
+        return models.Select(m => Str(Field(m, "id"))).OfType<string>().Select(id => id.StartsWith("models/", StringComparison.Ordinal) ? id[7..] : id)
             .Order(StringComparer.OrdinalIgnoreCase).ToList();
     }
 
@@ -148,27 +150,30 @@ public sealed class OpenAiCompatibleSession : IAssistantChat
         using var response = await _http.SendAsync(request, cancel);
         var text = await response.Content.ReadAsStringAsync(cancel);
         if (!response.IsSuccessStatusCode) throw Failure(response.StatusCode, text);
-        return JsonNode.Parse(text) ?? throw new ProviderException("The service sent an empty answer.");
+        return Unwrap(JsonNode.Parse(text)) ?? throw new ProviderException("The service sent an empty answer.");
     }
 
     private void Count(JsonNode? usage)
     {
         if (usage is null) return;
-        InputTokens += (long?)usage["prompt_tokens"] ?? 0;
-        OutputTokens += (long?)usage["completion_tokens"] ?? 0;
-        CachedTokens += (long?)usage["prompt_tokens_details"]?["cached_tokens"] ?? 0;
+        InputTokens += Num(Field(usage, "prompt_tokens"));
+        OutputTokens += Num(Field(usage, "completion_tokens"));
+        CachedTokens += Num(Field(Field(usage, "prompt_tokens_details"), "cached_tokens"));
     }
 
     /// <summary>The message's text: a string, or a list of text parts.</summary>
     private static string? Text(JsonNode? content) => content switch
     {
         JsonValue v when v.TryGetValue<string>(out var s) => s.Trim(),
-        JsonArray parts => string.Join("\n", parts.Select(p => (string?)p?["text"]).OfType<string>()).Trim(),
+        JsonArray parts => string.Join("\n", parts.Select(p => Str(Field(p, "text"))).OfType<string>()).Trim(),
         _ => null,
     };
 
-    private static JsonElement? Arguments(string? json)
+    /// <summary>A call's arguments: a JSON string as the format says, or (as some services send) the object itself.</summary>
+    private static JsonElement? Arguments(JsonNode? arguments)
     {
+        if (arguments is JsonObject direct) return JsonSerializer.SerializeToElement(direct);
+        var json = Str(arguments);
         try
         {
             var el = JsonDocument.Parse(string.IsNullOrWhiteSpace(json) ? "{}" : json).RootElement;
@@ -196,13 +201,29 @@ public sealed class OpenAiCompatibleSession : IAssistantChat
         },
     }).ToArray());
 
+    // ---- reading replies safely: services differ in what they send, so a missing or differently shaped field is
+    // treated as absent instead of throwing.
+
+    private static JsonNode? Field(JsonNode? node, string key) => node is JsonObject o ? o[key] : null;
+    private static JsonNode? Item(JsonNode? node, int index) => node is JsonArray a && index < a.Count ? a[index] : null;
+    private static string? Str(JsonNode? node) => node is JsonValue v && v.TryGetValue<string>(out var s) ? s : null;
+
+    private static long Num(JsonNode? node) =>
+        node is JsonValue v ? v.TryGetValue<long>(out var l) ? l : v.TryGetValue<double>(out var d) ? (long)d : 0 : 0;
+
+    /// <summary>Gemini's OpenAI-compatible endpoint sends some answers, errors in particular, as a one-item list.</summary>
+    private static JsonNode? Unwrap(JsonNode? node) => node is JsonArray { Count: > 0 } a ? a[0] : node;
+
+    /// <summary>An error's message, from {"error":{"message":…}}, {"error":"…"} or {"message":…}.</summary>
+    private static string Detail(JsonNode? reply) =>
+        Str(Field(Field(reply, "error"), "message")) ?? Str(Field(reply, "error")) ?? Str(Field(reply, "message")) ?? "";
+
     private static ProviderException Failure(HttpStatusCode status, string body)
     {
         var detail = "";
         try
         {
-            var error = JsonNode.Parse(body);
-            detail = (string?)error?["error"]?["message"] ?? (string?)error?["message"] ?? (error?["error"] is JsonValue v ? v.ToString() : "");
+            detail = Detail(Unwrap(JsonNode.Parse(body)));
         }
         catch (JsonException)
         {
@@ -224,7 +245,7 @@ public sealed class OpenAiCompatibleSession : IAssistantChat
         ProviderException p => p.Message,
         HttpRequestException => "Couldn't reach the service. Check the address and the internet connection; a program on this computer (Ollama, LM Studio) must be running.",
         JsonException => "The service sent an answer that isn't JSON. Check the address: it should be the API root, often ending in /v1.",
-        _ => ex.Message,
+        _ => $"The service sent an answer Card Crafter didn't expect: {ex.Message}",
     };
 
     private static string Detail(Exception ex) => ex.Message is { Length: > 0 } m ? $" ({m})" : "";

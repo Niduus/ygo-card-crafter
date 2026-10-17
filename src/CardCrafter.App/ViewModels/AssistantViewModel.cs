@@ -237,6 +237,12 @@ public sealed partial class AssistantViewModel : ObservableObject
                 Add(update.Kind switch { AssistantUpdateKind.Reply => ChatRole.Assistant, AssistantUpdateKind.Activity => ChatRole.Activity, _ => ChatRole.Problem }, update.Text, who);
             }, _cancel.Token);
         }
+        catch (Exception ex)
+        {
+            // The chat says what went wrong instead of the app's crash dialog; the details still go to the crash log.
+            CrashLog.Write("Assistant", ex);
+            Add(ChatRole.Problem, $"Something went wrong talking to {SelectedProvider.Name}: {ex.Message} (details in {CrashLog.FilePath})");
+        }
         finally
         {
             IsBusy = false;

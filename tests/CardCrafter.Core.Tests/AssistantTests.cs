@@ -352,4 +352,33 @@ public class AssistantTests
         Assert.All(AssistantProvider.All, p => Assert.True(p.EditableUrl || Uri.IsWellFormedUriString(p.BaseUrl, UriKind.Absolute), p.Id));
         Assert.True(AssistantProvider.Default.IsClaude);
     }
+
+    [Fact]
+    public async Task AnErrorSentAsAList_IsExplained_NotACrash()
+    {
+        // Gemini's OpenAI-compatible endpoint answers some errors as a one-item JSON list.
+        var (ws, _) = Monster();
+        var api = new FakeApi((HttpStatusCode.BadRequest, """[{"error":{"code":400,"message":"API key not valid. Please pass a valid API key.","status":"INVALID_ARGUMENT"}}]"""));
+        var chat = new OpenAiCompatibleSession(AssistantProvider.Find("gemini"), "https://example.test/v1", "bad", ws, new HttpClient(api)) { Model = "gemini-test" };
+        var updates = new List<AssistantUpdate>();
+        await chat.Send("Hello", updates.Add);
+        Assert.Contains("API key not valid", Assert.Single(updates).Text);
+        await Assert.ThrowsAsync<ProviderException>(() => OpenAiCompatibleSession.ListModels("https://example.test/v1", "bad", new HttpClient(api)));
+    }
+
+    [Fact]
+    public async Task OddlyShapedReplies_AreReadOrReported()
+    {
+        // Arguments sent as an object instead of a JSON string, a number where text was expected, and a reply with no choices.
+        var (ws, _) = Monster();
+        var api = new FakeApi(
+            (HttpStatusCode.OK, Completion("""{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"list_cards","arguments":{}}}]}""", "tool_calls")),
+            (HttpStatusCode.OK, """{"id":"x","choices":{"weird":true},"usage":{"prompt_tokens":"many"}}"""));
+        var chat = new OpenAiCompatibleSession(AssistantProvider.Find("openai"), "https://example.test/v1", "k", ws, new HttpClient(api)) { Model = "m" };
+        var updates = new List<AssistantUpdate>();
+        await chat.Send("Hello", updates.Add);
+        Assert.Equal(2, api.Requests.Count);
+        Assert.Equal(AssistantUpdateKind.Problem, updates.Last().Kind);
+        Assert.True(chat.IsEmpty);
+    }
 }
