@@ -106,6 +106,10 @@ public sealed class BoolSegmentViewModel(ParamSpec spec, BlockInstance inst, Act
 {
     public string Label => spec.Label;
 
+    /// <summary>False while the flag doesn't apply, like "1 each from those places" for a single card.</summary>
+    public bool IsShown => spec.ShownWhen?.Invoke(inst) ?? true;
+    public void RefreshShown() => OnPropertyChanged(nameof(IsShown));
+
     public bool Value
     {
         get => bool.TryParse(inst.Values.GetValueOrDefault(spec.Key, spec.Default), out var b) && b;
@@ -124,6 +128,7 @@ public sealed class CardsSegmentViewModel : SegmentViewModel
     private readonly BlockInstance _inst;
     private readonly ParamSpec _spec;
     private readonly Func<CardPack> _pack;
+    private readonly CardFilter _filter;
 
     public CardsSegmentViewModel(ParamSpec spec, BlockInstance inst, Func<CardPack> pack, Action changed)
     {
@@ -132,9 +137,15 @@ public sealed class CardsSegmentViewModel : SegmentViewModel
         _pack = pack;
         Label = spec.Label;
         if (!inst.Filters.TryGetValue(spec.Key, out var filter))
-            inst.Filters[spec.Key] = filter = spec.DefaultFilter?.Invoke() ?? new CardFilter();
+        {
+            filter = spec.DefaultFilter?.Invoke() ?? new CardFilter();
+            // A picker a block only sometimes uses ("up to the number of ...") is kept once it is edited.
+            if (!spec.OnlyWhenUsed) inst.Filters[spec.Key] = filter;
+        }
+        _filter = filter;
         Editor = new FilterEditorViewModel(filter, spec.AllowedZones, materialMode: false, pack, () =>
         {
+            _inst.Filters.TryAdd(_spec.Key, _filter);
             OnPropertyChanged(nameof(Summary));
             changed();
         }, allowThisCard: spec.AllowThisCard, whereFromBlock: spec.WhereFromBlock);
@@ -152,10 +163,11 @@ public sealed class CardsSegmentViewModel : SegmentViewModel
     {
         get
         {
-            var filter = _inst.Filters[_spec.Key];
+            var filter = _inst.Filters.TryGetValue(_spec.Key, out var kept) ? kept : _filter;
             if (filter.ThisCard) return "this card";
             var count = int.TryParse(_inst.Values.GetValueOrDefault("count"), out var n) ? n : 1;
-            var plural = count != 1 || _inst.Values.GetValueOrDefault("mode") == "all";
+            // "any number of" and "up to the number of" cards are plural, as are the cards counted.
+            var plural = count != 1 || _inst.Values.GetValueOrDefault("mode") == "all" || _inst.Values.GetValueOrDefault("amount") is "any" or "number_of";
             return Core.Text.FilterText.Describe(filter, _pack(), plural);
         }
     }

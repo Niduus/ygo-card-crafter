@@ -139,6 +139,13 @@ public sealed partial class EffectViewModel : ObservableObject
     /// </summary>
     public IEnumerable<BlockDefinition> AvailableGates => IsPassive ? [] : BlockRegistry.Offered(BlockKind.Condition);
 
+    /// <summary>
+    /// COST blocks offered among the DO blocks once a "Choose 1 of these effects" block leads them: an option's own cost
+    /// ("● Discard 1 card; draw 1 card").
+    /// </summary>
+    public IEnumerable<BlockDefinition> AvailableOptionCosts =>
+        IsPassive || ChooseEffectsAction.Header(Model.Do) is null ? [] : BlockRegistry.Offered(BlockKind.Cost);
+
     public void AddGate(BlockDefinition def)
     {
         Model.Do.Add(def.CreateInstance());

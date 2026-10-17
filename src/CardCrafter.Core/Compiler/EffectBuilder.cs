@@ -29,6 +29,11 @@ public sealed class BranchTarget
     public List<string> Lines { get; } = [];
     public List<string> Categories { get; } = [];
     public string? Chkc { get; set; }
+    /// <summary>The option's own cost ("● Discard 1 card; ..."): paid when it is chosen, if the effect pays costs.</summary>
+    public List<string> CostChecks { get; } = [];
+    public List<string> CostLines { get; } = [];
+    /// <summary>"1 or both": the options this choice does both of, in order; null for an option of its own.</summary>
+    public List<int>? Combines { get; set; }
     /// <summary>Index of its aux.Stringid description.</summary>
     public int StringIndex { get; set; }
 }
@@ -105,6 +110,15 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
     /// <summary>Per option: its activation checks, targeting and categories.</summary>
     public SortedDictionary<int, BranchTarget> Branches { get; } = [];
     public BranchTarget BranchOf(int branch) => Branches.TryGetValue(branch, out var b) ? b : Branches[branch] = new BranchTarget();
+
+    /// <summary>Who chooses the option of "Activate 1 of these effects": "tp", or "1-tp" for "your opponent chooses".</summary>
+    public string OptionChooser { get; set; } = "tp";
+    /// <summary>The option is chosen as the effect resolves ("apply 1 of these effects"), not as it is activated.</summary>
+    public bool OptionsOnResolution { get; set; }
+    /// <summary>"You can only use each effect once per turn": the player flag each option keeps, or null.</summary>
+    public Func<int, string>? OptionFlag { get; set; }
+    /// <summary>"Activate 1 or both of these effects": a third choice does both options.</summary>
+    public bool OptionBoth { get; set; }
 
     public void AddCategory(string c) { if (!Categories.Contains(c)) Categories.Add(c); }
     public void AddProperty(string p) { if (!Properties.Contains(p)) Properties.Add(p); }
@@ -237,7 +251,12 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
             var fn = Script.AddFunction(p + "cost", "e,tp,eg,ep,ev,re,r,rp,chk", body);
             lines.Add($"{Var}:SetCost({fn})");
         }
-        if (Branches.Count > 0)
+        if (Branches.Count > 0 && OptionsOnResolution)
+        {
+            var fn = Script.AddFunction(p + "tg", "e,tp,eg,ep,ev,re,r,rp,chk", BuildResolvingTarget());
+            lines.Add($"{Var}:SetTarget({fn})");
+        }
+        else if (Branches.Count > 0)
         {
             var fn = Script.AddFunction(p + "tg", "e,tp,eg,ep,ev,re,r,rp,chk" + (Branches.Values.Any(b => b.Chkc is not null) ? ",chkc" : ""), BuildBranchedTarget());
             lines.Add($"{Var}:SetTarget({fn})");
@@ -308,13 +327,15 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
             body.Add("\treturn false");
             body.Add("end");
         }
-        foreach (var (n, b) in Branches) body.Add($"local b{n}={AllOrTrue(b.Checks)}");
+        foreach (var (n, b) in Branches)
+            body.Add($"local b{n}={AllOrTrue(b.Checks)}" + (OptionFlag is { } flag && b.Combines is null ? $"\n\t\tand (not e:IsCostChecked() or Duel.GetFlagEffect(tp,{flag(n)})==0)" : "")
+                     + (b.CostChecks.Count > 0 ? $"\n\t\tand (not e:IsCostChecked() or {string.Join(" and ", b.CostChecks)})" : ""));
         var any = "(" + string.Join(" or ", Branches.Keys.Select(n => $"b{n}")) + ")";
         var checks = new List<string>(TargetChecks) { any };
         body.Add($"if chk==0 then return {(IsMandatory ? "true" : AllOrTrue(checks))} end");
         body.AddRange(TargetLines);
         var options = string.Join(",", Branches.Select(x => $"{{b{x.Key},aux.Stringid(id,{x.Value.StringIndex}),{x.Key}}}"));
-        body.Add($"local op=aux.SelectFromOptions(tp,{options})");
+        body.Add($"local op=aux.SelectFromOptions({OptionChooser},{options})");
         body.Add("e:SetLabel(e:GetLabel(),op)");
         var shared = Categories.Where(c => !Branches.Values.Any(b => b.Categories.Contains(c))).ToList();
         var untargeted = Properties.Where(x => x != "EFFECT_FLAG_CARD_TARGET").ToList();
@@ -327,10 +348,40 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
             body.Add($"\te:SetCategory({(cats.Count == 0 ? "0" : Lua.Join(cats))})");
             var props = b.Chkc is not null ? Properties : untargeted;
             body.Add($"\te:SetProperty({(props.Count == 0 ? "0" : Lua.Join(props))})");
+            // "Each effect once per turn": the option is used once it is chosen for an activation.
+            if (OptionFlag is { } flag && b.Combines is null) body.Add($"\tif e:IsCostChecked() then Duel.RegisterFlagEffect(tp,{flag(n)},RESET_PHASE+PHASE_END,0,1) end");
+            // The option's own cost, paid when the effect is activated (not when it is copied).
+            if (b.CostLines.Count > 0)
+            {
+                body.Add("\tif e:IsCostChecked() then");
+                body.AddRange(b.CostLines.Select(l => "\t\t" + l));
+                body.Add("\tend");
+            }
             body.AddRange(b.Lines.Select(l => "\t" + l));
         }
         body.Add("end");
         return body;
+    }
+
+    /// <summary>
+    /// "Apply 1 of these effects", "your opponent chooses 1 of these effects for you to apply": the effect can be
+    /// activated while any option could be applied, and the option is chosen as it resolves (<see cref="BuildOperation"/>).
+    /// </summary>
+    private List<string> BuildResolvingTarget()
+    {
+        var checks = new List<string>(TargetChecks) { "(" + string.Join(" or ", Branches.Keys.Select(OptionCheck)) + ")" };
+        var body = new List<string> { $"if chk==0 then return {(IsMandatory ? "true" : AllOrTrue(checks))} end" };
+        body.AddRange(TargetLines);
+        foreach (var b in Branches.Values.Where(b => b.Combines is null)) body.AddRange(b.Lines);
+        return body;
+    }
+
+    /// <summary>What one option needs to be chosen, as one expression.</summary>
+    private string OptionCheck(int n)
+    {
+        var checks = new List<string>(Branches[n].Checks);
+        if (OptionFlag is { } flag && Branches[n].Combines is null) checks.Add($"Duel.GetFlagEffect(tp,{flag(n)})==0");
+        return checks.Count == 0 ? "true" : "(" + string.Join(" and ", checks) + ")";
     }
 
     private List<string> BuildPassives(string? countLimit)
@@ -368,13 +419,26 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
             body.AddRange(_finally);
             return body;
         }
-        body.Add("local _,op=e:GetLabel()");
+        if (OptionsOnResolution)
+        {
+            // Chosen now, among the options that can be applied now.
+            foreach (var n in Branches.Keys) body.Add($"local b{n}={OptionCheck(n)}");
+            body.Add($"local op=aux.SelectFromOptions({OptionChooser},{string.Join(",", Branches.Select(x => $"{{b{x.Key},aux.Stringid(id,{x.Value.StringIndex}),{x.Key}}}"))})");
+        }
+        else body.Add("local _,op=e:GetLabel()");
         var first = true;
         foreach (var b in branches)
         {
             body.Add($"{(first ? "if" : "elseif")} op=={b} then");
             first = false;
+            if (OptionsOnResolution && OptionFlag is { } flag) body.Add($"\tDuel.RegisterFlagEffect(tp,{flag(b)},RESET_PHASE+PHASE_END,0,1)");
             body.AddRange(Chain(_steps.Where(s => s.Branch == b).ToList(), "\t"));
+        }
+        // "1 or both": both options' steps, each as its own chain.
+        foreach (var (n, both) in Branches.Where(x => x.Value.Combines is not null))
+        {
+            body.Add($"elseif op=={n} then");
+            foreach (var part in both.Combines!) body.AddRange(Chain(_steps.Where(s => s.Branch == part).ToList(), "\t"));
         }
         body.Add("end");
         body.AddRange(_finally);

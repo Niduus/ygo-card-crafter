@@ -490,11 +490,17 @@ public static partial class ScriptTranslator
             return new TranslatedPiece { Piece = piece, Effect = effect };
         }
         _eventCode = code;
-        var targeting = set.TryGetValue("Target", out var tg) ? Targeting(tg, fns) : new TargetInfo();
+        var hasTarget = set.TryGetValue("Target", out var tg);
+        // "Activate 1 of these effects": each option's own target step and operation (ScriptTranslator.Selections.cs).
+        ResetCounts();
+        var options = OptionsOf(set, fns, card);
+        var targeting = hasTarget && options is null ? Targeting(tg!, fns) : new TargetInfo();
         effect.Cost.AddRange(TakeChainLimits());
         if (!set.TryGetValue("Operation", out var op)) throw No("it has no operation");
         // Coin tosses, die rolls and declarations (ScriptTranslator.Chance.cs).
-        effect.Do.AddRange(ChanceOperation(effect, op, set.GetValueOrDefault("Target"), fns, targeting, card) ?? Operation(op, fns, targeting, card));
+        effect.Do.AddRange(options ?? ChanceOperation(effect, op, set.GetValueOrDefault("Target"), fns, targeting, card) ?? Operation(op, fns, targeting, card));
+        if (PairTargets(targeting, effect.Do) is { } pair) effect.Do = [pair];
+        VerifyCounts(targeting, set.GetValueOrDefault("Condition"), fns);
         TreatedAsCostCheck(effect, range);
         if (effect.Do.Count == 0) throw No("its operation does nothing the blocks recognise");
         CounterActivationChecks(effect, targeting, type);
@@ -1551,6 +1557,13 @@ public static partial class ScriptTranslator
         public string? Check { get; set; }
         /// <summary>The check when it is written over lines of its own, which only the value blocks read.</summary>
         public string? CheckOnItsOwnLines { get; set; }
+        /// <summary>Targets picked as a group ("pick"="names"), and a second kind of target (ScriptTranslator.Selections.cs).</summary>
+        public Dictionary<string, string>? Pick { get; set; }
+        public (CardFilter Filter, int Count)? Second { get; set; }
+        public string? FirstVar { get; set; }
+        public string? SecondVar { get; set; }
+        /// <summary>"up to the number of ...": the cards counted.</summary>
+        public CardFilter? CountFilter { get; set; }
     }
 
     /// <summary>
@@ -1743,6 +1756,8 @@ public static partial class ScriptTranslator
                 if (check.EndsWith(" end", StringComparison.Ordinal)) info.Check = Substitute(check[..^4], values.Locals).Trim();
             }
             if (RecordValueLocal(line, values)) continue;
+            // Several targets: "up to 3", two kinds, a group (ScriptTranslator.Selections.cs).
+            if (SelectionTargetLine(line, info, fns, values)) continue;
             if (Regex.Match(line, @"^Duel\.SetTargetParam\((.+)\)$") is { Success: true } tpm && !Regex.IsMatch(tpm.Groups[1].Value, @"^\d+$"))
             {
                 var param = Squash(Substitute(tpm.Groups[1].Value, values.Locals));
@@ -2216,6 +2231,9 @@ public static partial class ScriptTranslator
         // Murakumo: "your opponent can discard 1 card, or that effect is negated".
         var whole = string.Join(" ", body.Select(l => l.Trim()).Where(l => l.Length > 0));
         if (SummonNegation(whole) is { } negateSummon) return negateSummon;
+        // "Reveal 3 ..., your opponent randomly picks 1 for you to add to your hand" (ScriptTranslator.Selections.cs).
+        ResetPicks();
+        if (RevealPickOf(body, fns) is { } revealed) return revealed;
         if (Regex.IsMatch(whole, @"^if Duel\.(?:GetMatchingGroupCount\(Card\.IsDiscardable,tp,0,LOCATION_HAND,nil,REASON_EFFECT\)>0|IsExistingMatchingCard\(Card\.IsDiscardable,1-tp,LOCATION_HAND,0,1,nil(?:,REASON_EFFECT)?\)) and Duel\.SelectYesNo\(1-tp,aux\.Stringid\(\w+,\d+\)\) then Duel\.DiscardHand\(1-tp,(?:aux\.TRUE|nil),1,1,REASON_EFFECT\+REASON_DISCARD(?:,nil)?\) else Duel\.NegateEffect\(ev\) end$"))
             return [Block("do.negate_unless").With("pay", "discard")];
         if (Regex.IsMatch(whole, @"^if Duel\.CheckLPCost\(1-tp,1000\) and Duel\.SelectYesNo\(1-tp,aux\.Stringid\(\w+,\d+\)\) then Duel\.PayLPCost\(1-tp,1000\) else Duel\.NegateEffect\(ev\) end$"))
@@ -2286,6 +2304,8 @@ public static partial class ScriptTranslator
                 || Regex.IsMatch(line, @"^if tc and tc:IsRelateToEffect\(e\)(?: and tc:IsFaceup\(\))? then$")
                 || IsGuard(line))
                 continue;
+            // Cards picked as a group, at random or by the opponent, and the targets (ScriptTranslator.Selections.cs).
+            if (SelectionLine(line, body, index, groups, target, fns)) continue;
             Match m;
             // "Each face-up monster you control gains 500 ATK": a loop over every card of a group.
             if (GroupLoop(body, index, groups, temps) is { } loop)
@@ -2568,7 +2588,7 @@ public static partial class ScriptTranslator
             int count;
             bool targeted;
             if (groups.TryGetValue(what, out var g)) (filter, count, targeted) = (g.Filter, g.Count, false);
-            else if (what == "tc" && targetCard && target.Filter is not null) (filter, count, targeted) = (target.Filter, target.Count, true);
+            else if ((what == "tc" && targetCard || IsTargetGroup(what)) && target.Filter is not null) (filter, count, targeted) = (target.Filter, target.Count, true);
             else throw No($"it acts on {what}, which the blocks can't follow");
 
             var id = blockId switch
@@ -2599,6 +2619,7 @@ public static partial class ScriptTranslator
             if (BlockRegistry.Find(id)!.Param("target") is not null) block = block.With("target", targeted);
             else if (targeted) throw No("it targets in a way that block can't");
             if (position is not null && BlockRegistry.Find(id)!.Param("position") is not null) block = block.With("position", position);
+            ApplyPicks(what, targeted, target, block);
             return block;
         }
         throw No($"it does something the blocks don't ({Short(line)})");

@@ -55,6 +55,24 @@ public partial class EffectSheetView : UserControl
             }
             menu.Items.Add(gates);
         }
+        // Under "Choose 1 of these effects", an option can start with a cost of its own.
+        if (kind == BlockKind.Action && effect.AvailableOptionCosts.Any())
+        {
+            var costs = new MenuItem { Header = "An option's own cost (COST)" };
+            ToolTip.SetTip(costs, "Put it at the start of an option: it is paid when that option is chosen, like \"● Discard 1 card; draw 1 card\".");
+            foreach (var group in effect.AvailableOptionCosts.GroupBy(b => b.Group))
+            {
+                var header = new MenuItem { Header = group.Key };
+                foreach (var def in group)
+                {
+                    var item = new MenuItem { Header = def.Name };
+                    item.Click += (_, _) => effect.AddGate(def);
+                    header.Items.Add(item);
+                }
+                costs.Items.Add(header);
+            }
+            menu.Items.Add(costs);
+        }
         menu.ShowAt(button);
     }
 

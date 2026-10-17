@@ -24,6 +24,7 @@ public sealed partial class BlockViewModel : ObservableObject
             foreach (var c in Segments.OfType<IntSegmentViewModel>()) c.RefreshShown();
             foreach (var c in Segments.OfType<HexSegmentViewModel>()) c.RefreshShown();
             foreach (var c in Segments.OfType<CardsSegmentViewModel>()) c.RefreshShown();
+            foreach (var c in Segments.OfType<BoolSegmentViewModel>()) c.RefreshShown();
             changed();
         }
         var mode = definition.Param("count_mode") ?? definition.Param("mode");

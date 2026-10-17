@@ -197,6 +197,8 @@ public static class BlockRegistry
         new DeclareAction(), new DeclaredLockAction(), new ToonRulesPassive(),
         // Remembering cards and numbers for later, and delayed steps (Memory.cs)
         new RememberAction(), new MemoryCondition(), new LaterAction(),
+        // How "●" options are chosen, revealing cards for the opponent to pick, and targets of two kinds (Selections.cs)
+        new ChooseEffectsAction(), new RevealPickAction(), new PairTargetAction(),
     ];
 
     private static readonly Dictionary<string, BlockDefinition> ById = All.ToDictionary(b => b.Id);

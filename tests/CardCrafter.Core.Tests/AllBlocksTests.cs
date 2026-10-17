@@ -184,6 +184,13 @@ public class AllBlocksTests
                 // Cards are forgotten when they move, not while this card is face-up: that time is for numbers.
                 if (inst.Values.GetValueOrDefault("duration") == "face_up") inst.Values["what"] = "value";
                 break;
+            // Only Spells and Traps are Set; "Choose 1 of these effects" comes before two "●" options.
+            case RevealPickAction.BlockId when inst.Values.GetValueOrDefault("then") == "set":
+                inst.Filters["cards"].CardType = FilterCardType.SpellTrap;
+                break;
+            case ChooseEffectsAction.BlockId:
+                project.Effects[0].Do.AddRange([new BlockInstance("do.draw").Linked(ActionLink.Option), new BlockInstance("do.gain_lp").Linked(ActionLink.Option)]);
+                break;
         }
         // "The LP paid" needs the cost that pays LP in multiples.
         if (inst.Values.GetValueOrDefault("value") == "lp_paid") project.Effects[0].Cost.Add(new BlockInstance("cost.pay_lp").With("how", "multiple"));
