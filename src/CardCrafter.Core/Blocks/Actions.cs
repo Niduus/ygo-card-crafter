@@ -444,7 +444,9 @@ public sealed class BanishAction : CardGroupAction
         [.. base.BuildParams(), ParamSpec.Choice("until", "For how long", new("always", "", "for good"), new("end_phase", "until the End Phase"),
              // Memory.cs: banished for now, back during a Standby Phase, as official scripts write it.
              new("standby_next", "until the next Standby Phase"), new("standby_your", "until your next Standby Phase"),
-             new("standby_opp", "until your opponent's next Standby Phase")),
+             new("standby_opp", "until your opponent's next Standby Phase"),
+             // Interdimensional Matter Forwarder: "banish it, then return it to the field" (SelfFlicker.cs).
+             new("return", ", then return it to the field")),
          ParamSpec.Flag("facedown", "face-down", false)];
 
     protected override string TargetedAction(BlockArgs args, string pronoun, bool single) =>
@@ -456,11 +458,12 @@ public sealed class BanishAction : CardGroupAction
         var back = ctx.Args.Choice("until") switch
         {
             "standby_next" => "during the next Standby Phase", "standby_your" => "during your next Standby Phase",
-            "standby_opp" => "during your opponent's next Standby Phase", _ => "in the End Phase",
+            "standby_opp" => "during your opponent's next Standby Phase", "return" => "to the field", _ => "in the End Phase",
         };
         if (ctx.Args.Bool("facedown")) ctx.Effect.Error($"\"Banish cards\": cards banished face-down don't come back {back}. Untick \"face-down\" or banish them for good.");
         if (!ctx.Args.Cards("cards").ThisCard && (ctx.Args.Cards("cards").Zones & ~Zone.Field) != Zone.None)
             ctx.Effect.Warn($"Only cards banished from the field come back {back}.");
+        if (ctx.Args.Choice("until") == "return") return BanishAndReturn.Call(ctx, g);
         if (ctx.Args.Choice("until") != "end_phase") return LaterAction.BanishUntil(ctx.Script, g, ctx.Args.Choice("until"));
         var retFilter = ctx.Script.AddFunction("tmpretfilter", "c,fid", ["return c:GetFlagEffectLabel(id)==fid"]);
         var retCon = ctx.Script.AddFunction("tmpretcon", "e,tp,eg,ep,ev,re,r,rp",
@@ -682,10 +685,12 @@ public sealed class SpecialSummonSelfAction : ActionBlock
     public override string Id => "do.special_summon_self";
     public override string Group => "This card";
     public override string Name => "Special Summon this card";
-    public override string Sentence => "Special Summon this card {position} {as}";
-    public override string Help => "Summons this card from wherever the effect is used: the WHEN block's \"in the hand\" or \"in the GY\".";
+    public override string Sentence => "Special Summon this card {from} {position} {as}";
+    public override string Help => "Summons this card from wherever the effect is used: the WHEN block's \"in the hand\" or \"in the GY\". " +
+                                   "\"From where its cost put it\" Summons it after the effect's own cost banished it or sent it to the GY or hand.";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
+        ParamSpec.Choice("from", "From", new("zone", "", "from where this effect is used"), new("cost", "", "from where its cost put it")),
         ParamSpec.Choice("position", "Position",
             new("faceup", "", "face-up"),
             new("attack", "in Attack Position"),
@@ -704,7 +709,8 @@ public sealed class SpecialSummonSelfAction : ActionBlock
     {
         var zone = args.TriggerZone;
         var what = zone == "banished" ? "Special Summon this banished card" : "Special Summon this card";
-        if (zone is not null && Zones.From(zone) is { } from) what += " " + from;
+        if (args.Choice("from") == "cost") what = SummonFromCost.Text(args);
+        else if (zone is not null && Zones.From(zone) is { } from) what += " " + from;
         // A Pendulum Effect's "Special Summon this card from your Pendulum Zone".
         else if (zone == "pendulum_zone") what += " from your Pendulum Zone";
         what = $"{what} {args.Describe("position")}".TrimEnd();
@@ -724,18 +730,26 @@ public sealed class SpecialSummonSelfAction : ActionBlock
         $"{card}:RegisterEffect({v},true)",
     ];
 
+    private static string Position(BlockContext ctx) => ctx.Args.Choice("position") switch
+    {
+        "attack" => "POS_FACEUP_ATTACK",
+        "defense" => "POS_FACEUP_DEFENSE",
+        "defense_facedown" => "POS_FACEDOWN_DEFENSE",
+        _ => "POS_FACEUP",
+    };
+
     public override void Compile(BlockContext ctx)
     {
         Zones.RequireMonster(ctx, Name);
+        // "You can banish this card; Special Summon this banished card" (SelfFlicker.cs).
+        if (ctx.Args.Choice("from") == "cost")
+        {
+            SummonFromCost.Compile(ctx, Position(ctx), ctx.Args.Bool("ignore") ? "true" : "false");
+            return;
+        }
         if (ctx.Effect.Range == "LOCATION_MZONE")
             ctx.Effect.Error("\"Special Summon this card\" needs the effect to be used where this card isn't on the field: set the WHEN block to \"in the hand\", \"in the GY\" or \"while banished\".");
-        var pos = ctx.Args.Choice("position") switch
-        {
-            "attack" => "POS_FACEUP_ATTACK",
-            "defense" => "POS_FACEUP_DEFENSE",
-            "defense_facedown" => "POS_FACEDOWN_DEFENSE",
-            _ => "POS_FACEUP",
-        };
+        var pos = Position(ctx);
         var ignore = ctx.Args.Bool("ignore") ? "true" : "false";
         var treated = ctx.Args.Choice("as");
         if (treated != "none" && !TreatedAsSummon.Check(ctx, Name, 1, pos == "POS_FACEDOWN_DEFENSE")) return;

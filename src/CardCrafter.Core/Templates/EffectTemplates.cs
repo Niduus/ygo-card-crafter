@@ -623,6 +623,22 @@ public static class EffectTemplates
         },
         new()
         {
+            Name = "Fusion Summon using Extra Deck monsters", LikeCard = "Odd-Eyes Fusion", For = CardKind.Spell, Group = "Archetype mechanics",
+            Description = "Fusion Summon 1 Fusion Monster from your Extra Deck, using monsters from your Extra Deck and/or field, also you cannot activate monster effects " +
+                          "in the hand or GY for the rest of this turn after this card resolves, except Fusion Monsters'. Works on a Trap too, with \"If the activation " +
+                          "of this card ... was negated\" for its GY effect.",
+            Create = () => new EffectEvent
+            {
+                Label = "Fusion Summon", When = B("when.activate"), Limit = OncePerTurn.Hard,
+                Do =
+                [
+                    B(FusionSummonAction.BlockId).With("mats", "extra_field"),
+                    B("do.summon_restriction").With("what", "activate_monster_hand_gy").With("cards", new CardFilter { CardType = FilterCardType.Monster, MonsterKind = MonsterKind.Fusion }),
+                ],
+            },
+        },
+        new()
+        {
             Name = "Opponent discards, or it's negated", LikeCard = "Ame no Murakumo no Mitsurugi", For = CardKind.Monster, Group = "Archetype mechanics",
             Description = "When your opponent activates a card or effect (Quick Effect): your opponent can discard 1 card, or that effect is negated.",
             Create = () => new EffectEvent

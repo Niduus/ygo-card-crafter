@@ -73,6 +73,7 @@ public static partial class ScriptTranslator
         lua = EqualToStat(lua);
         lua = MechanicsRewrite(lua);
         lua = TreatedAsRewrite(lua);
+        lua = BanishReturnRewrite(lua);
         lua = BanishUntilRewrite(lua);
         var pieces = LuaPieces.Split(lua, id, strings);
         _ritualCalls = null;
@@ -264,6 +265,8 @@ public static partial class ScriptTranslator
 
         // "Treated as" a name, archetype, Attribute, Type or Normal Monster, and material treatments (ScriptTranslator.TreatedAs.cs).
         if (TreatedAsPieceOf(piece, sets, fns, card) is { } treatedAs) return treatedAs;
+        // Cyber Emergency's "If the activation of this card ... was negated" and its clone (ScriptTranslator.Negated.cs).
+        if (NegatedPieceOf(piece, sets, fns, card) is { } negated) return negated;
         // Copies that differ only in what they apply to are one effect on the card ("ATK/DEF", "Normal or Special").
         var merge = Merge.Of(sets);
         if (merge is not null) return TranslateSet(piece, sets[0], merge, fns, card);
@@ -466,7 +469,8 @@ public static partial class ScriptTranslator
         effect.AlsoWhen.AddRange(TakePendingAlsoWhen());
         if (condition is not null && !usedCondition) effect.If.AddRange(Conditions(condition, fns));
         effect.If.AddRange(TakePendingIf());
-        if (set.GetValueOrDefault("Cost") is { } cost) effect.Cost.AddRange(Costs(cost, fns));
+        // An activation watching for its own negation: the negated trigger block writes that (ScriptTranslator.Negated.cs).
+        if (set.GetValueOrDefault("Cost") is { } cost && !(type.SetEquals(["EFFECT_TYPE_ACTIVATE"]) && IsNegationWatch(cost))) effect.Cost.AddRange(Costs(cost, fns));
         effect.Cost.AddRange(MechanicsCosts(type, props));
         // A Ritual helper's effect, and Polymerization's family: one Ritual or Fusion Summon block.
         if (RitualOf(set) is { } ritual)
@@ -490,6 +494,7 @@ public static partial class ScriptTranslator
             return new TranslatedPiece { Piece = piece, Effect = effect };
         }
         _eventCode = code;
+        _effectRange = range;
         var hasTarget = set.TryGetValue("Target", out var tg);
         // "Activate 1 of these effects": each option's own target step and operation (ScriptTranslator.Selections.cs).
         ResetCounts();
@@ -1956,7 +1961,7 @@ public static partial class ScriptTranslator
                 if (ActivationLock(body) is { } cardsLock) return (who, cardsLock, except);
                 if (!body.StartsWith("return ", StringComparison.Ordinal)) throw No($"its lock on activations is unusual ({Short(body)})");
                 string? type = null;
-                bool onField = false, hand = false, gy = false, mzone = false, offField = false, named = false;
+                bool onField = false, hand = false, gy = false, mzone = false, offField = false, named = false, handGy = false;
                 foreach (var part in SplitTopLevelAnd(body[7..]).Select(x => x.Trim()))
                 {
                     Match m;
@@ -1970,12 +1975,18 @@ public static partial class ScriptTranslator
                     else if ((m = Regex.Match(part, @"^re:GetHandler\(\):(Is(?:Attribute|Race|SetCard|Code|Level)\([^()]*\))$")).Success) { Except("c:" + m.Groups[1].Value, "c"); named = true; }
                     // Songs of the Dominators: "the effects of monsters in your hand, GY, and banishment".
                     else if (Regex.IsMatch(part, @"^re:GetActivateLocation\(\)&\(?LOCATION_HAND[|+]LOCATION_GRAVE[|+]LOCATION_REMOVED\)?~=0$")) offField = true;
+                    else if (IsHandOrGyLocation(part)) handGy = true;
                     else throw No($"its lock on activations is unusual ({Short(part)})");
                 }
                 if (named)
                 {
                     if (type != "TYPE_MONSTER" || hand || mzone || gy || onField || offField) throw No($"its lock on activations is unusual ({Short(body)})");
                     return (who, "activate_monster_of", except);
+                }
+                if (handGy)
+                {
+                    if (type != "TYPE_MONSTER" || hand || mzone || gy || onField || offField) throw No($"its lock on activations is unusual ({Short(body)})");
+                    return (who, "activate_monster_hand_gy", except);
                 }
                 if (offField)
                 {
@@ -2529,6 +2540,7 @@ public static partial class ScriptTranslator
         if (CounterAction(line, target, targetCard) is { } counter) return counter;
         if (MechanicsAction(line, groups, target, targetCard, card, ref self) is { } mechanicsAction) return mechanicsAction;
         if (MemoryAction(line, groups, target, targetCard) is { } memoryAction) return memoryAction;
+        if (SelfToHandAction(line, target) is { } selfToHand) return selfToHand;
         if (TreatedAsSummonAction(line, groups, target, targetCard) is { } treatedSummon) return treatedSummon;
 
         // "inflict 300 damage for each card in your opponent's hand": an amount worked out when it resolves.

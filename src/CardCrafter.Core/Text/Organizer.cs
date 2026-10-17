@@ -212,7 +212,7 @@ public static class CardOrganizer
         if (def is ActivateTrigger || DetailedTriggers.IsCardActivation(def, e.When)) return 1;
         if (def is WhileFaceUpTrigger) return e.Do.Count > 0 && e.Do.All(b => Rules.Contains(b.BlockId)) ? 2 : 5;
         if (zone == "hand") return 3;
-        if (zone is "graveyard" or "banished" or "hand_or_graveyard") return 9;
+        if (zone is "graveyard" or "banished" or "hand_or_graveyard" || def is NegatedActivationTrigger) return 9;
         if (def is IgnitionTrigger) return 6;
         if (def is QuickTrigger || DetailedTriggers.IsQuick(def, e.When)) return 7;
         if (def is SelfTriggerBlock or FlipTrigger or ThisCardDetailTrigger)

@@ -366,14 +366,15 @@ public static partial class ScriptTranslator
     /// <summary>The marked line of <see cref="BanishUntilRewrite"/> as the banish block, or null for any other line.</summary>
     private static BlockInstance? MemoryAction(string line, Dictionary<string, (CardFilter Filter, int Count)> groups, TargetInfo target, bool targetCard)
     {
-        var m = Regex.Match(line, @"^Duel\.CardCrafterBanishUntil\((\w+|e:GetHandler\(\)),(standby_your|standby_next|standby_opp)\)$");
+        var m = Regex.Match(line, @"^Duel\.CardCrafterBanishUntil\((\w+|e:GetHandler\(\)),(standby_your|standby_next|standby_opp|return|return_monster)\)$");
         if (!m.Success) return null;
         if (m.Groups[1].Value is "c" or "e:GetHandler()")
-            return ChecksThisCardIsThere() ? Block("do.banish").With("cards", new CardFilter { ThisCard = true }).With("until", m.Groups[2].Value) : throw No("it banishes this card in a way the blocks can't");
+            return ChecksThisCardIsThere() ? Block("do.banish").With("cards", new CardFilter { ThisCard = true }).With("until", BanishReturnUntil(m.Groups[2].Value, new CardFilter { ThisCard = true }))
+                : throw No("it banishes this card in a way the blocks can't");
         if (CardsOf(m.Groups[1].Value, groups, target, targetCard) is not { Count: 1 } banished) throw No("it banishes cards for a while in a way the blocks can't");
         // The block only picks cards that can be banished: so must the script.
         if (_opValues?.Fns is not { } fns || !fns.ByName.Values.Any(f => f.Body.Any(l => l.Contains("IsAbleToRemove", StringComparison.Ordinal))))
             throw No("it banishes cards for a while that it doesn't check can be banished");
-        return CountedBlock("do.banish", banished).With("until", m.Groups[2].Value);
+        return CountedBlock("do.banish", banished).With("until", BanishReturnUntil(m.Groups[2].Value, banished.Filter));
     }
 }

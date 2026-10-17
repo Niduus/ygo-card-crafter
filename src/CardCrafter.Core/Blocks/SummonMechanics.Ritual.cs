@@ -432,8 +432,8 @@ public sealed class RitualSummonAction : ActionBlock
 /// <summary>
 /// Polymerization and its family: "Fusion Summon 1 Fusion Monster from your Extra Deck, using monsters from your hand
 /// or field as Fusion Material", by banishing materials from the GY (Miracle Fusion), from the Deck (Fusion Destiny),
-/// by shuffling them into the Deck, using the opponent's monsters (Super Polymerization) or the Pendulum Zones, and
-/// "including this card". Written out like Polymerization's script, Chain Material included.
+/// by shuffling them into the Deck, using the opponent's monsters (Super Polymerization), the Pendulum Zones or the Extra
+/// Deck (Odd-Eyes Fusion), and "including this card". Written out like Polymerization's script, Chain Material included.
 /// </summary>
 public sealed class FusionSummonAction : ActionBlock
 {
@@ -468,14 +468,19 @@ public sealed class FusionSummonAction : ActionBlock
             new("hand_field_gy_deck", "by shuffling Fusion Materials from your hand, field, and/or GY into the Deck"),
             new("gy_banished_deck", "by shuffling Fusion Materials from your GY and/or banishment into the Deck"),
             new("field_gy_banished_deck", "by shuffling Fusion Materials from your field, GY, and/or banishment into the Deck"),
-            new("banished_deck", "by shuffling your banished Fusion Materials into the Deck")),
+            new("banished_deck", "by shuffling your banished Fusion Materials into the Deck"),
+            // Odd-Eyes Fusion and Dinomorphia Frenzy add monsters from the Extra Deck to the materials and send them to the GY.
+            new("extra_field", "using monsters from your Extra Deck and/or field"),
+            new("hand_field_extra", "using monsters from your hand, field, and/or Extra Deck"),
+            new("extra", "using monsters from your Extra Deck"),
+            new("deck_extra", "using monsters from your Deck and/or Extra Deck")),
         ParamSpec.Cards("matcards", "Which monsters can be material", () => new CardFilter { CardType = FilterCardType.Monster }, Zone.MonsterZone),
         ParamSpec.Flag("self", ", including this card", false),
         SummonedMonsterAfter.Param,
     ];
 
     /// <summary>Where one way of Fusion Summoning takes its materials from, and what it does with them.</summary>
-    private sealed record Sources(string? Core, string? CoreOnly, bool Gy, bool Banished, bool Deck, bool Opponent, string Send, bool Pzone = false);
+    private sealed record Sources(string? Core, string? CoreOnly, bool Gy, bool Banished, bool Deck, bool Opponent, string Send, bool Pzone = false, bool Extra = false);
 
     private static Sources Of(string mats) => mats switch
     {
@@ -498,6 +503,10 @@ public sealed class FusionSummonAction : ActionBlock
         "gy_banished_deck" => new(null, null, true, true, false, false, "deck"),
         "field_gy_banished_deck" => new("Duel.GetFusionMaterial(tp)", "c:IsOnField()", true, true, false, false, "deck"),
         "banished_deck" => new(null, null, false, true, false, false, "deck"),
+        "extra_field" => new("Duel.GetFusionMaterial(tp)", "c:IsOnField()", false, false, false, false, "grave", Extra: true),
+        "hand_field_extra" => new("Duel.GetFusionMaterial(tp)", null, false, false, false, false, "grave", Extra: true),
+        "extra" => new(null, null, false, false, false, false, "grave", Extra: true),
+        "deck_extra" => new(null, null, false, false, true, false, "grave", Extra: true),
         _ => new("Duel.GetFusionMaterial(tp)", null, false, false, false, false, "grave"),
     };
 
@@ -562,6 +571,12 @@ public sealed class FusionSummonAction : ActionBlock
             var f = script.AddFunction("fusdeckfilter", "c,e,tp,chk", [$"return {Join([.. Base("c:IsType(TYPE_MONSTER)"), "c:IsAbleToGrave()"])}"]);
             body.Add($"mg:Merge(Duel.GetMatchingGroup({f},tp,LOCATION_DECK,0,nil,e,tp,chk))");
             ctx.Effect.AddCategory("CATEGORY_DECKDES");
+        }
+        if (src.Extra)
+        {
+            // Monsters in the Extra Deck, as Odd-Eyes Fusion adds them (they are sent to the GY with the other materials).
+            var f = script.AddFunction("fusexfilter", "c,e,tp,chk", [$"return {Join([.. Base(), "c:IsAbleToGrave()", "(chk or not c:IsImmuneToEffect(e))"])}"]);
+            body.Add($"mg:Merge(Duel.GetMatchingGroup({f},tp,LOCATION_EXTRA,0,nil,e,tp,chk))");
         }
         if (src.Opponent)
         {
@@ -636,6 +651,8 @@ public sealed class FusionSummonAction : ActionBlock
             "if sg2 then sg:Merge(sg2) end",
             "Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_SPSUMMON)",
             "local tc=sg:Select(tp,1,1,nil):GetFirst()",
+            // With Extra Deck materials, the Fusion Monster is taken out of them first, as Odd-Eyes Fusion does.
+            .. src.Extra ? new[] { "mg1:RemoveCard(tc)" } : [],
             "if sg1:IsContains(tc) and (sg2==nil or not sg2:IsContains(tc) or not Duel.SelectYesNo(tp,ce:GetDescription())) then",
             $"\tlocal mat1=Duel.SelectFusionMaterial(tp,tc,mg1,{gc},chkf)",
             "\ttc:SetMaterial(mat1)",
