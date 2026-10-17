@@ -269,77 +269,136 @@ public sealed class ExcavateAction : ActionBlock
     public const string BlockId = "do.excavate";
     public override string Id => BlockId;
     public override string Group => "Cards";
-    public override string Name => "Excavate the top cards of your Deck";
-    public override string Sentence => "Excavate the top {count} cards of your Deck, and if you do, you can {take} 1 excavated {cards}, also {rest}";
-    public override string Help => "The excavated cards are shown to both players. You may take 1 card that matches; the rest go where you choose.";
+    public override string Name => "Excavate the top cards of a Deck";
+    public override string Sentence => "Excavate {upto} the top {count} cards of {whose} Deck, and if you do, you can {take} 1 excavated {cards}, also {rest}";
+    public override string Help => "The excavated cards are shown to both players. You may take 1 card that matches; the rest go where you choose. " +
+                                   "\"Banish it face-down\" banishes 1 of them, as Kashtira Ogre does: \"excavate up to 5 cards from the top of your opponent's Deck, " +
+                                   "banish 1 excavated card, face-down, and place the rest on the top of the Deck in the same order\".";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
+        // Kashtira Ogre: "excavate up to 5 cards": the player says how many as the effect resolves.
+        ParamSpec.Flag("upto", "up to (you say how many)", false),
         ParamSpec.Int("count", "How many", 3, 1, 10),
-        ParamSpec.Choice("take", "Take", new("add", "add", "add it to your hand"), new("special", "Special Summon", "Special Summon it")),
+        ParamSpec.Choice("whose", "Whose Deck", new("you", "your"), new("opponent", "your opponent's")),
+        ParamSpec.Choice("take", "Take", new("add", "add", "add it to your hand"), new("special", "Special Summon", "Special Summon it"),
+            new("banish", "banish", "banish it face-down (not optional)")),
         new ParamSpec { Key = "cards", Label = "Which card", Type = ParamType.Cards, WhereFromBlock = true, DefaultFilter = () => new CardFilter { CardType = FilterCardType.Monster } },
         ParamSpec.Choice("rest", "The rest",
             new("gy", "send the rest to the GY"),
             new("shuffle", "shuffle the rest into the Deck"),
-            new("bottom", "place the rest on the bottom of the Deck in any order")),
+            new("bottom", "place the rest on the bottom of the Deck in any order"),
+            new("top", "place the rest on the top of the Deck in the same order")),
     ];
 
     public override string Describe(BlockArgs args)
     {
+        var n = args.Int("count");
+        var whose = args.Describe("whose");
+        // "excavate up to 5 cards from the top of your opponent's Deck", "excavate the top 3 cards of your Deck".
+        var excavate = args.Bool("upto") ? $"excavate up to {n} cards from the top of {whose} Deck" : $"excavate the top {n} cards of {whose} Deck";
         var noun = FilterText.Describe(args.Cards("cards"), args.Pack, withLocation: false, ownName: args.CardName);
+        // Kashtira Ogre: "..., banish 1 excavated card, face-down, and place the rest on the top of the Deck in the same order".
+        if (args.Choice("take") == "banish") return $"{excavate}, banish 1 excavated {noun}, face-down, and {args.Describe("rest")}{args.ExceptText()}";
         var take = args.Choice("take") == "special" ? $"Special Summon 1 excavated {noun}" : $"add 1 excavated {noun} to your hand";
-        return $"excavate the top {args.Int("count")} cards of your Deck, and if you do, you can {take}, also {args.Describe("rest")}{args.ExceptText()}";
+        return $"{excavate}, and if you do, you can {take}, also {args.Describe("rest")}{args.ExceptText()}";
     }
 
     public override void Compile(BlockContext ctx)
     {
         var e = ctx.Effect;
         var n = ctx.Args.Int("count");
-        var special = ctx.Args.Choice("take") == "special";
+        var p = PlayerOf(ctx.Args.Choice("whose"));
+        var take = ctx.Args.Choice("take");
+        var special = take == "special";
+        var banish = take == "banish";
         var rest = ctx.Args.Choice("rest");
+        var upto = ctx.Args.Bool("upto");
         var picked = ctx.Args.Cards("cards").Clone();
-        picked.Owner = CardOwner.You;
+        picked.Owner = p == "tp" ? CardOwner.You : CardOwner.Opponent;
         picked.Zones = Zone.Deck;
-        var f = ctx.Script.Filter(picked, special ? "c:IsCanBeSpecialSummoned(e,0,tp,false,false)" : "c:IsAbleToHand()");
-        e.AddCategory(special ? "CATEGORY_SPECIAL_SUMMON" : "CATEGORY_TOHAND");
-        if (!special) e.AddCategory("CATEGORY_SEARCH");
+        var f = ctx.Script.Filter(picked, banish ? "c:IsAbleToRemove(tp,POS_FACEDOWN)" : special ? "c:IsCanBeSpecialSummoned(e,0,tp,false,false)" : "c:IsAbleToHand()");
+        if (p != "tp" && !banish) e.Warn($"\"{Name}\": cards excavated from your opponent's Deck are theirs; adding or Summoning one is unusual. \"Banish it face-down\" is what such cards do.");
+        e.AddCategory(banish ? "CATEGORY_REMOVE" : special ? "CATEGORY_SPECIAL_SUMMON" : "CATEGORY_TOHAND");
+        if (take == "add") e.AddCategory("CATEGORY_SEARCH");
         if (rest == "gy") e.AddCategory("CATEGORY_DECKDES");
-        e.TargetChecks.Add($"Duel.GetFieldGroupCount(tp,LOCATION_DECK,0)>={n}");
+        // "Up to 5": 1 card is enough to activate it; banishing checks the top card can be banished, as Kashtira Ogre does.
+        if (banish) e.TargetChecks.Add($"Duel.GetDecktopGroup({p},1):IsExists(Card.IsAbleToRemove,1,nil,tp,POS_FACEDOWN)");
+        else e.TargetChecks.Add($"Duel.GetFieldGroupCount({p},LOCATION_DECK,0)>={(upto ? 1 : n)}");
+        if (banish) e.TargetLines.Add($"Duel.SetOperationInfo(0,CATEGORY_REMOVE,nil,1,{p},LOCATION_DECK)");
         var g = e.NewLocal("g");
         var sg = e.NewLocal("sg");
         var r = e.NewLocal("r");
         var ask = $"Duel.SelectYesNo(tp,aux.Stringid(id,{Math.Min(e.Index, 16) - 1}))";
-        var lines = new List<string>
+        var lines = new List<string> { $"local {r}=0" };
+        // How many are excavated: the number, or up to it (1 to as many as there are), declared as Kashtira Ogre does.
+        var ct = n.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        if (upto)
         {
-            $"local {r}=0",
-            $"if Duel.GetFieldGroupCount(tp,LOCATION_DECK,0)>={n} then",
-            $"\tDuel.ConfirmDecktop(tp,{n})",
-            $"\tlocal {g}=Duel.GetDecktopGroup(tp,{n})",
+            ct = e.NewLocal("ct");
+            lines.AddRange(
+            [
+                $"local {ct}=math.min({n},Duel.GetFieldGroupCount({p},LOCATION_DECK,0))",
+                $"if {ct}>1 then",
+                "\tlocal nums={}",
+                $"\tfor i=1,{ct} do nums[i]=i end",
+                $"\t{ct}=Duel.AnnounceNumber(tp,table.unpack(nums))",
+                "end",
+                $"if {ct}>0 then",
+            ]);
+        }
+        else lines.Add($"if Duel.GetFieldGroupCount({p},LOCATION_DECK,0)>={n} then");
+        lines.AddRange(
+        [
+            $"\tDuel.ConfirmDecktop({p},{ct})",
+            $"\tlocal {g}=Duel.GetDecktopGroup({p},{ct})",
             $"\t{r}={g}:GetCount()",
-            $"\tif {(special ? "Duel.GetLocationCount(tp,LOCATION_MZONE)>0 and " : "")}{g}:IsExists({f.Function},1,nil,e,tp) and {ask} then",
-            "\t\tDuel.DisableShuffleCheck()",
-            $"\t\tDuel.Hint(HINT_SELECTMSG,tp,{(special ? "HINTMSG_SPSUMMON" : "HINTMSG_ATOHAND")})",
-            $"\t\tlocal {sg}={g}:FilterSelect(tp,{f.Function},1,1,nil,e,tp)",
-        };
-        if (special) lines.Add($"\t\tDuel.SpecialSummon({sg},0,tp,tp,false,false,POS_FACEUP)");
-        else lines.AddRange([$"\t\tDuel.SendtoHand({sg},nil,REASON_EFFECT)", $"\t\tDuel.ConfirmCards(1-tp,{sg})", "\t\tDuel.ShuffleHand(tp)"]);
-        lines.Add($"\t\t{g}:Sub({sg})");
-        lines.Add("\tend");
+        ]);
+        if (banish)
+        {
+            lines.AddRange(
+            [
+                "\tDuel.Hint(HINT_SELECTMSG,tp,HINTMSG_REMOVE)",
+                $"\tlocal {sg}={g}:FilterSelect(tp,{f.Function},1,1,nil,e,tp)",
+                $"\tif {sg}:GetCount()>0 then",
+                "\t\tDuel.DisableShuffleCheck()",
+                $"\t\tDuel.Remove({sg},POS_FACEDOWN,REASON_EFFECT)",
+                $"\t\t{g}:Sub({sg})",
+                "\tend",
+            ]);
+        }
+        else
+        {
+            lines.AddRange(
+            [
+                $"\tif {(special ? "Duel.GetLocationCount(tp,LOCATION_MZONE)>0 and " : "")}{g}:IsExists({f.Function},1,nil,e,tp) and {ask} then",
+                "\t\tDuel.DisableShuffleCheck()",
+                $"\t\tDuel.Hint(HINT_SELECTMSG,tp,{(special ? "HINTMSG_SPSUMMON" : "HINTMSG_ATOHAND")})",
+                $"\t\tlocal {sg}={g}:FilterSelect(tp,{f.Function},1,1,nil,e,tp)",
+            ]);
+            if (special) lines.Add($"\t\tDuel.SpecialSummon({sg},0,tp,tp,false,false,POS_FACEUP)");
+            else lines.AddRange([$"\t\tDuel.SendtoHand({sg},nil,REASON_EFFECT)", $"\t\tDuel.ConfirmCards(1-tp,{sg})", "\t\tDuel.ShuffleHand(tp)"]);
+            lines.Add($"\t\t{g}:Sub({sg})");
+            lines.Add("\tend");
+        }
         switch (rest)
         {
             case "gy":
                 lines.AddRange(["\tDuel.DisableShuffleCheck()", $"\tDuel.SendtoGrave({g},REASON_EFFECT+REASON_REVEAL)"]);
                 break;
             case "shuffle":
-                lines.Add("\tDuel.ShuffleDeck(tp)");
+                lines.Add($"\tDuel.ShuffleDeck({p})");
+                break;
+            // Still on top, in the order they were: nothing moves.
+            case "top":
                 break;
             default:
                 // What is left of the excavated cards is still on top: sort them, then move each to the bottom.
                 lines.AddRange(
                 [
                     $"\tif {g}:GetCount()>0 then",
-                    $"\t\tDuel.SortDecktop(tp,tp,{g}:GetCount())",
+                    $"\t\tDuel.SortDecktop(tp,{p},{g}:GetCount())",
                     $"\t\tfor i=1,{g}:GetCount() do",
-                    "\t\t\tlocal mg=Duel.GetDecktopGroup(tp,1)",
+                    $"\t\t\tlocal mg=Duel.GetDecktopGroup({p},1)",
                     "\t\t\tDuel.MoveSequence(mg:GetFirst(),SEQ_DECKBOTTOM)",
                     "\t\tend",
                     "\tend",

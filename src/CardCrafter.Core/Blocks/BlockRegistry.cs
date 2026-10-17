@@ -212,6 +212,9 @@ public static class BlockRegistry
         new ChooseEffectsAction(), new RevealPickAction(), new PairTargetAction(),
         // Targeting for the steps after, which act on "that card" (CardRefs.cs)
         new TargetCardsAction(),
+        // The top of the Deck, draw rules, the hand and LP (DeckTop.cs, Draws.cs, ControllerDamage.cs)
+        new BanishTopAction(), new BanishTopCost(), new DrawCountPassive(), new EndPhaseHandAction(), new ArchetypeActivationsCondition(),
+        new ControllerDamageAction(),
     ];
 
     private static readonly Dictionary<string, BlockDefinition> ById = All.ToDictionary(b => b.Id);

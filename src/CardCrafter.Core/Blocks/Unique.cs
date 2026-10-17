@@ -45,6 +45,14 @@ public sealed class TributeAction : CardGroupAction
     protected override Func<CardFilter> DefaultCards => () => new CardFilter { Owner = CardOwner.You, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster };
     protected override string? AbleCheck(BlockContext ctx) => "c:IsReleasableByEffect()";
     protected override string Apply(string g, BlockContext ctx) => $"Duel.Release({g},REASON_EFFECT)";
+
+    public override void Compile(BlockContext ctx)
+    {
+        var steps = ctx.Effect.StepCount;
+        base.Compile(ctx);
+        // Kept for a Token whose ATK/DEF are "the combined original ATK/DEF of the Tributed monsters" (Nibiru).
+        if (ctx.Effect.StepCount > steps) ctx.Effect.TributeStep = ctx.Effect.LastResultStep;
+    }
 }
 
 /// <summary>"Make your opponent Tribute 1 monster they control (their choice)": Mitsurugi Sacred Boundary.</summary>

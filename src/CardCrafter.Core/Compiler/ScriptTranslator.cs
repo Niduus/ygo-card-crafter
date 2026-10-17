@@ -1586,6 +1586,8 @@ public static partial class ScriptTranslator
         var blocks = new List<BlockInstance>();
         bool inCheck = false;
         (string Var, CardFilter Filter, int Min, int Max)? picked = null;
+        // "Banish (face-down) the top 3 cards of your Deck": the top cards, banished without shuffling.
+        (string Var, int Count)? top = null;
         // "the turn you activate this": the check asks that nothing was Special Summoned (or activated) yet this turn.
         var wholeTurn = rawBody.Any(l => l.Contains("Duel.GetCustomActivityCount(", StringComparison.Ordinal));
         foreach (var raw in body)
@@ -1630,6 +1632,14 @@ public static partial class ScriptTranslator
                 continue;
             }
             if (line.StartsWith("Duel.HintSelection(", StringComparison.Ordinal)) continue;
+            if ((m = Regex.Match(line, @"^local (\w+)=Duel\.GetDecktopGroup\(tp,(\d+)\)$")).Success) { top = (m.Groups[1].Value, Int(m.Groups[2].Value)); continue; }
+            if (top is not null && line == "Duel.DisableShuffleCheck()") continue;
+            if (top is { } t && (m = Regex.Match(line, $@"^Duel\.Remove\({t.Var},(POS_FACEUP|POS_FACEDOWN),REASON_COST\)$")).Success)
+            {
+                blocks.Add(Block(BanishTopCost.BlockId).With("count", t.Count).With("facedown", m.Groups[1].Value == "POS_FACEDOWN"));
+                top = null;
+                continue;
+            }
             // "Reveal 1 EARTH monster in your hand": picked from the hand, then shown to the opponent.
             if (picked is { } rp && line == $"Duel.ConfirmCards(1-tp,{rp.Var})" && rp.Filter.Zones == Model.Zone.Hand && rp.Min == rp.Max && rp.Max > 0)
             {
@@ -2427,6 +2437,8 @@ public static partial class ScriptTranslator
         // "Special Summon up to 2": the free Monster Zones ("ft"), capped by the card.
         int? ftCap = null;
         var discards = new HashSet<string>();
+        // The top cards of a Deck ("local g=Duel.GetDecktopGroup(1-tp,3)"), for banishing them.
+        var decktop = new Dictionary<string, (string Player, int Count)>();
         BlockInstance? setBlock = null;
         // "..., then you can ...": the next action is optional; the checks before the question must be about the cards it picks.
         var optional = false;
@@ -2539,6 +2551,17 @@ public static partial class ScriptTranslator
             }
             // Part of negating a card's effects, which the block does too.
             if (line == "Duel.NegateRelatedChain(tc,RESET_TURN_SET)") continue;
+            // "Banish the top 3 cards of your opponent's Deck face-down": the top cards, banished without shuffling.
+            if ((m = Regex.Match(line, @"^local (\w+)=Duel\.GetDecktopGroup\((tp|1-tp),(\d+)\)$")).Success) { decktop[m.Groups[1].Value] = (m.Groups[2].Value, Int(m.Groups[3].Value)); continue; }
+            if (decktop.Count > 0 && (line == "Duel.DisableShuffleCheck()" || Regex.IsMatch(line, @"^if (?:#(\w+)==0|(\w+):GetCount\(\)==0) then return end$"))) continue;
+            if ((m = Regex.Match(line, @"^(if )?Duel\.Remove\((\w+),(POS_FACEUP|POS_FACEDOWN),REASON_EFFECT\)(?:(?:~=0|>0) then)?$")).Success && decktop.TryGetValue(m.Groups[2].Value, out var top)
+                && m.Groups[1].Success == line.EndsWith(" then", StringComparison.Ordinal))
+            {
+                blocks.Add(Add(Block(BanishTopAction.BlockId).With("whose", top.Player == "tp" ? "you" : "opponent").With("count", top.Count)
+                    .With("facedown", m.Groups[3].Value == "POS_FACEDOWN").Linked(link)));
+                link = m.Groups[1].Success ? ActionLink.IfYouDo : ActionLink.And;
+                continue;
+            }
             // "then discard 1 card": picked from the hand, then sent to the GY as a discard.
             if ((m = Regex.Match(line, @"^local (\w+)=Duel\.SelectMatchingCard\(tp,Card\.IsDiscardable,tp,LOCATION_HAND,0,(\d+),\2,nil(?:,REASON_\w+(?:\+REASON_\w+)*)?\)$")).Success)
             {

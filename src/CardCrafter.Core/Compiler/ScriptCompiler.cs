@@ -137,6 +137,42 @@ public static class ScriptCompiler
         ("aux.dlvcheck", ["if not aux.dlvcheck then function aux.dlvcheck(g) return g:GetClassCount(Card.GetLevel)==#g end end"]),
         ("aux.SameValueCheck", ["if not aux.SameValueCheck then function aux.SameValueCheck(g,f) local v=nil for tc in aux.Next(g) do v=v and v&f(tc) or f(tc) if v==0 then return false end end return true end end"]),
         ("aux.IsCodeOrListed", ["if not aux.IsCodeOrListed then function aux.IsCodeOrListed(c,code) return c:IsCode(code) or aux.IsCodeListed(c,code) end end"]),
+        // The official "Mulcharmy" count: a flag on the player for each "Mulcharmy" monster effect activated this turn.
+        ("aux.EnableMulcharmyGlobalCheck", [
+            "if not aux.EnableMulcharmyGlobalCheck then",
+            "\tfunction aux.EnableMulcharmyGlobalCheck()",
+            "\t\tif CardCrafterMulcharmyCheck then return end",
+            "\t\tCardCrafterMulcharmyCheck=true",
+            "\t\tlocal ge=Effect.GlobalEffect()",
+            "\t\tge:SetType(EFFECT_TYPE_FIELD+EFFECT_TYPE_CONTINUOUS)",
+            "\t\tge:SetCode(EVENT_CHAINING)",
+            "\t\tge:SetOperation(function(e,tp,eg,ep,ev,re,r,rp) if re:IsActiveType(TYPE_MONSTER) and re:GetHandler():IsSetCard(0x1b2) then Duel.RegisterFlagEffect(ep,84192580,RESET_PHASE+PHASE_END,0,1) end end)",
+            "\t\tDuel.RegisterEffect(ge,0)",
+            "\tend",
+            "end",
+        ]),
+        // "Instead of conducting your normal draw": the draw is given up for this Draw Phase.
+        ("NormalDraw", ["if not FLAG_ID_NO_NORMAL_DRAW then FLAG_ID_NO_NORMAL_DRAW=3 end"]),
+        ("aux.IsPlayerCanNormalDraw", [
+            "if not aux.IsPlayerCanNormalDraw then",
+            "\tfunction aux.IsPlayerCanNormalDraw(tp) return Duel.GetDrawCount(tp)>0 and Duel.GetFieldGroupCount(tp,LOCATION_DECK,0)>0 and Duel.GetFlagEffect(tp,FLAG_ID_NO_NORMAL_DRAW)==0 end",
+            "end",
+        ]),
+        ("aux.GiveUpNormalDraw", [
+            "if not aux.GiveUpNormalDraw then",
+            "\tfunction aux.GiveUpNormalDraw(e,tp)",
+            "\t\tlocal e1=Effect.CreateEffect(e:GetHandler())",
+            "\t\te1:SetType(EFFECT_TYPE_FIELD)",
+            "\t\te1:SetProperty(EFFECT_FLAG_PLAYER_TARGET)",
+            "\t\te1:SetCode(EFFECT_DRAW_COUNT)",
+            "\t\te1:SetTargetRange(1,0)",
+            "\t\te1:SetReset(RESET_PHASE+PHASE_DRAW)",
+            "\t\te1:SetValue(0)",
+            "\t\tDuel.RegisterEffect(e1,tp)",
+            "\t\tDuel.RegisterFlagEffect(tp,FLAG_ID_NO_NORMAL_DRAW,RESET_PHASE+PHASE_DRAW,0,1)",
+            "\tend",
+            "end",
+        ]),
         ("aux.DimensionalFissureTarget", [
             "if not aux.DimensionalFissureTarget then",
             "\tfunction aux.DimensionalFissureTarget(e,c) return bit.band(c:GetOriginalType(),TYPE_MONSTER)>0 and not c:IsLocation(LOCATION_OVERLAY) and not c:IsType(TYPE_SPELL+TYPE_TRAP) end",
@@ -256,7 +292,10 @@ public static class ScriptCompiler
             effect.CurrentOptional = false;
         }
 
-        if (src.Do.Count == 0)
+        if (effect.LpPerTarget is not null)
+            effect.Warn("\"Pay LP for each target\" is paid by a DO block that targets after it; none does, so nothing is paid.");
+        // "Activate this card by sending 1 ... to the GY": a Continuous or Field card's activation can be only its cost.
+        if (src.Do.Count == 0 && !(effect.IsActivation && src.Cost.Count > 0 && Lingers(effect.Card) && effect.Card is not { Kind: CardKind.Spell, SpellKind: SpellKind.Equip }))
             effect.Error("Add at least one DO block: what the effect does.");
         if (effect.IsPassive && src.Limit != OncePerTurn.None)
             effect.Warn("Once-per-turn limits do nothing on \"while face-up\" effects and were ignored.");
@@ -484,16 +523,15 @@ public static class ScriptCompiler
     }
 
     /// <summary>Continuous, Field and Equip cards need a plain "activate this card" effect to be placed on the field.</summary>
-    private static bool NeedsActivationEffect(CardData card, List<EffectBuilder> effects)
+    private static bool NeedsActivationEffect(CardData card, List<EffectBuilder> effects) => Lingers(card) && !effects.Any(e => e.IsActivation);
+
+    /// <summary>A card that stays on the field after it is activated: a Continuous, Field or Equip Spell, or a Continuous Trap.</summary>
+    private static bool Lingers(CardData card) => card.Kind switch
     {
-        bool lingering = card.Kind switch
-        {
-            CardKind.Spell => card.SpellKind is SpellKind.Continuous or SpellKind.Field or SpellKind.Equip,
-            CardKind.Trap => card.TrapKind == TrapKind.Continuous,
-            _ => false,
-        };
-        return lingering && !effects.Any(e => e.IsActivation);
-    }
+        CardKind.Spell => card.SpellKind is SpellKind.Continuous or SpellKind.Field or SpellKind.Equip,
+        CardKind.Trap => card.TrapKind == TrapKind.Continuous,
+        _ => false,
+    };
 
     /// <summary>How many uses an effect's limit allows ("twice per turn"): 1 to 9.</summary>
     public static int Times(EffectEvent e) => Math.Clamp(e.Times, 1, 9);

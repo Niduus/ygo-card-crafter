@@ -64,6 +64,20 @@ public static class CardRefs
         return null;
     }
 
+    /// <summary>Whether the DO block after <paramref name="b"/> acts on, or reads, the cards <paramref name="b"/> affected.</summary>
+    public static bool NextUsesAffected(EffectEvent effect, BlockInstance b)
+    {
+        var at = effect.Do.FindIndex(x => ReferenceEquals(x, b));
+        for (var i = at + 1; at >= 0 && i < effect.Do.Count; i++)
+        {
+            var next = effect.Do[i];
+            if (BlockRegistry.Find(next.BlockId) is OnlyIfAction or ConditionBlock) continue;
+            return next.Filters.Values.Any(f => f.That == CardRef.Affected) || next.Values.Values.Any(v => v.StartsWith("that_", StringComparison.Ordinal))
+                || next.BlockId == ControllerDamageAction.BlockId && next.Values.GetValueOrDefault("which") == "affected";
+        }
+        return false;
+    }
+
     /// <summary>The cost block whose cards the effect keeps: the first one that moves cards.</summary>
     private static BlockInstance? CostBlock(EffectEvent? effect) =>
         effect?.Cost.FirstOrDefault(b => b.BlockId is "cost.discard" or "cost.tribute" or "cost.move_cards" or "cost.this_card" or "cost.detach");
@@ -174,7 +188,7 @@ public static class CardRefs
                 return "Duel.GetChainInfo(0,CHAININFO_TARGET_CARDS):Filter(Card.IsRelateToEffect,nil,e)";
             case CardRef.Affected:
                 if (e.LastResult is null) { e.Error($"\"{name}\": \"the cards the step before affected\" needs a DO block before it that moves, destroys or Summons cards."); return null; }
-                return "Duel.GetOperatedGroup():Clone()";
+                return e.LastResultStep?.Affected ?? "Duel.GetOperatedGroup():Clone()";
             case CardRef.Cost:
                 if (CostBlock(e.Source) is null) { e.Error($"\"{name}\": \"the cards used for the cost\" needs a COST block that discards, Tributes, banishes, sends or detaches cards."); return null; }
                 return "(e:GetLabelObject() or Group.CreateGroup())";

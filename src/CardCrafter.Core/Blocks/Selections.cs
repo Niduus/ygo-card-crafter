@@ -386,8 +386,9 @@ public abstract partial class CardGroupAction
             {
                 e.TargetChecks.Add($"Duel.IsExistingTarget({f.Function},tp,{f.Self},{f.Opp},{min},{f.Exclude},e,tp)");
                 if (ct is not null) e.TargetLines.Add($"local {ct}={counted}");
-                e.TargetLines.Add($"local {tg}=Duel.SelectTarget(tp,{f.Function},tp,{f.Self},{f.Opp},{least},{max},{f.Exclude},e,tp)");
+                e.TargetLines.Add($"local {tg}=Duel.SelectTarget(tp,{f.Function},tp,{f.Self},{f.Opp},{least},{PaidMax(e, max)},{f.Exclude},e,tp)");
             }
+            PayPerTarget(e, tg);
             if (Category.Length > 0) e.TargetLines.Add($"Duel.SetOperationInfo(0,{Category},{tg},{tg}:GetCount(),0,0)");
             body.Add($"local {g}=Duel.GetChainInfo(0,CHAININFO_TARGET_CARDS):Filter(Card.IsRelateToEffect,nil,e)");
             body.Add($"local {r}=0");

@@ -18,6 +18,11 @@ public sealed class OperationStep
     /// <summary>For an IF block among the DO blocks: the condition the following steps need ("then if you control ...").</summary>
     public string? Gate { get; init; }
     /// <summary>
+    /// The Lua group of the cards the step affected, for "that card" after it, when the engine doesn't keep them as its
+    /// operated group (placing cards face-up). Null for Duel.GetOperatedGroup().
+    /// </summary>
+    public string? Affected { get; set; }
+    /// <summary>
     /// For a gate on a coin toss or die roll's result ("if the result is heads"): it ends the steps of the result before
     /// it, so "● Heads: ..." and "● Tails: ..." are each their own.
     /// </summary>
@@ -169,6 +174,9 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
 
     private readonly List<string> _finally = [];
 
+    /// <summary>Lines the operation starts with, before any step: "instead of conducting your normal draw" gives the draw up.</summary>
+    public List<string> OperationPrologue { get; } = [];
+
     /// <summary>
     /// Lines that run at the end of the operation whatever happened before, like Dominus' "If you activated this card
     /// from your hand, you cannot ... for the rest of this Duel."
@@ -207,6 +215,15 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
 
     /// <summary>The DO step <see cref="LastResult"/> belongs to, for a later step that needs it kept ("the damage inflicted").</summary>
     public OperationStep? LastResultStep => _steps.LastOrDefault(s => s.Result is not null);
+
+    /// <summary>
+    /// "Pay 800 LP for each target": the LP the next DO block that targets pays for each of its targets, as they are
+    /// chosen (no more targets than the LP can pay for). Null when the effect has no such cost.
+    /// </summary>
+    public string? LpPerTarget { get; set; }
+
+    /// <summary>The DO step of the effect that Tributed cards, for "the combined original ATK of the Tributed monsters".</summary>
+    public OperationStep? TributeStep { get; set; }
 
     /// <summary>True once a COST block has stored how many cards it used (in the effect's label).</summary>
     public bool CostCounts { get; set; }
@@ -317,7 +334,7 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
             var fn = Script.AddFunction(p + "tg", args, body);
             lines.Add($"{Var}:SetTarget({fn})");
         }
-        if (_steps.Count > 0 || _finally.Count > 0)
+        if (_steps.Count > 0 || _finally.Count > 0 || OperationPrologue.Count > 0)
         {
             var fn = Script.AddFunction(p + "op", "e,tp,eg,ep,ev,re,r,rp", BuildOperation());
             lines.Add($"{Var}:SetOperation({fn})");
@@ -463,6 +480,7 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
     private List<string> BuildOperation()
     {
         var body = new List<string> { "local c=e:GetHandler()" };
+        body.AddRange(OperationPrologue);
         var branches = _steps.Select(s => s.Branch).Distinct().OrderBy(b => b).ToList();
         if (branches.Count == 0 || branches.Count == 1 && branches[0] == 0)
         {

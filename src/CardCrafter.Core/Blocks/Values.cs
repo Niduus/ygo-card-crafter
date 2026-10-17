@@ -383,6 +383,16 @@ public static class ValueSources
         .. Counters.Params(withAny: true, b => UsesCounter(b.Values.GetValueOrDefault("value", "lp_diff"))),
     ];
 
+    /// <summary>
+    /// The same parameters, shown only while <paramref name="when"/> holds: for a block that takes a number or a value
+    /// ("banish the top 3 cards" or "cards equal to ...").
+    /// </summary>
+    public static IEnumerable<ParamSpec> ParamsWhen(Func<BlockInstance, bool> when, int amountDefault = 300, bool withEvent = true) =>
+        Params(amountDefault, withEvent).Select(p => Also(p, when)).ToList();
+
+    /// <summary>The parameter, shown only while <paramref name="when"/> holds as well as whatever it already needs.</summary>
+    public static ParamSpec Also(ParamSpec p, Func<BlockInstance, bool> when) => p.ShownWhen is { } own ? p.ShowIf(b => when(b) && own(b)) : p.ShowIf(when);
+
     /// <summary>The engine codes for gaining, losing or becoming a stat.</summary>
     public static string[] Codes(string stat, string dir) => (stat, dir) switch
     {

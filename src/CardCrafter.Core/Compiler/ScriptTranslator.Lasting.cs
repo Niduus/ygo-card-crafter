@@ -460,6 +460,13 @@ public static partial class ScriptTranslator
             effect.Do.Add(Block("passive.player_rule").With("rule", playerRule));
             return true;
         }
+        // "Draw 2 cards instead of 1 for your normal draw during your Draw Phase" (Pandora's Jewelry Box).
+        if (type.SetEquals(["EFFECT_TYPE_FIELD"]) && range is not null && code == "EFFECT_DRAW_COUNT" && HasFlags(set, "EFFECT_FLAG_PLAYER_TARGET")
+            && Setting(set, "TargetRange") is "1,0" or "0,1" && Only(set, "Code", "Range", "Property", "TargetRange", "Value", "Condition") && value is "2" or "3" or "4" or "5")
+        {
+            effect.Do.Add(Block(DrawCountPassive.BlockId).With("who", Setting(set, "TargetRange") == "0,1" ? "opponent" : "you").With("count", Int(value)));
+            return true;
+        }
         // "If the equipped monster would be destroyed (by battle), destroy this card instead."
         if (type.SetEquals(["EFFECT_TYPE_EQUIP"]) && !(card.Kind == CardKind.Spell && card.SpellKind != SpellKind.Equip) && code == "EFFECT_DESTROY_SUBSTITUTE"
             && HasFlags(set, "EFFECT_FLAG_IGNORE_IMMUNE") && Only(set, "Code", "Property", "Value", "Condition") && value is not null

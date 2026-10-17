@@ -119,18 +119,30 @@ public sealed class DiscardAction : ActionBlock
     public override string Id => "do.discard";
     public override string Group => "Cards";
     public override string Name => "Discard cards (as an effect)";
-    public override string Sentence => "{who} discard(s) {count} card(s) {how}";
+    public override string Sentence => "{who} discard(s) {count} card(s) {how} {cards}";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Choice("who", "Who", new("opponent", "Your opponent"), new("you", "You"), new("each", "Each player")),
         ParamSpec.Int("count", "How many", 1, 1, 10),
         ParamSpec.Choice("how", "How", new("chosen", "", "of their choice"), new("random", "at random")),
+        // Wicked Canon: "then discard 1 Fiend monster": what you discard, picked from your hand.
+        new ParamSpec { Key = "cards", Label = "Which cards (you discard)", Type = ParamType.Cards, WhereFromBlock = true, DefaultFilter = () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Hand } }
+            .WhenUsed().ShowIf(b => b.Values.GetValueOrDefault("who", "opponent") == "you"),
     ];
+
+    /// <summary>The cards you discard are picked by a filter: the picker says what they are ("1 Fiend monster").</summary>
+    private static CardFilter? Picked(BlockArgs args)
+    {
+        if (args.Choice("who") != "you" || !args.Instance.Filters.TryGetValue("cards", out var f)) return null;
+        var plain = new CardFilter { Owner = f.Owner, Zones = f.Zones };
+        return FilterCompiler.Conditions(f).SequenceEqual(FilterCompiler.Conditions(plain)) ? null : f;
+    }
 
     public override string Describe(BlockArgs args)
     {
         var n = args.Int("count");
         var cards = n == 1 ? "1 card" : $"{n} cards";
+        if (Picked(args) is { } picked) cards = $"{n} {Text.FilterText.Describe(picked, args.Pack, plural: n != 1, withLocation: false, ownName: args.CardName)}";
         var how = args.Choice("how") == "random" ? " at random" : "";
         return args.Choice("who") switch
         {
@@ -148,6 +160,20 @@ public sealed class DiscardAction : ActionBlock
         var who = ctx.Args.Choice("who");
         var players = who switch { "you" => new[] { "tp" }, "each" => ["tp", "1-tp"], _ => ["1-tp"] };
         e.AddCategory(who == "you" ? "CATEGORY_HANDES_SELF" : "CATEGORY_HANDES");
+        if (Picked(ctx.Args) is { } picked)
+        {
+            // "Add 1 ... to your hand, then discard 1 Fiend monster": the card is picked as the step resolves, so it is not
+            // checked when the effect is activated (it may be the card the step before added).
+            var pf = picked.Clone();
+            pf.Owner = CardOwner.You;
+            pf.Zones = Zone.Hand;
+            var f = ctx.Script.Filter(pf, "c:IsDiscardable(REASON_EFFECT)", "discardfilter");
+            if (random) e.Warn($"\"{Name}\": the cards you pick are discarded as you choose them, not at random.");
+            e.TargetLines.Add($"Duel.SetOperationInfo(0,CATEGORY_HANDES,nil,0,tp,{n})");
+            var pr = e.NewLocal("r");
+            e.AddStep([$"local {pr}=Duel.DiscardHand(tp,{f.Function},{n},{n},REASON_EFFECT+REASON_DISCARD,nil,e,tp)"], pr, ctx.Link);
+            return;
+        }
         foreach (var p in players) e.TargetChecks.Add($"Duel.GetFieldGroupCount({p},LOCATION_HAND,0)>={n}");
         e.TargetLines.Add($"Duel.SetOperationInfo(0,CATEGORY_HANDES,nil,0,{(players.Length == 2 ? "PLAYER_ALL" : players[0])},{n})");
         var r = e.NewLocal("r");
@@ -319,7 +345,7 @@ public sealed class TokenAction : ActionBlock
     public override string Id => "do.tokens";
     public override string Group => "Monsters";
     public override string Name => "Special Summon Tokens";
-    public override string Sentence => "Special Summon {count} {max} Token(s) (passcode {token}) {position} {side}";
+    public override string Sentence => "Special Summon {count} {max} Token(s) (passcode {token}) {position} {side} {stats}";
     public override string Help => "Make the Token as its own card in this pack (Monster, frame \"Token\") and enter its passcode here; its Level, Type, Attribute, ATK and DEF come from that card.";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
@@ -329,7 +355,15 @@ public sealed class TokenAction : ActionBlock
         ParamSpec.Int("token", "Token passcode", 0, 0, int.MaxValue),
         ParamSpec.Choice("position", "Position", new("faceup", "", "face-up"), new("attack", "in Attack Position"), new("defense", "in Defense Position")),
         ParamSpec.Choice("side", "Whose field", new("you", "", "to your field"), new("opponent", "to your opponent's field")),
+        // Nibiru, the Primal Being: "(this Token's ATK/DEF become the combined original ATK/DEF of the Tributed monsters)".
+        ParamSpec.Choice("stats", "ATK/DEF", new("own", "", "its own (the Token card's)"),
+            new("tributed", "(this Token's ATK/DEF become the combined original ATK/DEF of the Tributed monsters)", "the combined original ATK/DEF of the monsters a step before Tributed")),
     ];
+
+    private static bool Tributed(BlockArgs args) => args.Choice("stats") == "tributed";
+
+    /// <summary>Where the Tributed monsters' combined original ATK and DEF are kept while the effect resolves.</summary>
+    public const string TributedAtk = "s.cctributeatk", TributedDef = "s.cctributedef";
 
     private static CardData? TokenCard(BlockArgs args) =>
         args.Pack?.Cards.FirstOrDefault(c => c.Card.Id == args.Int("token"))?.Card;
@@ -338,16 +372,18 @@ public sealed class TokenAction : ActionBlock
     {
         var n = args.Int("count");
         var t = TokenCard(args);
-        var stats = t is null ? "" :
-            $" ({args.Pack!.TypeName(t.Race)}/{EnumNames.Display(t.Attribute)}/Level {t.Level}/ATK {t.Atk}/DEF {t.Def})";
+        var stats = t is null ? "" : Tributed(args)
+            ? $" ({args.Pack!.TypeName(t.Race)}/{EnumNames.Display(t.Attribute)}/Level {t.Level}/ATK ?/DEF ?)"
+            : $" ({args.Pack!.TypeName(t.Race)}/{EnumNames.Display(t.Attribute)}/Level {t.Level}/ATK {t.Atk}/DEF {t.Def})";
+        var tail = Tributed(args) ? " " + args.Describe("stats") : "";
         var name = t is null ? "Token" : $"\"{t.Name}\"";
         if (t is not null && !t.Name.Contains("Token", StringComparison.OrdinalIgnoreCase)) name += " Token";
         var side = args.Choice("side") == "opponent" ? " to your opponent's field" : "";
         var pos = args.Describe("position");
         // "as many "Battle Eagle Tokens" as possible": the plural inside the name's quotes.
         var many = name.EndsWith('"') ? name[..^1] + "s\"" : name + "s";
-        if (args.Bool("max")) return $"Special Summon as many {many}{stats} as possible{(pos.Length > 0 ? " " + pos : "")}{side}";
-        return $"Special Summon {(n == 1 ? "1" : n.ToString(CultureInfo.InvariantCulture))} {name}{(n == 1 ? "" : "s")}{stats}{(pos.Length > 0 ? " " + pos : "")}{side}";
+        if (args.Bool("max")) return $"Special Summon as many {many}{stats} as possible{(pos.Length > 0 ? " " + pos : "")}{side}{tail}";
+        return $"Special Summon {(n == 1 ? "1" : n.ToString(CultureInfo.InvariantCulture))} {name}{(n == 1 ? "" : "s")}{stats}{(pos.Length > 0 ? " " + pos : "")}{side}{tail}";
     }
 
     public override void Compile(BlockContext ctx)
@@ -365,6 +401,41 @@ public sealed class TokenAction : ActionBlock
         var check = $"Duel.IsPlayerCanSpecialSummonMonster(tp,{t.Id},0,TYPES_TOKEN_MONSTER,{t.Atk},{t.Def},{t.Level},{EnumNames.LuaConstant(t.Race)},{EnumNames.LuaConstant(t.Attribute)},{pos},{p})";
         e.AddCategory("CATEGORY_SPECIAL_SUMMON");
         e.AddCategory("CATEGORY_TOKEN");
+        // "This Token's ATK/DEF become the combined original ATK/DEF of the Tributed monsters": the Tribute step keeps them.
+        var create = $"local token=Duel.CreateToken(tp,{t.Id})";
+        if (Tributed(ctx.Args))
+        {
+            if (ctx.Effect.TributeStep is not { } tributed)
+            {
+                e.Error($"\"{Name}\": \"the combined original ATK/DEF of the Tributed monsters\" needs a DO block before it that Tributes monsters.");
+                return;
+            }
+            var keep = ctx.Script.AddFunction("keeptributed", "r",
+            [
+                $"{TributedAtk},{TributedDef}=0,0",
+                "if r==0 then return end",
+                "for tc in aux.Next(Duel.GetOperatedGroup()) do",
+                $"\t{TributedAtk}={TributedAtk}+math.max(tc:GetTextAttack(),0)",
+                $"\t{TributedDef}={TributedDef}+math.max(tc:GetTextDefense(),0)",
+                "end",
+            ]);
+            var line = $"{keep}({tributed.Result})";
+            if (!tributed.Lines.Contains(line)) tributed.Lines.Add(line);
+            var stats = ctx.Script.AddFunction("tokenstats", "token,c",
+            [
+                "local e1=Effect.CreateEffect(c)",
+                "e1:SetType(EFFECT_TYPE_SINGLE)",
+                "e1:SetCode(EFFECT_SET_ATTACK)",
+                $"e1:SetValue({TributedAtk} or 0)",
+                "e1:SetReset(RESET_EVENT+RESETS_STANDARD-RESET_TOFIELD)",
+                "token:RegisterEffect(e1)",
+                "local e2=e1:Clone()",
+                "e2:SetCode(EFFECT_SET_DEFENSE)",
+                $"e2:SetValue({TributedDef} or 0)",
+                "token:RegisterEffect(e2)",
+            ]);
+            create += $" {stats}(token,c)";
+        }
         if (ctx.Args.Bool("max"))
         {
             // One for each free Monster Zone, or 1 while only 1 monster can be Summoned at a time (Blue-Eyes Spirit Dragon).
@@ -382,7 +453,7 @@ public sealed class TokenAction : ActionBlock
                 "if Duel.IsPlayerAffectedByEffect(tp,59822133) then ft=math.min(ft,1) end",
                 $"if ft>0 and {check} then",
                 "\tfor i=1,ft do",
-                $"\t\tlocal token=Duel.CreateToken(tp,{t.Id})",
+                $"\t\t{create}",
                 $"\t\tif Duel.SpecialSummonStep(token,0,tp,{p},false,false,{pos}) then {rm}={rm}+1 end",
                 "\tend",
                 "\tDuel.SpecialSummonComplete()",
@@ -401,7 +472,7 @@ public sealed class TokenAction : ActionBlock
             $"local {r}=0",
             $"if Duel.GetLocationCount({p},LOCATION_MZONE,tp)>={n} and {check}{(n > 1 ? " and not Duel.IsPlayerAffectedByEffect(tp,59822133)" : "")} then",
             $"\tfor i=1,{n} do",
-            $"\t\tlocal token=Duel.CreateToken(tp,{t.Id})",
+            $"\t\t{create}",
             $"\t\tif Duel.SpecialSummonStep(token,0,tp,{p},false,false,{pos}) then {r}={r}+1 end",
             "\tend",
             "\tDuel.SpecialSummonComplete()",
