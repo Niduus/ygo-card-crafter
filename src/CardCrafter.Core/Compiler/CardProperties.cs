@@ -146,6 +146,11 @@ public static class CardProperties
         new("is_linked", "Is linked (Link Arrows)", PropertyKind.State, "c:IsLinkState()", "", IsText: "that is linked", IsNotText: "that is not linked"),
         // The engine only tells how many kinds of counters a card has (GetCounter(0)), not how many counters: a yes/no.
         new("counters", "Has a counter on it", PropertyKind.State, "c:GetCounter(0)>0", "", IsText: "that has a counter on it", IsNotText: "that has no counters on it"),
+        // Autumn: "1 Field Spell ... that you can place a Season Counter on": the card can hold that counter (A-Counters and
+        // the other counters of 0x1000 go on any card).
+        new("can_have_counter", "Can have a counter placed on it (which kind)", PropertyKind.Options, "", "counter",
+            Choices: Blocks.Counters.Known.Select(k => ((long)k.Id, k.Name, (k.Id & 0x1000) != 0 ? "true" : $"c:IsCanHaveCounter({Blocks.Counters.Hex(k.Id)})")).ToArray(),
+            IsText: "that you can place a {0} on", IsNotText: "that you cannot place a {0} on"),
         new("equipped", "Has an Equip Card", PropertyKind.State, "c:GetEquipCount()>0", "", IsText: "that is equipped with an Equip Card", IsNotText: "that is not equipped with an Equip Card"),
         new("has_materials", "Has materials attached (Xyz)", PropertyKind.State, "c:GetOverlayCount()>0", "", IsText: "that has material", IsNotText: "that has no material"),
         new("extra_zone", "In an Extra Monster Zone", PropertyKind.State, "c:IsLocation(LOCATION_MZONE) and c:GetSequence()>4", "",

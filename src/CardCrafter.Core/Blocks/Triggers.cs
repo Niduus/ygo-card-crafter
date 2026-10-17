@@ -851,6 +851,9 @@ public sealed class EventTrigger : BlockDefinition
     [
         new("opp_normal", "your opponent Normal Summons a monster", "EVENT_SUMMON_SUCCESS", "eg:IsExists(Card.IsSummonPlayer,1,nil,1-tp)", ("opp", "Normal")),
         new("opp_special", "your opponent Special Summons a monster(s)", "EVENT_SPSUMMON_SUCCESS", "eg:IsExists(Card.IsSummonPlayer,1,nil,1-tp)", ("opp", "Special")),
+        // Mulcharmy Fuwalos: "Each time your opponent Special Summons a monster(s) from the Deck and/or Extra Deck".
+        new("opp_special_deck_extra", "your opponent Special Summons a monster(s) from the Deck and/or Extra Deck", "EVENT_SPSUMMON_SUCCESS",
+            "@spdefilter:c:IsSummonPlayer(1-tp) and c:IsSummonLocation(LOCATION_DECK+LOCATION_EXTRA) and c:GetOriginalType()&TYPE_MONSTER~=0"),
         new("opp_flip", "your opponent Flip Summons a monster", "EVENT_FLIP_SUMMON_SUCCESS", "eg:IsExists(Card.IsSummonPlayer,1,nil,1-tp)", ("opp", "Flip")),
         new("you_normal", "you Normal Summon a monster", "EVENT_SUMMON_SUCCESS", "eg:IsExists(Card.IsSummonPlayer,1,nil,tp)", ("you", "Normal")),
         new("you_special", "you Special Summon a monster(s)", "EVENT_SPSUMMON_SUCCESS", "eg:IsExists(Card.IsSummonPlayer,1,nil,tp)", ("you", "Special")),
@@ -1152,7 +1155,13 @@ public sealed class PhaseTrigger : BlockDefinition
         ParamSpec.Flag("optional", "optional (\"You can\")", true),
         // Jester Confit: "If Summoned this way, during your opponent's next End Phase".
         ParamSpec.Choice("after", "Which one", new("any", "", "every one"), new("summoned_self", "", "only the next one after this card is Summoned by its own procedure (\"this way\")")),
+        // Time Chain, Freed the Matchless General: "During your Draw Phase, instead of conducting your normal draw:".
+        ParamSpec.Flag("instead", "instead of conducting your normal draw", false)
+            .ShowIf(b => b.Values.GetValueOrDefault("phase") == "draw" && b.Values.GetValueOrDefault("whose", "your") == "your"),
     ];
+
+    /// <summary>"instead of conducting your normal draw": said after the conditions, as cards say it.</summary>
+    public static bool InsteadOfDraw(BlockInstance b) => b.BlockId == "when.phase" && b.Values.GetValueOrDefault("instead") == "true";
 
     public override string Describe(BlockArgs args)
     {
@@ -1191,6 +1200,24 @@ public sealed class PhaseTrigger : BlockDefinition
             case "opponent": ctx.Effect.Conditions.Add("Duel.GetTurnPlayer()==1-tp"); break;
         }
         if (ctx.Args.Choice("after") == "summoned_self") WatchSummonedThisWay(ctx);
+        if (ctx.Args.Bool("instead")) InsteadOfNormalDraw(ctx);
+    }
+
+    /// <summary>
+    /// "During your Draw Phase, instead of conducting your normal draw: You can ...": a trigger before the draw
+    /// (EVENT_PREDRAW) that gives the normal draw up as it resolves, as official cards do (aux.GiveUpNormalDraw).
+    /// </summary>
+    private static void InsteadOfNormalDraw(BlockContext ctx)
+    {
+        if (ctx.Args.Choice("phase") != "draw" || ctx.Args.Choice("whose") != "your")
+        {
+            ctx.Effect.Error("\"Instead of conducting your normal draw\" is for \"During your Draw Phase\".");
+            return;
+        }
+        if (ctx.Args.Choice("after") == "summoned_self") ctx.Effect.Error("\"Instead of conducting your normal draw\" can't wait for the next Draw Phase after this card is Summoned this way.");
+        ctx.Effect.Code = "EVENT_PREDRAW";
+        ctx.Effect.TargetChecks.Add("aux.IsPlayerCanNormalDraw(tp)");
+        ctx.Effect.OperationPrologue.AddRange(["if not aux.IsPlayerCanNormalDraw(tp) then return end", "aux.GiveUpNormalDraw(e,tp)"]);
     }
 
     /// <summary>

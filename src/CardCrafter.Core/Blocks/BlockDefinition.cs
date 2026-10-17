@@ -148,6 +148,12 @@ public abstract class BlockDefinition
     public virtual string Afterword(BlockArgs args) => "";
 
     /// <summary>
+    /// For DO blocks: how "and if you do" reads after this step, when the card says it in its own words ("and if you banish
+    /// any"). Null for "if you do".
+    /// </summary>
+    public virtual string? IfYouDoText(BlockArgs args) => null;
+
+    /// <summary>
     /// For targeting actions: the "target ..." clause that goes before the semicolon, and the action
     /// wording that follows it, e.g. ("target 1 monster your opponent controls", "destroy it").
     /// Null when the block is not currently targeting.

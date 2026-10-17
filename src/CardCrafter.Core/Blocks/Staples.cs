@@ -357,11 +357,24 @@ public sealed class PlaceAction : CardGroupAction
 
     private static string Location(BlockContext ctx) => ctx.Args.Choice("where") switch { "fzone" => "LOCATION_FZONE", "pzone" => "LOCATION_PZONE", _ => "LOCATION_SZONE" };
 
+    /// <summary>Where the placed cards are kept for "that card" after this step ("place all Season Counters on this card on that card").</summary>
+    private const string Placed = "s.ccplaced";
+
+    /// <summary>The step after acts on the placed cards: Duel.MoveToField doesn't keep them as the operated group, so they are kept here.</summary>
+    private static bool Keeps(BlockContext ctx) => CardRefs.NextUsesAffected(ctx.Effect.Source, ctx.Args.Instance);
+
     public override void Compile(BlockContext ctx)
     {
         if (ctx.Args.Choice("where") == "pzone" && ctx.Args.Cards("cards").ThisCard && !ctx.Args.Bool("target"))
+        {
             PlaceThisCardInPendulumZone(ctx);
-        else base.Compile(ctx);
+            return;
+        }
+        var steps = ctx.Effect.StepCount;
+        base.Compile(ctx);
+        if (!Keeps(ctx) || ctx.Effect.StepCount == steps) return;
+        if (!ctx.Effect.OperationPrologue.Contains($"{Placed}={{}}")) ctx.Effect.OperationPrologue.Add($"{Placed}={{}}");
+        ctx.Effect.LastResultStep!.Affected = $"Group.FromCards(table.unpack({Placed}))";
     }
 
     /// <summary>
@@ -413,6 +426,7 @@ public sealed class PlaceAction : CardGroupAction
         // Its owner's zone: a card whose owner has no free zone left is sent to the GY by the game.
         body.Add($"\tif Duel.MoveToField(tc,tp,{(ToOwner(ctx) ? "tc:GetOwner()" : "tp")},{loc},POS_FACEUP,true) then");
         body.Add("\t\tn=n+1");
+        if (Keeps(ctx)) body.Add($"\t\tif {Placed} then table.insert({Placed},tc) end");
         if (type is not null)
         {
             body.AddRange(

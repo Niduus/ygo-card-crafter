@@ -282,7 +282,8 @@ public abstract partial class CardGroupAction : ActionBlock
             e.TargetChecks.Add($"Duel.IsExistingTarget({f.Function},tp,{f.Self},{f.Opp},{min},{f.Exclude},e,tp)");
             var tg = e.NewLocal("tg");
             e.TargetLines.Add($"Duel.Hint(HINT_SELECTMSG,tp,{Hint})");
-            e.TargetLines.Add($"local {tg}=Duel.SelectTarget(tp,{f.Function},tp,{f.Self},{f.Opp},{min},{n},{f.Exclude},e,tp)");
+            e.TargetLines.Add($"local {tg}=Duel.SelectTarget(tp,{f.Function},tp,{f.Self},{f.Opp},{min},{PaidMax(e, n.ToString(System.Globalization.CultureInfo.InvariantCulture))},{f.Exclude},e,tp)");
+            PayPerTarget(e, tg);
             if (Category.Length > 0) e.TargetLines.Add($"Duel.SetOperationInfo(0,{Category},{tg},{tg}:GetCount(),0,0)");
             body.Add($"local {g}=Duel.GetChainInfo(0,CHAININFO_TARGET_CARDS):Filter(Card.IsRelateToEffect,nil,e)");
             body.Add($"local {r}=0");
@@ -310,6 +311,21 @@ public abstract partial class CardGroupAction : ActionBlock
         body.AddRange(After(g, f).Select(l => "\t" + l));
         body.Add("end");
         e.AddStep(body, r, ctx.Link);
+    }
+
+    /// <summary>
+    /// "Target ... and pay 800 LP for each target": no more targets than the LP pays for (as Ultimate Sky caps them), or
+    /// <paramref name="max"/> when the effect has no such cost.
+    /// </summary>
+    protected static string PaidMax(EffectBuilder e, string max) =>
+        e.LpPerTarget is { } each ? $"math.min({max},math.floor(Duel.GetLP(tp)/{each}))" : max;
+
+    /// <summary>Pays the LP for each target as the targets are chosen, when the effect is activated (not copied); the cost is then used.</summary>
+    protected static void PayPerTarget(EffectBuilder e, string targets)
+    {
+        if (e.LpPerTarget is not { } each) return;
+        e.TargetLines.Add($"if e:IsCostChecked() then Duel.PayLPCost(tp,{targets}:GetCount()*{each}) end");
+        e.LpPerTarget = null;
     }
 
     /// <summary>

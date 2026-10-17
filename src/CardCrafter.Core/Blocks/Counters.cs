@@ -164,41 +164,103 @@ public sealed class PlaceCounterAction : CardGroupAction
     public override string Id => BlockId;
     public override string Group => "Counters";
     public override string Name => "Place counters on cards (Spell Counters, A-Counters...)";
-    public override string Sentence => "Place {amount} {counter} {counter_id} on {count} {cards} {target} {max}";
-    public override string Help => "A card that places counters on itself can hold them; other cards need to be able to (A-Counters and other 0x1000 counters go on any card).";
+    public override string Sentence => "Place {by} {amount} {counter} {counter_id} on {count} {cards} {target} {max} {value} {mem2} {counter2} {counter_id2} {of} {status}";
+    public override string Help => "A card that places counters on itself can hold them; other cards need to be able to (A-Counters and other 0x1000 counters go on any card). " +
+                                   "\"Equal to a value\" places as many as it says (Autumn: \"equal to the number of cards in your opponent's hand\"); \"all of them on this card\" " +
+                                   "moves this card's counters onto the cards (\"place all Season Counters on this card on that card\"). Cubic Counters can carry what they do " +
+                                   "(\"monsters with a Cubic Counter cannot attack, also negate their effects\").";
     protected override string Category => "CATEGORY_COUNTER";
     protected override string Hint => "HINTMSG_COUNTER";
     protected override string TargetedWording => "{0}";
     protected override bool AllowsThisCard => true;
     protected override Func<CardFilter> DefaultCards => () => new CardFilter { ThisCard = true };
 
+    private static string By(BlockInstance b) => b.Values.GetValueOrDefault("by", "number");
+
     protected override IReadOnlyList<ParamSpec> BuildParams() =>
     [
-        ParamSpec.Int("amount", "How many counters", 1, 1, 99),
+        ParamSpec.Choice("by", "How many counters", new("number", "", "a number"), new("value", "", "equal to a value:"),
+            new("here", "", "all of them on this card (moved onto the cards)")),
+        ParamSpec.Int("amount", "How many counters", 1, 1, 99).ShowIf(b => By(b) == "number"),
         .. Counters.Params(withAny: false),
         ParamSpec.Int("count", "On how many cards", 1, 1, 10),
         ModeParam,
         ParamSpec.Cards("cards", "On which cards", DefaultCards, Zone.Field, thisCard: true),
         ParamSpec.Flag("target", "(targeting)", false),
         ParamSpec.Int("max", "Most this card can hold (0 for no limit)", 0, 0, 99).ShowIf(b => b.Filters.TryGetValue("cards", out var f) && f.ThisCard),
+        // "Equal to the number of cards in your opponent's hand": the value, with its own counter blanks for values that count counters.
+        ParamSpec.Choice("value", "Equal to", ValueSources.Sources).ShowIf(b => By(b) == "value"),
+        ValueSources.Also(ValueSources.MemoryParam("value", "2"), b => By(b) == "value"),
+        .. Counters.Params(withAny: true, b => By(b) == "value" && ValueSources.UsesCounter(b.Values.GetValueOrDefault("value", "lp_diff")), "2"),
+        ParamSpec.Cards(ValueSources.CardsKey, "Which cards (for counts and totals)", () => new CardFilter { Owner = CardOwner.Opponent, Zones = Zone.Hand })
+            .ShowIf(b => By(b) == "value" && ValueSources.UsesCards(b.Values.GetValueOrDefault("value", "lp_diff"))).WhenUsed(),
+        // Cubic Counters: "monsters with a Cubic Counter cannot attack, also negate their effects", while they have one.
+        ParamSpec.Choice("status", "Monsters with it", new("none", "", "(nothing more)"),
+            new("no_attack_negated", "cannot attack, also negate their effects"), new("no_attack", "cannot attack"), new("negated", "have their effects negated")),
     ];
 
-    private static string What(BlockArgs args) => Counters.Amount(args.Int("amount"), Counters.Name(args));
+    /// <summary>"1 Spell Counter", "Season Counters" (as many as a value), "all Season Counters on this card".</summary>
+    private static string What(BlockArgs args) => By(args.Instance) switch
+    {
+        "value" => Counters.Name(args) + "s",
+        "here" => $"all {Counters.Name(args)}s on this card",
+        _ => Counters.Amount(args.Int("amount"), Counters.Name(args)),
+    };
+
+    /// <summary>" equal to the number of cards in your opponent's hand", or "".</summary>
+    private static string EqualTo(BlockArgs args)
+    {
+        if (By(args.Instance) != "value") return "";
+        var value = args.Choice("value");
+        var of = value == "cost_count" ? "the number of " + ValueSources.CostNoun(args.Effect, plural: true)
+            : ValueSources.Of(value, args.Cards(ValueSources.CardsKey), args.Pack, "this card", Counters.Name(args, "2"), args.Effect);
+        return " equal to " + of;
+    }
+
+    /// <summary>" (monsters with a Cubic Counter cannot attack, also negate their effects)", or "".</summary>
+    private static string Status(BlockArgs args) => args.Choice("status") switch
+    {
+        "none" => "",
+        var s => $" (monsters with {Counters.Amount(1, Counters.Name(args), article: true)} {args.Describe("status")})",
+    };
 
     private static string Max(BlockArgs args) => args.Cards("cards").ThisCard && args.Int("max") > 0 ? $" (max. {args.Int("max")})" : "";
 
     public override string Describe(BlockArgs args)
     {
-        if (args.IsThisCard) return $"place {What(args)} on this card{Max(args)}";
+        var tail = EqualTo(args) + Status(args);
+        if (args.IsThisCard) return $"place {What(args)} on this card{tail}{Max(args)}";
+        // "place all Season Counters on this card on that card".
+        if (args.IsThatCard && By(args.Instance) == "here") return $"place {What(args)} on {(CardRefs.Plural(args, args.Cards("cards").That) ? "those cards" : "that card")}{tail}";
         if (args.Choice("mode") == "all")
-            return $"place {What(args)} on each {FilterText.Describe(args.Cards("cards"), args.Pack, plural: false, ownName: args.CardName, withExcept: false)}{args.ExceptText()}";
-        return $"place {What(args)} on {args.Describe("count")} {args.Describe("cards")}{args.ExceptText()}";
+            return $"place {What(args)} on each {FilterText.Describe(args.Cards("cards"), args.Pack, plural: false, ownName: args.CardName, withExcept: false)}{tail}{args.ExceptText()}";
+        return $"place {What(args)} on {args.Describe("count")} {args.Describe("cards")}{tail}{args.ExceptText()}";
     }
 
     protected override string TargetedAction(BlockArgs args, string pronoun, bool single) =>
-        $"place {What(args)} on {(single ? "it" : "each of them")}";
+        $"place {What(args)} on {(single ? "it" : "each of them")}{EqualTo(args)}{Status(args)}";
 
     private static int CounterId(BlockContext ctx) => Counters.Id(ctx.Args) ?? 0x1;
+
+    /// <summary>The Lua number of counters placed: the number, the value as it resolves, or this card's counters (kept as the effect began).</summary>
+    private static string Amount(BlockContext ctx) => By(ctx.Args.Instance) switch
+    {
+        "value" => ValueSources.Lua(ctx, "e:GetHandler()", "tp", counterSuffix: "2"),
+        "here" => Here(ctx),
+        _ => ctx.Args.Int("amount").ToString(CultureInfo.InvariantCulture),
+    };
+
+    /// <summary>
+    /// This card's counters, counted as the effect begins to resolve: a Field Spell that places another one leaves the
+    /// field before its counters are placed on it (Autumn).
+    /// </summary>
+    private static string Here(BlockContext ctx)
+    {
+        var v = $"here{ctx.Effect.Index.ToString(CultureInfo.InvariantCulture)}";
+        var line = $"local {v}=c:GetCounter({Counters.Hex(CounterId(ctx))})";
+        if (!ctx.Effect.OperationPrologue.Contains(line)) ctx.Effect.OperationPrologue.Add(line);
+        return v;
+    }
 
     /// <summary>
     /// What activating an effect that places counters on this card asks, as official cards do: a mandatory trigger
@@ -208,19 +270,68 @@ public sealed class PlaceCounterAction : CardGroupAction
     public static string? ActivationCheck(bool mandatory, bool activation, string id, string n) =>
         mandatory ? null : activation ? $"Duel.IsCanAddCounter(tp,{id},{n},e:GetHandler())" : $"e:GetHandler():IsCanAddCounter({id},{n})";
 
-    protected override string? AbleCheck(BlockContext ctx) =>
-        $"c:IsCanAddCounter({Counters.Hex(CounterId(ctx))},{ctx.Args.Int("amount").ToString(CultureInfo.InvariantCulture)})";
+    /// <summary>A number of counters is checked on each card; a value or this card's counters, 1 of them.</summary>
+    private static string Checked(BlockContext ctx) => By(ctx.Args.Instance) == "number" ? ctx.Args.Int("amount").ToString(CultureInfo.InvariantCulture) : "1";
+
+    protected override string? AbleCheck(BlockContext ctx) => $"c:IsCanAddCounter({Counters.Hex(CounterId(ctx))},{Checked(ctx)})";
 
     protected override string Apply(string g, BlockContext ctx)
     {
-        var fn = ctx.Script.AddFunction("addcounter", "g,id,n", ["local r=0", "for tc in aux.Next(g) do", "\tif tc:AddCounter(id,n) then r=r+1 end", "end", "return r"]);
-        return $"{fn}({g},{Counters.Hex(CounterId(ctx))},{ctx.Args.Int("amount").ToString(CultureInfo.InvariantCulture)})";
+        var id = Counters.Hex(CounterId(ctx));
+        var n = Amount(ctx);
+        var status = ctx.Args.Choice("status");
+        string call;
+        if (status == "none")
+        {
+            var fn = ctx.Script.AddFunction("addcounter", "g,id,n", ["local r=0", "for tc in aux.Next(g) do", "\tif tc:AddCounter(id,n) then r=r+1 end", "end", "return r"]);
+            call = $"{fn}({g},{id},{n})";
+        }
+        else
+        {
+            // As the official Cubic cards do it: the monster gets what the counter does, while it has one.
+            var has = ctx.Script.AddFunction("hascounter", "e", [$"return e:GetHandler():GetCounter({id})>0"]);
+            var codes = status switch { "no_attack" => new[] { "EFFECT_CANNOT_ATTACK" }, "negated" => ["EFFECT_DISABLE"], _ => ["EFFECT_CANNOT_ATTACK", "EFFECT_DISABLE"] };
+            var body = new List<string> { "local r=0", "for tc in aux.Next(g) do", "\tif tc:AddCounter(id,n) then", "\t\tr=r+1" };
+            foreach (var code in codes)
+                body.AddRange(
+                [
+                    "\t\tlocal ce=Effect.CreateEffect(e:GetHandler())",
+                    "\t\tce:SetType(EFFECT_TYPE_SINGLE)",
+                    "\t\tce:SetProperty(EFFECT_FLAG_CANNOT_DISABLE)",
+                    $"\t\tce:SetCode({code})",
+                    $"\t\tce:SetCondition({has})",
+                    "\t\tce:SetReset(RESET_EVENT+RESETS_STANDARD)",
+                    "\t\ttc:RegisterEffect(ce)",
+                ]);
+            body.AddRange(["\tend", "end", "return r"]);
+            var fn = ctx.Script.AddFunction("addcounterst", "g,id,n,e", body);
+            call = $"{fn}({g},{id},{n},e)";
+        }
+        // Moved: this card has them no more.
+        if (By(ctx.Args.Instance) == "here")
+        {
+            var move = ctx.Script.AddFunction("movecounters", "c,tp,id,n,r",
+                ["if r>0 and n>0 and c:GetCounter(id)>=n then c:RemoveCounter(tp,id,n,REASON_EFFECT) end", "return r"]);
+            call = $"{move}(c,tp,{id},{n},{call})";
+        }
+        return call;
     }
 
     public override void Compile(BlockContext ctx)
     {
         var id = CounterId(ctx);
-        var n = ctx.Args.Int("amount").ToString(CultureInfo.InvariantCulture);
+        var by = By(ctx.Args.Instance);
+        if (by == "value" && !ValueSources.AtResolution(ctx.Args.Choice("value")))
+            ctx.Effect.TargetChecks.Add($"{ValueSources.Lua(ctx, "e:GetHandler()", "tp", counterSuffix: "2")}>0");
+        if (by == "here" && ctx.Args.Cards("cards").ThisCard)
+        {
+            ctx.Effect.Error($"\"{Name}\": \"all of them on this card\" moves this card's counters onto other cards; pick those cards.");
+            return;
+        }
+        if (by == "here") Counters.Permit(ctx, id);
+        if (ctx.Args.Choice("status") != "none" && ctx.Args.Cards("cards").ThisCard)
+            ctx.Effect.Warn($"\"{Name}\": what the counter does is for the monsters it is placed on; this card gets it too.");
+        var n = Amount(ctx);
         if (!ctx.Args.Cards("cards").ThisCard)
         {
             if (ctx.Args.Int("max") > 0) ctx.Effect.Warn("\"(max. ...)\" is how many this card can hold: it only applies when the counters go on this card.");
@@ -231,13 +342,20 @@ public sealed class PlaceCounterAction : CardGroupAction
         Counters.Permit(ctx, id, ctx.Args.Int("max"));
         var e = ctx.Effect;
         e.AddCategory("CATEGORY_COUNTER");
-        if (ActivationCheck(e.IsMandatory, e.IsActivation, Counters.Hex(id), n) is { } check) e.TargetChecks.Add(check);
-        e.TargetLines.Add($"Duel.SetOperationInfo(0,CATEGORY_COUNTER,nil,{n},0,{Counters.Hex(id)})");
+        if (ActivationCheck(e.IsMandatory, e.IsActivation, Counters.Hex(id), Checked(ctx)) is { } check) e.TargetChecks.Add(check);
+        e.TargetLines.Add($"Duel.SetOperationInfo(0,CATEGORY_COUNTER,nil,{(by == "number" ? n : "1")},0,{Counters.Hex(id)})");
         var r = e.NewLocal("r");
+        if (ctx.Args.Choice("status") != "none")
+        {
+            e.AddStep([$"local {r}=0", $"if c:IsRelateToEffect(e) then {r}={Apply("Group.FromCards(c)", ctx)} end"], r, ctx.Link);
+            return;
+        }
         e.AddStep(
         [
             $"local {r}=0",
-            $"if c:IsRelateToEffect(e) and c:AddCounter({Counters.Hex(id)},{n}) then {r}=1 end",
+            by == "number"
+                ? $"if c:IsRelateToEffect(e) and c:AddCounter({Counters.Hex(id)},{n}) then {r}=1 end"
+                : $"if c:IsRelateToEffect(e) and {n}>0 and c:AddCounter({Counters.Hex(id)},{n}) then {r}=1 end",
         ], r, ctx.Link);
     }
 }

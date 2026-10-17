@@ -195,8 +195,8 @@ public sealed class TurnWatchAction : ActionBlock
         {
             "damage_you" => $"you take {n} damage",
             "gain" => $"you gain {n} LP",
-            "draw" => "draw 1 card",
-            "opp_draw" => "your opponent draws 1 card",
+            "draw" => "immediately draw 1 card",
+            "opp_draw" => "your opponent immediately draws 1 card",
             _ => $"inflict {n} damage to your opponent",
         };
         return $"for the rest of this turn, each time {EventTrigger.Find(args.Choice("event")).Text}, {then}";
@@ -221,6 +221,11 @@ public sealed class TurnWatchAction : ActionBlock
             "opp_draw" => "Duel.Draw(1-tp,1,REASON_EFFECT)",
             _ => $"Duel.Damage(1-tp,{n},REASON_EFFECT)",
         };
+        if (ctx.Args.Choice("then") is "draw" or "opp_draw")
+        {
+            DrawAfterChainLink(ctx, ev.Code, check, ctx.Args.Choice("then") == "draw" ? "tp" : "1-tp");
+            return;
+        }
         var con = check is null ? null : ctx.Script.AddFunction("watchcon", "e,tp,eg,ep,ev,re,r,rp", [$"return {check}"]);
         var op = ctx.Script.AddFunction("watchop", "e,tp,eg,ep,ev,re,r,rp", ["Duel.Hint(HINT_CARD,0,id)", act]);
         var lines = new List<string>
@@ -232,6 +237,53 @@ public sealed class TurnWatchAction : ActionBlock
         if (con is not null) lines.Add($"tw:SetCondition({con})");
         lines.AddRange([$"tw:SetOperation({op})", "tw:SetReset(RESET_PHASE+PHASE_END)", "Duel.RegisterEffect(tw,tp)"]);
         ctx.Effect.AddStep(lines, null, ctx.Link);
+    }
+
+    /// <summary>
+    /// "Each time ..., immediately draw 1 card", as Maxx "C" and Mulcharmy Fuwalos do it: at once, or when it happens while
+    /// a chain link resolves, after that chain link (a flag counts the times, and the cards are drawn when it has resolved).
+    /// </summary>
+    private static void DrawAfterChainLink(BlockContext ctx, string code, string? check, string player)
+    {
+        var flag = $"id+{(8800 + ctx.Effect.Index).ToString(CultureInfo.InvariantCulture)}";
+        var happened = check is null ? "" : check + " and ";
+        var now = ctx.Script.AddFunction("watchcon", "e,tp,eg,ep,ev,re,r,rp", [$"return {happened}not Duel.IsChainSolving()"]);
+        var draw = ctx.Script.AddFunction("watchop", "e,tp,eg,ep,ev,re,r,rp", ["Duel.Hint(HINT_CARD,0,id)", $"Duel.Draw({player},1,REASON_EFFECT)"]);
+        var later = ctx.Script.AddFunction("watchregcon", "e,tp,eg,ep,ev,re,r,rp", [$"return {happened}Duel.IsChainSolving()"]);
+        var count = ctx.Script.AddFunction("watchregop", "e,tp,eg,ep,ev,re,r,rp", [$"Duel.RegisterFlagEffect(tp,{flag},RESET_CHAIN,0,1)"]);
+        var solved = ctx.Script.AddFunction("watchsolvedcon", "e,tp,eg,ep,ev,re,r,rp", [$"return Duel.GetFlagEffect(tp,{flag})>0"]);
+        var drawAll = ctx.Script.AddFunction("watchsolvedop", "e,tp,eg,ep,ev,re,r,rp",
+        [
+            $"local n=Duel.GetFlagEffect(tp,{flag})",
+            $"Duel.ResetFlagEffect(tp,{flag})",
+            "Duel.Hint(HINT_CARD,0,id)",
+            $"Duel.Draw({player},n,REASON_EFFECT)",
+        ]);
+        ctx.Effect.AddStep(
+        [
+            "local tw=Effect.CreateEffect(e:GetHandler())",
+            "tw:SetType(EFFECT_TYPE_FIELD+EFFECT_TYPE_CONTINUOUS)",
+            "tw:SetProperty(EFFECT_FLAG_DELAY)",
+            $"tw:SetCode({code})",
+            $"tw:SetCondition({now})",
+            $"tw:SetOperation({draw})",
+            "tw:SetReset(RESET_PHASE+PHASE_END)",
+            "Duel.RegisterEffect(tw,tp)",
+            "local tw2=Effect.CreateEffect(e:GetHandler())",
+            "tw2:SetType(EFFECT_TYPE_FIELD+EFFECT_TYPE_CONTINUOUS)",
+            $"tw2:SetCode({code})",
+            $"tw2:SetCondition({later})",
+            $"tw2:SetOperation({count})",
+            "tw2:SetReset(RESET_PHASE+PHASE_END)",
+            "Duel.RegisterEffect(tw2,tp)",
+            "local tw3=Effect.CreateEffect(e:GetHandler())",
+            "tw3:SetType(EFFECT_TYPE_FIELD+EFFECT_TYPE_CONTINUOUS)",
+            "tw3:SetCode(EVENT_CHAIN_SOLVED)",
+            $"tw3:SetCondition({solved})",
+            $"tw3:SetOperation({drawAll})",
+            "tw3:SetReset(RESET_PHASE+PHASE_END)",
+            "Duel.RegisterEffect(tw3,tp)",
+        ], null, ctx.Link);
     }
 }
 
@@ -245,7 +297,7 @@ public sealed class EachTimePassive : PassiveBlock
     public override string Id => BlockId;
     public override string Group => "Players";
     public override string Name => "Each time something happens, do something (no chain)";
-    public override string Sentence => "Each time {event}, {then} {amount}";
+    public override string Sentence => "Each time {event}, {then} {amount} {counters} {counter} {counter_id}";
     public override string Help => "A Continuous effect: it applies at once and can't be chained to. The effect's IF blocks and once per turn apply to it.";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
@@ -254,9 +306,15 @@ public sealed class EachTimePassive : PassiveBlock
             new("damage", "inflict damage to your opponent:"),
             new("damage_you", "you take damage:"),
             new("gain", "gain LP:"),
-            new("opp_gain", "your opponent gains LP:")),
-        ParamSpec.Int("amount", "Amount", 200, 1, 99999),
+            new("opp_gain", "your opponent gains LP:"),
+            // Wicked Canon: "Each time an opponent's monster declares an attack, place 1 Sinister Doctrine Counter on this card."
+            new("counter", "place counters on this card:")),
+        ParamSpec.Int("amount", "Amount", 200, 1, 99999).ShowIf(b => b.Values.GetValueOrDefault("then", "damage") != "counter"),
+        ParamSpec.Int("counters", "How many counters", 1, 1, 99).ShowIf(Counter),
+        .. Counters.Params(withAny: false, Counter),
     ];
+
+    private static bool Counter(BlockInstance b) => b.Values.GetValueOrDefault("then") == "counter";
 
     public override string Describe(BlockArgs args)
     {
@@ -266,6 +324,7 @@ public sealed class EachTimePassive : PassiveBlock
             "damage_you" => $"you take {n} damage",
             "gain" => $"you gain {n} LP",
             "opp_gain" => $"your opponent gains {n} LP",
+            "counter" => $"place {Counters.Amount(args.Int("counters"), Counters.Name(args))} on this card",
             _ => $"inflict {n} damage to your opponent",
         };
         return $"each time {EventTrigger.Find(args.Choice("event")).Text}, {then}";
@@ -287,8 +346,10 @@ public sealed class EachTimePassive : PassiveBlock
             "damage_you" => $"Duel.Damage(tp,{n},REASON_EFFECT)",
             "gain" => $"Duel.Recover(tp,{n},REASON_EFFECT)",
             "opp_gain" => $"Duel.Recover(1-tp,{n},REASON_EFFECT)",
+            "counter" => $"e:GetHandler():AddCounter({Counters.Hex(Counters.Id(ctx.Args) ?? 0x1)},{ctx.Args.Int("counters").ToString(CultureInfo.InvariantCulture)})",
             _ => $"Duel.Damage(1-tp,{n},REASON_EFFECT)",
         };
+        if (ctx.Args.Choice("then") == "counter") Counters.Permit(ctx, Counters.Id(ctx.Args) ?? 0x1);
         // The event's own check goes in the operation: the effect's condition is its IF blocks.
         var body = new List<string>();
         if (check is not null) body.Add($"if not ({check}) then return end");

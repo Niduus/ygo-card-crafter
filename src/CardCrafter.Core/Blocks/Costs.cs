@@ -13,10 +13,13 @@ public sealed class DiscardCost : CostBlock
     public override string Id => "cost.discard";
     public override string Group => "Cards";
     public override string Name => "Discard cards";
-    public override string Sentence => "Discard {count} {cards}";
+    public override string Sentence => "Discard {amount} {count} {cards}";
+    public override string Help => "\"Any number\" discards as many as the player likes (at least 1); a DO block can then use how many: \"that many\" " +
+                                   "(The Winged Dragon of Ra, Sun God of Darkness), or \"the number of cards used for the cost\".";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
-        ParamSpec.Int("count", "How many", 1, 1, 10),
+        ParamSpec.Choice("amount", "Number", new("count", "", "a number:"), new("any", "any number of", "any number")),
+        ParamSpec.Int("count", "How many", 1, 1, 10).ShowIf(b => b.Values.GetValueOrDefault("amount") != "any"),
         new ParamSpec
         {
             Key = "cards", Label = "Which cards", Type = ParamType.Cards, AllowThisCard = true, AllowedZones = Zone.Hand,
@@ -24,7 +27,13 @@ public sealed class DiscardCost : CostBlock
         },
     ];
 
-    public override string Describe(BlockArgs args) => args.Cards("cards").ThisCard ? "discard this card" : base.Describe(args);
+    public override string Describe(BlockArgs args)
+    {
+        if (args.Cards("cards").ThisCard) return "discard this card";
+        // "discard any number of "Sun God" cards".
+        if (args.Choice("amount") == "any") return $"discard any number of {Text.FilterText.Describe(args.Cards("cards"), args.Pack, plural: true, ownName: args.CardName, withExcept: false)}{args.ExceptText()}";
+        return base.Describe(args);
+    }
 
     public override void Compile(BlockContext ctx)
     {
@@ -43,6 +52,15 @@ public sealed class DiscardCost : CostBlock
         // "discard 1 "Sundering - Inferno"" on Sundering - Inferno can discard this very card.
         var namesItself = filter.CardCode == ctx.Card.Id || filter.AltCodes.Contains(ctx.Card.Id);
         var exclude = namesItself && !filter.ExcludeThisCard ? "nil" : "e:GetHandler()";
+        if (ctx.Args.Choice("amount") == "any")
+        {
+            // How many were discarded is kept for "that many" and "for each card discarded", as cost.detach keeps it.
+            ctx.Effect.CostChecks.Add($"Duel.IsExistingMatchingCard({f.Function},tp,LOCATION_HAND,0,1,{exclude},e,tp)");
+            ctx.Effect.CostLines.Add($"e:SetLabel(Duel.DiscardHand(tp,{f.Function},1,{EffectBuilder.CostCapToken},REASON_COST+REASON_DISCARD,{exclude},e,tp))");
+            ctx.Effect.CostCapFallback = "99";
+            ctx.Effect.CostCounts = true;
+            return;
+        }
         ctx.Effect.CostChecks.Add($"Duel.IsExistingMatchingCard({f.Function},tp,LOCATION_HAND,0,{n},{exclude},e,tp)");
         ctx.Effect.CostLines.Add($"Duel.DiscardHand(tp,{f.Function},{n},{n},REASON_COST+REASON_DISCARD,{exclude},e,tp)");
     }
@@ -57,8 +75,12 @@ public sealed class PayLifePointsCost : CostBlock
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Choice("how", "How much", new("amount", "", "a number"), new("half", "half your", "half your LP"),
-            new("multiple", "LP in multiples of", "any multiple of (the LP paid can be used as an amount)")),
-        ParamSpec.Int("amount", "Amount", 1000, 1, 99999).ShowIf(b => b.Values.GetValueOrDefault("how", "amount") == "amount"),
+            new("multiple", "LP in multiples of", "any multiple of (the LP paid can be used as an amount)"),
+            // The Winged Dragon of Ra, Sun God of Darkness: "pay LP so that you only have 1 left" (the LP paid can be used as an amount).
+            new("to_one", "LP so that you only have 1 left", "so that you only have 1 left (the LP paid can be used as an amount)"),
+            // Ultimate Sky: "Target ... and pay 800 LP for each target": paid as the targets are chosen, which the LP caps.
+            new("per_target", "", "a number for each target (of the DO block that targets)")),
+        ParamSpec.Int("amount", "Amount", 1000, 1, 99999).ShowIf(b => b.Values.GetValueOrDefault("how", "amount") is "amount" or "per_target"),
         ParamSpec.Choice("step", "Multiples of", new("100", "100"), new("500", "500"), new("1000", "1000")).ShowIf(Multiple),
         ParamSpec.Int("max", "At most (0: as much as you have)", 0, 0, 99999).ShowIf(Multiple),
     ];
@@ -70,15 +92,44 @@ public sealed class PayLifePointsCost : CostBlock
         "half" => "pay half your LP",
         // Psychic Blade: "Pay LP in multiples of 100 (max. 2000)".
         "multiple" => $"pay LP in multiples of {args.Choice("step")}" + (args.Int("max") > 0 ? $" (max. {args.Int("max")})" : ""),
+        "to_one" => "pay LP so that you only have 1 left",
+        "per_target" => $"pay {args.Int("amount")} LP for each target",
         _ => $"pay {args.Int("amount")} LP",
     };
 
-    /// <summary>Whether the effect pays LP in multiples, which its blocks can use as "the LP paid" (kept in the effect's label).</summary>
+    /// <summary>
+    /// Whether the effect pays an amount of LP it chooses (in multiples, or down to 1), which its blocks can use as "the LP
+    /// paid" (kept in the effect's label).
+    /// </summary>
     public static bool PaysMultiple(EffectEvent effect) =>
-        effect.Cost.Any(b => b.BlockId == "cost.pay_lp" && b.Values.GetValueOrDefault("how") == "multiple");
+        effect.Cost.Any(b => b.BlockId == "cost.pay_lp" && b.Values.GetValueOrDefault("how") is "multiple" or "to_one");
+
+    /// <summary>"Pay 800 LP for each target": the cost is said with the targets ("target ... and pay 800 LP for each target").</summary>
+    public static bool PerTarget(BlockInstance b) => b.BlockId == "cost.pay_lp" && b.Values.GetValueOrDefault("how") == "per_target";
 
     public override void Compile(BlockContext ctx)
     {
+        // "Pay 800 LP for each target": the DO block that targets pays it as its targets are chosen (CardGroupAction).
+        if (ctx.Args.Choice("how") == "per_target")
+        {
+            var each = ctx.Args.Int("amount").ToString(System.Globalization.CultureInfo.InvariantCulture);
+            if (ctx.Effect.LpPerTarget is not null) ctx.Effect.Error("Only one \"pay LP for each target\" can go with a DO block that targets.");
+            ctx.Effect.CostChecks.Add($"Duel.CheckLPCost(tp,{each})");
+            ctx.Effect.LpPerTarget = each;
+            return;
+        }
+        // "Pay LP so that you only have 1 left": all but 1, kept for "the LP paid" (as Cost.PayLP(1,true) keeps it).
+        if (ctx.Args.Choice("how") == "to_one")
+        {
+            if (ctx.Effect.Source.Cost.Any(b => b.BlockId == "cost.move_cards") || ctx.Effect.Source.Cost.Count(b => b.BlockId == Id && b.Values.GetValueOrDefault("how") is "multiple" or "to_one") > 1)
+            {
+                ctx.Effect.Error("Only one COST block of an effect can keep its amount: paying LP so that you have 1 left can't go with another cost that counts its cards, or a second one.");
+                return;
+            }
+            ctx.Effect.CostChecks.Add("Duel.GetLP(tp)>1 and Duel.CheckLPCost(tp,Duel.GetLP(tp)-1)");
+            ctx.Effect.CostLines.AddRange(["local lpc=Duel.GetLP(tp)-1", "Duel.PayLPCost(tp,lpc)", "e:SetLabel(lpc)"]);
+            return;
+        }
         // "Pay half your LP": rounded down, as the game does.
         if (ctx.Args.Choice("how") == "half")
         {
@@ -89,7 +140,7 @@ public sealed class PayLifePointsCost : CostBlock
         // official cards keep it ("Duel.PayLPCost(tp,ac,true) e:SetLabel(ac)").
         if (ctx.Args.Choice("how") == "multiple")
         {
-            if (ctx.Effect.Source.Cost.Any(b => b.BlockId == "cost.move_cards") || ctx.Effect.Source.Cost.Count(b => b.BlockId == Id && b.Values.GetValueOrDefault("how") == "multiple") > 1)
+            if (ctx.Effect.Source.Cost.Any(b => b.BlockId == "cost.move_cards") || ctx.Effect.Source.Cost.Count(b => b.BlockId == Id && b.Values.GetValueOrDefault("how") is "multiple" or "to_one") > 1)
             {
                 ctx.Effect.Error("Only one COST block of an effect can keep its amount: paying LP in multiples can't go with another cost that counts its cards, or a second one.");
                 return;

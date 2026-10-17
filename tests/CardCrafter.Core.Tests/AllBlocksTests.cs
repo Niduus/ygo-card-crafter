@@ -132,6 +132,23 @@ public class AllBlocksTests
                 break;
             case "do.tokens":
                 inst.Values["token"] = TokenId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                // "The combined original ATK/DEF of the Tributed monsters": after a block that Tributes.
+                if (inst.Values.GetValueOrDefault("stats") == "tributed") project.Effects[0].Do.Insert(0, BlockRegistry.Find("do.tribute")!.CreateInstance());
+                break;
+            // "Instead of conducting your normal draw" is for the Draw Phase.
+            case "when.phase" when inst.Values.GetValueOrDefault("instead") == "true":
+                inst.Values["phase"] = "draw";
+                break;
+            // "All of them on this card" moves this card's counters onto other cards.
+            case PlaceCounterAction.BlockId when inst.Values.GetValueOrDefault("by") == "here":
+                inst.Filters["cards"] = new CardFilter { Owner = CardOwner.Opponent, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster, FaceUpOnly = true };
+                break;
+            case ArchetypeActivationsCondition.BlockId:
+                inst.Filters["cards"].Archetype = ArchetypeActivationsCondition.Mulcharmy;
+                break;
+            // "The card(s) the step before affected", "this effect's target(s)": after a block that destroys or targets them.
+            case ControllerDamageAction.BlockId when inst.Values.GetValueOrDefault("which") is "affected" or "target":
+                project.Effects[0].Do.Insert(0, inst.Values["which"] == "affected" ? BlockRegistry.Find("do.destroy")!.CreateInstance() : BlockRegistry.Find(TargetCardsAction.BlockId)!.CreateInstance());
                 break;
             // Responses to an activation.
             case "do.negate_unless" or "do.that_card":

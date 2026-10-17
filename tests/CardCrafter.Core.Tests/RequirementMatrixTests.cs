@@ -464,6 +464,9 @@ public class RequirementMatrixChoiceTests
         Row("fusion_mentions", true, Is("material_archetype", RequirementMatrix.Arch)), Row("fusion_mentions", false, Is("material_archetype", RequirementMatrix.OtherArch)),
         Row("fusion_mentions", false, IsNot("material_archetype", RequirementMatrix.Arch)), Row("fusion_mentions", true, IsNot("material_archetype", RequirementMatrix.OtherArch)),
         Row("fusion_plain", false, Is("material_archetype", RequirementMatrix.Arch)), Row("fusion_plain", true, IsNot("material_archetype", RequirementMatrix.Arch)),
+        // Whether a counter can be placed on it: the subject allows no Spell Counters; A-Counters go on any card.
+        Row("stat", false, Is("can_have_counter", 0x1)), Row("stat", true, IsNot("can_have_counter", 0x1)),
+        Row("stat", true, Is("can_have_counter", 0x100e)), Row("stat", false, IsNot("can_have_counter", 0x100e)),
     ];
 
     public static IEnumerable<object[]> States() =>
@@ -589,6 +592,7 @@ public class RequirementMatrixTextTests
         [Is("name", RequirementMatrix.S), "that is \"Subject\""],
         [IsNot("name", RequirementMatrix.S, RequirementMatrix.Other), "that is neither \"Subject\" nor \"Other\""],
         [Is("negated"), "whose effects are negated"],
+        [Is("can_have_counter", 0x6e), "that you can place a Season Counter on"],
         [IsNot("summoned_turn"), "that was not Summoned this turn"],
         [Is("spsummoned_turn"), "that was Special Summoned this turn"],
         [IsNot("normal_special_turn"), "that was not Normal or Special Summoned this turn"],

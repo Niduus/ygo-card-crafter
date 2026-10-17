@@ -91,7 +91,7 @@ public static partial class EffectTextGenerator
     /// or, for Extra Deck and Ritual monsters, "Must be Fusion Summoned."
     /// </summary>
     private static bool StartsWithSubject(string body) =>
-        System.Text.RegularExpressions.Regex.IsMatch(body, @"^(this card |this card's |the (ATK|DEF|ATK/DEF|Level|Levels|battle position)s? of |\d+ |up to \d+ |all |each |both players |you take )");
+        System.Text.RegularExpressions.Regex.IsMatch(body, @"^(this card |this card's |the (ATK|DEF|ATK/DEF|Level|Levels|battle position)s? of |\d+ |up to \d+ |all |each |both players |you take |once, )");
 
     /// <summary>What starts each option of "activate 1 of these effects": a new, indented line with a bullet.</summary>
     public const string OptionLine = "\n ● ";
@@ -211,10 +211,16 @@ public static partial class EffectTextGenerator
             // Each option on its own line, as printed cards list them.
             text += string.Concat(options.Select(o => OptionLine + OptionText(o, pack, effect))).TrimEnd('.');
         }
+        // "Activate this card by sending 1 ... to the GY.": a Continuous Spell/Trap whose activation only has a cost.
+        else if (activation && effect.Do.Count == 0 && effect.Cost.Count > 0)
+        {
+            var by = string.Join(" and ", effect.Cost.Select(b => Gerund(Text(b, pack, effect))).Where(t => t.Length > 0));
+            var body = $"Activate this card by {by}";
+            text = head.Length == 0 ? body : $"{SentenceCase.Upper(head)}: {body}";
+        }
         else
         {
-            var costs = string.Join(" and ", effect.Cost.Select(b => Text(b, pack, effect)).Where(t => t.Length > 0));
-            var before = targetClause is null ? costs : costs.Length == 0 ? targetClause : $"{costs}, then {targetClause}";
+            var before = Before(effect.Cost, pack, effect, targetClause);
             var body = before.Length == 0 ? actions : $"{before}; {actions}";
             // "You can" once, even when the first action is itself optional.
             if (optional && body.StartsWith("you can ", StringComparison.Ordinal)) body = body["you can ".Length..];
@@ -270,10 +276,22 @@ public static partial class EffectTextGenerator
             return $"If {Text(blocks[0], pack, effect)}: {OptionText(blocks.Skip(1).ToList(), pack, effect)}";
         // "● Discard 1 card, then target 1 monster your opponent controls; destroy it.": the option's own cost first.
         var paid = blocks.TakeWhile(b => BlockRegistry.Find(b.BlockId) is { Kind: BlockKind.Cost }).ToList();
-        var costs = string.Join(" and ", paid.Select(b => Text(b, pack, effect)).Where(t => t.Length > 0));
         var (target, actions) = Actions(blocks.Skip(paid.Count).ToList(), pack, effect);
-        var before = target is null ? costs : costs.Length == 0 ? target : $"{costs}, then {target}";
+        var before = Before(paid, pack, effect, target);
         return SentenceCase.Upper(before.Length == 0 ? actions : $"{before}; {actions}") + ".";
+    }
+
+    /// <summary>
+    /// What goes before the semicolon: the costs, then the targets ("discard 1 card, then target 1 monster"). A cost paid for
+    /// each target is said with them: "target face-up cards on the field ... and pay 800 LP for each target" (Ultimate Sky).
+    /// </summary>
+    private static string Before(IEnumerable<BlockInstance> costBlocks, CardPack? pack, EffectEvent effect, string? target)
+    {
+        var blocks = costBlocks.ToList();
+        var costs = string.Join(" and ", blocks.Where(b => target is null || !PayLifePointsCost.PerTarget(b)).Select(b => Text(b, pack, effect)).Where(t => t.Length > 0));
+        var perTarget = target is null ? "" : string.Join(" and ", blocks.Where(PayLifePointsCost.PerTarget).Select(b => Text(b, pack, effect)));
+        if (target is not null && perTarget.Length > 0) target = $"{target} and {perTarget}";
+        return target is null ? costs : costs.Length == 0 ? target : $"{costs}, then {target}";
     }
 
     /// <summary>The text of each option of "Activate 1 of these effects", for the choice the player is shown; empty when there are none.</summary>
@@ -412,6 +430,8 @@ public static partial class EffectTextGenerator
         else if (trigger is PhaseTrigger) head = $"{when}, {Clause(cond, "if")}";
         else head = $"{when} {Clause(cond, joiner)}";
         if (except.Count > 0) head = head.Length == 0 ? string.Join(", ", except) : $"{head}, {string.Join(", ", except)}";
+        // "During your Draw Phase, if this card is in your GY, instead of conducting your normal draw".
+        if (PhaseTrigger.InsteadOfDraw(effect.When!)) head += ", instead of conducting your normal draw";
 
         // "During your opponent's Main Phase", not "During the Main Phase during your opponent's turn".
         head = PhaseTurn().Replace(head, m => $"{m.Groups[1].Value} {(m.Groups[3].Value == "your opponent's" ? "your opponent's" : "your")} {m.Groups[2].Value} Phase");
@@ -435,6 +455,8 @@ public static partial class EffectTextGenerator
         string? target = null;
         var sb = new System.Text.StringBuilder();
         BlockDefinition? previous = null;
+        // "and if you banish any": the step before says "if you do" in its own words.
+        string? ifYouDo = null;
         var previousOnlyIf = false;
         // A declaration says its part before the semicolon too: "declare 1 Attribute, then target 1 face-up monster; ...".
         var declared = false;
@@ -474,6 +496,8 @@ public static partial class EffectTextGenerator
                 continue;
             }
             previous = def;
+            var ownIfYouDo = ifYouDo;
+            ifYouDo = def.IfYouDoText(args);
             // "..., then if you have a Trap in your GY, destroy that card".
             if (sb.Length > 0 && previousOnlyIf)
             {
@@ -493,7 +517,7 @@ public static partial class EffectTextGenerator
             {
                 sb.Append(b.Link switch
                 {
-                    ActionLink.IfYouDo => ", and if you do, ",
+                    ActionLink.IfYouDo => $", and {ownIfYouDo ?? "if you do"}, ",
                     ActionLink.Then => ", then ",
                     ActionLink.AlsoAfterThat => ". Also, after that, ",
                     ActionLink.IfYouDont => ", and if you don't, ",
