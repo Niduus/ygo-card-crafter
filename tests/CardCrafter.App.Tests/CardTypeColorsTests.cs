@@ -28,7 +28,7 @@ public class CardTypeColorsTests
         new() { Name = "A Trap", Kind = CardKind.Trap, TrapKind = TrapKind.Counter },
     ];
 
-    [Fact]
+    [AvaloniaFact]
     public void EachKindOfCard_HasItsOwnFrameColour()
     {
         var colours = Samples().Where(c => !c.IsPendulum).Select(CardTypeColors.Frame).ToList();
