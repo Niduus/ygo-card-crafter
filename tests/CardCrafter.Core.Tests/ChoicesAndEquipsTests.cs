@@ -603,6 +603,54 @@ public class ChoicesAndEquipsTests
             .AssertPasses();
     }
 
+    // ---------------------------------------------------------------- reading official scripts
+
+    private static string Script(long id) => File.ReadAllText(Path.Combine(EngineScripts!, $"c{id}.lua"));
+
+    /// <summary>The DO blocks of the effect of <paramref name="id"/>'s script that became a "do.either" block.</summary>
+    private static (EffectEvent Effect, BlockInstance Either) Translated(long id, CardData card)
+    {
+        var result = ScriptTranslator.Translate(Script(id), id, card);
+        var effect = result.Pieces.SelectMany(p => p.Effects).Single(e => e.Do.Any(b => b.BlockId == EitherAction.BlockId));
+        return (effect, effect.Do.Single(b => b.BlockId == EitherAction.BlockId));
+    }
+
+    [EngineFact]
+    public void Translator_ReadsSendToTheGyOrBanish_LikeOrcustratedEinsatz()
+    {
+        var (effect, either) = Translated(62834295, new CardData { Id = Id, Name = "Einsatz", Kind = CardKind.Trap, TrapKind = TrapKind.Continuous });
+        Assert.Equal("grave", either.Values["first"]);
+        Assert.Equal("banish", either.Values["second"]);
+        Assert.Equal(Zone.Hand | Zone.Deck, either.Filters["cards"].Zones);
+        Assert.Contains("You can send to the GY, or banish, 1 ", EffectTextGenerator.Describe(effect, new CardData { Name = "Einsatz", Kind = CardKind.Trap }));
+    }
+
+    [EngineFact]
+    public void Translator_ReadsAddOrSendToTheGy_AsTakeAndEither()
+    {
+        var (effect, either) = Translated(44335251, new CardData { Id = Id, Name = "Oviraptor", Level = 4, Atk = 1800, Def = 500 });
+        Assert.Equal("take", either.Values["wording"]);
+        Assert.Equal(CardRace.Dinosaur, either.Filters["cards"].Race);
+        Assert.Contains("take 1 Dinosaur monster from your Deck, and either add it to your hand or send it to the GY", EffectTextGenerator.Describe(effect, new CardData { Name = "Oviraptor" }));
+    }
+
+    [EngineFact]
+    public void Translator_ReadsTheTargetAddedOrSpecialSummoned_LikeZexalEntrust()
+    {
+        var card = new CardData { Id = Id, Name = "Entrust", Kind = CardKind.Spell };
+        var (effect, either) = Translated(4017398, card);
+        Assert.Equal("true", either.Values["target"]);
+        Assert.Equal("summon", either.Values["second"]);
+        // The translation plays: the targeted monster in the GY is Special Summoned when that is chosen.
+        var p = new CardProject { Card = card, Effects = [effect] };
+        var monster = new CardProject { Card = new CardData { Id = Second, Name = "Zexal Monster", Frame = MonsterFrame.Normal, Level = 4, Atk = 1000, Def = 1000, Archetypes = [0x107e] } };
+        new EngineScenario(p, monster)
+            .Card(Id, 0, "hand").Card(Second, 0, "grave").Card(Warrior, 0, "deck", 4).Card(Warrior, 1, "deck", 4)
+            .Activate(Id).Option(1).ExpectActivations(1)
+            .Check(In(0, "LOCATION_MZONE", Second))
+            .AssertPasses();
+    }
+
     // ---------------------------------------------------------------- ", except Equip Spells"
 
     [Fact]

@@ -2486,6 +2486,14 @@ public static partial class ScriptTranslator
                 || Regex.IsMatch(line, @"^if tc and tc:IsRelateToEffect\(e\)(?: and tc:IsFaceup\(\))? then$")
                 || IsGuard(line))
                 continue;
+            // "Add to your hand, or Special Summon, 1 ...": the card is picked, then what happens to it is chosen (ScriptTranslator.Choices.cs).
+            if (EitherOf(body, index, groups, target, targetCard) is { } either)
+            {
+                blocks.Add(Add(either.Block.Linked(link)));
+                link = ActionLink.And;
+                index = either.End;
+                continue;
+            }
             // Cards picked as a group, at random or by the opponent, and the targets (ScriptTranslator.Selections.cs).
             if (SelectionLine(line, body, index, groups, target, fns)) continue;
             Match m;
@@ -2568,7 +2576,9 @@ public static partial class ScriptTranslator
                 link = ActionLink.And;
                 continue;
             }
-            if ((m = Regex.Match(line, @"^local (\w+)=Duel\.SelectMatchingCard\(tp,([\w.()]+),tp,([\w+]+),([\w+]+),(\d+),\5,(nil|e:GetHandler\(\)|c)(?:,e,tp|,e)?\)$")).Success)
+            // "local tc=Duel.SelectMatchingCard(...,1,1,...):GetFirst()": the 1 card picked.
+            if ((m = Regex.Match(line, @"^local (\w+)=Duel\.SelectMatchingCard\(tp,([\w.()]+),tp,([\w+]+),([\w+]+),(\d+),\5,(nil|e:GetHandler\(\)|c)(?:,e,tp|,e)?\)(?::GetFirst\(\))?$")).Success
+                && (!line.EndsWith(":GetFirst()", StringComparison.Ordinal) || m.Groups[5].Value == "1"))
             {
                 var f = Filter(m.Groups[2].Value, fns);
                 Locate(f, m.Groups[3].Value, m.Groups[4].Value);
@@ -3382,6 +3392,11 @@ public static partial class ScriptTranslator
         // A check passed in as a parameter ("f(c)" with f=Card.IsAbleToGraveAsCost) and room to Summon.
         foreach (var par in pars.Skip(1)) text = Regex.Replace(text, $@"(?: and )?\b{Regex.Escape(par)}\(c\)", "");
         text = Regex.Replace(text, @"(?: and )?Duel\.GetMZoneCount\(tp,c\)>0", "");
+        // "(c:IsAbleToHand() or (Duel.GetLocationCount(tp,LOCATION_MZONE)>0 and c:IsCanBeSpecialSummoned(e,0,tp,false,false)))":
+        // either way the card can go, which "Do one thing or another to cards" checks for each way (ScriptTranslator.Choices.cs).
+        const string summonable = @"\(?Duel\.GetLocationCount\(tp,LOCATION_MZONE\)>0 and c:IsCanBeSpecialSummoned\(e,0,tp,false,false\)\)?";
+        text = Regex.Replace(text, $@"(?: and )?\(c:IsAbleTo(?:Hand|Grave|Remove)\(\) or {summonable}\)|(?: and )?\({summonable} or c:IsAbleTo(?:Hand|Grave|Remove)\(\)\)", "")
+            .Replace("return  and ", "return ").Replace("return and ", "return ");
         // "not immune to this effect", which the game checks anyway when it moves the card.
         text = Regex.Replace(text, @"(?: and )?\(not e or not c:IsImmuneToEffect\(e\)\)|(?: and )?not c:IsImmuneToEffect\(e\)", "").Replace("return  and ", "return ").Replace("return and ", "return ");
         if (text.Trim() == "return") return f;
