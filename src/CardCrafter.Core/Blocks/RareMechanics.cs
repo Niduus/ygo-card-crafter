@@ -363,14 +363,16 @@ public sealed class DestroyLaterCost : CostBlock
     public override string Id => BlockId;
     public override string Group => "Activation";
     public override string Name => "Destroy this card during the Nth Standby / End Phase after activation";
-    public override string Sentence => "{how} this card during {whose} {count} {phase} after activation";
-    public override string Help => "Not a cost: it starts counting when this card is activated. The card text says it after the effect.";
+    public override string Sentence => "{how} this card during {whose} {count} {phase} after activation, written {said}";
+    public override string Help => "Not a cost: it starts counting when this card is activated. The card text says it after the effect, or first (Time Chain).";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Choice("how", "What", new("destroy", "Destroy"), new("grave", "Send", "Send to the GY")),
         ParamSpec.Choice("whose", "Whose", new("your", "your"), new("opponent", "your opponent's")),
         ParamSpec.Int("count", "Which one", 2, 1, 9),
         ParamSpec.Choice("phase", "Phase", new("standby", "Standby Phase"), new("end", "End Phase")),
+        // Time Chain, Swords of Concealing Light: the card text starts with it. Saved before it was offered: after the effect.
+        ParamSpec.Choice("said", "The card text says it", new("after", "", "after the effect"), new("first", "", "first, before the effect")),
     ];
 
     private static string Ordinal(int n) => n switch
@@ -381,7 +383,11 @@ public sealed class DestroyLaterCost : CostBlock
 
     public override string Describe(BlockArgs args) => "";
 
-    public override string Afterword(BlockArgs args)
+    public override string Afterword(BlockArgs args) => args.Choice("said") == "first" ? "" : Said(args);
+
+    public override string Foreword(BlockArgs args) => args.Choice("said") == "first" ? Said(args) : "";
+
+    private static string Said(BlockArgs args)
     {
         var when = $"during {args.Describe("whose")} {Ordinal(args.Int("count"))} {args.Describe("phase")} after activation";
         return args.Choice("how") == "grave" ? $"Send this card to the GY {when}." : $"Destroy this card {when}.";

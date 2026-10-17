@@ -80,7 +80,7 @@ public class SweepRound6Tests
     public void MaterialBan_WithAndWithoutAnException()
     {
         var plain = Lasting(100014030, B(MaterialBanPassive.BlockId, ("kind", "link")));
-        Assert.Equal("This card cannot be used as Link Material.", EffectTextGenerator.Generate(plain));
+        Assert.Equal("Cannot be used as Link Material.", EffectTextGenerator.Generate(plain));
         var lua = ScriptCompiler.Compile(plain).Lua;
         Assert.Contains("EFFECT_CANNOT_BE_LINK_MATERIAL", lua);
         Assert.Contains("SetValue(1)", lua);
@@ -88,7 +88,7 @@ public class SweepRound6Tests
         var ban = B(MaterialBanPassive.BlockId, ("kind", "synchro"));
         ban.Filters["cards"] = new CardFilter { CardType = FilterCardType.Monster, Attribute = CardAttribute.Water };
         var water = Lasting(100014031, ban);
-        Assert.Equal("This card cannot be used as Synchro Material, except for the Synchro Summon of a WATER monster.", EffectTextGenerator.Generate(water));
+        Assert.Equal("Cannot be used as Synchro Material, except for the Synchro Summon of a WATER monster.", EffectTextGenerator.Generate(water));
         var r = ScriptCompiler.Compile(water);
         Assert.False(r.HasErrors, string.Join("\n", r.Diagnostics));
         Assert.Contains("EFFECT_CANNOT_BE_SYNCHRO_MATERIAL", r.Lua);

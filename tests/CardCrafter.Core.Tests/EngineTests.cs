@@ -434,7 +434,9 @@ public class EngineTests
             // Equipping a card to the monster a step before Summoned: ChoicesAndEquipsTests plays it. Taking a target's
             // materials needs an Xyz Monster: ZoneBlockTests; tying a Summoned monster to a Continuous Spell and copying a
             // Spell sent for the cost need those: RareMechanicsTests.
-            or EquipAction.BlockId or FromMaterialsAction.BlockId or BindAction.BlockId or CopyEffectAction.BlockId)).Select(b => new object[] { b.Id, false })
+            or EquipAction.BlockId or FromMaterialsAction.BlockId or BindAction.BlockId or CopyEffectAction.BlockId
+            // "Cannot be destroyed by that battle" needs a battle: SunGodsAnkhTimeChainTests plays it.
+            or BattleSafeAction.BlockId)).Select(b => new object[] { b.Id, false })
             .Concat(BlockRegistry.OfKind(BlockKind.Action).Where(b => b.Param("target") is not null && b.Id is not ("do.place" or AttachSelfAction.BlockId)).Select(b => new object[] { b.Id, true }));
 
     /// <summary>Every DO block, with its default settings, activated from a monster on a well-stocked board.</summary>

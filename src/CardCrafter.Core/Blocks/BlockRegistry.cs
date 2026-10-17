@@ -225,6 +225,10 @@ public static class BlockRegistry
         new DisableZoneAction(), new MustReduceAction(), new FromMaterialsAction(), new SendZonesAction(),
         // Winning the Duel, named cards in your hand, dodging a resolving effect, tied monsters, copied effects (RareMechanics.cs)
         new WinAction(), new WinPassive(), new HaveNamesCondition(), new DodgePassive(), new BindAction(), new CopyEffectAction(), new DestroyLaterCost(),
+        // Showing cards, and what a Spell/Trap does with itself after activation (Reveals.cs)
+        new RevealAction(), new AfterActivationCost(),
+        // "Cannot be destroyed by that battle", and negating activated effects as they resolve (BattleAndNegation.cs)
+        new BattleSafeAction(), new NegateActivatedPassive(),
     ];
 
     private static readonly Dictionary<string, BlockDefinition> ById = All.ToDictionary(b => b.Id);

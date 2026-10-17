@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:CardCrafter.App.ViewModels"
              xmlns:blocks="using:CardCrafter.Core.Blocks"
+             xmlns:views="using:CardCrafter.App.Views"
              x:Class="CardCrafter.App.Views.FilterEditorView"
              x:DataType="vm:FilterEditorViewModel"
              Width="396">
@@ -168,6 +169,20 @@
                 ToolTip.Tip="Not a card with this card's name, e.g. &quot;1 Warrior monster from your Deck, except &quot;Card Name&quot;&quot;" />
       <TextBox Grid.Column="2" Text="{Binding ExceptCode}" Watermark="except (passcode)" />
     </Grid>
+    <ItemsControl ItemsSource="{Binding ExceptKinds}">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate DataType="vm:ExceptKindViewModel">
+          <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,4,0,0">
+            <Button Classes="chip" Content="{Binding Summary}">
+              <Button.Flyout><Flyout><views:FilterEditorView DataContext="{Binding Filter}" /></Flyout></Button.Flyout>
+            </Button>
+            <Button Content="✕" Command="{Binding RemoveCommand}" Padding="6,0" ToolTip.Tip="Remove this exception" />
+          </StackPanel>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+    <Button Content="+ except a kind of card" Command="{Binding AddExceptCommand}" HorizontalAlignment="Left" Margin="0,4,0,0"
+            ToolTip.Tip="Leave out cards of a kind, like Millennium Ankh's &quot;except &quot;Exodia&quot; Monster Cards whose original Levels are 10 or higher, and &quot;Millennium&quot; Monster Cards&quot;" />
     <CheckBox Content="Face-up only" IsChecked="{Binding FaceUpOnly}" IsVisible="{Binding !MaterialMode}" Margin="0,6,0,0" />
     <CheckBox Content="Not revealed already (cards in the hand)" IsChecked="{Binding NotRevealed}" IsVisible="{Binding !MaterialMode}"
               ToolTip.Tip="For &quot;reveal 1 card in your hand&quot;: a card that isn't revealed already" />

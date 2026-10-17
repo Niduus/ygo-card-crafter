@@ -281,10 +281,10 @@ public class StatsAndLocksTests
     public void Immunities()
     {
         string Of(BlockInstance b) => Text(Monster(100471027, "Immune", Lasting(b)));
-        Assert.Equal("This card is unaffected by the activated effects of monsters with ATK less than this card.", Of(B("passive.immune", ("whose", "less_atk"))));
-        Assert.Equal("This card is unaffected by the activated effects of other Link Monsters.", Of(B("passive.immune", ("whose", "other_link"))));
+        Assert.Equal("Unaffected by the activated effects of monsters with ATK less than this card.", Of(B("passive.immune", ("whose", "less_atk"))));
+        Assert.Equal("Unaffected by the activated effects of other Link Monsters.", Of(B("passive.immune", ("whose", "other_link"))));
         var patron = B("passive.immune", ("whose", "except_cards")).With("except", new CardFilter { Zones = Zone.None, Archetype = 0x1aa });
-        Assert.Matches("^This card is unaffected by card effects, except \"[^\"]+\" cards'\\.$", Of(patron));
+        Assert.Matches("^Unaffected by card effects, except \"[^\"]+\" cards'\\.$", Of(patron));
         Assert.Contains("not ", ScriptCompiler.Compile(Monster(100471028, "Patron", Lasting(patron))).Lua);
         var shrine = B("passive.immune", ("whose", "opp_activated_attr"), ("attribute", "Fire"))
             .With("cards", new CardFilter { Owner = CardOwner.You, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster, Race = CardRace.Pyro });

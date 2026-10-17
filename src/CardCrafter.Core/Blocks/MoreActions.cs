@@ -1034,6 +1034,19 @@ public sealed class SummonRestrictionAction : ActionBlock
     {
         if (args.Bool("from_hand")) return "";
         var what = Locks.WhatOf(args);
+        // After another action: "..., also you cannot Special Summon from the Extra Deck for the rest of this turn, except ...",
+        // as most printed cards add it.
+        if (args.Effect?.Do is { } dos && dos.IndexOf(args.Instance) > 0 && args.Instance.Link is ActionLink.And or ActionLink.AlsoAfterThat && what != "search")
+        {
+            if (!Locks.HasExcept(what, args.Cards("cards"))) return $"{Locks.Sentence(args.Choice("who"), what, args.Cards("cards"), args)} {Duration(args)}";
+            if (args.Choice("who") == "you")
+            {
+                // Illusion of the Winter Raven Witch: "..., also you cannot ... for the rest of this turn after this card resolves, except ...".
+                var (head, except) = Locks.Split(what, args.Cards("cards"), args);
+                var after = args.Choice("duration") == "turn" && DetailedTriggers.ActivatesThisCard(args.Effect) ? "for the rest of this turn after this card resolves" : Duration(args);
+                return $"{head} {after}{except}";
+            }
+        }
         // A Spell/Trap Card's activation: the lock starts when the card resolves, and printed cards say so. Your own lock
         // with an exception reads as Over Tuning's: "you cannot ... for the rest of this turn after this card resolves, except ...".
         if (args.Choice("duration") == "turn" && DetailedTriggers.ActivatesThisCard(args.Effect))

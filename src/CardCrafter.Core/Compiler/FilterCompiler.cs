@@ -148,6 +148,9 @@ public static class FilterCompiler
             .Select(test => card == "c" ? test : System.Text.RegularExpressions.Regex.Replace(test, @"\bc:", card + ":")).ToList();
         if (f.AnyRequirement && tests.Count > 1) parts.Add("(" + string.Join(" or ", tests) + ")");
         else parts.AddRange(tests);
+        // "..., except "Exodia" Monster Cards whose original Levels are 10 or higher, and "Millennium" Monster Cards".
+        foreach (var x in f.Except ?? [])
+            if (Conditions(x, card, material, hasEffect) is { Count: > 0 } left) parts.Add($"not ({string.Join(" and ", left)})");
         if (f.FaceDownOnly) parts.Add($"{card}:IsFacedown()");
         else if (f.FaceUpOnly)
         {

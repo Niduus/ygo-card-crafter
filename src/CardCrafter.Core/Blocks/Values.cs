@@ -168,7 +168,49 @@ public static class ValueSources
     };
 
     /// <summary>True when the amount reads "300 ... for each card in your hand": a count, used "for each".</summary>
-    public static bool ForEach(BlockArgs args) => args.Choice("how") == "per" && IsCountable(args.Choice("value"));
+    public static bool ForEach(BlockArgs args) => args.Choice("how") == "per" && IsCountable(args.Choice("value")) && !HasPlus(args);
+
+    /// <summary>The block adds a second value to the first ("the amount of LP paid and the total ATK of ...").</summary>
+    public static bool HasPlus(BlockArgs args) => args.Definition.Param("plus") is not null && args.Choice("plus") == "value";
+
+    /// <summary>
+    /// The second value, as it reads after "and": the totals and counts of the cards there are when the effect resolves,
+    /// "the total ATK of all "Sun God" monsters currently in your GY".
+    /// </summary>
+    private static string PlusOf(BlockArgs args, string owner)
+    {
+        var source = args.Choice("value2");
+        var cards = args.Cards("of2");
+        if (UsesCards(source) && source.StartsWith("sum_", StringComparison.Ordinal) && source != "sum_counters")
+        {
+            var group = CardCounts.Group(cards, args.Pack);
+            // "monsters currently in your GY", "monsters you currently control".
+            group = group.EndsWith(" you control", StringComparison.Ordinal) ? group[..^" you control".Length] + " you currently control"
+                : group.Replace(" in your ", " currently in your ", StringComparison.Ordinal);
+            var stat = source switch { "sum_def" => "DEF", "sum_level" => "Levels", _ => "ATK" };
+            return $"the total {stat} of all {group}";
+        }
+        return source == "cost_count" ? "the number of " + CostNoun(args.Effect, plural: true)
+            : Of(source, cards, args.Pack, owner, Counters.Name(args, "2"), args.Effect);
+    }
+
+    /// <summary>
+    /// "And another value": a second value the block adds to the first, with its own cards and counter. Saved before it
+    /// was offered: nothing is added.
+    /// </summary>
+    public static IEnumerable<ParamSpec> PlusParams()
+    {
+        static bool Plus(BlockInstance b) => b.Values.GetValueOrDefault("plus") == "value";
+        return
+        [
+            ParamSpec.Choice("plus", "And", new("none", "", "(nothing else)"), new("value", "and", "and another value, added to it:")),
+            ParamSpec.Choice("value2", "Added value", Sources).ShowIf(Plus),
+            MemoryParam("value2", "2").ShowIf(b => Plus(b) && Remembered(b.Values.GetValueOrDefault("value2", "lp_diff"))),
+            ParamSpec.Cards("of2", "Which cards (added value)", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Graveyard, CardType = FilterCardType.Monster })
+                .ShowIf(b => Plus(b) && UsesCards(b.Values.GetValueOrDefault("value2", "lp_diff"))),
+            .. Counters.Params(withAny: true, b => Plus(b) && UsesCounter(b.Values.GetValueOrDefault("value2", "lp_diff")), suffix: "2"),
+        ];
+    }
 
     /// <summary>"card in your hand", for "300 damage for each card in your hand".</summary>
     public static string EachText(BlockArgs args, string owner = "it") =>
@@ -196,6 +238,13 @@ public static class ValueSources
     {
         var of = args.Choice("value") == "cost_count" ? "the number of " + CostNoun(args.Effect, plural: true)
             : Of(args.Choice("value"), args.Cards(CardsKey), args.Pack, owner, Counters.Name(args), args.Effect);
+        // The Winged Dragon of Ra, Sun God of Darkness: "equal to the amount of LP paid and the total ATK of all "Sun God"
+        // monsters currently in your GY": two values added together.
+        if (HasPlus(args))
+        {
+            if (args.Choice("value") == "lp_paid") of = "the amount of LP paid";
+            of += " and " + PlusOf(args, owner);
+        }
         var n = args.Int("amount").ToString(CultureInfo.InvariantCulture);
         return args.Choice("how") switch
         {
@@ -272,6 +321,9 @@ public static class ValueSources
         if (source == "event" && !ev) ctx.Effect.Error("\"That amount\" only exists while an effect resolves after damage or an LP change; a lasting effect can't use it.");
         else if (source == "event" && ctx.Effect.Code is not ("EVENT_DAMAGE" or "EVENT_BATTLE_DAMAGE" or "EVENT_RECOVER" or "EVENT_PAY_LPCOST"))
             ctx.Effect.Warn("\"That amount\" needs a WHEN that is damage being taken or LP being paid or gained; otherwise it is 0.");
+        // "The amount of LP paid and the total ATK of ...": the second value added to the first, before halving or doubling.
+        if (valueKey == "value" && HasPlus(ctx.Args))
+            raw = $"({raw})+({Lua(ctx, card, p, ev, "value2", "of2", howKey: "none", counterSuffix: "2")})";
         if (ctx.Args.Definition.Param(howKey) is null) return raw;
         return ctx.Args.Choice(howKey) switch
         {
@@ -465,7 +517,7 @@ public static class ValueSources
         if (dir == "becomes") return $"{Whose(unit.Trim())} {(stat is "both" or "orig_both" ? "become" : "becomes")} {Phrase(args, "", forEach: false)}";
         var gain = dir == "lose" ? (plural ? "lose" : "loses") : (plural ? "gain" : "gains");
         // "this card gains that much ATK", as cards that pay LP in multiples say it (Cosmic Tree Irmistil, Psychic Blade).
-        if (args.Choice("value") == "lp_paid" && args.Choice("how") == "equal") return $"{subject} {gain} that much{unit}";
+        if (args.Choice("value") == "lp_paid" && args.Choice("how") == "equal" && !HasPlus(args)) return $"{subject} {gain} that much{unit}";
         // "gains ATK equal to ...", "gains 300 ATK for each ...".
         return $"{subject} {gain} {Phrase(args, unit)}";
     }
@@ -541,7 +593,7 @@ public sealed class StatsFromValueAction : CardGroupAction
     public override string Id => BlockId;
     public override string Group => "Monsters";
     public override string Name => "Monsters gain ATK/DEF/Level equal to a value (LP difference, cards, its Level...)";
-    public override string Sentence => "{count} {cards} {target} {dir} {stat} {how} {amount} {value} {mem} {counter} {counter_id} {of} {duration}";
+    public override string Sentence => "{count} {cards} {target} {dir} {stat} {how} {amount} {value} {mem} {counter} {counter_id} {of} {plus} {value2} {mem2} {counter2} {counter_id2} {of2} {duration}";
     protected override string Category => "CATEGORY_ATKCHANGE";
     protected override string Hint => "HINTMSG_FACEUP";
     protected override string TargetedWording => "{0}";
@@ -558,6 +610,7 @@ public sealed class StatsFromValueAction : CardGroupAction
         ParamSpec.Choice("dir", "Gains / loses / becomes", ValueSources.Dirs),
         ParamSpec.Choice("stat", "Stat", ValueSources.Stats),
         .. ValueSources.Params(),
+        .. ValueSources.PlusParams(),
         ParamSpec.Choice("duration", "Until", Resets.Duration),
         KeptParam,
     ];

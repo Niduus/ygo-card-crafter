@@ -243,10 +243,22 @@ internal static class Procedures
         if (proc.Materials.Count > 0)
         {
             var parts = new List<string>();
-            string Part(CardFilter f, string name) => OnlyCode(f) ? Lua.Num(f.CardCode) : Fn(script.MaterialFilter(f, name, SummonProcedureKind.Fusion));
+            string Part(CardFilter f, string name, MaterialPlace place)
+            {
+                if (place == MaterialPlace.Any) return OnlyCode(f) ? Lua.Num(f.CardCode) : Fn(script.MaterialFilter(f, name, SummonProcedureKind.Fusion));
+                // "1 "Sun God" monster you control + 2 face-up monsters on the field": the procedure passes the Fusion Monster.
+                var kind = script.MaterialFilter(f, name + "k", SummonProcedureKind.Fusion);
+                var tests = new List<string> { "c:IsOnField()" };
+                if (place == MaterialPlace.YouControl) tests.Add("c:IsControler(fc:GetControler())");
+                if (f.FaceUpOnly) tests.Add("c:IsFaceup()");
+                if (kind != "nil") tests.Add($"{kind}(c)");
+                return script.AddFunction(name, "c,fc", [$"return {string.Join(" and ", tests)}"]);
+            }
             // A slot with an "or" takes either: {74677422,s.fusfilter2b}.
             foreach (var (slot, i) in proc.Materials.Select((m, i) => (m, i)))
-                parts.Add(slot.Or is { } alt ? $"{{{Part(slot.Filter, $"fusfilter{i + 1}")},{Part(alt, $"fusfilter{i + 1}b")}}}" : Part(slot.Filter, $"fusfilter{i + 1}"));
+                parts.Add(slot.Or is { } alt
+                    ? $"{{{Part(slot.Filter, $"fusfilter{i + 1}", slot.Place)},{Part(alt, $"fusfilter{i + 1}b", slot.Place)}}}"
+                    : Part(slot.Filter, $"fusfilter{i + 1}", slot.Place));
             var repeating = proc.Materials.Select((m, i) => (m, i)).Where(x => x.m.Repeats).ToList();
             if (repeating.Count > 1)
             {
@@ -266,7 +278,7 @@ internal static class Procedures
             {
                 if (rep.Min < 2) { script.Diagnostics.Add(new(Severity.Error, "A Fusion Monster needs at least 2 materials.")); yield break; }
                 // "2+ "Blue-Eyes White Dragon"": a passcode repeats with the helper for names.
-                yield return rep.Or is null && OnlyCode(rep.Filter)
+                yield return rep.Or is null && OnlyCode(rep.Filter) && rep.Place == MaterialPlace.Any
                     ? $"aux.AddFusionProcCodeRep2(c,{parts[at]},{rep.Min},{max},{Sub(proc)},true)"
                     : $"aux.AddFusionProcFunRep2(c,{parts[at]},{rep.Min},{max},true)";
                 yield break;

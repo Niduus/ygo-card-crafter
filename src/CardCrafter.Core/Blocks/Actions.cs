@@ -201,7 +201,10 @@ public abstract partial class CardGroupAction : ActionBlock
         var e = ctx.Effect;
         if (Category.Length > 0) e.AddCategory(Category);
         foreach (var c in ExtraCategories(filter)) e.AddCategory(c);
-        e.TargetChecks.Add($"Duel.IsExistingMatchingCard({f.Function},tp,{f.Self},{f.Opp},1,{f.Exclude},e,tp)");
+        // Millennium Ankh: "..., then shuffle the face-up Monster Cards you control into the Deck": a later step on all such
+        // cards needs none to be there for the effect to be activated.
+        var later = e.Source.Do.IndexOf(ctx.Args.Instance) > 0 && ctx.Link is ActionLink.Then or ActionLink.AlsoAfterThat;
+        if (!later) e.TargetChecks.Add($"Duel.IsExistingMatchingCard({f.Function},tp,{f.Self},{f.Opp},1,{f.Exclude},e,tp)");
         PlusChecks(ctx);
         var ig = e.NewLocal("ig");
         e.TargetLines.Add($"local {ig}=Duel.GetMatchingGroup({f.Function},tp,{f.Self},{f.Opp},{f.Exclude},e,tp)");
@@ -645,7 +648,8 @@ public sealed class BanishAction : CardGroupAction
 
     protected override string Apply(string g, BlockContext ctx)
     {
-        if (ctx.Args.Choice("until") == "always") return $"Duel.Remove({g},{(ctx.Args.Bool("facedown") ? "POS_FACEDOWN" : "POS_FACEUP")},REASON_EFFECT)";
+        // "The monster banished by this card's effect": marked when the card reads them (CardRefs.cs).
+        if (ctx.Args.Choice("until") == "always") return CardRefs.MarkBanished(ctx.Script, $"Duel.Remove({g},{(ctx.Args.Bool("facedown") ? "POS_FACEDOWN" : "POS_FACEUP")},REASON_EFFECT)");
         var back = ctx.Args.Choice("until") switch
         {
             "standby_next" => "during the next Standby Phase", "standby_your" => "during your next Standby Phase",
@@ -655,7 +659,7 @@ public sealed class BanishAction : CardGroupAction
         if (!ctx.Args.Cards("cards").ThisCard && (ctx.Args.Cards("cards").Zones & ~Zone.Field) != Zone.None)
             ctx.Effect.Warn($"Only cards banished from the field come back {back}.");
         if (ctx.Args.Choice("until") == "return") return BanishAndReturn.Call(ctx, g);
-        if (ctx.Args.Choice("until") != "end_phase") return LaterAction.BanishUntil(ctx.Script, g, ctx.Args.Choice("until"));
+        if (ctx.Args.Choice("until") != "end_phase") return CardRefs.MarkBanished(ctx.Script, LaterAction.BanishUntil(ctx.Script, g, ctx.Args.Choice("until")));
         var retFilter = ctx.Script.AddFunction("tmpretfilter", "c,fid", ["return c:GetFlagEffectLabel(id)==fid"]);
         var retCon = ctx.Script.AddFunction("tmpretcon", "e,tp,eg,ep,ev,re,r,rp",
         [

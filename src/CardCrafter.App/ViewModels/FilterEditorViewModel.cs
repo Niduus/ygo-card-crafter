@@ -30,6 +30,29 @@ public sealed partial class FilterEditorViewModel : ObservableObject
         MaterialMode = materialMode;
         _ownerChoice = ownerChoice;
         foreach (var r in filter.Requirements) Requirements.Add(NewRequirement(r));
+        foreach (var x in filter.Except ?? []) ExceptKinds.Add(NewExcept(x));
+    }
+
+    // ---- kinds left out: "..., except "Exodia" Monster Cards whose original Levels are 10 or higher, and "Millennium" Monster Cards"
+    public System.Collections.ObjectModel.ObservableCollection<ExceptKindViewModel> ExceptKinds { get; } = [];
+
+    private ExceptKindViewModel NewExcept(CardFilter x) => new(x, _pack, () => Changed(), RemoveExcept);
+
+    [CommunityToolkit.Mvvm.Input.RelayCommand]
+    private void AddExcept()
+    {
+        var x = new CardFilter { Zones = Zone.None, CardType = _f.CardType, MonsterCards = _f.MonsterCards };
+        (_f.Except ??= []).Add(x);
+        ExceptKinds.Add(NewExcept(x));
+        Changed();
+    }
+
+    private void RemoveExcept(ExceptKindViewModel vm)
+    {
+        _f.Except?.Remove(vm.Model);
+        if (_f.Except is { Count: 0 }) _f.Except = null;
+        ExceptKinds.Remove(vm);
+        Changed();
     }
 
     public CardPack Pack => _pack();
@@ -361,4 +384,28 @@ public sealed partial class FilterEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(Archetype2));
         OnPropertyChanged(nameof(Summary));
     }
+}
+
+/// <summary>One kind of card a picker leaves out ("except "Millennium" Monster Cards"), edited in its own picker.</summary>
+public sealed partial class ExceptKindViewModel : ObservableObject
+{
+    private readonly Func<CardPack> _pack;
+    private readonly Action<ExceptKindViewModel> _remove;
+
+    public ExceptKindViewModel(CardFilter model, Func<CardPack> pack, Action changed, Action<ExceptKindViewModel> remove)
+    {
+        Model = model;
+        _pack = pack;
+        _remove = remove;
+        Filter = new FilterEditorViewModel(model, Zone.None, true, pack, () => { OnPropertyChanged(nameof(Summary)); changed(); });
+    }
+
+    public CardFilter Model { get; }
+    public FilterEditorViewModel Filter { get; }
+
+    /// <summary>"except "Millennium" Monster Cards".</summary>
+    public string Summary => "except " + FilterText.Describe(Model, _pack(), plural: true, withLocation: false);
+
+    [CommunityToolkit.Mvvm.Input.RelayCommand]
+    private void Remove() => _remove(this);
 }
