@@ -193,11 +193,16 @@ public static class ScriptCompiler
         // What the WHEN itself checks, which the clones for an option's own WHEN don't share.
         else effect.TriggerConditionCount = effect.Conditions.Count;
 
+        // Where each IF block's checks are, for "... or ...".
+        var ifRanges = new List<(int From, int Count, bool Or)>();
         foreach (var b in src.If)
         {
             CardRefs.Check(effect, b);
+            var from = effect.Conditions.Count;
             Run(effect, b, BlockKind.Condition, pack);
+            ifRanges.Add((from, effect.Conditions.Count - from, b.Or && ifRanges.Count > 0));
         }
+        JoinAlternatives(effect, ifRanges);
 
         if (effect.IsPassive && src.Cost.Count > 0)
             effect.Error("\"While face-up\" effects are never activated, so they cannot have a COST.");
@@ -331,6 +336,36 @@ public static class ScriptCompiler
             effect.Error("Add at least one DO block: what the effect does.");
         if (effect.IsPassive && src.Limit != OncePerTurn.None)
             effect.Warn("Once-per-turn limits do nothing on \"while face-up\" effects and were ignored.");
+    }
+
+    /// <summary>
+    /// IF blocks joined by "or": the checks of each run of them become one check, any of their blocks being enough
+    /// ("(a and b) or (c)"). <paramref name="ranges"/> holds where each IF block's checks are, in order.
+    /// </summary>
+    private static void JoinAlternatives(EffectBuilder effect, List<(int From, int Count, bool Or)> ranges)
+    {
+        if (!ranges.Any(r => r.Or)) return;
+        // From the last run back, so the places of the ones before stay right.
+        for (var end = ranges.Count - 1; end > 0; end--)
+        {
+            if (!ranges[end].Or) continue;
+            var start = end;
+            while (start > 0 && ranges[start].Or) start--;
+            var run = ranges.Skip(start).Take(end - start + 1).ToList();
+            if (run.Any(r => r.Count == 0))
+            {
+                effect.Error("An IF block joined with \"or\" must be one that checks something as the effect is used (not one about where this card is or what it remembers).");
+                return;
+            }
+            string Group((int From, int Count, bool Or) r) =>
+                "(" + string.Join(" and ", effect.Conditions.Skip(r.From).Take(r.Count)) + ")";
+            var joined = "(" + string.Join(" or ", run.Select(Group)) + ")";
+            var from = run[0].From;
+            var count = run.Sum(r => r.Count);
+            effect.Conditions.RemoveRange(from, count);
+            effect.Conditions.Insert(from, joined);
+            end = start;
+        }
     }
 
     /// <summary>

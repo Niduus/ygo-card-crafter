@@ -305,7 +305,8 @@ public static class CardRefs
     /// keeps in the effect's label object. Older cards never do, so they compile as before.
     /// </summary>
     public static bool UsesCost(EffectEvent effect) => effect.Do.Concat(effect.If).Any(b =>
-        b.Filters.Values.Any(f => f.That == CardRef.Cost || f.Requirements.Any(r => IsRequirement(r.Property) && r.Values.Contains((long)CardRef.Cost)))
+        b.BlockId == CopyEffectAction.BlockId
+        || b.Filters.Values.Any(f => f.That == CardRef.Cost || f.Requirements.Any(r => IsRequirement(r.Property) && r.Values.Contains((long)CardRef.Cost)))
         || b.Values.Values.Any(v => v.StartsWith("cost_", StringComparison.Ordinal)));
 
     /// <summary>

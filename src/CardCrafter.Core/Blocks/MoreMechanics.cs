@@ -665,13 +665,22 @@ public sealed class CannotBeNegatedCost : CostBlock
     public override string Id => BlockId;
     public override string Group => "Activation";
     public override string Name => "This activation and effect cannot be negated";
-    public override string Sentence => "This activation and effect cannot be negated";
-    public override string Help => "Not a cost: it is part of the effect. The card text puts it after the effect.";
+    public override string Sentence => "This activation and effect cannot be negated {while}";
+    public override string Help => "Not a cost: it is part of the effect. The card text puts it after the effect. \"While you control no monsters\" makes it hold only then (Heretic Eradicator).";
+    public override IReadOnlyList<ParamSpec> Params { get; } =
+    [
+        // Saved before it could depend on anything: always.
+        ParamSpec.Choice("while", "When", new("always", "", "always"), new("no_monsters", "while you control no monsters")),
+    ];
 
     public override string Describe(BlockArgs args) => "";
 
-    public override string Afterword(BlockArgs args) =>
-        DetailedTriggers.ActivatesThisCard(args.Effect) ? "This card's activation and effect cannot be negated." : "This effect's activation and effect cannot be negated.";
+    public override string Afterword(BlockArgs args)
+    {
+        // Heretic Eradicator: "... Special Summon this card (while you control no monsters, this effect and its activation cannot be negated)."
+        if (args.Choice("while") == "no_monsters") return "(while you control no monsters, this effect and its activation cannot be negated)";
+        return DetailedTriggers.ActivatesThisCard(args.Effect) ? "This card's activation and effect cannot be negated." : "This effect's activation and effect cannot be negated.";
+    }
 
     /// <summary>The effect's flags: its activation can't be negated, its effect can't be negated, "Prohibition" still works on it.</summary>
     public static readonly string[] Flags = ["EFFECT_FLAG_CANNOT_INACTIVATE", "EFFECT_FLAG_CANNOT_DISABLE", "EFFECT_FLAG_CAN_FORBIDDEN"];
@@ -682,8 +691,47 @@ public sealed class CannotBeNegatedCost : CostBlock
 
     public override void Compile(BlockContext ctx)
     {
+        if (ctx.Args.Choice("while") == "no_monsters")
+        {
+            Conditional(ctx);
+            return;
+        }
         foreach (var flag in Flags) ctx.Effect.AddProperty(flag);
         if (DetailedTriggers.ActivatesThisCard(ctx.Effect.Source)) ctx.Script.AddInitialLine(CardLine);
+    }
+
+    /// <summary>
+    /// "(while you control no monsters, this effect and its activation cannot be negated)": a rule over every chain link,
+    /// written once per Duel, that spares this effect (known by its description) while its player controls no monsters.
+    /// </summary>
+    private static void Conditional(BlockContext ctx)
+    {
+        if (ctx.Effect.Index > 16)
+        {
+            ctx.Effect.Error("\"Cannot be negated while you control no monsters\" works for a card's first 16 effects.");
+            return;
+        }
+        var desc = $"aux.Stringid(id,{ctx.Effect.Index - 1})";
+        var value = ctx.Script.AddFunction("nonegval", "e,ct",
+        [
+            "local te,p=Duel.GetChainInfo(ct,CHAININFO_TRIGGERING_EFFECT,CHAININFO_TRIGGERING_PLAYER)",
+            $"return te:GetDescription()=={desc} and Duel.GetFieldGroupCount(p,LOCATION_MZONE,0)==0",
+        ]);
+        var guard = $"s.cc_noneg{ctx.Effect.Index}";
+        ctx.Script.AddInitialLine(string.Join("\n\t",
+        [
+            $"if not {guard} then",
+            $"\t{guard}=true",
+            "\tlocal ge=Effect.GlobalEffect()",
+            "\tge:SetType(EFFECT_TYPE_FIELD)",
+            "\tge:SetCode(EFFECT_CANNOT_INACTIVATE)",
+            $"\tge:SetValue({value})",
+            "\tDuel.RegisterEffect(ge,0)",
+            "\tlocal ge2=ge:Clone()",
+            "\tge2:SetCode(EFFECT_CANNOT_DISEFFECT)",
+            "\tDuel.RegisterEffect(ge2,0)",
+            "end",
+        ]));
     }
 }
 

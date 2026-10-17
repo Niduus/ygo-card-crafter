@@ -98,6 +98,21 @@ public sealed partial class BlockViewModel : ObservableObject
         }
     }
 
+    /// <summary>IF blocks after the first can be an alternative to the one above ("... or ...").</summary>
+    [ObservableProperty] private bool _showOr;
+
+    public bool Or
+    {
+        get => Instance.Or;
+        set
+        {
+            if (Instance.Or == value) return;
+            Instance.Or = value;
+            OnPropertyChanged();
+            _changed();
+        }
+    }
+
     /// <summary>"You can ...": only DO blocks of activated effects can be skipped.</summary>
     public bool ShowOptional => Definition.Kind == BlockKind.Action && !Owner.IsPassive;
 

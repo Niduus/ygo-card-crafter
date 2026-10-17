@@ -152,6 +152,9 @@ public static class CardProperties
             IsText: "that was Normal or Special Summoned this turn", IsNotText: "that was not Normal or Special Summoned this turn"),
         new("spsummoned_turn", "Special Summoned this turn", PropertyKind.State, "c:IsStatus(STATUS_SPSUMMON_TURN)", "",
             IsText: "that was Special Summoned this turn", IsNotText: "that was not Special Summoned this turn"),
+        // Heretic Eradicator: "4 or more monsters that cannot be Normal Summoned/Set".
+        new("summonable_card", "Can be Normal Summoned/Set (not Extra Deck, Ritual or Special Summon-only)", PropertyKind.State, "c:IsSummonableCard()", "",
+            Guard: "c:IsType(TYPE_MONSTER)", IsText: "that can be Normal Summoned/Set", IsNotText: "that cannot be Normal Summoned/Set"),
         new("attacked_turn", "Declared an attack this turn", PropertyKind.State, "c:GetAttackAnnouncedCount()>0", "",
             IsText: "that declared an attack this turn", IsNotText: "that has not declared an attack this turn"),
         new("battled_turn", "Battled this turn", PropertyKind.State, "c:GetBattledGroupCount()>0", "",

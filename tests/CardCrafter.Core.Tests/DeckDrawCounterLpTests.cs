@@ -533,7 +533,7 @@ public class DeckDrawCounterLpTests
     private static CardProject RaDiscards() => Monster(new EffectEvent
     {
         When = B("when.ignition"),
-        Cost = [B("cost.discard").With("amount", "any").With("cards", new CardFilter { Owner = CardOwner.You, Zones = Zone.Hand, CardType = FilterCardType.Monster, Race = CardRace.Warrior })],
+        Cost = [B("cost.discard").With("mode", "any").With("cards", new CardFilter { Owner = CardOwner.You, Zones = Zone.Hand, CardType = FilterCardType.Monster, Race = CardRace.Warrior })],
         Do = [B("do.send_to_gy").With("amount", "cost").With("cards", Theirs)],
     });
 

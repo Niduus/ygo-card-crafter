@@ -282,7 +282,10 @@ public sealed class PlayerRulePassive : PassiveBlock
             new("opp_no_draw_extra", "Your opponent cannot add cards from their Deck to their hand except by drawing them"),
             new("opp_no_bp_activate", "Your opponent cannot activate cards or effects during the Battle Phase"),
             // Lethargisaurus.
-            new("no_own_response", "Neither player can activate cards or effects in response to the activation of their own cards or effects")),
+            new("no_own_response", "Neither player can activate cards or effects in response to the activation of their own cards or effects"),
+            // Invoked Caliga.
+            new("one_monster_effect", "Each player can only attempt to activate 1 monster effect per turn"),
+            new("one_attacker", "Each player can only attack with 1 monster during each Battle Phase")),
     ];
 
     public override void Compile(BlockContext ctx)
@@ -361,6 +364,51 @@ public sealed class PlayerRulePassive : PassiveBlock
                 // Each activation: only the other player may chain to it (a chain limit set as it is activated).
                 var op = ctx.Script.AddFunction("ownchainop", "e,tp,eg,ep,ev,re,r,rp", ["Duel.SetChainLimit(function(ce,cp,ctp) return cp~=rp end)"]);
                 ctx.Effect.AddPassive(v => [$"{v}:SetType(EFFECT_TYPE_FIELD+EFFECT_TYPE_CONTINUOUS)", $"{v}:SetCode(EVENT_CHAINING)", $"{v}:SetRange({range})", $"{v}:SetOperation({op})"]);
+                break;
+            }
+            case "one_monster_effect":
+            {
+                // Each player's first monster effect this turn leaves a flag on this card; then that player is locked out.
+                var flags = new[] { $"id+{8420 + ctx.Script.Slot("onemonster")}", $"id+{8440 + ctx.Script.Slot("onemonster")}" };
+                foreach (var side in new[] { 0, 1 })
+                {
+                    var flag = flags[side];
+                    var mine = side == 0 ? "ep~=tp" : "ep==tp";
+                    var count = ctx.Script.AddFunction("onecount", "e,tp,eg,ep,ev,re,r,rp",
+                        [$"if {mine} or not re:IsActiveType(TYPE_MONSTER) then return end", $"e:GetHandler():RegisterFlagEffect({flag},RESET_EVENT+0x3ff0000+RESET_PHASE+PHASE_END,0,1)"]);
+                    ctx.Effect.AddPassive(v => [$"{v}:SetType(EFFECT_TYPE_FIELD+EFFECT_TYPE_CONTINUOUS)", $"{v}:SetCode(EVENT_CHAINING)", $"{v}:SetRange({range})",
+                        $"{v}:SetProperty(EFFECT_FLAG_CANNOT_DISABLE)", $"{v}:SetOperation({count})"]);
+                    var con = ctx.Script.AddFunction("onecon", "e", [$"return e:GetHandler():GetFlagEffect({flag})~=0"]);
+                    var limit = ctx.Script.AddFunction("onelimit", "e,re,tp", ["return re:IsActiveType(TYPE_MONSTER)"]);
+                    ctx.Effect.AddPassive(v => [.. Player(v, "EFFECT_CANNOT_ACTIVATE", side == 0 ? "1" : "0", side == 0 ? "0" : "1", limit), $"{v}:SetCondition({con})"]);
+                }
+                break;
+            }
+            case "one_attacker":
+            {
+                // The first monster to attack in a Battle Phase is remembered; no other monster can attack in it.
+                var flag = $"id+{8460 + ctx.Script.Slot("oneattacker")}";
+                var con = ctx.Script.AddFunction("oneatkcon", "e", [$"return e:GetHandler():GetFlagEffect({flag})~=0"]);
+                var tg = ctx.Script.AddFunction("oneatktg", "e,c", ["return c:GetFieldID()~=e:GetLabel()"]);
+                var check = ctx.Script.AddFunction("oneatkop", "e,tp,eg,ep,ev,re,r,rp",
+                [
+                    $"if e:GetHandler():GetFlagEffect({flag})~=0 then return end",
+                    "local fid=eg:GetFirst():GetFieldID()",
+                    $"e:GetHandler():RegisterFlagEffect({flag},RESET_EVENT+RESETS_STANDARD+RESET_PHASE+PHASE_END,0,1)",
+                    "e:GetLabelObject():SetLabel(fid)",
+                ]);
+                // The attack lock and its watcher are one pair: the watcher tells the lock which monster attacked.
+                ctx.Effect.AddPassive(v =>
+                [
+                    $"{v}:SetType(EFFECT_TYPE_FIELD)", $"{v}:SetProperty(EFFECT_FLAG_IGNORE_IMMUNE)", $"{v}:SetCode(EFFECT_CANNOT_ATTACK_ANNOUNCE)",
+                    $"{v}:SetRange({range})", $"{v}:SetTargetRange(LOCATION_MZONE,LOCATION_MZONE)", $"{v}:SetCondition({con})", $"{v}:SetTarget({tg})",
+                    "local oneatk=" + v,
+                ]);
+                ctx.Effect.AddPassive(v =>
+                [
+                    $"{v}:SetType(EFFECT_TYPE_FIELD+EFFECT_TYPE_CONTINUOUS)", $"{v}:SetProperty(EFFECT_FLAG_CANNOT_DISABLE)", $"{v}:SetCode(EVENT_ATTACK_ANNOUNCE)",
+                    $"{v}:SetRange({range})", $"{v}:SetOperation({check})", $"{v}:SetLabelObject(oneatk)",
+                ]);
                 break;
             }
             case "opp_no_bp_activate":

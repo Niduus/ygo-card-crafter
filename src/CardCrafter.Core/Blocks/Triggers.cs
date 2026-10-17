@@ -1150,7 +1150,9 @@ public sealed class PhaseTrigger : BlockDefinition
         ParamSpec.Choice("whose", "Whose", new("your", "your"), new("opponent", "your opponent's"), new("each", "the", "each player's")),
         ParamSpec.Choice("phase", "Phase", new("standby", "Standby Phase"), new("end", "End Phase"),
             new("battle_start", "Battle Phase", "start of the Battle Phase"), new("battle_end", "Battle Phase", "end of the Battle Phase"),
-            new("draw", "Draw Phase")),
+            new("draw", "Draw Phase"),
+            // Freed the Matchless General: "During your Draw Phase, instead of conducting your normal draw: You can add ...".
+            new("draw_instead", "Draw Phase, instead of conducting your normal draw", "Draw Phase, instead of the normal draw")),
         ParamSpec.Choice("zone", "From", Zones.RangeChoices),
         ParamSpec.Flag("optional", "optional (\"You can\")", true),
         // Jester Confit: "If Summoned this way, during your opponent's next End Phase".
@@ -1185,6 +1187,11 @@ public sealed class PhaseTrigger : BlockDefinition
         ctx.Effect.Types.Add("EFFECT_TYPE_FIELD");
         ctx.Effect.Types.Add(optional ? "EFFECT_TYPE_TRIGGER_O" : "EFFECT_TYPE_TRIGGER_F");
         ctx.Effect.IsMandatory = !optional;
+        if (ctx.Args.Choice("phase") == "draw_instead")
+        {
+            InsteadOfDrawing(ctx);
+            return;
+        }
         ctx.Effect.Code = ctx.Args.Choice("phase") switch
         {
             "end" => "EVENT_PHASE+PHASE_END",
@@ -1218,6 +1225,21 @@ public sealed class PhaseTrigger : BlockDefinition
         ctx.Effect.Code = "EVENT_PREDRAW";
         ctx.Effect.TargetChecks.Add("aux.IsPlayerCanNormalDraw(tp)");
         ctx.Effect.OperationPrologue.AddRange(["if not aux.IsPlayerCanNormalDraw(tp) then return end", "aux.GiveUpNormalDraw(e,tp)"]);
+    }
+
+    /// <summary>
+    /// "During your Draw Phase, instead of conducting your normal draw": before the draw, and only if the player could
+    /// draw normally; the effect gives up that draw as it resolves (aux.GiveUpNormalDraw), as official cards do.
+    /// </summary>
+    private static void InsteadOfDrawing(BlockContext ctx)
+    {
+        if (ctx.Args.Choice("whose") != "your") ctx.Effect.Error("\"Instead of conducting your normal draw\" is during your own Draw Phase: set whose to \"your\".");
+        if (ctx.Args.Choice("after") != "any") ctx.Effect.Error("\"Instead of conducting your normal draw\" is each of your Draw Phases.");
+        ctx.Effect.Code = "EVENT_PREDRAW";
+        ctx.Effect.Range = Zones.Resolve(ctx.Args.Choice("zone"), ctx.Card);
+        ctx.Effect.Conditions.Add("Duel.GetTurnPlayer()==tp");
+        ctx.Effect.TargetChecks.Add("aux.IsPlayerCanNormalDraw(tp)");
+        ctx.Effect.AddStep(["if not aux.IsPlayerCanNormalDraw(tp) then return end", "aux.GiveUpNormalDraw(e,tp)"], null, ActionLink.And);
     }
 
     /// <summary>

@@ -246,7 +246,9 @@ public static partial class EffectTextGenerator
         // A list after the effect ("● Add a card from the Deck to the hand.") starts its own lines.
         foreach (var b in new[] { effect.When! }.Concat(effect.Cost).Concat(effect.Do).Concat(effect.If))
             if (BlockRegistry.Find(b.BlockId) is { } bd && bd.Afterword(new BlockArgs(bd, b, pack) { Effect = effect, CardName = card.Name }) is { Length: > 0 } after)
-                text += (after.StartsWith('\n') ? "" : " ") + after;
+                // "... Special Summon this card (while you control no monsters, this effect and its activation cannot be negated).":
+                // a remark in parentheses that is not a sentence of its own goes inside the effect's sentence.
+                text = after is ['(', var first, ..] && char.IsLower(first) && text.EndsWith('.') ? $"{text[..^1]} {after}." : text + (after.StartsWith('\n') ? "" : " ") + after;
 
         // "Tribute this card instead" is a lasting effect that still takes "once per turn".
         var limited = !passive || effect.Do.Any(b => b.BlockId == ReplaceDestroyPassive.BlockId);
@@ -476,7 +478,16 @@ public static partial class EffectTextGenerator
             var noun = FilterText.Describe(unless, pack, preposition: "in");
             return $"unless you have {SummonWording.Article(noun)} {noun}";
         }
-        var conditions = ifs.Select(b => Text(b, pack)).Where(t => t.Length > 0).ToList();
+        // "While you control a "Reindsurm" monster whose original Level is 8 or higher or your opponent has a Dragon
+        // monster in their field or GY": IF blocks joined by "or" read as one condition.
+        var conditions = new List<string>();
+        foreach (var b in ifs)
+        {
+            var t = Text(b, pack);
+            if (t.Length == 0) continue;
+            if (b.Or && conditions.Count > 0) conditions[^1] += " or " + SentenceCase.Lower(t);
+            else conditions.Add(t);
+        }
         // "During the Main Phase, if ...": the turn and phase come first (TimingFirst).
         var during = During(conditions);
         // "While you have no cards in your hand, if this card attacks": a clause that brings its own "if" comes last.
@@ -492,7 +503,7 @@ public static partial class EffectTextGenerator
             && effect.When!.Values.GetValueOrDefault("zone") is { } zone && Zones.Where(zone) is { } where && !SaysWhereThisCardIs(effect))
             cond = cond.Length == 0 ? $"this card is {where}" : $"this card is {where} and {cond}";
         // "If your opponent controls a card, you can activate this card from your hand": a rule, not a lasting "while".
-        var joiner = when.Length > 0 || passive && !effect.Do.All(b => b.BlockId is ActivateFromHandPassive.BlockId or NoTributeSummonPassive.BlockId or SelfDestroyPassive.BlockId or ActivateSetTurnPassive.BlockId or CannotBeSummonedPassive.BlockId) ? "while" : "if";
+        var joiner = when.Length > 0 || passive && !effect.Do.All(b => b.BlockId is ActivateFromHandPassive.BlockId or NoTributeSummonPassive.BlockId or SelfDestroyPassive.BlockId or ActivateSetTurnPassive.BlockId or CannotBeSummonedPassive.BlockId or WinPassive.BlockId) ? "while" : "if";
         cond = TimingFirst(during, cond, joiner);
 
         // "When your opponent Normal Summons a monster during their turn", not "during your opponent's turn".
@@ -538,6 +549,7 @@ public static partial class EffectTextGenerator
         // A declaration says its part before the semicolon too: "declare 1 Attribute, then target 1 face-up monster; ...".
         var declared = false;
         var chanceCases = 0;
+        string? previousHolder = null;
         foreach (var b in blocks)
         {
             if (BlockRegistry.Find(b.BlockId) is not { } def) continue;
@@ -583,6 +595,15 @@ public static partial class EffectTextGenerator
                 continue;
             }
             previousOnlyIf = def is OnlyIfAction or ConditionBlock;
+            // Mimighoul Dungeon: "Any player who controls a face-down monster cannot Normal Summon monsters, nor declare an
+            // attack with ...": a second lock on the same players says "nor".
+            var holder = def is LockPassive && b.Values.GetValueOrDefault("who") == "holder" ? SentenceCase.Lower(LockPassive.HolderSubject(args)) : null;
+            if (holder is not null && holder == previousHolder && sb.Length > 0 && t.StartsWith(holder, StringComparison.Ordinal))
+            {
+                sb.Append(", nor ").Append(t[holder.Length..]);
+                continue;
+            }
+            previousHolder = holder;
             if (sb.Length > 0 && sentences && (gate || wasGate))
             {
                 sb.Append(". ").Append(SentenceCase.Upper(t));

@@ -299,7 +299,11 @@
                     <CheckBox Content="Spell &amp; Trap Zones too" IsChecked="{Binding ContactWholeField}" Margin="0,0,12,0" />
                     <CheckBox Content="also from the hand" IsChecked="{Binding ContactFromHand}" Margin="0,0,12,0" />
                     <CheckBox Content="also from the GY" IsChecked="{Binding ContactFromGrave}" Margin="0,0,12,0" />
-                    <CheckBox Content="the opponent's cards too" IsChecked="{Binding ContactOpponent}" />
+                    <CheckBox Content="the opponent's cards too" IsChecked="{Binding ContactOpponent}" Margin="0,0,12,0" />
+                    <CheckBox Content="to the opponent's Main Monster Zone" IsChecked="{Binding ContactToOpponent}" Margin="0,0,12,0"
+                              ToolTip.Tip="Lava Golem, Steelcage of the Sun God: Special Summoned to your opponent's Main Monster Zone" />
+                    <CheckBox Content="then you can only Special Summon once more this turn" IsChecked="{Binding ContactOneMoreSummon}"
+                              ToolTip.Tip="&quot;..., but if you Special Summon this card with the second method, you can only Special Summon once for the rest of this turn&quot;" />
                   </WrapPanel>
                   <ComboBox ItemsSource="{Binding ContactRuleOptions}" SelectedItem="{Binding ContactRuleChoice}" HorizontalAlignment="Stretch" />
                   <TextBlock Text="{Binding ContactText}" TextWrapping="Wrap" FontStyle="Italic" />
