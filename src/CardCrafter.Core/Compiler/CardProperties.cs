@@ -161,6 +161,12 @@ public static class CardProperties
             IsText: "that battled this turn", IsNotText: "that has not battled this turn"),
         new("changed_atk", "ATK differs from its original ATK", PropertyKind.State, "c:GetAttack()~=c:GetBaseAttack()", "", Guard: "c:IsType(TYPE_MONSTER)",
             IsText: "whose ATK is different from its original ATK", IsNotText: "whose ATK is the same as its original ATK"),
+        // Gizmek Taniguku: "a Machine monster whose ATK equals its own DEF" (aux.AtkEqualsDef: not a Link Monster, ATK equal to DEF).
+        new("atk_eq_def", "ATK equals its own DEF", PropertyKind.State, "aux.AtkEqualsDef(c)", "", Guard: "c:IsType(TYPE_MONSTER)",
+            IsText: "whose ATK equals its own DEF", IsNotText: "whose ATK does not equal its own DEF"),
+        // Heretic Eradicator: "monsters that cannot be Normal Summoned/Set" (a Ritual, Extra Deck or Special Summon-only monster).
+        new("not_summonable", "Cannot be Normal Summoned/Set", PropertyKind.State, "not c:IsSummonableCard()", "", Guard: "c:GetOriginalType()&TYPE_MONSTER~=0",
+            IsText: "that cannot be Normal Summoned/Set", IsNotText: "that can be Normal Summoned/Set"),
         new("is_linked", "Is linked (Link Arrows)", PropertyKind.State, "c:IsLinkState()", "", IsText: "that is linked", IsNotText: "that is not linked"),
         // The engine only tells how many kinds of counters a card has (GetCounter(0)), not how many counters: a yes/no.
         new("counters", "Has a counter on it", PropertyKind.State, "c:GetCounter(0)>0", "", IsText: "that has a counter on it", IsNotText: "that has no counters on it"),
@@ -211,6 +217,9 @@ public static class CardProperties
             IsText: "with the same original name as that card", IsNotText: "with a different original name", NeedsEffect: true),
         new("ref_atk_le", "ATK at most that card's ATK (target, cost...)", PropertyKind.Options, "", "ATK", Guard: "c:IsType(TYPE_MONSTER)", Choices: Blocks.CardRefs.RequirementChoices(),
             IsText: "with ATK less than or equal to that monster's ATK", IsNotText: "with more ATK than that monster", NeedsEffect: true),
+        // Necromancer of Dragon Magic: "a non-Fusion Monster in your GY whose name is mentioned on the revealed monster".
+        new("ref_mentioned", "Its name is mentioned on that card (target, cost...)", PropertyKind.Options, "", "name", Choices: Blocks.CardRefs.RequirementChoices(),
+            IsText: "whose name is mentioned on that monster", IsNotText: "whose name is not mentioned on that monster", NeedsEffect: true),
         // A card a "Remember" block of this card remembers (it carries the Memory's flag: Blocks/Memory.cs).
         new("remembered", "Remembered by this card (Memory A-E)", PropertyKind.Options, "", "memory",
             Choices: Blocks.Memory.Slots.Select((s, i) => ((long)i, "Memory " + s.Value, Blocks.Memory.RequirementLua(i))).ToArray(),

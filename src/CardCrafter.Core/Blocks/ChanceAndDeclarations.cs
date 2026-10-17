@@ -398,7 +398,7 @@ public sealed class DeclareAction : ActionBlock
     public override string Id => BlockId;
     public override string Group => "Chance";
     public override string Name => "Declare a card name, Type, Attribute, Level or card type";
-    public override string Sentence => "Declare {what} {min} {max}";
+    public override string Sentence => "Declare {what} {min} {max} {names}";
     public override string Help => "Declared when the effect is activated (before the semicolon). Then add a requirement \"has the declared ...\" to a card " +
                                    "picker, like \"destroy all monsters with the declared Type\", or use \"Cards with the declared name cannot be used\".";
     public override IReadOnlyList<ParamSpec> Params { get; } =
@@ -408,10 +408,34 @@ public sealed class DeclareAction : ActionBlock
             new("level", "a Level from", "a Level"), new("type", "1 card type (Monster, Spell, or Trap)")),
         ParamSpec.Int("min", "From", 1, 1, 12).ShowIf(b => b.Values.GetValueOrDefault("what") == "level"),
         ParamSpec.Int("max", "To", 12, 1, 12).ShowIf(b => b.Values.GetValueOrDefault("what") == "level"),
+        // Ars Magna Academic Arcane Apparition Acropolis: "declare 1 "Ars Magna" Link Monster Card name that has not been
+        // declared for "..." this turn": only the names of the cards picked below (the ones there are), not one declared before.
+        ParamSpec.Flag("limited", "only the name of a card picked below", false).ShowIf(Names),
+        ParamSpec.Cards("names", "The names of", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.ExtraDeck, CardType = FilterCardType.Monster })
+            .Unprinted().WhenUsed().ShowIf(b => Names(b) && b.Values.GetValueOrDefault("limited") == "true"),
+        ParamSpec.Flag("fresh", "that has not been declared for this card this turn", false).ShowIf(Names),
     ];
+
+    private static bool Names(BlockInstance b) => b.Values.GetValueOrDefault("what", "name") is "name" or "monster_name";
+
+    /// <summary>"1 "Ars Magna" Link Monster Card name", "1 Spell Card name": the names the declaration may be.</summary>
+    private static string LimitedNoun(BlockArgs args)
+    {
+        var words = Text.FilterText.Describe(args.Cards("names"), args.Pack, withLocation: false, ownName: args.CardName);
+        if (words.EndsWith(" monster", StringComparison.Ordinal) || words == "monster") words = words[..^"monster".Length] + "Monster Card";
+        else if (words.EndsWith("Monster", StringComparison.Ordinal) || words.EndsWith("Spell", StringComparison.Ordinal) || words.EndsWith("Trap", StringComparison.Ordinal)
+                 || words.EndsWith("Spell/Trap", StringComparison.Ordinal)) words += " Card";
+        return $"1 {words} name";
+    }
 
     public override string Describe(BlockArgs args)
     {
+        if (Names(args.Instance) && (args.Bool("limited") || args.Bool("fresh")))
+        {
+            var noun = args.Bool("limited") ? LimitedNoun(args) : args.Describe("what");
+            var name = args.CardName is { Length: > 0 } n ? $"\"{n}\"" : "this card";
+            return "declare " + noun + (args.Bool("fresh") ? $" that has not been declared for {name} this turn" : "");
+        }
         if (args.Choice("what") != "level") return "declare " + args.Describe("what");
         var (min, max) = (Math.Min(args.Int("min"), args.Int("max")), Math.Max(args.Int("min"), args.Int("max")));
         return $"declare a Level from {min.ToString(CultureInfo.InvariantCulture)} to {max.ToString(CultureInfo.InvariantCulture)}";
@@ -445,9 +469,61 @@ public sealed class DeclareAction : ActionBlock
             "type" => ("HINTMSG_CARDTYPE", "1<<Duel.AnnounceType(tp)"),
             _ => ("HINTMSG_CODE", "Duel.AnnounceCard(tp)"),
         };
+        var limited = Names(ctx.Args.Instance) && ctx.Args.Bool("limited");
+        var fresh = Names(ctx.Args.Instance) && ctx.Args.Bool("fresh");
+        if (limited || fresh)
+        {
+            // The names it may be, as the announce filter's opcodes: those of the cards picked, and none declared this turn.
+            var lines = new List<string> { "local used=s.ccdecl and s.ccdecl[tp] and s.ccdecl[tp][Duel.GetTurnCount()] or {}", "local t={}" };
+            if (limited)
+            {
+                var f = ctx.Script.Filter(ctx.Args.Cards("names"), null, "declfilter");
+                lines.AddRange(
+                [
+                    "local seen={}",
+                    $"for tc in aux.Next(Duel.GetMatchingGroup({f.Function},tp,{f.Self},{f.Opp},nil,e,tp)) do",
+                    "\tlocal code=tc:GetCode()",
+                    $"\tif not seen[code]{(fresh ? " and not used[code]" : "")} then",
+                    "\t\tseen[code]=true",
+                    "\t\ttable.insert(t,code)",
+                    "\t\ttable.insert(t,OPCODE_ISCODE)",
+                    "\t\tif #t>2 then table.insert(t,OPCODE_OR) end",
+                    "\tend",
+                    "end",
+                ]);
+            }
+            else
+            {
+                if (what == "monster_name") lines.AddRange(["table.insert(t,TYPE_MONSTER)", "table.insert(t,OPCODE_ISTYPE)"]);
+                lines.AddRange(
+                [
+                    "for code,_ in pairs(used) do",
+                    "\ttable.insert(t,code)",
+                    "\ttable.insert(t,OPCODE_ISCODE)",
+                    "\ttable.insert(t,OPCODE_NOT)",
+                    "\tif #t>3 then table.insert(t,OPCODE_AND) end",
+                    "end",
+                ]);
+            }
+            lines.Add("return t");
+            var names = ctx.Script.AddFunction("declnames", "e,tp", lines);
+            if (limited) e.TargetChecks.Add($"#{names}(e,tp)>0");
+            var t = e.NewLocal("dt");
+            e.TargetLines.Add($"local {t}={names}(e,tp)");
+            announce = $"(#{t}>0 and Duel.AnnounceCard(tp,table.unpack({t})) or {announce})";
+        }
         e.TargetLines.Add($"Duel.Hint(HINT_SELECTMSG,tp,{hint})");
         e.TargetLines.Add($"local {v}={announce}");
         e.TargetLines.Add($"Duel.SetTargetParam({v})");
+        // Remembered for the turn, by player: "that has not been declared for this card this turn".
+        if (fresh)
+            e.TargetLines.AddRange(
+            [
+                "s.ccdecl=s.ccdecl or {}",
+                "s.ccdecl[tp]=s.ccdecl[tp] or {}",
+                "s.ccdecl[tp][Duel.GetTurnCount()]=s.ccdecl[tp][Duel.GetTurnCount()] or {}",
+                $"s.ccdecl[tp][Duel.GetTurnCount()][{v}]=true",
+            ]);
         if (what is "name" or "monster_name") e.TargetLines.Add("Duel.SetOperationInfo(0,CATEGORY_ANNOUNCE,nil,0,tp,0)");
         Chance.Declare(e, KindOf(what));
     }

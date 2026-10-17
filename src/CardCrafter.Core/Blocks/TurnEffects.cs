@@ -120,10 +120,14 @@ public sealed class TurnPlayerRuleAction : ActionBlock
             new("opp_double_battle", "battle damage your opponent takes is doubled"),
             new("opp_half_battle", "battle damage your opponent takes is halved"),
             new("reflect", "effect damage you would take is inflicted to your opponent instead"),
-            new("opp_no_battle", "your opponent takes no battle damage")),
+            new("opp_no_battle", "your opponent takes no battle damage"),
+            new("reveal_hand", "you must keep your hand revealed"),
+            // The Secret Crane Princess Who Returns A Favor: "you must keep your hand revealed during this Main Phase".
+            new("reveal_hand_main", "you must keep your hand revealed during this Main Phase", "(this Main Phase only) you must keep your hand revealed")),
     ];
 
-    public override string Describe(BlockArgs args) => $"for the rest of this turn, {args.Describe("rule")}";
+    public override string Describe(BlockArgs args) =>
+        args.Choice("rule") == "reveal_hand_main" ? "you must keep your hand revealed during this Main Phase" : $"for the rest of this turn, {args.Describe("rule")}";
 
     public override void Compile(BlockContext ctx)
     {
@@ -156,6 +160,22 @@ public sealed class TurnPlayerRuleAction : ActionBlock
                 Player("EFFECT_NO_EFFECT_DAMAGE", "1", "0", null);
                 break;
             case "half": Player("EFFECT_CHANGE_DAMAGE", "1", "0", Fn("halfdamval", "return math.floor(val/2)")); break;
+            case "reveal_hand" or "reveal_hand_main":
+            {
+                // Your hand is public (EFFECT_PUBLIC) until the end of the turn, or of the Main Phase it is used in.
+                var reset = ctx.Args.Choice("rule") == "reveal_hand" ? "RESET_PHASE+PHASE_END"
+                    : "RESET_PHASE+((Duel.GetCurrentPhase()==PHASE_MAIN1 or Duel.GetCurrentPhase()==PHASE_MAIN2) and Duel.GetCurrentPhase() or PHASE_END)";
+                lines.AddRange(
+                [
+                    "local rh=Effect.CreateEffect(e:GetHandler())",
+                    "rh:SetType(EFFECT_TYPE_FIELD)",
+                    "rh:SetCode(EFFECT_PUBLIC)",
+                    "rh:SetTargetRange(LOCATION_HAND,0)",
+                    $"rh:SetReset({reset})",
+                    "Duel.RegisterEffect(rh,tp)",
+                ]);
+                break;
+            }
             case "opp_double_battle": Player("EFFECT_CHANGE_DAMAGE", "0", "1", Fn("doubledamval", "if bit.band(r,REASON_BATTLE)~=0 then return val*2 end return val")); break;
             case "opp_half_battle": Player("EFFECT_CHANGE_DAMAGE", "0", "1", Fn("halfbattleval", "if bit.band(r,REASON_BATTLE)~=0 then return math.floor(val/2) end return val")); break;
             default: Player("EFFECT_REFLECT_DAMAGE", "1", "0", Fn("reflectval", "return bit.band(r,REASON_EFFECT)~=0")); break;

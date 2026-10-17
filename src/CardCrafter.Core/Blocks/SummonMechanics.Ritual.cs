@@ -102,19 +102,25 @@ public static class SummonedMonsterAfter
 /// Normal Monsters from your Deck to the GY" (Advanced Ritual Art), "whose total ATK equal or exceed its ATK" (Drytron),
 /// "by Tributing 1 monster whose Level ...", "Ritual Summon this card". Written as the engine's own Ritual helpers do it.
 /// </summary>
-public sealed class RitualSummonAction : ActionBlock
+public sealed partial class RitualSummonAction : ActionBlock
 {
     public const string BlockId = "do.ritual_summon";
     public override string Id => BlockId;
     public override string Group => "Summon";
     public override string Name => "Ritual Summon a monster";
-    public override string Sentence => "Ritual Summon 1 {cards}, by {source} (monsters used: {mats}; from the other place: {mats2}), whose total {stat} {how} its own (at most {max} monsters){after}";
+    public override string Sentence => "Ritual Summon {number} {cards}, by {source} (monsters used: {mats}; from the other place: {mats2}), whose total {stat} {how} its own (at most {max} monsters){after}";
     public override string Help => "A Ritual Spell's effect (or any card's, like Mitsurugi Magatama). Pick where the Ritual Monster can come from " +
                                    "(hand, Deck, GY, banishment, or this card itself), what is used to Summon it (Tributes, monsters banished from the GY, " +
                                    "sent from the Deck...), and whether their Levels or their ATK are added up.";
 
     /// <summary>The ways to pay for the Summon whose second kind of material has its own picker.</summary>
-    private static bool HasSecond(string source) => source is "hand_field_gy" or "hand_field_deck" or "hand_field_extra" or "hand_field_opponent";
+    private static bool HasSecond(string source) => source is "hand_field_gy" or "hand_field_deck" or "hand_field_extra" or "hand_field_opponent" or "hand_field_gy_deck";
+
+    /// <summary>The ways whose materials from the GY are shuffled into the Deck (Reindsurm).</summary>
+    private static bool Shuffles(string source) => source is "hand_field_gy_deck" or "gy_deck" or "gys_deck";
+
+    /// <summary>"Ritual Summon any number of Insect Ritual Monsters": only by shuffling monsters from the GY(s) into the Deck.</summary>
+    private static bool AnyNumberOf(BlockInstance b) => b.Values.GetValueOrDefault("number") == "any" && b.Values.GetValueOrDefault("source") is "gy_deck" or "gys_deck";
 
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
@@ -131,7 +137,15 @@ public sealed class RitualSummonAction : ActionBlock
             new("deck", "sending monsters from your Deck to the GY"),
             new("hand_field_deck", "Tributing from your hand or field, and/or sending from your Deck to the GY"),
             new("hand_field_extra", "Tributing from your hand or field, and/or sending from your Extra Deck to the GY"),
-            new("hand_field_opponent", "Tributing from your hand or field, and/or face-up monsters your opponent controls")),
+            new("hand_field_opponent", "Tributing from your hand or field, and/or face-up monsters your opponent controls"),
+            // Reindsurm Amurusa: "by Tributing monsters from your hand or field, and/or shuffling Insect and/or Dragon monsters from your GY into the Deck".
+            new("hand_field_gy_deck", "Tributing from your hand or field, and/or shuffling from your GY into the Deck"),
+            new("gy_deck", "shuffling monsters from your GY into the Deck"),
+            // Reindsurm Conquest: "shuffle Insect and/or Dragon monsters from the GY(s) into the Deck".
+            new("gys_deck", "shuffling monsters from either GY into the Deck")),
+        // Reindsurm Conquest: "Ritual Summon any number of Insect Ritual Monsters", whose total Levels the materials' equal or exceed.
+        ParamSpec.Choice("number", "How many Ritual Monsters", new("one", "", "1"), new("any", "", "any number (by shuffling from the GY into the Deck)"))
+            .ShowIf(b => b.Values.GetValueOrDefault("source") is "gy_deck" or "gys_deck"),
         ParamSpec.Cards("mats2", "Monsters banished, sent or taken from the other place", () => new CardFilter { CardType = FilterCardType.Monster }, Zone.MonsterZone)
             .ShowIf(b => HasSecond(b.Values.GetValueOrDefault("source") ?? "hand_field")),
         ParamSpec.Choice("stat", "Added up", new("level", "Levels", "Levels (its Level)"), new("original", "Levels", "Levels (its original Level)"), new("atk", "ATK", "ATK (its ATK)")),
@@ -167,7 +181,9 @@ public sealed class RitualSummonAction : ActionBlock
     public override string Describe(BlockArgs args)
     {
         var ritual = Ritual(args);
-        var who = ritual.ThisCard ? "this card" : $"1 {FilterText.Describe(ritual, args.Pack, withLocation: false)} {From(ritual.Zones)}";
+        var many = AnyNumberOf(args.Instance) && !ritual.ThisCard;
+        var who = ritual.ThisCard ? "this card" : many ? $"any number of {FilterText.Describe(ritual, args.Pack, plural: true, withLocation: false)} {From(ritual.Zones)}"
+            : $"1 {FilterText.Describe(ritual, args.Pack, withLocation: false)} {From(ritual.Zones)}";
         var max = args.Int("max");
         string M(string key)
         {
@@ -187,8 +203,12 @@ public sealed class RitualSummonAction : ActionBlock
             "hand_field_deck" => $"Tributing {m} from your hand or field, and/or sending {m2} from your Deck to the GY,",
             "hand_field_extra" => $"Tributing {m} from your hand or field, and/or sending {m2} from your Extra Deck to the GY,",
             "hand_field_opponent" => $"Tributing {m} from your hand or field, and/or face-up {m2} your opponent controls,",
+            "hand_field_gy_deck" => $"Tributing {m} from your hand or field, and/or shuffling {m2} from your GY into the Deck,",
+            "gy_deck" => $"shuffling {m} from your GY into the Deck",
+            "gys_deck" => $"shuffling {m} from the GY(s) into the Deck",
             _ => $"Tributing {m} from your hand or field",
         };
+        if (many) return $"Ritual Summon {who}, by {by} whose total Levels {args.Describe("how")} the total Levels of the Ritual Monsters{args.Describe("after")}";
         return $"Ritual Summon {who}, by {by} {Compare(args, ritual)}{args.Describe("after")}";
     }
 
@@ -252,13 +272,19 @@ public sealed class RitualSummonAction : ActionBlock
             ctx.Effect.Error("A Ritual Summon by total ATK Tributes monsters from the hand or field only.");
             return;
         }
+        if (AnyNumberOf(a.Instance))
+        {
+            if (ritual.ThisCard) { ctx.Effect.Error("\"Ritual Summon any number of\" Summons Ritual Monsters from where you pick, not this card."); return; }
+            CompileMany(ctx, loc, rf);
+            return;
+        }
 
         // The materials: the ones the engine checks as Ritual Material (hand, field, the opponent's field), and the
         // extra ones (GY, Deck, Extra Deck) that are merged in as they are, like the engine's Ritual helpers do.
         var mats = a.Cards("mats");
         var second = HasSecond(source) ? a.Cards("mats2") : mats;
         string mat;
-        if (source is "gy" or "deck") mat = script.AddFunction("ritmat", "e,tp", ["return Group.CreateGroup()"]);
+        if (source is "gy" or "deck" or "gy_deck" or "gys_deck") mat = script.AddFunction("ritmat", "e,tp", ["return Group.CreateGroup()"]);
         else
         {
             var conds = Conds(mats);
@@ -280,12 +306,13 @@ public sealed class RitualSummonAction : ActionBlock
             "hand_field_gy" or "gy" => ("LOCATION_GRAVE", new[] { "c:GetLevel()>0", "c:IsType(TYPE_MONSTER)", "c:IsAbleToRemove()" }),
             "deck" or "hand_field_deck" => ("LOCATION_DECK", ["c:IsType(TYPE_MONSTER)", "c:IsLevelAbove(1)", "c:IsAbleToGrave()"]),
             "hand_field_extra" => ("LOCATION_EXTRA", ["c:IsType(TYPE_MONSTER)", "c:IsLevelAbove(1)", "c:IsAbleToGrave()"]),
+            "hand_field_gy_deck" or "gy_deck" or "gys_deck" => ("LOCATION_GRAVE", ["c:GetLevel()>0", "c:IsType(TYPE_MONSTER)", "c:IsAbleToDeck()"]),
             _ => ((string?)null, Array.Empty<string>()),
         };
         if (extraLoc is not null)
         {
             var xf = script.AddFunction("ritexfilter", "c,e,tp", [$"return {Join([.. extraTest, .. Conds(second)])}"]);
-            extra = script.AddFunction("ritextra", "e,tp", [$"return Duel.GetMatchingGroup({xf},tp,{extraLoc},0,nil,e,tp)"]);
+            extra = script.AddFunction("ritextra", "e,tp", [$"return Duel.GetMatchingGroup({(Shuffles(source) ? $"aux.NecroValleyFilter({xf})" : xf)},tp,{extraLoc},{(source == "gys_deck" ? extraLoc : "0")},nil,e,tp)"]);
         }
 
         // "by Tributing 1 monster" / "up to 2 monsters": the engine's extra group checks.
@@ -403,6 +430,16 @@ public sealed class RitualSummonAction : ActionBlock
             "\tmat:Sub(dmat)",
             "\tDuel.SendtoGrave(dmat,REASON_EFFECT+REASON_MATERIAL+REASON_RITUAL)",
             "end",
+            // The GY's are shuffled into the Deck instead (Reindsurm).
+            .. Shuffles(source) ? new[]
+            {
+                "local gmat=mat:Filter(Card.IsLocation,nil,LOCATION_GRAVE)",
+                "if #gmat>0 then",
+                "\tmat:Sub(gmat)",
+                "\tDuel.HintSelection(gmat)",
+                "\tDuel.SendtoDeck(gmat,nil,SEQ_DECKSHUFFLE,REASON_EFFECT+REASON_MATERIAL+REASON_RITUAL)",
+                "end",
+            } : [],
             "if #mat>0 then Duel.ReleaseRitualMaterial(mat) end",
             "Duel.BreakEffect()",
             "Duel.SpecialSummon(tc,SUMMON_TYPE_RITUAL,tp,tp,false,true,POS_FACEUP)",
@@ -412,8 +449,9 @@ public sealed class RitualSummonAction : ActionBlock
         ]);
 
         ctx.Effect.AddCategory("CATEGORY_SPECIAL_SUMMON");
-        if (source is not ("gy" or "deck")) ctx.Effect.AddCategory("CATEGORY_RELEASE");
+        if (source is not ("gy" or "deck" or "gy_deck" or "gys_deck")) ctx.Effect.AddCategory("CATEGORY_RELEASE");
         if (source is "gy" or "hand_field_gy") ctx.Effect.AddCategory("CATEGORY_REMOVE");
+        if (Shuffles(source)) ctx.Effect.AddCategory("CATEGORY_TODECK");
         if (source is "deck" or "hand_field_deck") ctx.Effect.AddCategory("CATEGORY_DECKDES");
         ctx.Effect.TargetChecks.Add($"{target}(e,tp)");
         ctx.Effect.TargetLines.Add($"Duel.SetOperationInfo(0,CATEGORY_SPECIAL_SUMMON,nil,1,tp,{loc})");
@@ -425,6 +463,67 @@ public sealed class RitualSummonAction : ActionBlock
             $"local {rc1}={op}(e,tp)",
             $"local {r}={rc1} and 1 or 0",
             .. after.Count == 0 ? Array.Empty<string>() : [$"if {rc1} then", .. after.Select(l => "\t" + l), "end"],
+        ], r, ctx.Link);
+    }
+}
+
+public sealed partial class RitualSummonAction
+{
+    /// <summary>
+    /// Reindsurm Conquest: "Ritual Summon any number of Insect Ritual Monsters, by shuffling Insect and/or Dragon monsters
+    /// from the GY(s) into the Deck whose total Levels equal or exceed the total Levels of the Ritual Monsters", as its script
+    /// does it: the Ritual Monsters are picked first, then materials with at least their total Levels.
+    /// </summary>
+    private static void CompileMany(BlockContext ctx, string loc, string rf)
+    {
+        var a = ctx.Args;
+        var script = ctx.Script;
+        var both = a.Choice("source") == "gys_deck";
+        var equal = a.Choice("how") == "equal";
+        var conds = FilterCompiler.Conditions(a.Cards("mats")).Where(c => c != "c:IsType(TYPE_MONSTER)").ToList();
+        var mf = script.AddFunction("ritmanymat", "c,e,tp", [$"return {string.Join(" and ", ["c:IsType(TYPE_MONSTER)", "c:GetLevel()>0", "c:IsAbleToDeck()", .. conds])}"]);
+        var mats = $"Duel.GetMatchingGroup(aux.NecroValleyFilter({mf}),tp,LOCATION_GRAVE,{(both ? "LOCATION_GRAVE" : "0")},nil,e,tp)";
+        var sf = script.AddFunction("ritmanyfilter", "c,e,tp,lv",
+            [$"return bit.band(c:GetType(),0x81)==0x81 and c:IsLevelBelow(lv){(rf == "nil" ? "" : $" and {rf}(c,e,tp,true)")} and c:IsCanBeSpecialSummoned(e,SUMMON_TYPE_RITUAL,tp,false,true)"]);
+        // Summoned together: as many as there are zones (1 under Blue-Eyes Spirit Dragon), whose total Levels the materials can pay.
+        var gcheck = script.AddFunction("ritmanycheck", "g,lv", ["return g:GetSum(Card.GetLevel)<=lv"]);
+        ctx.Effect.AddCategory("CATEGORY_SPECIAL_SUMMON");
+        ctx.Effect.AddCategory("CATEGORY_TODECK");
+        ctx.Effect.TargetChecks.Add("Duel.GetLocationCount(tp,LOCATION_MZONE)>0");
+        var mg0 = ctx.Effect.NewLocal("mg");
+        ctx.Effect.TargetChecks.Add($"(function(mg) return #mg>0 and Duel.IsExistingMatchingCard({sf},tp,{loc},0,1,nil,e,tp,mg:GetSum(Card.GetLevel)) end)({mats})");
+        ctx.Effect.TargetLines.Add($"Duel.SetOperationInfo(0,CATEGORY_SPECIAL_SUMMON,nil,1,tp,{loc})");
+        ctx.Effect.TargetLines.Add($"Duel.SetOperationInfo(0,CATEGORY_TODECK,nil,1,{(both ? "PLAYER_ALL" : "tp")},LOCATION_GRAVE)");
+        var (sg, tg, fm, ct, r) = (ctx.Effect.NewLocal("sg"), ctx.Effect.NewLocal("tg"), ctx.Effect.NewLocal("fm"), ctx.Effect.NewLocal("ct"), ctx.Effect.NewLocal("r"));
+        var pick = equal ? $"{mg0}:SelectWithSumEqual(tp,Card.GetLevel,{tg}:GetSum(Card.GetLevel),1,#{mg0})" : $"{mg0}:SelectWithSumGreater(tp,Card.GetLevel,{tg}:GetSum(Card.GetLevel))";
+        ctx.Effect.AddStep(
+        [
+            $"local {r}=0",
+            $"local {ct}=Duel.GetLocationCount(tp,LOCATION_MZONE)",
+            $"local {mg0}={mats}",
+            $"if {ct}>0 and #{mg0}>0 then",
+            $"	local {sg}=Duel.GetMatchingGroup(aux.NecroValleyFilter({sf}),tp,{loc},0,nil,e,tp,{mg0}:GetSum(Card.GetLevel))",
+            $"	if Duel.IsPlayerAffectedByEffect(tp,59822133) then {ct}=1 end",
+            $"	if #{sg}>0 then",
+            "		Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_SPSUMMON)",
+            $"		local {tg}={sg}:SelectSubGroup(tp,{gcheck},false,1,math.min({ct},#{sg}),{mg0}:GetSum(Card.GetLevel))",
+            $"		if {tg} and #{tg}>0 then",
+            "			Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_TODECK)",
+            $"			local {fm}={pick}",
+            $"			if {fm} and #{fm}>0 then",
+            $"				for sc in aux.Next({tg}) do sc:SetMaterial({fm}) end",
+            $"				Duel.HintSelection({fm})",
+            $"				Duel.SendtoDeck({fm},nil,SEQ_DECKSHUFFLE,REASON_EFFECT+REASON_MATERIAL+REASON_RITUAL)",
+            "				Duel.BreakEffect()",
+            $"				for sc in aux.Next({tg}) do",
+            $"					if Duel.SpecialSummonStep(sc,SUMMON_TYPE_RITUAL,tp,tp,false,true,POS_FACEUP) then {r}={r}+1 end",
+            "					sc:CompleteProcedure()",
+            "				end",
+            "				Duel.SpecialSummonComplete()",
+            "			end",
+            "		end",
+            "	end",
+            "end",
         ], r, ctx.Link);
     }
 }
@@ -451,7 +550,8 @@ public sealed class FusionSummonAction : ActionBlock
                                    "from each place (Splendor of the Winter Raven Witch); \"If Summoning ...\" lets some Fusion Monsters use more materials (Invocation).";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
-        ParamSpec.Cards("cards", "Fusion Monster", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.ExtraDeck, CardType = FilterCardType.Monster, MonsterKind = MonsterKind.Fusion }, Zone.ExtraDeck),
+        // Necromancer of Dragon Magic: "Fusion Summon the revealed Fusion Monster": "that card" is the one revealed for the cost.
+        ParamSpec.Cards("cards", "Fusion Monster", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.ExtraDeck, CardType = FilterCardType.Monster, MonsterKind = MonsterKind.Fusion }, Zone.ExtraDeck).ThatCards(),
         ParamSpec.Choice("mats", "Materials",
             new("hand_field", "using monsters from your hand or field as Fusion Material"),
             new("field", "using monsters you control as Fusion Material"),
@@ -573,7 +673,11 @@ public sealed class FusionSummonAction : ActionBlock
         }
         var self = args.Bool("self") ? ", including this card" : "";
         var including = args.Bool("including") ? ", including " + Article(FilterText.Describe(Including(args), args.Pack, withLocation: false)) + " you control" : "";
-        var text = $"Fusion Summon 1 {fusion} from your Extra Deck, {how}{self}{including}{args.Describe("after")}";
+        var that = args.Cards("cards").That;
+        // "Fusion Summon the revealed Fusion Monster".
+        var which = that == CardRef.None ? $"1 {fusion} from your Extra Deck"
+            : CardRefs.Words(args, args.Cards("cards")) is var w && w.EndsWith(" monster", StringComparison.Ordinal) ? w[..^" monster".Length] + " Fusion Monster" : w;
+        var text = $"Fusion Summon {which}, {how}{self}{including}{args.Describe("after")}";
         // ". If Summoning an "Invoked" Fusion Monster this way, you can also banish monsters from your field and/or either player's GY as material".
         if (Also(args) != "none")
             text += $". If Summoning {Article(FilterText.Describe(Fusion(args, "alsocards"), args.Pack, withLocation: false))} this way, you can also {args.Definition.Param("also")!.Choices.First(c => c.Value == Also(args)).Label}";
@@ -717,6 +821,12 @@ public sealed class FusionSummonAction : ActionBlock
         var whole = fcheck is not null || fgoal is not null;
 
         var fusConds = FilterCompiler.Conditions(Fusion(ctx.Args)).Where(c => c is not "c:IsType(TYPE_MONSTER)" and not "c:IsType(TYPE_FUSION)").ToList();
+        // "The revealed Fusion Monster": only that card, once it is known (it is when the effect resolves).
+        if (ctx.Args.Cards("cards").That is var that and not CardRef.None)
+        {
+            if (CardRefs.GroupLua(ctx, that) is null) return;
+            fusConds.Add($"(function(rg) if not rg then return true end return rg:IsContains(c) end)({CardRefs.GuardedGroup(that)})");
+        }
         string FusFilter(string name, List<string> conds)
         {
             var head = Join(["c:IsType(TYPE_FUSION)", .. conds, "(not f or f(c))", "c:IsCanBeSpecialSummoned(e,SUMMON_TYPE_FUSION,tp,false,false)"]);

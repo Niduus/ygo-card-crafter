@@ -130,11 +130,14 @@ public class ValueMatrixTests
     // "That amount", a die roll's result and a toss's heads only exist while an effect resolves: their own tests play them
     // (this file for "that amount", ChanceAndDeclarationTests for the die and the coin).
     // What this card remembers needs a block that remembers it first: MemoryTests plays those.
-    public static IEnumerable<object[]> SourceKeys() => ValueSources.Sources.Where(o => !ValueSources.AtResolution(o.Value) && !ValueSources.Remembered(o.Value)).Select(o => new object[] { o.Value });
+    // A monster's own ATK or DEF now is only read as an effect resolves ("double this card's ATK"): NameAndRitualTests plays it.
+    private static bool Played(string v) => !ValueSources.AtResolution(v) && !ValueSources.Remembered(v) && v is not ("its_atk" or "its_def");
+
+    public static IEnumerable<object[]> SourceKeys() => ValueSources.Sources.Where(o => Played(o.Value)).Select(o => new object[] { o.Value });
 
     [Fact]
     public void EverySource_HasABoard() =>
-        Assert.Equal(ValueSources.Sources.Select(o => o.Value).Where(v => !ValueSources.AtResolution(v) && !ValueSources.Remembered(v)).OrderBy(v => v), Sources.Keys.OrderBy(v => v));
+        Assert.Equal(ValueSources.Sources.Select(o => o.Value).Where(Played).OrderBy(v => v), Sources.Keys.OrderBy(v => v));
 
     private static EngineScenario Scenario(Source src, BlockInstance block, bool action)
     {

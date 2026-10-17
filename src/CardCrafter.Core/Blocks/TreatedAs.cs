@@ -343,7 +343,7 @@ public sealed class MaterialTreatedAsPassive : PassiveBlock
     public override string Id => BlockId;
     public override string Group => "This card";
     public override string Name => "This card can be treated as a Level, non-Tuner, Fusion substitute... as material";
-    public override string Sentence => "As material, this card can be treated as {kind} {level} {level2} for {for} {where}";
+    public override string Sentence => "As material, this card can be treated as {kind} {level} {level2} for {for} {where} {name}";
     public override string Help => "Leave the monster being Summoned as plain monsters for any. Put it under \"While this card is face-up\".";
 
     private static bool IsKind(BlockInstance b, params string[] kinds) => kinds.Contains(b.Values.GetValueOrDefault("kind", "xyz_level"));
@@ -356,7 +356,9 @@ public sealed class MaterialTreatedAsPassive : PassiveBlock
             new("nontuner", "a non-Tuner", "a non-Tuner for a Synchro Summon"),
             new("ritual_entire", "the entire Tribute", "the entire Tribute for a Ritual Summon"),
             new("fusion_substitute", "a substitute", "a substitute for any 1 Fusion Material whose name is listed"),
-            new("xyz_double", "2 materials", "2 materials for an Xyz Summon that requires 3 or more")),
+            new("xyz_double", "2 materials", "2 materials for an Xyz Summon that requires 3 or more"),
+            // Crowley, the Gifted Magistus: "If this face-up card is used as Fusion Material, its name can be treated as "Aleister the Invoker"".
+            new("fusion_code", "another name", "another card's name, as Fusion Material (picked below)")),
         ParamSpec.Int("level", "Level", 4, 1, 12).ShowIf(b => IsKind(b, "xyz_level", "synchro_level")),
         ParamSpec.Int("level2", "Or Level (0 for none)", 0, 0, 12).ShowIf(b => IsKind(b, "xyz_level")),
         new ParamSpec
@@ -365,7 +367,13 @@ public sealed class MaterialTreatedAsPassive : PassiveBlock
             DefaultFilter = () => new CardFilter { CardType = FilterCardType.Monster },
         },
         ParamSpec.Choice("where", "Where", new("field", "on the field", "while this card is on the field"), new("any", "", "wherever it is used from"))
-            .ShowIf(b => IsKind(b, "synchro_level", "ritual_entire", "fusion_substitute")),
+            .ShowIf(b => IsKind(b, "synchro_level", "ritual_entire", "fusion_substitute", "fusion_code")),
+        new ParamSpec
+        {
+            Key = "name", Label = "Its name can be treated as", Type = ParamType.Cards, WhereFromBlock = true,
+            // "Aleister the Invoker" by default.
+            DefaultFilter = () => new CardFilter { CardType = FilterCardType.Monster, CardCode = 86120751 },
+        }.Unprinted().WhenUsed().ShowIf(b => IsKind(b, "fusion_code")),
     ];
 
     private static string KindOf(BlockArgs args) => args.Choice("kind");
@@ -405,9 +413,14 @@ public sealed class MaterialTreatedAsPassive : PassiveBlock
             "fusion_substitute" => $"this card{(field ? " on the field" : "")} can be used as a substitute for any 1 Fusion Material whose name is specifically listed on " +
                                    $"{(Picks(args) ? Noun(args, MonsterKind.Fusion) : "the Fusion Monster Card")}, but the other Fusion Material(s) must be correct",
             "xyz_double" => $"this card can be treated as 2 materials for the Xyz Summon of {Noun(args, MonsterKind.Xyz)} that requires 3 or more materials",
+            "fusion_code" => $"if this {(field ? "face-up " : "")}card is used as Fusion Material, its name can be treated as {NameText(args)}",
             _ => $"if this card is used for {(Picks(args) ? "the Xyz Summon of " + Noun(args) : "an Xyz Summon")}, it can be treated as a {Levels(args)} monster",
         };
     }
+
+    /// <summary>""Aleister the Invoker"": the name the card can be treated as, or "another card's name" while none is picked.</summary>
+    private static string NameText(BlockArgs args) =>
+        args.Cards("name").CardCode is var code and not 0 ? CardNames.Find(code, args.Pack) is { } n ? $"\"{n}\"" : $"passcode {code}" : "another card's name";
 
     /// <summary>The checks on the monster being Summoned, for the value function's <paramref name="card"/>.</summary>
     private static List<string> Checks(BlockArgs args, string card, MonsterKind drop = MonsterKind.Any)
@@ -507,6 +520,21 @@ public sealed class MaterialTreatedAsPassive : PassiveBlock
                     .. field ? new[] { $"{v}:SetProperty(EFFECT_FLAG_SINGLE_RANGE)", $"{v}:SetRange(LOCATION_MZONE)" } : [],
                     .. con is null ? Array.Empty<string>() : [$"{v}:SetCondition({con})"],
                     .. value is null ? Array.Empty<string>() : [$"{v}:SetValue({value})"],
+                ]);
+                break;
+            }
+            case "fusion_code":
+            {
+                var code = args.Cards("name").CardCode;
+                if (code == 0) { ctx.Effect.Error($"\"{Name}\": pick the card whose name it can be treated as."); return; }
+                // As Crowley, the Gifted Magistus: an extra name its Fusion Material checks see, while it is face-up on the field.
+                var con = field ? ctx.Script.AddFunction("fcodecon", "e", ["local c=e:GetHandler()", "return c:IsLocation(LOCATION_MZONE) and c:IsFaceup()"]) : null;
+                ctx.Effect.AddPassive(v =>
+                [
+                    $"{v}:SetType(EFFECT_TYPE_SINGLE)",
+                    $"{v}:SetCode(EFFECT_ADD_FUSION_CODE)",
+                    .. con is null ? Array.Empty<string>() : [$"{v}:SetCondition({con})"],
+                    $"{v}:SetValue({Lua.Num(code)})",
                 ]);
                 break;
             }

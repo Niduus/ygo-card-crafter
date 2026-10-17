@@ -7,7 +7,10 @@ sb.AppendLine("# Block reference");
 sb.AppendLine();
 sb.AppendLine("Every block you can place on the event sheet. Words in `{braces}` are blanks you fill in on the sheet.");
 sb.AppendLine("Blocks that pick cards open a card picker: whose cards, which zones, card type, monster Type, Attribute, archetype,");
-sb.AppendLine("Level, ATK, face-up, \"other than this card\", and \"only cards this card points to\" for Link monsters.");
+sb.AppendLine("Level, ATK, face-up, \"other than this card\", and \"only cards this card points to\" for Link monsters. Requirements test any");
+sb.AppendLine("property (\"whose ATK equals its own DEF\", \"that cannot be Normal Summoned/Set\"); requirements with the same \"or\" group need only one");
+sb.AppendLine("of them. \"Or another kind of card\" lets a second kind count too (\"1 \"Ancient Gear\" monster or 1 \"Geartown\"\"), and a second");
+sb.AppendLine("Spell/Trap kind gives \"a Normal or Quick-Play Spell\".");
 sb.AppendLine();
 foreach (var (kind, title, intro) in new[]
 {

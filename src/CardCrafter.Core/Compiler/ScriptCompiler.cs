@@ -522,7 +522,7 @@ public static class ScriptCompiler
             CardType = FilterCardType.Monster, MonsterKind = f.MonsterKind, Race = f.Race, Attribute = f.Attribute, Archetype = f.Archetype, Archetype2 = f.Archetype2,
             CardCode = f.CardCode, AltCodes = f.AltCodes, ExceptOwnName = f.ExceptOwnName, ExceptCode = f.ExceptCode, LevelMin = f.LevelMin, LevelMax = f.LevelMax,
             AtkMin = f.AtkMin, AtkMax = f.AtkMax, DefMin = f.DefMin, DefMax = f.DefMax, MentionsCode = f.MentionsCode, MentionsOrIs = f.MentionsOrIs,
-            Requirements = f.Requirements, AnyRequirement = f.AnyRequirement,
+            Requirements = f.Requirements, AnyRequirement = f.AnyRequirement, OrCards = f.OrCards,
         }, hasEffect: false);
         conds.Remove("c:IsType(TYPE_MONSTER)");
         var test = conds.Count == 0 ? "true" : string.Join(" and ", conds);

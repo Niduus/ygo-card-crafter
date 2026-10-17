@@ -217,7 +217,7 @@ public static partial class ScriptTranslator
     ];
 
     private static readonly HashSet<string> MaterialCodes =
-        ["EFFECT_XYZ_LEVEL", "EFFECT_SYNCHRO_LEVEL", "EFFECT_NONTUNER", "EFFECT_RITUAL_LEVEL", "EFFECT_FUSION_SUBSTITUTE", "EFFECT_DOUBLE_XMATERIAL"];
+        ["EFFECT_XYZ_LEVEL", "EFFECT_SYNCHRO_LEVEL", "EFFECT_NONTUNER", "EFFECT_RITUAL_LEVEL", "EFFECT_FUSION_SUBSTITUTE", "EFFECT_DOUBLE_XMATERIAL", "EFFECT_ADD_FUSION_CODE"];
 
     /// <summary>
     /// A piece whose effects all make this card treated as something (or count as material some way): one block, or
@@ -485,6 +485,19 @@ public static partial class ScriptTranslator
                          && Squashed(con, fns) == "return e:GetHandler():IsLocation(LOCATION_HAND+LOCATION_MZONE+LOCATION_GRAVE)") field = false;
                 else throw No("its Fusion substitute applies in places the block doesn't");
                 block = Block(MaterialTreatedAsPassive.BlockId).With("kind", "fusion_substitute").With("where", field ? "field" : "any").With("for", SummonedBy(checks, "c"));
+                break;
+            }
+            // Crowley, the Gifted Magistus: "If this face-up card is used as Fusion Material, its name can be treated as "Aleister the Invoker"."
+            case "EFFECT_ADD_FUSION_CODE":
+            {
+                if (sets.Count != 1 || value is null || !long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var fcode)) throw No("its Fusion Material name is given in a way the block doesn't");
+                bool field;
+                if (Only(set, "Code", "Value")) field = false;
+                else if (Only(set, "Code", "Value", "Condition") && set.GetValueOrDefault("Condition") is { } fcon && Regex.IsMatch(fcon, @"^[\w]+\.\w+$")
+                         && Squashed(fcon, fns) is "local c=e:GetHandler() return c:IsLocation(LOCATION_MZONE) and c:IsFaceup()" or "return c:IsLocation(LOCATION_MZONE) and c:IsFaceup()") field = true;
+                else throw No($"its Fusion Material name applies in places the block doesn't ({Short(set.GetValueOrDefault("Condition") is { } cc ? Squashed(cc, fns) : "")})");
+                block = Block(MaterialTreatedAsPassive.BlockId).With("kind", "fusion_code").With("where", field ? "field" : "any")
+                    .With("name", new CardFilter { CardType = FilterCardType.Monster, CardCode = fcode });
                 break;
             }
             // Drake Shark: "This card can be treated as 2 materials for the Xyz Summon of a WATER Xyz Monster that requires 3 or more materials."

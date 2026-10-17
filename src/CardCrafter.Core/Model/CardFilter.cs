@@ -51,6 +51,8 @@ public enum CardRef
     Equipped,
     /// <summary>The cards whose event started this effect (eg): "1 of those Link Monsters".</summary>
     Event,
+    /// <summary>The attacking monster (Duel.GetAttacker): the one whose attack the effect answers or negated.</summary>
+    Attacker,
 }
 
 public enum MonsterKind
@@ -94,6 +96,8 @@ public sealed class CardFilter
     public bool MentionsOrIs { get; set; }
     public FilterPosition Position { get; set; }
     public SpellTrapKind SpellTrapKind { get; set; }
+    /// <summary>Another kind it may be instead, Any for none: "a Normal or Quick-Play Spell".</summary>
+    public SpellTrapKind SpellTrapKind2 { get; set; }
     public FilterSummoned Summoned { get; set; }
     /// <summary>Only cards in the hand that aren't revealed already: "reveal 1 card in your hand".</summary>
     public bool NotRevealed { get; set; }
@@ -118,10 +122,18 @@ public sealed class CardFilter
     public bool PointedToByThisCard { get; set; }
     /// <summary>Only the monster in the center Main Monster Zone (Elfnote).</summary>
     public bool CenterZone { get; set; }
+    /// <summary>Only cards in this card's column, on either side of the field (Javelin Beetle of the Alliance).</summary>
+    public bool InThisColumn { get; set; }
     /// <summary>Further requirements, each a property compared with a value: "original ATK 2000 or more", "not DARK".</summary>
     public List<CardRequirement> Requirements { get; set; } = [];
     /// <summary>Any one of <see cref="Requirements"/> is enough ("a DARK monster or a Dragon monster"); otherwise all must hold.</summary>
     public bool AnyRequirement { get; set; }
+    /// <summary>
+    /// Another kind of card that counts too: "1 "Ancient Gear" monster or 1 "Geartown"". Only what it says the card is
+    /// counts (its type, name, Attribute, requirements...): where the cards are, face-up or not, and "other" or "except"
+    /// come from this filter and hold for both kinds.
+    /// </summary>
+    public CardFilter? OrCards { get; set; }
 
     /// <summary>The cards are given, not picked: this card itself, or "that card" (<see cref="That"/>).</summary>
     public bool IsSpecific() => ThisCard || That != CardRef.None;
@@ -131,6 +143,7 @@ public sealed class CardFilter
         var copy = (CardFilter)MemberwiseClone();
         copy.AltCodes = [.. AltCodes];
         copy.Requirements = Requirements.Select(r => r.Clone()).ToList();
+        copy.OrCards = OrCards?.Clone();
         return copy;
     }
 

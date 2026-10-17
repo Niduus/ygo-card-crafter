@@ -253,16 +253,41 @@ public static partial class ScriptTranslator
         var reqs = new List<CardRequirement>();
         foreach (var alt in alternatives)
         {
-            if (Normalize(alt) is not { } term || RequirementOf(term) is not { } r || !Proven(r.Proof, null)) return false;
+            if (Normalize(alt) is not { } term || RequirementOf(term) is not { } r || !Proven(r.Proof, null)) return OrCards(alternatives, f);
             reqs.Add(r.Req);
         }
         // The filter's other requirements would join the "or" list: only when they can move into fields.
         Tidy(f);
-        if (f.Requirements.Count > 0 || f.AnyRequirement) return false;
+        if (f.Requirements.Count > 0 || f.AnyRequirement) return OrCards(alternatives, f);
         f.Requirements.AddRange(reqs);
         f.AnyRequirement = true;
         return true;
     }
+
+    /// <summary>
+    /// "(c:IsSetCard(0x7) and c:IsType(TYPE_MONSTER)) or c:IsCode(37694547)": two kinds of cards, "1 "Ancient Gear" monster or
+    /// 1 "Geartown"" (<see cref="CardFilter.OrCards"/>). Each kind may only say what the card is: where it is, face-up and
+    /// "other" are the filter's own, for both.
+    /// </summary>
+    private static bool OrCards(List<string> alternatives, CardFilter f)
+    {
+        if (alternatives.Count != 2 || f.OrCards is not null || f.AnyRequirement || f.IsSpecific()) return false;
+        try
+        {
+            var (one, two) = (f.Clone(), f.Clone());
+            if (!Conjunction(alternatives[0], one) || !Conjunction(alternatives[1], two) || !SameWhere(one, f) || !SameWhere(two, f) || two.OrCards is not null || one.OrCards is not null) return false;
+            Copy(one, f);
+            f.OrCards = two;
+            return true;
+        }
+        catch (Untranslatable) { return false; }
+    }
+
+    /// <summary>The filter says the same about where its cards are and what state they are in.</summary>
+    private static bool SameWhere(CardFilter a, CardFilter b) =>
+        a.Zones == b.Zones && a.Owner == b.Owner && a.FaceUpOnly == b.FaceUpOnly && a.FaceDownOnly == b.FaceDownOnly && a.Position == b.Position
+        && a.NotRevealed == b.NotRevealed && a.ExcludeThisCard == b.ExcludeThisCard && a.ExceptOwnName == b.ExceptOwnName && a.ExceptCode == b.ExceptCode
+        && a.PointedToByThisCard == b.PointedToByThisCard && a.CenterZone == b.CenterZone && a.InThisColumn == b.InThisColumn && a.That == b.That && a.ThisCard == b.ThisCard;
 
     /// <summary>"c:IsRace(A) or c:IsRace(B)" as the one test "c:IsRace(A+B)", the same for codes, archetypes and Levels.</summary>
     private static string? Merged(List<string> alternatives)
@@ -528,6 +553,9 @@ public static partial class ScriptTranslator
             case "c:IsDefensePos()": return Plain(Req("position", isOp, values: 0xc));
             case "c:IsDisabled()": return Plain(Req("negated", isOp));
             case "c:IsLinkState()": return Plain(Req("is_linked", isOp));
+            // Not a monster: neither equal stats nor a monster that can't be Normal Summoned, so "not" needs a monster.
+            case "aux.AtkEqualsDef(c)": return (Req("atk_eq_def", isOp), not ? Proof.Monster : Proof.None);
+            case "c:IsSummonableCard()": return (Req("not_summonable", not ? RequirementOp.Is : RequirementOp.IsNot), not ? Proof.Monster : Proof.None);
         }
         if ((m = Regex.Match(t, @"^c:IsStatus\(([\w+|]+)\)$")).Success && m.Groups[1].Value.Split('+', '|').Order(StringComparer.Ordinal).SequenceEqual(["STATUS_FLIP_SUMMON_TURN", "STATUS_SPSUMMON_TURN", "STATUS_SUMMON_TURN"]))
             return Plain(Req("summoned_turn", isOp));

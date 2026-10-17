@@ -433,8 +433,10 @@ public class EngineTests
             or AttachSelfAction.BlockId
             // Equipping a card to the monster a step before Summoned: ChoicesAndEquipsTests plays it. Taking a target's
             // materials needs an Xyz Monster: ZoneBlockTests; tying a Summoned monster to a Continuous Spell and copying a
-            // Spell sent for the cost need those: RareMechanicsTests.
-            or EquipAction.BlockId or FromMaterialsAction.BlockId or BindAction.BlockId or CopyEffectAction.BlockId)).Select(b => new object[] { b.Id, false })
+            // Spell sent for the cost need those: RareMechanicsTests. Negating by original name needs a step before it, looking
+            // at random cards an opponent's Extra Deck: NameRitualRoundTests plays them.
+            or EquipAction.BlockId or FromMaterialsAction.BlockId or BindAction.BlockId or CopyEffectAction.BlockId
+            or NegateSameNameAction.BlockId or LookRandomAction.BlockId)).Select(b => new object[] { b.Id, false })
             .Concat(BlockRegistry.OfKind(BlockKind.Action).Where(b => b.Param("target") is not null && b.Id is not ("do.place" or AttachSelfAction.BlockId)).Select(b => new object[] { b.Id, true }));
 
     /// <summary>Every DO block, with its default settings, activated from a monster on a well-stocked board.</summary>
@@ -487,7 +489,9 @@ public class EngineTests
         // Removing counters needs counters on the field: CounterTests pays it.
         BlockRegistry.OfKind(BlockKind.Cost).Where(b => b.Id is not ("cost.detach" or RemoveCounterCost.BlockId)).SelectMany(def =>
             new[] { def.CreateInstance() }
-                .Concat(def.Params.Where(p => p.Type == ParamType.Choice).SelectMany(p => Samples.OtherChoices(p).Where(c => !(def.Id == "cost.move_cards" && c.Value == "extra"))
+                // Revealing from the Extra Deck needs a Fusion Monster there: NameRitualRoundTests pays it.
+                .Concat(def.Params.Where(p => p.Type == ParamType.Choice).SelectMany(p => Samples.OtherChoices(p).Where(c => !(def.Id == "cost.move_cards" && c.Value == "extra")
+                        && !(def.Id == RevealCost.BlockId && c.Value == "extra"))
                     .Select(c => def.CreateInstance().With(p.Key, c.Value))))
                 .Select(inst => new object[] { def.Id, string.Join(",", inst.Values.Select(kv => $"{kv.Key}={kv.Value}")) }));
 

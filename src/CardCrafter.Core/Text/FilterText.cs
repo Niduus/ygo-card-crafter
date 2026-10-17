@@ -41,8 +41,38 @@ public static class FilterText
             CardRef.BattleTarget => "the monster this card is battling",
             CardRef.Equipped => "the equipped monster",
             CardRef.Event => Blocks.CardRefs.EventNoun(f, plural),
+            CardRef.Attacker => "the attacking monster",
             _ => "your battling monster",
         };
+        // "1 "Ancient Gear" monster or 1 "Geartown" from your Deck": both kinds, then where they are.
+        if (f.OrCards is { } alt)
+        {
+            var main = f.Clone();
+            main.OrCards = null;
+            var one = Describe(main, pack, plural, preposition, withLocation: false, ownName, withExcept: false);
+            var other = alt.Clone();
+            other.OrCards = null;
+            other.Zones = Zone.None;
+            other.ExcludeThisCard = other.ExceptOwnName = false;
+            other.ExceptCode = 0;
+            var two = Describe(other, pack, plural, preposition, withLocation: false, ownName, withExcept: false);
+            var both = plural ? $"{one} and/or {two}" : $"{one} or 1 {two}";
+            if (beforeLocation is { Length: > 0 }) both += " " + beforeLocation;
+            if (withLocation && Location(main, preposition, plural) is { Length: > 0 } at) both += " " + at;
+            return withExcept ? both + ExceptText(f, pack, ownName) : both;
+        }
+        // "with a Level 4 or lower, or a Tuner": requirements of an "or" group, each group said as one.
+        if (!f.AnyRequirement && f.Requirements.Any(r => r.Group > 0))
+        {
+            var rest = f.Clone();
+            rest.Requirements.RemoveAll(r => r.Group > 0);
+            var groups = f.Requirements.Where(r => r.Group > 0).GroupBy(r => r.Group)
+                .Select(g => g.Select(r => Compiler.CardProperties.Text(r, pack)).Where(t => t.Length > 0).Select(t => plural ? Plural(t) : t).ToList())
+                .Where(g => g.Count > 0).Select(g => g.Count == 1 ? g[0] : string.Join(", ", g.Take(g.Count - 1)) + (g.Count > 2 ? "," : "") + " or " + g[^1]).ToList();
+            var said = string.Join(" and ", groups);
+            if (beforeLocation is { Length: > 0 }) said = said.Length == 0 ? beforeLocation : said + " " + beforeLocation;
+            return Describe(rest, pack, plural, preposition, withLocation, ownName, withExcept, said.Length == 0 ? null : said);
+        }
         // Snake-Eyes Doomed Dragon: "2 face-up Monster Cards from your Spell & Trap Zone": monsters placed there as Spells.
         if (f is { Zones: Zone.SpellTrapZone, CardType: FilterCardType.Any, Owner: CardOwner.You, AnyRequirement: false }
             && f.Requirements.FindIndex(r => r is { Property: "orig_card_type", Op: RequirementOp.Is } && r.Values.SequenceEqual([0x1L])) is var mi and >= 0)
@@ -105,13 +135,16 @@ public static class FilterText
         else
         {
             // "Continuous Spell", "Equip Spell", "Field Spell", "Counter Trap".
-            var stKind = f.SpellTrapKind switch
+            static string? KindWord(SpellTrapKind k) => k switch
             {
                 SpellTrapKind.Normal => "Normal", SpellTrapKind.Continuous => "Continuous", SpellTrapKind.QuickPlay => "Quick-Play",
                 SpellTrapKind.Field => "Field", SpellTrapKind.Equip => "Equip", SpellTrapKind.Ritual => "Ritual", SpellTrapKind.Counter => "Counter", _ => null,
             };
+            // "Normal or Quick-Play Spell": a second kind it may be instead.
+            var stKind = KindWord(f.SpellTrapKind) is { } k1 && KindWord(f.SpellTrapKind2) is { } k2 && k1 != k2 ? $"{k1} or {k2}"
+                : KindWord(f.SpellTrapKind) ?? KindWord(f.SpellTrapKind2);
             noun = stKind is not null && f.CardType is FilterCardType.Spell or FilterCardType.Trap or FilterCardType.SpellTrap or FilterCardType.Any
-                ? $"{stKind} {(f.CardType == FilterCardType.Trap || f.SpellTrapKind == SpellTrapKind.Counter ? "Trap" : f.CardType == FilterCardType.Spell || f.SpellTrapKind is SpellTrapKind.QuickPlay or SpellTrapKind.Field or SpellTrapKind.Equip or SpellTrapKind.Ritual ? "Spell" : "Spell/Trap")}"
+                ? $"{stKind} {(f.CardType == FilterCardType.Trap || f.SpellTrapKind == SpellTrapKind.Counter ? "Trap" : f.CardType == FilterCardType.Spell || f.SpellTrapKind is SpellTrapKind.QuickPlay or SpellTrapKind.Field or SpellTrapKind.Equip or SpellTrapKind.Ritual || f.SpellTrapKind2 is SpellTrapKind.QuickPlay or SpellTrapKind.Field or SpellTrapKind.Equip or SpellTrapKind.Ritual ? "Spell" : "Spell/Trap")}"
                 : KindNoun(f.MonsterKind) is { Non: false } kind ? kind.Noun : kinds is not null ? KindsNoun(kinds)! : f.CardType switch
             {
                 FilterCardType.Monster => f.MonsterCards ? "Monster Card" : "monster",
@@ -149,7 +182,7 @@ public static class FilterText
         // "with the declared Type" comes after where they are, as cards say it: "all face-up monsters on the field with the
         // declared Type", but "1 card with the declared name from your Deck". So does "that was remembered".
         var declared = f.AnyRequirement || !withLocation || Location(f, preposition, plural).StartsWith("from ", StringComparison.Ordinal) ? []
-            : f.Requirements.Where(r => Compiler.CardProperties.IsDeclared(r.Property) || r.Property == "remembered").ToList();
+            : f.Requirements.Where(r => Compiler.CardProperties.IsDeclared(r.Property) || r.Property is "remembered" or "ref_mentioned").ToList();
         var extra = f.Requirements.Except(prefixed).Except(described).Except(declared).Except(cardLevels).Where(r => !SaidAsExcept(f, r))
             .Select(r => Compiler.CardProperties.Text(r, pack)).Where(t => t.Length > 0)
             .Select(t => plural ? Plural(t) : t).ToList();
@@ -326,6 +359,16 @@ public static class FilterText
                 CardOwner.You => "in your center Main Monster Zone",
                 CardOwner.Opponent => "in your opponent's center Main Monster Zone",
                 _ => "in a center Main Monster Zone",
+            };
+        }
+        // Javelin Beetle of the Alliance: "1 other card in this card's column".
+        if (f.InThisColumn)
+        {
+            return f.Owner switch
+            {
+                CardOwner.You => "you control in this card's column",
+                CardOwner.Opponent => "your opponent controls in this card's column",
+                _ => "in this card's column",
             };
         }
         if (f.PointedToByThisCard)

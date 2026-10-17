@@ -471,6 +471,15 @@ public static partial class EffectTextGenerator
             when += " " + SummonedUsingCondition.Using(new BlockArgs(usedDef, usedMats, pack));
             ifs = ifs.Where(b => !ReferenceEquals(b, usedMats)).ToList();
         }
+        // King of Beasts, Risen from the Valley of Flames: "if this card was Link Summoned using "Salamangreat Heatleo"".
+        (BlockInstance How, string Said)? usedAlso = null;
+        if (ifs.FirstOrDefault(b => b.BlockId == SummonedUsingCondition.BlockId) is { } mats && BlockRegistry.Find(mats.BlockId) is { } matsDef
+            && ifs.FirstOrDefault(b => b.BlockId == "if.summoned_by" && b.Values.GetValueOrDefault("how", "link") is "link" or "synchro" or "xyz" or "fusion" or "ritual" or "tribute")
+                is { } how)
+        {
+            usedAlso = (how, $"{Text(how, pack)} {SummonedUsingCondition.Using(new BlockArgs(matsDef, mats, pack))}");
+            ifs = ifs.Where(b => !ReferenceEquals(b, mats)).ToList();
+        }
         // Stargazer Magician: "Unless you have a "Magician" card in your other Pendulum Zone, this card's Pendulum Scale becomes 4."
         if (passive && effect.AlsoWhen.Count == 0 && ifs is [{ BlockId: "if.no_cards" } none] && effect.Do.Any(b => b.BlockId == PendulumScalePassive.BlockId)
             && none.Filters.TryGetValue("cards", out var unless) && unless.Owner == CardOwner.You && (unless.Zones & Zone.Field) == 0 && unless.Zones != Zone.None)
@@ -483,7 +492,7 @@ public static partial class EffectTextGenerator
         var conditions = new List<string>();
         foreach (var b in ifs)
         {
-            var t = Text(b, pack);
+            var t = usedAlso is { } u && ReferenceEquals(b, u.How) ? u.Said : Text(b, pack);
             if (t.Length == 0) continue;
             if (b.Or && conditions.Count > 0) conditions[^1] += " or " + SentenceCase.Lower(t);
             else conditions.Add(t);
@@ -546,6 +555,8 @@ public static partial class EffectTextGenerator
         // "and if you banish any": the step before says "if you do" in its own words.
         string? ifYouDo = null;
         var previousOnlyIf = false;
+        // "your opponent can draw 1 card, and if they do, ...": what the step before said, for who "you" is in "if you do".
+        var previousText = "";
         // A declaration says its part before the semicolon too: "declare 1 Attribute, then target 1 face-up monster; ...".
         var declared = false;
         var chanceCases = 0;
@@ -615,6 +626,7 @@ public static partial class EffectTextGenerator
             {
                 sb.Append(b.Link switch
                 {
+                    ActionLink.IfYouDo when ownIfYouDo is null && previousText.StartsWith("your opponent ", StringComparison.Ordinal) => ", and if they do, ",
                     ActionLink.IfYouDo => $", and {ownIfYouDo ?? "if you do"}, ",
                     ActionLink.Then => ", then ",
                     ActionLink.AlsoAfterThat => ". Also, after that, ",
@@ -627,6 +639,7 @@ public static partial class EffectTextGenerator
                 });
             }
             sb.Append(t);
+            previousText = t;
         }
         return (target, sb.ToString());
     }

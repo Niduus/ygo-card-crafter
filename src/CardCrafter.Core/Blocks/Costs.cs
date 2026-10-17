@@ -338,7 +338,7 @@ public sealed class MoveCardsCost : CostBlock
     public override string Id => "cost.move_cards";
     public override string Group => "Cards";
     public override string Name => "Banish, send or return cards (cost)";
-    public override string Sentence => "{how} {count} {cards} {same_type}";
+    public override string Sentence => "{how} {count} {cards} {same_type} {no_repeat}";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Choice("how", "How",
@@ -349,7 +349,26 @@ public sealed class MoveCardsCost : CostBlock
         ParamSpec.Cards("cards", "Which cards", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Graveyard }, thisCard: true),
         // Invoked Mechaba: "send the same type of card (Monster, Spell, or Trap) from your hand to the GY".
         ParamSpec.Flag("same_type", "of the same card type (Monster, Spell, or Trap) as the card or effect activated", false),
+        // Marincess Truth Heart: "also for the rest of this turn, you cannot banish monsters with that same Link Rating to activate this effect".
+        ParamSpec.Choice("no_repeat", "Again this turn",
+            new("none", "", "(any cards, each time)"),
+            new("link", "Link Rating", "not with the same Link Rating as one used for it this turn"),
+            new("level", "Level", "not with the same Level as one used for it this turn"),
+            new("name", "name", "not with the same name as one used for it this turn")),
     ];
+
+    /// <summary>"For the rest of this turn, you cannot banish monsters with that same Link Rating to activate this effect of "X"."</summary>
+    public override string Afterword(BlockArgs args)
+    {
+        if (args.Choice("no_repeat") == "none" || args.Cards("cards").ThisCard) return "";
+        var (verb, tail, _, _, _) = Way(args.Choice("how"));
+        var what = args.Choice("no_repeat") == "name" ? "cards with that same name" : $"monsters with that same {args.Describe("no_repeat")}";
+        var of = args.CardName is { Length: > 0 } n ? $" of \"{n}\"" : "";
+        return $"For the rest of this turn, you cannot {verb} {what}{tail} to activate this effect{of}.";
+    }
+
+    /// <summary>The value a card used for the cost is remembered by, for "not with the same ... again this turn".</summary>
+    private static string? RepeatValue(string kind) => kind switch { "link" => "c:GetLink()", "level" => "c:GetLevel()", "name" => "c:GetCode()", _ => null };
 
     private static (string Verb, string Tail, string Able, string Hint, string Call) Way(string how) => how switch
     {
@@ -407,6 +426,10 @@ public sealed class MoveCardsCost : CostBlock
         if (sameType && ctx.Effect.Code != "EVENT_CHAINING")
             ctx.Effect.Error($"\"{Name}\": \"the same card type as the card or effect activated\" needs a WHEN that responds to an activation.");
         // The card type (Monster, Spell or Trap) of the chain link it responds to, passed to the filter.
+        // "Not with the same Link Rating as one used for this effect this turn": the values used are kept by player and turn.
+        var repeat = RepeatValue(ctx.Args.Choice("no_repeat"));
+        var key = $"{ctx.Effect.Index}";
+        if (repeat is not null) able += $" and not (s.ccused and s.ccused[tp] and s.ccused[tp][Duel.GetTurnCount()] and s.ccused[tp][Duel.GetTurnCount()][\"{key}:\"..{repeat}])";
         var f = ctx.Script.Filter(filter, able, how + "costfilter");
         var function = sameType
             ? ctx.Script.AddFunction(how + "typefilter", "c,e,tp,rtype", [$"return {string.Join(" and ", FilterCompiler.Conditions(filter).Append(able).Append("c:IsType(rtype)"))}"])
@@ -420,6 +443,14 @@ public sealed class MoveCardsCost : CostBlock
         ctx.Effect.CostLines.Add($"Duel.Hint(HINT_SELECTMSG,tp,{hint})");
         ctx.Effect.CostLines.Add($"local {g}=Duel.SelectMatchingCard(tp,{function},tp,{f.Self},0,{min},{n},e:GetHandler(),{args})");
         if ((filter.Zones & Zone.Field) != Zone.None) ctx.Effect.CostLines.Add($"Duel.HintSelection({g})");
+        if (repeat is not null)
+            ctx.Effect.CostLines.AddRange(
+            [
+                "s.ccused=s.ccused or {}",
+                "s.ccused[tp]=s.ccused[tp] or {}",
+                "s.ccused[tp][Duel.GetTurnCount()]=s.ccused[tp][Duel.GetTurnCount()] or {}",
+                $"for c in aux.Next({g}) do s.ccused[tp][Duel.GetTurnCount()][\"{key}:\"..{repeat}]=true end",
+            ]);
         // Kept for "for each card used for the cost".
         ctx.Effect.CostLines.Add($"e:SetLabel({string.Format(System.Globalization.CultureInfo.InvariantCulture, call, g)})");
         ctx.Effect.CostCounts = true;

@@ -376,11 +376,32 @@ public sealed class NoTributeSummonPassive : PassiveBlock
     public override string Id => BlockId;
     public override string Group => "This card";
     public override string Name => "You can Normal Summon this card without Tributing";
-    public override string Sentence => "You can Normal Summon this card without Tributing";
-    public override string Help => "For Level 5 or higher monsters. Add IF blocks for when it is allowed, like \"your opponent controls a monster\" and \"you control no monsters\".";
+    public override string Sentence => "You can Normal Summon {whose} {cards} without Tributing";
+    public override string Help => "For Level 5 or higher monsters. Add IF blocks for when it is allowed, like \"your opponent controls a monster\" and \"you control no monsters\". " +
+                                   "\"Monsters picked below\" lets you Summon those from your hand without Tributing (Kashtira Birth: \"Level 7 monsters\").";
+    public override IReadOnlyList<ParamSpec> Params { get; } =
+    [
+        ParamSpec.Choice("whose", "Which monsters", new("self", "this card"), new("picked", "", "monsters picked below")),
+        new ParamSpec
+        {
+            Key = "cards", Label = "Which monsters", Type = ParamType.Cards, WhereFromBlock = true,
+            DefaultFilter = () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Hand, CardType = FilterCardType.Monster, LevelMin = 7, LevelMax = 7 },
+        }.Unprinted().WhenUsed().ShowIf(b => b.Values.GetValueOrDefault("whose") == "picked"),
+    ];
+
+    private static bool Picked(BlockArgs args) => args.Choice("whose") == "picked";
+
+    public override string Describe(BlockArgs args) => Picked(args)
+        ? $"you can Normal Summon {Text.FilterText.Describe(args.Cards("cards"), args.Pack, plural: true, withLocation: false)} without Tributing"
+        : "you can Normal Summon this card without Tributing";
 
     public override void Compile(BlockContext ctx)
     {
+        if (Picked(ctx.Args))
+        {
+            CompilePicked(ctx);
+            return;
+        }
         Zones.RequireMonster(ctx, Name);
         if (ctx.Card.Level < 5) ctx.Effect.Warn("\"Without Tributing\" matters for Level 5 or higher monsters; lower ones need no Tribute anyway.");
         // The Summon procedure is checked from the hand with (e,c,minc): its IF blocks go in its own condition.
@@ -396,6 +417,32 @@ public sealed class NoTributeSummonPassive : PassiveBlock
             $"{v}:SetCode(EFFECT_SUMMON_PROC)",
             $"{v}:SetCondition({con})",
         ]);
+    }
+
+    /// <summary>Kashtira Birth: "You can Normal Summon Level 7 monsters without Tributing": a Summon procedure for monsters in your hand.</summary>
+    private static void CompilePicked(BlockContext ctx)
+    {
+        var range = RangeOf(ctx);
+        var extra = ctx.Effect.Conditions.ToList();
+        ctx.Effect.Conditions.Clear();
+        var check = string.Join(" and ", new[] { "minc==0", "Duel.GetLocationCount(c:GetControler(),LOCATION_MZONE)>0" }.Concat(extra));
+        var con = ctx.Script.AddFunction("ntcon", "e,c,minc", ["if c==nil then return true end", "local tp=e:GetHandlerPlayer()", $"return {check}"]);
+        var f = ctx.Args.Cards("cards").Clone();
+        f.Zones = Zone.Hand;
+        f.Owner = CardOwner.You;
+        f.CardType = FilterCardType.Monster;
+        var conds = FilterCompiler.Conditions(f, hasEffect: false);
+        var tg = ctx.Script.AddFunction("nttg", "e,c", [$"return {string.Join(" and ", conds)}"]);
+        ctx.Effect.AddPassive(v =>
+        [
+            $"{v}:SetDescription(aux.Stringid(id,{Math.Min(ctx.Effect.Index, 16) - 1}))",
+            $"{v}:SetType(EFFECT_TYPE_FIELD)",
+            $"{v}:SetCode(EFFECT_SUMMON_PROC)",
+            $"{v}:SetRange({range})",
+            $"{v}:SetTargetRange(LOCATION_HAND,0)",
+            $"{v}:SetCondition({con})",
+            $"{v}:SetTarget({tg})",
+        ], limited: true);
     }
 }
 

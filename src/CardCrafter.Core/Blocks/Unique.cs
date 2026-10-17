@@ -169,13 +169,16 @@ public sealed class ReplaceDestroyPassive : PassiveBlock
             new("destroy", "destroy this card"),
             new("banish", "banish this card"),
             new("grave", "send this card to the GY"),
-            new("detach", "detach 1 material from this card")),
+            new("detach", "detach 1 material from this card"),
+            // Reindsurm Encounter: "you can place this card from your GY on the bottom of the Deck instead".
+            new("deck_bottom", "place this card on the bottom of the Deck")),
     ];
 
     public override string Describe(BlockArgs args)
     {
         var f = args.Cards("cards");
-        var how = args.Choice("how") == "banish" && args.TriggerZone == "graveyard" ? "banish this card from your GY" : args.Describe("how");
+        var how = args.Choice("how") == "banish" && args.TriggerZone == "graveyard" ? "banish this card from your GY"
+            : args.Choice("how") == "deck_bottom" && args.TriggerZone == "graveyard" ? "place this card from your GY on the bottom of the Deck" : args.Describe("how");
         // "If this card would be destroyed by battle or card effect, you can detach 1 material from it instead."
         if (f.ThisCard) return $"if this card would be destroyed {args.Describe("by")}, you can {how.Replace("from this card", "from it", StringComparison.Ordinal)} instead";
         var noun = FilterText.Describe(f, args.Pack, false, "", withLocation: false, withExcept: false);
@@ -205,6 +208,7 @@ public sealed class ReplaceDestroyPassive : PassiveBlock
                 "tribute" => ("c:IsReleasableByEffect()", "Duel.Release(e:GetHandler(),REASON_EFFECT+REASON_REPLACE)"),
                 "banish" => ("c:IsAbleToRemove()", "Duel.Remove(e:GetHandler(),POS_FACEUP,REASON_EFFECT+REASON_REPLACE)"),
                 "grave" => ("c:IsAbleToGrave()", "Duel.SendtoGrave(e:GetHandler(),REASON_EFFECT+REASON_REPLACE)"),
+                "deck_bottom" => ("c:IsAbleToDeck()", "Duel.SendtoDeck(e:GetHandler(),nil,SEQ_DECKBOTTOM,REASON_EFFECT+REASON_REPLACE)"),
                 _ => ("c:CheckRemoveOverlayCard(tp,1,REASON_EFFECT)", "e:GetHandler():RemoveOverlayCard(tp,1,1,REASON_EFFECT)"),
             };
             var selfTg = ctx.Script.AddFunction("selfreptg", "e,tp,eg,ep,ev,re,r,rp,chk",
@@ -230,6 +234,7 @@ public sealed class ReplaceDestroyPassive : PassiveBlock
             "destroy" => ("c:IsDestructable(e)", "Duel.Destroy(e:GetHandler(),REASON_EFFECT+REASON_REPLACE)"),
             "banish" => ("c:IsAbleToRemove()", "Duel.Remove(e:GetHandler(),POS_FACEUP,REASON_EFFECT+REASON_REPLACE)"),
             "grave" => ("c:IsAbleToGrave()", "Duel.SendtoGrave(e:GetHandler(),REASON_EFFECT+REASON_REPLACE)"),
+            "deck_bottom" => ("c:IsAbleToDeck()", "Duel.SendtoDeck(e:GetHandler(),nil,SEQ_DECKBOTTOM,REASON_EFFECT+REASON_REPLACE)"),
             _ => ("c:CheckRemoveOverlayCard(tp,1,REASON_EFFECT)", "e:GetHandler():RemoveOverlayCard(tp,1,1,REASON_EFFECT)"),
         };
         var exclude = f.ExcludeThisCard ? "c" : "nil";
@@ -379,7 +384,9 @@ public sealed class OnlyIfAction : ActionBlock
     /// <summary>"a Fusion Monster", "a Dragon monster": what the cards must be, without where.</summary>
     private static string What(BlockArgs args)
     {
-        var noun = FilterText.Describe(args.Cards("cards"), args.Pack, plural: false, withLocation: false);
+        var cards = args.Cards("cards").Clone();
+        cards.That = CardRef.None;
+        var noun = FilterText.Describe(cards, args.Pack, plural: false, withLocation: false);
         return $"{SummonWording.Article(noun)} {noun}";
     }
 
@@ -458,11 +465,14 @@ public sealed class ThatCardAction : ActionBlock
     public override string Sentence => "{how} that card";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
-        ParamSpec.Choice("how", "What", new("destroy", "Destroy"), new("banish", "Banish"), new("hand", "Return to the hand:"), new("deck", "Shuffle into the Deck:")),
+        ParamSpec.Choice("how", "What", new("destroy", "Destroy"), new("banish", "Banish"), new("hand", "Return to the hand:"), new("deck", "Shuffle into the Deck:"),
+            // Number F0: Utopic Draco Future: "negate the activation, then, if that monster is on the field, gain control of it".
+            new("control", "Gain control of it, if it is on the field:")),
     ];
 
     public override string Describe(BlockArgs args) => args.Choice("how") switch
     {
+        "control" => "if that monster is on the field, gain control of it",
         "banish" => "banish that card",
         "hand" => "return that card to the hand",
         "deck" => "shuffle that card into the Deck",
@@ -481,10 +491,22 @@ public sealed class ThatCardAction : ActionBlock
             "banish" => ("CATEGORY_REMOVE", "Duel.Remove(rc,POS_FACEUP,REASON_EFFECT)"),
             "hand" => ("CATEGORY_TOHAND", "Duel.SendtoHand(rc,nil,REASON_EFFECT)"),
             "deck" => ("CATEGORY_TODECK", "Duel.SendtoDeck(rc,nil,SEQ_DECKSHUFFLE,REASON_EFFECT)"),
+            "control" => ("CATEGORY_CONTROL", "(Duel.GetControl(rc,tp) and 1 or 0)"),
             _ => ("CATEGORY_DESTROY", "Duel.Destroy(rc,REASON_EFFECT)"),
         };
         ctx.Effect.AddCategory(cat);
         var r = ctx.Effect.NewLocal("r");
+        if (ctx.Args.Choice("how") == "control")
+        {
+            // As Utopic Draco Future's script: only a monster still on the field where it was activated, not destroyed by battle.
+            ctx.Effect.AddStep(
+            [
+                $"local {r}=0",
+                "local rc=re:GetHandler()",
+                $"if rc:IsRelateToEffect(re) and rc:IsLocation(LOCATION_MZONE) and Duel.GetChainInfo(ev,CHAININFO_TRIGGERING_LOCATION)==LOCATION_MZONE and not rc:IsStatus(STATUS_BATTLE_DESTROYED) and not rc:IsControler(tp) then {r}={act} end",
+            ], r, ctx.Link);
+            return;
+        }
         ctx.Effect.AddStep(
         [
             $"local {r}=0",
@@ -875,19 +897,22 @@ public sealed class RevealCost : CostBlock
     public const string BlockId = "cost.reveal";
     public override string Id => BlockId;
     public override string Group => "Cards";
-    public override string Name => "Reveal cards in your hand";
-    public override string Sentence => "Reveal {count} {cards} in your hand";
+    public override string Name => "Reveal cards in your hand (or Extra Deck)";
+    public override string Sentence => "Reveal {count} {cards} {from}";
+    public override string Help => "The revealed cards are \"the card used for the cost\" for the DO blocks (\"the revealed monster\"): Necromancer of Dragon Magic " +
+                                   "reveals a Fusion Monster in the Extra Deck and Fusion Summons it.";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Int("count", "How many", 1, 1, 5),
         ParamSpec.Cards("cards", "Which cards", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Hand, CardType = FilterCardType.Monster }, Zone.Hand, thisCard: true),
+        ParamSpec.Choice("from", "Where", new("hand", "in your hand"), new("extra", "in your Extra Deck")),
     ];
 
     private static CardFilter Hand(BlockArgs args)
     {
         var f = args.Cards("cards").Clone();
         f.Owner = CardOwner.You;
-        f.Zones = Zone.Hand;
+        f.Zones = args.Choice("from") == "extra" ? Zone.ExtraDeck : Zone.Hand;
         f.NotRevealed = true;
         return f;
     }
@@ -897,7 +922,7 @@ public sealed class RevealCost : CostBlock
         if (args.Cards("cards").ThisCard) return "reveal this card in your hand";
         var f = Hand(args);
         var n = args.Int("count");
-        return $"reveal {n} {FilterText.Describe(f, args.Pack, plural: n != 1, withLocation: false, ownName: args.CardName)} in your hand";
+        return $"reveal {n} {FilterText.Describe(f, args.Pack, plural: n != 1, withLocation: false, ownName: args.CardName)} {args.Describe("from")}";
     }
 
     public override void Compile(BlockContext ctx)
@@ -911,13 +936,18 @@ public sealed class RevealCost : CostBlock
             ctx.Effect.CostLines.Add("Duel.ConfirmCards(1-tp,e:GetHandler())");
             return;
         }
+        var extra = ctx.Args.Choice("from") == "extra";
+        var where = extra ? "LOCATION_EXTRA" : "LOCATION_HAND";
         var f = ctx.Script.Filter(Hand(ctx.Args));
         var n = ctx.Args.Int("count");
         var g = ctx.Effect.NewLocal("rg");
-        ctx.Effect.CostChecks.Add($"Duel.IsExistingMatchingCard({f.Function},tp,LOCATION_HAND,0,{n},{f.Exclude},e,tp)");
+        ctx.Effect.CostChecks.Add($"Duel.IsExistingMatchingCard({f.Function},tp,{where},0,{n},{f.Exclude},e,tp)");
         ctx.Effect.CostLines.Add("Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_CONFIRM)");
-        ctx.Effect.CostLines.Add($"local {g}=Duel.SelectMatchingCard(tp,{f.Function},tp,LOCATION_HAND,0,{n},{n},{f.Exclude},e,tp)");
+        ctx.Effect.CostLines.Add($"local {g}=Duel.SelectMatchingCard(tp,{f.Function},tp,{where},0,{n},{n},{f.Exclude},e,tp)");
         ctx.Effect.CostLines.Add($"Duel.ConfirmCards(1-tp,{g})");
-        ctx.Effect.CostLines.Add("Duel.ShuffleHand(tp)");
+        ctx.Effect.CostLines.Add(extra ? "Duel.ShuffleExtra(tp)" : "Duel.ShuffleHand(tp)");
+        // "The revealed monster": kept for the DO blocks that use it.
+        if (CardRefs.UsesCost(ctx.Effect.Source) && ReferenceEquals(ctx.Effect.Source.Cost.FirstOrDefault(b => b.BlockId == BlockId), ctx.Args.Instance))
+            ctx.Effect.CostLines.AddRange([$"{g}:KeepAlive()", $"e:SetLabelObject({g})"]);
     }
 }
