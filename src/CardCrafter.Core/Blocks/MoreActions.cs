@@ -267,7 +267,7 @@ public sealed class AttachMaterialAction : CardGroupAction
     public override string Id => "do.attach";
     public override string Group => "Monsters";
     public override string Name => "Attach cards to this card as material";
-    public override string Sentence => "Attach {amount} {count_cards} {count} {cards} {pick} {sum} {target} to this card as material {chooser}";
+    public override string Sentence => "Attach {amount} {count_cards} {count} {cards} {pick} {pick2} {pick3} {sum} {inc_cards} {target} to this card as material {chooser}";
     public override string Help => "Xyz Monsters only: the cards go under this card as Xyz Materials.";
     protected override string Category => "";
     protected override string Hint => "HINTMSG_XMATERIAL";

@@ -3409,6 +3409,7 @@ public static partial class ScriptTranslator
             case "c:IsSummonLocation(LOCATION_EXTRA)": f.Summoned = FilterSummoned.FromExtra; f.CardType = FilterCardType.Monster; return;
             case "c:IsSummonType(SUMMON_TYPE_SPECIAL)": f.Summoned = FilterSummoned.Special; f.CardType = FilterCardType.Monster; return;
             case "c:IsSummonType(SUMMON_TYPE_ADVANCE)": f.Summoned = FilterSummoned.Tribute; f.CardType = FilterCardType.Monster; return;
+            case "e:GetHandler():GetColumnGroup():IsContains(c)": f.InThisColumn = true; return;
             case "c:IsAttackPos()" or "c:IsPosition(POS_ATTACK)": f.Position = FilterPosition.Attack; return;
             case "c:IsDefensePos()" or "c:IsPosition(POS_DEFENSE)": f.Position = FilterPosition.Defense; return;
             case "c:IsPosition(POS_FACEUP_ATTACK)": f.Position = FilterPosition.FaceUpAttack; return;

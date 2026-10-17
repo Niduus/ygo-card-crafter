@@ -25,6 +25,7 @@ public static class CardRefs
         (CardRef.Cost, "The card(s) used for the cost"),
         (CardRef.BattleTarget, "The monster this card is battling (or destroyed by battle)"),
         (CardRef.Battling, "Your monster that is battling"),
+        (CardRef.Attacker, "The attacking monster (whose attack this effect answers)"),
     ];
 
     /// <summary>
@@ -66,7 +67,7 @@ public static class CardRefs
 
     /// <summary>The cost block whose cards the effect keeps: the first one that moves cards.</summary>
     private static BlockInstance? CostBlock(EffectEvent? effect) =>
-        effect?.Cost.FirstOrDefault(b => b.BlockId is "cost.discard" or "cost.tribute" or "cost.move_cards" or "cost.this_card" or "cost.detach");
+        effect?.Cost.FirstOrDefault(b => b.BlockId is "cost.discard" or "cost.tribute" or "cost.move_cards" or "cost.this_card" or "cost.detach" or RevealCost.BlockId);
 
     /// <summary>Whether "that card" means several cards: several targets, cards the step before affected, or cost cards.</summary>
     public static bool Plural(BlockArgs args, CardRef that)
@@ -106,6 +107,7 @@ public static class CardRefs
             "cost.discard" => "discarded",
             "cost.tribute" => "Tributed",
             "cost.detach" => "detached",
+            RevealCost.BlockId => "revealed",
             _ => b.Values.GetValueOrDefault("how", "banish") switch
             {
                 "grave" => "sent", "deck" or "deck_bottom" or "hand" or "extra" => "returned", _ => "banished",
@@ -127,6 +129,7 @@ public static class CardRefs
             CardRef.Cost => CostNoun(args.Effect, plural),
             CardRef.BattleTarget => DestroysByBattle(args.Effect) ? "that monster" : "the monster this card is battling",
             CardRef.Battling => "your battling monster",
+            CardRef.Attacker => "the attacking monster",
             _ => "",
         };
         return Plus(args) == "this" ? $"both {words} and this card" : words;
@@ -153,6 +156,7 @@ public static class CardRefs
     {
         CardRef.Target => "the targeted monster's",
         CardRef.Cost => CostNoun(effect) + "'s",
+        CardRef.Attacker => "the attacking monster's",
         _ => "that monster's",
     };
 
@@ -178,7 +182,7 @@ public static class CardRefs
             case CardRef.Cost:
                 if (CostBlock(e.Source) is null) { e.Error($"\"{name}\": \"the cards used for the cost\" needs a COST block that discards, Tributes, banishes, sends or detaches cards."); return null; }
                 return "(e:GetLabelObject() or Group.CreateGroup())";
-            case CardRef.BattleTarget or CardRef.Battling:
+            case CardRef.BattleTarget or CardRef.Battling or CardRef.Attacker:
                 if (!e.TargetLines.Contains(RelateLine(that))) e.TargetLines.Add(RelateLine(that));
                 if (!IsBattle(e)) e.Warn($"\"{name}\": a battling monster is only there during battle; use a WHEN about battle, like \"If this card destroys a monster by battle\".");
                 var card = Card(that, "c");
@@ -193,8 +197,12 @@ public static class CardRefs
         || e.Source.When?.BlockId is "when.destroys_by_battle" or "when.battle" or "when.attack_declared";
 
     /// <summary>The battling monster: this card's battle target, or your monster that is battling (one of the two Duel.GetBattleMonster gives).</summary>
-    public static string Card(CardRef that, string self = "e:GetHandler()") =>
-        that == CardRef.BattleTarget ? $"{self}:GetBattleTarget()" : "(Duel.GetBattleMonster(tp))";
+    public static string Card(CardRef that, string self = "e:GetHandler()") => that switch
+    {
+        CardRef.BattleTarget => $"{self}:GetBattleTarget()",
+        CardRef.Attacker => "Duel.GetAttacker()",
+        _ => "(Duel.GetBattleMonster(tp))",
+    };
 
     /// <summary>Relates the battling monster to the effect as it is activated.</summary>
     private static string RelateLine(CardRef that) => $"if {Card(that)} then {Card(that)}:CreateEffectRelation(e) end";
@@ -204,7 +212,7 @@ public static class CardRefs
     /// official scripts check it); targets, the cards the step before affects and cost cards are not, so there is none.
     /// </summary>
     public static string? ActivationCheck(CardRef that, string function) =>
-        that is CardRef.BattleTarget or CardRef.Battling ? $"{Card(that)}~=nil and {function}({Card(that)},e,tp)" : null;
+        that is CardRef.BattleTarget or CardRef.Battling or CardRef.Attacker ? $"{Card(that)}~=nil and {function}({Card(that)},e,tp)" : null;
 
     /// <summary>
     /// The group a picker requirement compares with ("with a different Attribute from that monster"), or nil while the
@@ -236,6 +244,7 @@ public static class CardRefs
             "ref_orig_attribute" => "c:GetOriginalAttribute()&rc:GetOriginalAttribute()~=0",
             "ref_orig_level" => "c:GetOriginalLevel()>0 and c:GetOriginalLevel()==rc:GetOriginalLevel()",
             "ref_orig_name" => "c:IsOriginalCodeRule(rc:GetOriginalCodeRule())",
+            "ref_mentioned" => "(aux.IsMaterialListCode(rc,c:GetCode()) or aux.IsCodeListed(rc,c:GetCode()))",
             _ => "c:IsAttackBelow(rc:GetAttack())",
         };
         // "A different Attribute from that monster": there must be that monster to differ from.
@@ -261,7 +270,8 @@ public static class CardRefs
     /// </summary>
     public static void KeepCost(EffectBuilder e, BlockInstance cost, int from)
     {
-        if (e.IsSummonProcedure || !UsesCost(e.Source) || !ReferenceEquals(CostBlock(e.Source), cost)) return;
+        // A revealed card isn't moved: the reveal keeps it itself.
+        if (e.IsSummonProcedure || cost.BlockId == RevealCost.BlockId || !UsesCost(e.Source) || !ReferenceEquals(CostBlock(e.Source), cost)) return;
         if (!e.CostLines.Skip(from).Any(l => l.Contains("Duel.", StringComparison.Ordinal) || l.Contains("RemoveOverlayCard(", StringComparison.Ordinal))) return;
         e.CostLines.Add("local cg=Duel.GetOperatedGroup():Clone()");
         e.CostLines.Add("cg:KeepAlive()");
@@ -298,6 +308,9 @@ public static class CardRefs
             "cost_atk" => (CardRef.Cost, "(tc:IsPreviousLocation(LOCATION_MZONE) and tc:GetPreviousAttackOnField() or tc:GetAttack())"),
             "cost_def" => (CardRef.Cost, "(tc:IsPreviousLocation(LOCATION_MZONE) and tc:GetPreviousDefenseOnField() or tc:GetDefense())"),
             "cost_level" => (CardRef.Cost, "(tc:IsPreviousLocation(LOCATION_MZONE) and tc:GetPreviousLevelOnField() or tc:GetLevel())"),
+            // Number 39: Utopia Roots: "this card gains ATK equal to that monster's Rank x 500" (the monster whose attack was negated).
+            "attacker_atk" => (CardRef.Attacker, "tc:GetAttack()"),
+            "attacker_rank" => (CardRef.Attacker, "tc:GetRank()"),
             _ => (CardRef.None, ""),
         };
         if (that == CardRef.None) return null;

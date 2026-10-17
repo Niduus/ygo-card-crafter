@@ -51,6 +51,9 @@ public static class ValueSources
         new("that_orig_lvrk", "that monster's original Level/Rank", "that monster's original Level, or Rank for an Xyz Monster (the card the step before affected)"),
         new("that_max_atk", "the highest ATK among those monsters", "the highest ATK among the cards the step before affected (as they were on the field)"),
         new("that_max_orig_atk", "the highest original ATK among those monsters", "the highest original ATK among the cards the step before affected"),
+        // Gandora-X the Blackmetal Rampaging Dragon: "the highest ATK on the field among the destroyed face-up monsters they own".
+        new("that_max_atk_opp", "the highest ATK on the field among the destroyed face-up monsters they own",
+            "the highest ATK among the face-up monsters your opponent owns the step before affected (as they were on the field)"),
         new("damage_dealt", "the damage inflicted", "the damage the step before inflicted"),
         // This effect's target(s) and the card(s) used for its cost (CardRefs.cs).
         new("target_atk", "the targeted monster's ATK", "this effect's target's ATK"),
@@ -60,6 +63,11 @@ public static class ValueSources
         new("cost_atk", "the cost monster's ATK", "the ATK of the card used for the cost"),
         new("cost_def", "the cost monster's DEF", "the DEF of the card used for the cost"),
         new("cost_level", "the cost monster's Level", "the Level of the card used for the cost"),
+        new("attacker_atk", "the attacking monster's ATK", "the attacking monster's ATK (whose attack this effect answers)"),
+        new("attacker_rank", "the attacking monster's Rank", "the attacking monster's Rank (whose attack this effect answers, or negated)"),
+        // Reindsurm Giriakarma: "double this card's ATK".
+        new("its_atk", "its ATK", "its ATK (now)"),
+        new("its_def", "its DEF", "its DEF (now)"),
         new("damage_turn", "the damage you took this turn"),
         new("opp_damage_turn", "the damage your opponent took this turn"),
         new("gained_turn", "the LP you gained this turn"),
@@ -82,7 +90,7 @@ public static class ValueSources
 
     /// <summary>Values about this effect's target(s) or the card(s) used for its cost ("the targeted monster's ATK").</summary>
     public static bool OfThatCard(string source) => source != "cost_count"
-        && (source.StartsWith("target_", StringComparison.Ordinal) || source.StartsWith("cost_", StringComparison.Ordinal));
+        && (source.StartsWith("target_", StringComparison.Ordinal) || source.StartsWith("cost_", StringComparison.Ordinal) || source.StartsWith("attacker_", StringComparison.Ordinal));
 
     /// <summary>Values about the card(s) the DO step before affected ("that monster's original ATK").</summary>
     public static bool Affected(string source) => source.StartsWith("that_", StringComparison.Ordinal);
@@ -162,6 +170,8 @@ public static class ValueSources
         "its_used" => $"the number of materials used for {Poss(owner)} Summon",
         "its_orig_atk" => $"{Poss(owner)} original ATK",
         "its_orig_def" => $"{Poss(owner)} original DEF",
+        "its_atk" => $"{Poss(owner)} ATK",
+        "its_def" => $"{Poss(owner)} DEF",
         "its_orig_higher" => $"{Poss(owner)} original ATK or DEF (whichever is higher)",
         "event" => "that amount",
         var s => Sources.First(o => o.Value == s).Label,
@@ -248,10 +258,12 @@ public static class ValueSources
             "its_linked" => $"{card}:GetLinkedGroupCount()",
             "its_used" => $"{card}:GetMaterialCount()",
             "its_orig_atk" => $"math.max(0,{card}:GetBaseAttack())",
+            "its_atk" => $"math.max(0,{card}:GetAttack())",
+            "its_def" => $"math.max(0,{card}:GetDefense())",
             "its_orig_def" => $"math.max(0,{card}:GetBaseDefense())",
             "its_orig_higher" => $"math.max(0,{card}:GetBaseAttack(),{card}:GetBaseDefense())",
             "that_atk" or "that_orig_atk" or "that_orig_def" or "that_orig_higher" or "that_level" or "that_rank" or "that_orig_lvrk"
-                or "that_max_atk" or "that_max_orig_atk" when ev => AffectedLua(ctx, source),
+                or "that_max_atk" or "that_max_orig_atk" or "that_max_atk_opp" when ev => AffectedLua(ctx, source),
             "damage_dealt" when ev => DamageDealt(ctx),
             _ when ev && OfThatCard(source) => CardRefs.StatLua(ctx, source) ?? "0",
             "damage_turn" => LifeWatch.Total(ctx, p, "damage"),
@@ -295,7 +307,7 @@ public static class ValueSources
         }
         var stat = source switch
         {
-            "that_atk" or "that_max_atk" => "tc:GetPreviousAttackOnField()",
+            "that_atk" or "that_max_atk" or "that_max_atk_opp" => "tc:GetPreviousAttackOnField()",
             "that_orig_atk" => "tc:GetBaseAttack()",
             // Gandora-X the Dragon of Demolition: the highest original ATK, as printed (GetTextAttack).
             "that_max_orig_atk" => "tc:GetTextAttack()",
@@ -306,6 +318,13 @@ public static class ValueSources
             "that_orig_lvrk" => "(tc:IsType(TYPE_XYZ) and tc:GetOriginalRank() or tc:GetOriginalLevel())",
             _ => "tc:GetLevel()",
         };
+        if (source == "that_max_atk_opp")
+        {
+            // Only the ones that were face-up on the field, owned by the opponent.
+            var maxOpp = ctx.Script.AddFunction("thatmaxopp", "g,tp",
+                ["local n=0", "for tc in aux.Next(g) do", "\tif tc:IsPreviousPosition(POS_FACEUP) and tc:GetOwner()==1-tp then", $"\t\tn=math.max(n,{stat})", "\tend", "end", "return n"]);
+            return $"{maxOpp}(Duel.GetOperatedGroup(),tp)";
+        }
         if (source is "that_max_atk" or "that_max_orig_atk")
         {
             var max = ctx.Script.AddFunction("thatmax", "g", ["local n=0", "for tc in aux.Next(g) do", $"\tn=math.max(n,{stat})", "end", "return n"]);
@@ -375,7 +394,8 @@ public static class ValueSources
     [
         ParamSpec.Choice("how", "How much", Hows),
         ParamSpec.Int("amount", "Amount (x, or for each)", amountDefault, 1, 99999).ShowIf(b => b.Values.GetValueOrDefault("how") == "per"),
-        ParamSpec.Choice("value", "Of", withEvent ? Sources : Sources.Where(o => !AtResolution(o.Value)).ToArray()),
+        // A lasting effect can't read the ATK it changes itself.
+        ParamSpec.Choice("value", "Of", withEvent ? Sources : Sources.Where(o => !AtResolution(o.Value) && o.Value is not ("its_atk" or "its_def")).ToArray()),
         MemoryParam(),
         ParamSpec.Cards(CardsKey, "Which cards (for counts and totals)", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Hand })
             .ShowIf(b => UsesCards(b.Values.GetValueOrDefault("value", "lp_diff"))),
@@ -451,11 +471,14 @@ public static class ValueSources
             return $"{whose} {(dir == "lose" ? plural ? "decrease" : "decreases" : plural ? "increase" : "increases")} by {by}";
         }
         var unit = " " + args.Describe("stat");
+        // Reindsurm Giriakarma: "double this card's ATK", "halve its ATK".
+        if (dir == "becomes" && stat is "atk" or "def" && args.Choice("value") == (stat == "atk" ? "its_atk" : "its_def") && args.Choice("how") is "double" or "half" && !plural)
+            return $"{(args.Choice("how") == "double" ? "double" : "halve")} {Whose(unit.Trim())}";
         // "the ATK of monsters you control becomes ...", but "its ATK/DEF become ...".
         if (dir == "becomes") return $"{Whose(unit.Trim())} {(stat is "both" or "orig_both" ? "become" : "becomes")} {Phrase(args, "", forEach: false)}";
         var gain = dir == "lose" ? (plural ? "lose" : "loses") : (plural ? "gain" : "gains");
         // "this card gains that much ATK", as cards that pay LP in multiples say it (Cosmic Tree Irmistil, Psychic Blade).
-        if (args.Choice("value") == "lp_paid" && args.Choice("how") == "equal") return $"{subject} {gain} that much{unit}";
+        if (args.Choice("value") is "lp_paid" or "damage_dealt" && args.Choice("how") == "equal") return $"{subject} {gain} that much{unit}";
         // "gains ATK equal to ...", "gains 300 ATK for each ...".
         return $"{subject} {gain} {Phrase(args, unit)}";
     }

@@ -430,7 +430,9 @@ public class EngineTests
             // Remembering and delayed steps need a step before them: MemoryTests plays them.
             or RememberAction.BlockId or LaterAction.BlockId
             // Attaching this card needs an Xyz Monster you control: XyzMaterialBlockTests plays it.
-            or AttachSelfAction.BlockId)).Select(b => new object[] { b.Id, false })
+            or AttachSelfAction.BlockId
+            // Negating by original name needs a step before it, looking at random cards an opponent's Extra Deck: NameRitualRoundTests plays them.
+            or NegateSameNameAction.BlockId or LookRandomAction.BlockId)).Select(b => new object[] { b.Id, false })
             .Concat(BlockRegistry.OfKind(BlockKind.Action).Where(b => b.Param("target") is not null && b.Id is not ("do.place" or AttachSelfAction.BlockId)).Select(b => new object[] { b.Id, true }));
 
     /// <summary>Every DO block, with its default settings, activated from a monster on a well-stocked board.</summary>
@@ -483,7 +485,9 @@ public class EngineTests
         // Removing counters needs counters on the field: CounterTests pays it.
         BlockRegistry.OfKind(BlockKind.Cost).Where(b => b.Id is not ("cost.detach" or RemoveCounterCost.BlockId)).SelectMany(def =>
             new[] { def.CreateInstance() }
-                .Concat(def.Params.Where(p => p.Type == ParamType.Choice).SelectMany(p => Samples.OtherChoices(p).Where(c => !(def.Id == "cost.move_cards" && c.Value == "extra"))
+                // Revealing from the Extra Deck needs a Fusion Monster there: NameRitualRoundTests pays it.
+                .Concat(def.Params.Where(p => p.Type == ParamType.Choice).SelectMany(p => Samples.OtherChoices(p).Where(c => !(def.Id == "cost.move_cards" && c.Value == "extra")
+                        && !(def.Id == RevealCost.BlockId && c.Value == "extra"))
                     .Select(c => def.CreateInstance().With(p.Key, c.Value))))
                 .Select(inst => new object[] { def.Id, string.Join(",", inst.Values.Select(kv => $"{kv.Key}={kv.Value}")) }));
 

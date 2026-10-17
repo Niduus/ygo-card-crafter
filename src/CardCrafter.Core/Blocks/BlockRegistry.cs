@@ -212,6 +212,8 @@ public static class BlockRegistry
         new ChooseEffectsAction(), new RevealPickAction(), new PairTargetAction(),
         // Targeting for the steps after, which act on "that card" (CardRefs.cs)
         new TargetCardsAction(),
+        // Names for a while, negating by original name, looking at random cards (Names.cs)
+        new NameBecomesAction(), new NegateSameNameAction(), new LookRandomAction(), new RevealedCondition(), new SameNameLinkPassive(),
     ];
 
     private static readonly Dictionary<string, BlockDefinition> ById = All.ToDictionary(b => b.Id);

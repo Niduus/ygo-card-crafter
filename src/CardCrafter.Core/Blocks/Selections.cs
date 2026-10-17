@@ -18,7 +18,7 @@ public static class Selection
     public static IReadOnlyList<ParamSpec> Params(bool anyNumber) =>
     [
         .. anyNumber ? [AmountParam, NumberOfParam] : Array.Empty<ParamSpec>(),
-        PickParam, SumParam, EachParam, ChooserParam,
+        PickParam, Pick2Param, Pick3Param, SumParam, EachParam, IncludingParam, IncludedParam, ChooserParam,
     ];
 
     /// <summary>
@@ -28,7 +28,9 @@ public static class Selection
     public static ParamSpec AmountParam => ParamSpec.Choice("amount", "Number",
         new("count", "", "a number:"), new("any", "", "any number"), new("number_of", "", "up to the number of:"),
         // Flying Launcher: "detach any number of materials from this card, then target that many Spells/Traps on the field".
-        new("cost", "", "that many (as many as the cost used)"));
+        new("cost", "", "that many (as many as the cost used)"),
+        // Hyperinvoked Aeon: "banish cards ..., up to the number of monsters used as material for its Summon".
+        new("materials", "", "up to the number of monsters used as material for this card's Summon"));
 
     /// <summary>The cards counted for "up to the number of ...", said at the end of the sentence (<see cref="EachText"/>).</summary>
     public static ParamSpec NumberOfParam => ParamSpec.Cards("count_cards", "The number of",
@@ -49,6 +51,33 @@ public static class Selection
         new("level_max", "", "whose total Levels equal ... or less"),
         new("atk_max", "", "whose combined ATK is ... or less")).ShowIf(Several);
 
+    /// <summary>The group rules that can go together: "2 Normal Monsters with different Types, Attributes, and Levels" (Bunnillin Soft).</summary>
+    private static ChoiceOption[] MoreRules =>
+    [
+        new("any", "", "(no other rule)"),
+        new("names", "", "and with different names"),
+        new("attributes", "", "and with different Attributes"),
+        new("types", "", "and with different Types"),
+        new("levels", "", "and with different Levels"),
+        new("same_name", "", "and with the same name"),
+        new("same_attribute", "", "and with the same Attribute"),
+        new("same_type", "", "and with the same Type"),
+        new("same_level", "", "and with the same Level"),
+    ];
+
+    public static ParamSpec Pick2Param => ParamSpec.Choice("pick2", "And as a group", MoreRules)
+        .ShowIf(b => Several(b) && b.Values.GetValueOrDefault("pick", "any") is not ("any" or "level_sum" or "level_max" or "atk_max"));
+
+    public static ParamSpec Pick3Param => ParamSpec.Choice("pick3", "And also as a group", MoreRules)
+        .ShowIf(b => Several(b) && b.Values.GetValueOrDefault("pick2", "any") != "any");
+
+    /// <summary>"Send 2 monsters from your Deck to the GY, including an Insect monster": at least 1 of the cards is like this.</summary>
+    public static ParamSpec IncludingParam => ParamSpec.Flag("including", "including at least 1 card like this (picked below)", false).ShowIf(Several);
+
+    public static ParamSpec IncludedParam => ParamSpec.Cards("inc_cards", "Including",
+            () => new CardFilter { Owner = CardOwner.You, Zones = Zone.None, CardType = FilterCardType.Monster })
+        .Unprinted().WhenUsed().ShowIf(b => Several(b) && b.Values.GetValueOrDefault("including") == "true");
+
     public static ParamSpec SumParam => ParamSpec.Int("sum", "Total", 8, 1, 99999).Unprinted()
         .ShowIf(b => Several(b) && b.Values.GetValueOrDefault("pick") is "level_sum" or "level_max" or "atk_max");
 
@@ -65,7 +94,7 @@ public static class Selection
 
     /// <summary>The block may take more than 1 card, so the group blanks mean something.</summary>
     private static bool Several(BlockInstance b) =>
-        b.Values.GetValueOrDefault("amount") is "any" or "number_of" or "cost"
+        b.Values.GetValueOrDefault("amount") is "any" or "number_of" or "cost" or "materials"
         || b.Values.GetValueOrDefault("mode") != "all" && b.Values.GetValueOrDefault("count_mode") != "all"
         && int.TryParse(b.Values.GetValueOrDefault("count", "1"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) && n > 1;
 
@@ -79,8 +108,11 @@ public static class Selection
     /// <summary>"that many": as many cards as the effect's cost used.</summary>
     public static bool ThatMany(BlockArgs a) => a.Definition.Param("amount") is not null && a.Choice("amount") == "cost";
 
+    /// <summary>"up to the number of monsters used as material for its Summon": this card's materials, counted as the effect is used.</summary>
+    public static bool Materials(BlockArgs a) => a.Definition.Param("amount") is not null && a.Choice("amount") == "materials";
+
     /// <summary>"any number of", "up to the number of" or "that many": the count blank says nothing, and the cards are plural.</summary>
-    public static bool Uncounted(BlockArgs a) => AnyNumber(a) || NumberOf(a) || ThatMany(a);
+    public static bool Uncounted(BlockArgs a) => AnyNumber(a) || NumberOf(a) || ThatMany(a) || Materials(a);
 
     private static bool Several(BlockArgs a) => Uncounted(a) || a.CountMode != "all" && a.Int("count") > 1;
 
@@ -88,6 +120,24 @@ public static class Selection
     private static string Pick(BlockArgs a) => Offers(a.Definition) && Several(a) && !a.Cards("cards").IsSpecific() ? a.Choice("pick") : "any";
 
     private static bool Each(BlockArgs a) => Offers(a.Definition) && Several(a) && a.Bool("each_zone") && Parts(a.Cards("cards")).Count > 1;
+
+    /// <summary>The group rules besides the first: "and with different Attributes", "and with different Levels".</summary>
+    private static List<string> MorePicks(BlockArgs a)
+    {
+        if (Pick(a) is "any" or "level_sum" or "level_max" or "atk_max" || a.Definition.Param("pick2") is null) return [];
+        var more = new List<string>();
+        foreach (var key in new[] { "pick2", "pick3" })
+        {
+            var p = a.Choice(key);
+            if (p == "any") break;
+            if (p != Pick(a) && !more.Contains(p)) more.Add(p);
+        }
+        return more;
+    }
+
+    /// <summary>"including a monster you control": at least 1 of the picked cards must be like the "Including" picker.</summary>
+    private static bool Including(BlockArgs a) => Offers(a.Definition) && a.Definition.Param("including") is not null && Several(a) && a.Bool("including")
+                                                 && !a.Cards("cards").IsSpecific();
 
     /// <summary>
     /// "up to 1 card each from your GY and your opponent's GY" (Tantrum Toddler): up to as many cards as there are places,
@@ -98,14 +148,14 @@ public static class Selection
     private static string Chooser(BlockArgs a) => Offers(a.Definition) && !a.Cards("cards").IsSpecific() ? a.Choice("chooser") : "you";
 
     /// <summary>True when the block picks its cards in a way of its own here, compiled by <see cref="CardGroupAction"/>'s selection step.</summary>
-    public static bool Applies(BlockArgs a) => Offers(a.Definition) && !a.Cards("cards").IsSpecific() && (Uncounted(a) || Pick(a) != "any" || Each(a) || Chooser(a) != "you");
+    public static bool Applies(BlockArgs a) => Offers(a.Definition) && !a.Cards("cards").IsSpecific() && (Uncounted(a) || Pick(a) != "any" || Each(a) || Including(a) || Chooser(a) != "you");
 
     /// <summary>"any number of", "1 random": the count's words, or null for the usual ones.</summary>
     public static string? CountWords(BlockArgs a)
     {
         if (!Offers(a.Definition) || a.Cards("cards").IsSpecific()) return null;
         if (AnyNumber(a)) return "any number of";
-        if (NumberOf(a)) return "";
+        if (NumberOf(a) || Materials(a)) return "";
         if (ThatMany(a)) return "that many";
         if (Chooser(a) == "random" && a.CountMode == "exact") return $"{a.Int("count").ToString(CultureInfo.InvariantCulture)} random";
         if (UpToOneEach(a)) return "up to 1";
@@ -157,18 +207,7 @@ public static class Selection
     {
         var f = a.Cards("cards");
         var pick = Pick(a);
-        var before = pick switch
-        {
-            "names" => "with different names",
-            "attributes" => "with different Attributes",
-            "types" => "with different Types",
-            "levels" => "with different Levels",
-            "same_name" => "with the same name",
-            "same_attribute" => "with the same Attribute",
-            "same_type" => "with the same Type",
-            "same_level" => "with the same Level",
-            _ => null,
-        };
+        var before = RuleWords([pick, .. MorePicks(a)]);
         var each = Each(a);
         if (UpToOneEach(a))
             return FilterText.Describe(f, a.Pack, plural: false, preposition: preposition, ownName: a.CardName, withExcept: false, beforeLocation: before, withLocation: false)
@@ -184,15 +223,70 @@ public static class Selection
         };
     }
 
+    /// <summary>
+    /// "with different Types, Attributes, and Levels", "with different names and the same Level": the group rules that
+    /// say how the cards differ or match, or null for none.
+    /// </summary>
+    private static string? RuleWords(IReadOnlyList<string> rules)
+    {
+        static string? Noun(string rule) => rule switch
+        {
+            "names" or "same_name" => "name", "attributes" or "same_attribute" => "Attribute", "types" or "same_type" => "Type", "levels" or "same_level" => "Level",
+            _ => null,
+        };
+        var different = rules.Where(r => !r.StartsWith("same_", StringComparison.Ordinal) && Noun(r) is not null).Select(r => Noun(r)! + "s").ToList();
+        var same = rules.Where(r => r.StartsWith("same_", StringComparison.Ordinal)).Select(r => Noun(r)!).ToList();
+        static string Join(List<string> w) => w.Count switch
+        {
+            1 => w[0],
+            2 => $"{w[0]} and {w[1]}",
+            _ => string.Join(", ", w.Take(w.Count - 1)) + ", and " + w[^1],
+        };
+        var parts = new List<string>();
+        if (different.Count > 0) parts.Add("different " + Join(different));
+        if (same.Count > 0) parts.Add("the same " + Join(same));
+        return parts.Count == 0 ? null : "with " + string.Join(" and ", parts);
+    }
+
+    /// <summary>"a" or "an" before a card's words: "an Insect monster", "a monster you control".</summary>
+    private static string Article(string words)
+    {
+        var w = words.TrimStart('"');
+        return w.Length > 0 && "aeiouAEIOU".Contains(w[0]) && !w.StartsWith("Uni", StringComparison.Ordinal) ? "an" : "a";
+    }
+
     /// <summary>", 1 each from your hand, Deck, and GY": said at the end of the sentence, or "".</summary>
     public static string EachText(BlockArgs a)
     {
         // ", up to the number of "Ritual Beast" monsters you control".
         var text = Offers(a.Definition) && NumberOf(a) && !a.Cards("cards").IsSpecific()
             ? ", up to the number of " + FilterText.Describe(a.Cards("count_cards"), a.Pack, plural: true, ownName: a.CardName)
-            : "";
+            : Offers(a.Definition) && Materials(a) && !a.Cards("cards").IsSpecific() ? ", up to the number of monsters used as material for its Summon" : "";
+        if (Including(a)) text += ", including " + IncludedText(a);
         if (!Each(a) || UpToOneEach(a)) return text;
         return text + ", 1 each " + EachPlaces(a.Cards("cards"));
+    }
+
+    /// <summary>"an Insect monster", "a monster you control": the card the group includes, with where it is when that says more.</summary>
+    private static string IncludedText(BlockArgs a)
+    {
+        var (f, inc) = (a.Cards("cards"), a.Cards("inc_cards"));
+        var where = inc.Zones != Zone.None && (inc.Zones != f.Zones || inc.Owner != f.Owner);
+        var words = FilterText.Describe(inc, a.Pack, plural: false, preposition: "from", withLocation: where, ownName: a.CardName);
+        return $"{Article(words)} {words}";
+    }
+
+    /// <summary>"including ...": the Lua test that the group g has such a card, or null.</summary>
+    private static string? IncludedLua(BlockContext ctx)
+    {
+        if (!Including(ctx.Args)) return null;
+        var (f, inc) = (ctx.Args.Cards("cards"), ctx.Args.Cards("inc_cards"));
+        var extra = new List<string>();
+        // Where it is matters only when it says more than where the cards are picked from.
+        if (inc.Zones != Zone.None && inc.Zones != f.Zones) extra.Add($"c:IsLocation({Lua.Locations(inc.Zones)})");
+        if (inc.Owner != f.Owner && inc.Owner != CardOwner.Either) extra.Add(inc.Owner == CardOwner.You ? "c:IsControler(tp)" : "c:IsControler(1-tp)");
+        var fn = ctx.Script.Filter(inc, extra.Count == 0 ? null : string.Join(" and ", extra), "incfilter");
+        return $"g:IsExists({fn.Function},1,nil,e,tp)";
     }
 
     /// <summary>"from your hand, Deck, and GY", "from your GY and your opponent's GY": the places "1 each" takes from.</summary>
@@ -208,6 +302,7 @@ public static class Selection
             if (!ctx.Effect.CostCounts) ctx.Effect.Error("\"That many\" needs a COST block that detaches, discards, sends or banishes cards (\"any number\" or \"up to\").");
             return "e:GetLabel()";
         }
+        if (Materials(ctx.Args)) return "e:GetHandler():GetMaterialCount()";
         if (!NumberOf(ctx.Args)) return null;
         var c = ctx.Script.Filter(ctx.Args.Cards("count_cards"), null, "ctfilter");
         return $"Duel.GetMatchingGroupCount({c.Function},tp,{c.Self},{c.Opp},{c.Exclude},e,tp)";
@@ -222,45 +317,56 @@ public static class Selection
         var a = ctx.Args;
         var pick = Pick(a);
         var each = Each(a);
-        if (pick == "any" && !each) return null;
+        var included = IncludedLua(ctx);
+        var more = MorePicks(a);
+        if (pick == "any" && !each && included is null) return null;
         var sum = Num(a.Int("sum"));
         // The activation check can't use a local of the target step: it counts again ("up to the number of ...").
         var cmax = checkMax ?? max;
+        var plain = !each && included is null && more.Count == 0;
         // "whose total Levels equal 8", without more: the engine's own sum selection, as official cards use.
-        if (pick == "level_sum" && !each)
+        if (pick == "level_sum" && plain)
             return (pool => $"{pool}:CheckWithSumEqual(Card.GetLevel,{sum},{Num(min)},{cmax})",
                     pool => $"{pool}:SelectWithSumEqual({who},Card.GetLevel,{sum},{Num(min)},{max})");
         // "with different names": the engine's checks (aux.dncheck...), and enough different ones among the cards.
-        var (helper, by) = pick switch
+        static (string? Helper, string? By) Different(string rule) => rule switch
         {
             "names" => ("aux.dncheck", "Card.GetCode"),
             "attributes" => ("aux.dabcheck", "Card.GetAttribute"),
             "types" => ("aux.drccheck", "Card.GetRace"),
             "levels" => ("aux.dlvcheck", "Card.GetLevel"),
-            _ => ((string?)null, (string?)null),
+            _ => (null, null),
         };
-        if (helper is not null && !each)
+        var (helper, by) = Different(pick);
+        if (helper is not null && plain)
             return (pool => $"{pool}:GetClassCount({by})>={Num(min)}", pool => $"{pool}:SelectSubGroup({who},{helper},false,{Num(min)},{max})");
         var tests = new List<string>();
-        if (helper is not null) tests.Add($"{helper}(g)");
-        tests.AddRange(pick switch
+        foreach (var rule in new[] { pick }.Concat(more))
         {
-            "same_name" => ["g:GetClassCount(Card.GetCode)==1"],
-            "same_attribute" => ["aux.SameValueCheck(g,Card.GetAttribute)"],
-            "same_type" => ["aux.SameValueCheck(g,Card.GetRace)"],
-            "same_level" => ["g:GetClassCount(Card.GetLevel)==1"],
-            "level_sum" => [$"g:GetSum(Card.GetLevel)=={sum}"],
-            "level_max" => [$"g:GetSum(Card.GetLevel)<={sum}"],
-            "atk_max" => [$"g:GetSum(Card.GetAttack)<={sum}"],
-            _ => Array.Empty<string>(),
-        });
+            if (Different(rule).Helper is { } h) tests.Add($"{h}(g)");
+            tests.AddRange(rule switch
+            {
+                "same_name" => ["g:GetClassCount(Card.GetCode)==1"],
+                "same_attribute" => ["aux.SameValueCheck(g,Card.GetAttribute)"],
+                "same_type" => ["aux.SameValueCheck(g,Card.GetRace)"],
+                "same_level" => ["g:GetClassCount(Card.GetLevel)==1"],
+                "level_sum" => [$"g:GetSum(Card.GetLevel)=={sum}"],
+                "level_max" => [$"g:GetSum(Card.GetLevel)<={sum}"],
+                "atk_max" => [$"g:GetSum(Card.GetAttack)<={sum}"],
+                _ => Array.Empty<string>(),
+            });
+        }
         // "1 each from your hand and GY": at most 1 card from each place.
         if (each)
             tests.AddRange(Parts(a.Cards("cards")));
-        // "1 each from your GY and your opponent's GY" asks whose each card is: the player is passed along.
+        // "including an Insect monster": one of them is.
+        if (included is not null) tests.Add(included);
+        // "1 each from your GY and your opponent's GY" asks whose each card is: the player is passed along, and the
+        // effect with it for "including ...".
         var player = tests.Any(t => t.Contains("tp", StringComparison.Ordinal));
-        var fn = ctx.Script.AddFunction("gcheck", player ? "g,tp" : "g", [$"return {string.Join(" and ", tests)}"]);
-        var extra = player ? ",tp" : "";
+        var withEffect = included is not null;
+        var fn = ctx.Script.AddFunction("gcheck", withEffect ? "g,e,tp" : player ? "g,tp" : "g", [$"return {string.Join(" and ", tests)}"]);
+        var extra = withEffect ? ",e,tp" : player ? ",tp" : "";
         return (pool => $"{pool}:CheckSubGroup({fn},{Num(min)},{cmax}{extra})", pool => $"{pool}:SelectSubGroup({who},{fn},false,{Num(min)},{max}{extra})");
     }
 
@@ -725,7 +831,7 @@ public sealed class PairTargetAction : ActionBlock
     public override string Id => BlockId;
     public override string Group => "Cards";
     public override string Name => "Target cards of two kinds (1 you control and 1 your opponent controls)";
-    public override string Sentence => "Target {count} {cards} and {count2} {cards2}; {action} them";
+    public override string Sentence => "Target {count} {cards} and {count2} {cards2}; {action} them {action2}";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Int("count", "How many of the first", 1, 1, 3),
@@ -733,11 +839,19 @@ public sealed class PairTargetAction : ActionBlock
         ParamSpec.Int("count2", "How many of the second", 1, 1, 3),
         ParamSpec.Cards("cards2", "The second targets", () => new CardFilter { Owner = CardOwner.Opponent, Zones = Zone.Field }),
         ParamSpec.Choice("action", "What happens to them",
-            new("destroy", "destroy"), new("banish", "banish"), new("hand", "return to the hand"), new("deck", "shuffle into the Deck"), new("grave", "send to the GY")),
+            new("destroy", "destroy"), new("banish", "banish"), new("hand", "return to the hand"), new("deck", "shuffle into the Deck"), new("grave", "send to the GY"),
+            // Qliphort Genius: "both those cards have their effects negated until the end of this turn".
+            new("negate", "negate the effects of", "negate their effects until the end of this turn")),
+        // Ancient Gear Ballista: "destroy that card you control, and if you do, change that opponent's monster's ATK/DEF to 0".
+        ParamSpec.Choice("action2", "The second targets",
+            new("same", "", "(the same happens to them)"),
+            new("atk0", "", "only the first: and if you do, the second's ATK/DEF become 0 until the end of this turn"),
+            new("negate", "", "only the first: and if you do, negate the second's effects until the end of this turn")),
     ];
 
     private static (string Category, string Hint, string? Able, string Apply) Way(string action) => action switch
     {
+        "negate" => ("CATEGORY_DISABLE", "HINTMSG_FACEUP", "aux.NegateAnyFilter(c)", "{0}"),
         "banish" => ("CATEGORY_REMOVE", "HINTMSG_REMOVE", "c:IsAbleToRemove()", "Duel.Remove({0},POS_FACEUP,REASON_EFFECT)"),
         "hand" => ("CATEGORY_TOHAND", "HINTMSG_RTOHAND", "c:IsAbleToHand()", "Duel.SendtoHand({0},nil,REASON_EFFECT)"),
         "deck" => ("CATEGORY_TODECK", "HINTMSG_TODECK", "c:IsAbleToDeck()", "Duel.SendtoDeck({0},nil,SEQ_DECKSHUFFLE,REASON_EFFECT)"),
@@ -766,10 +880,51 @@ public sealed class PairTargetAction : ActionBlock
         return $"{n} {FilterText.Describe(a.Cards(cards), a.Pack, plural: n != 1, ownName: a.CardName)}";
     }
 
+    /// <summary>"1 face-up card on each player's field": 1 of each, alike but for whose they are.</summary>
+    private static bool EachPlayers(BlockArgs a)
+    {
+        var (f1, f2) = (a.Cards("cards"), a.Cards("cards2"));
+        if (a.Int("count") != 1 || a.Int("count2") != 1 || f1.Owner == f2.Owner || f1.Owner == CardOwner.Either || f2.Owner == CardOwner.Either) return false;
+        var (one, two) = (f1.Clone(), f2.Clone());
+        one.Owner = two.Owner = CardOwner.Either;
+        one.ExcludeThisCard = two.ExcludeThisCard = false;
+        return System.Text.Json.JsonSerializer.Serialize(one, PackSerializer.Options) == System.Text.Json.JsonSerializer.Serialize(two, PackSerializer.Options);
+    }
+
+    /// <summary>"that card you control", "that opponent's monster": one kind of target, in the words of what is done to it.</summary>
+    private static string That(CardFilter f, bool owner) => (f.Owner, owner) switch
+    {
+        (CardOwner.Opponent, true) => "that opponent's monster",
+        (CardOwner.Opponent, false) => "that card your opponent controls",
+        (CardOwner.You, true) => "that monster you control",
+        (CardOwner.You, false) => "that card you control",
+        _ => "that card",
+    };
+
     public override (string Target, string Action)? DescribeTargeting(BlockArgs args)
     {
-        var verb = args.Choice("action") switch { "hand" => "return them to the hand", "deck" => "shuffle them into the Deck", "grave" => "send them to the GY", var v => v + " them" };
-        return ($"target {Cards(args, "count", "cards")} and {Cards(args, "count2", "cards2")}", verb);
+        string Verb(string action, string them) => action switch
+        {
+            "hand" => $"return {them} to the hand", "deck" => $"shuffle {them} into the Deck", "grave" => $"send {them} to the GY",
+            "negate" => $"negate {(them == "them" ? "their" : them + "'s")} effects until the end of this turn", var v => $"{v} {them}",
+        };
+        var (f1, f2) = (args.Cards("cards"), args.Cards("cards2"));
+        string target;
+        if (EachPlayers(args))
+        {
+            // Qliphort Genius: "target 1 face-up card on each player's field, except this card".
+            var one = f1.Clone();
+            one.ExcludeThisCard = false;
+            target = $"target 1 {FilterText.Describe(one, args.Pack, withLocation: false, ownName: args.CardName)} on each player's field{(f1.ExcludeThisCard || f2.ExcludeThisCard ? ", except this card" : "")}";
+        }
+        else target = $"target {Cards(args, "count", "cards")} and {Cards(args, "count2", "cards2")}";
+        var verb = args.Choice("action2") switch
+        {
+            "atk0" => $"{Verb(args.Choice("action"), That(f1, false))}, and if you do, change {That(f2, true)}'s ATK/DEF to 0 until the end of the turn",
+            "negate" => $"{Verb(args.Choice("action"), That(f1, false))}, and if you do, negate the effects of {That(f2, false)} until the end of this turn",
+            _ => Verb(args.Choice("action"), "them"),
+        };
+        return (target, verb);
     }
 
     public override string Describe(BlockArgs args) => DescribeTargeting(args) is { } t ? $"{t.Target}; {t.Action}" : "";
@@ -794,8 +949,12 @@ public sealed class PairTargetAction : ActionBlock
             return;
         }
         var (category, hint, able, apply) = Way(a.Choice("action"));
+        var second = a.Choice("action2");
         var r1 = ctx.Script.Filter(f1, able);
-        var r2 = ctx.Script.Filter(f2, able);
+        // What happens to the second targets: the same, or only after the first ("and if you do").
+        var able2 = second switch { "atk0" => "c:IsFaceup()", "negate" => "aux.NegateAnyFilter(c)", _ => able };
+        var r2 = ctx.Script.Filter(f2, able2);
+        if (a.Choice("action") == "negate") apply = NegateLua(ctx) + "({0},e)";
         var (n1, n2) = (a.Int("count").ToString(CultureInfo.InvariantCulture), a.Int("count2").ToString(CultureInfo.InvariantCulture));
         e.AddCategory(category);
         e.SetChkc("false");
@@ -812,13 +971,86 @@ public sealed class PairTargetAction : ActionBlock
             $"Duel.SetOperationInfo(0,{category},{g1},{g1}:GetCount(),0,0)",
         ]);
         var (g, r) = (e.NewLocal("g"), e.NewLocal("r"));
+        if (second == "same")
+        {
+            e.AddStep(
+            [
+                $"local {g}=Duel.GetChainInfo(0,CHAININFO_TARGET_CARDS):Filter(Card.IsRelateToEffect,nil,e)",
+                $"local {r}=0",
+                $"if {g}:GetCount()>0 then",
+                $"\t{r}={string.Format(CultureInfo.InvariantCulture, apply, g)}",
+                "end",
+            ], r, ctx.Link);
+            return;
+        }
+        // The first targets are still the first kind (where they are, whose, what), as official scripts check them.
+        var where = $"c:IsLocation({Lua.Locations(f1.Zones)})" + f1.Owner switch { CardOwner.You => " and c:IsControler(tp)", CardOwner.Opponent => " and c:IsControler(1-tp)", _ => "" };
+        var first = ctx.Script.AddFunction("pairfirst", "c,e,tp", [$"return {where} and {r1.Function}(c,e,tp)"]);
+        e.AddCategory(second == "atk0" ? "CATEGORY_ATKCHANGE" : "CATEGORY_DISABLE");
+        if (second == "atk0") e.AddCategory("CATEGORY_DEFCHANGE");
+        var then = second == "atk0" ? ZeroLua(ctx) : NegateLua(ctx);
+        var (s1, s2) = (e.NewLocal("g"), e.NewLocal("g"));
         e.AddStep(
         [
             $"local {g}=Duel.GetChainInfo(0,CHAININFO_TARGET_CARDS):Filter(Card.IsRelateToEffect,nil,e)",
             $"local {r}=0",
-            $"if {g}:GetCount()>0 then",
-            $"\t{r}={string.Format(CultureInfo.InvariantCulture, apply, g)}",
+            $"local {s1}={g}:Filter({first},nil,e,tp)",
+            $"local {s2}={g}:Clone()",
+            $"{s2}:Sub({s1})",
+            $"if {s1}:GetCount()>0 then",
+            $"\t{r}={string.Format(CultureInfo.InvariantCulture, apply, s1)}",
+            $"\tif {r}>0 and {s2}:GetCount()>0 then {r}={r}+{then}({s2}:Filter({r2.Function},nil,e,tp),e) end",
             "end",
         ], r, ctx.Link);
     }
+
+    /// <summary>"Negate their effects until the end of this turn", as Qliphort Genius does it; how many were negated.</summary>
+    private static string NegateLua(BlockContext ctx) => ctx.Script.AddFunction("pairnegate", "g,e",
+    [
+        "local n=0",
+        "for tc in aux.Next(g) do",
+        "\tif tc:IsFaceup() and not tc:IsDisabled() then",
+        "\t\tDuel.NegateRelatedChain(tc,RESET_TURN_SET)",
+        "\t\tlocal e1=Effect.CreateEffect(e:GetHandler())",
+        "\t\te1:SetType(EFFECT_TYPE_SINGLE)",
+        "\t\te1:SetProperty(EFFECT_FLAG_CANNOT_DISABLE)",
+        "\t\te1:SetCode(EFFECT_DISABLE)",
+        "\t\te1:SetReset(RESET_EVENT+RESETS_STANDARD+RESET_PHASE+PHASE_END)",
+        "\t\ttc:RegisterEffect(e1)",
+        "\t\tlocal e2=e1:Clone()",
+        "\t\te2:SetCode(EFFECT_DISABLE_EFFECT)",
+        "\t\te2:SetValue(RESET_TURN_SET)",
+        "\t\ttc:RegisterEffect(e2)",
+        "\t\tif tc:IsType(TYPE_TRAPMONSTER) then",
+        "\t\t\tlocal e3=e1:Clone()",
+        "\t\t\te3:SetCode(EFFECT_DISABLE_TRAPMONSTER)",
+        "\t\t\ttc:RegisterEffect(e3)",
+        "\t\tend",
+        "\t\tn=n+1",
+        "\tend",
+        "end",
+        "return n",
+    ]);
+
+    /// <summary>"Change that monster's ATK/DEF to 0 until the end of the turn", as Ancient Gear Ballista does it.</summary>
+    private static string ZeroLua(BlockContext ctx) => ctx.Script.AddFunction("pairzero", "g,e",
+    [
+        "local n=0",
+        "for tc in aux.Next(g) do",
+        "\tif tc:IsFaceup() then",
+        "\t\tlocal e1=Effect.CreateEffect(e:GetHandler())",
+        "\t\te1:SetType(EFFECT_TYPE_SINGLE)",
+        "\t\te1:SetCode(EFFECT_SET_ATTACK_FINAL)",
+        "\t\te1:SetProperty(EFFECT_FLAG_CANNOT_DISABLE)",
+        "\t\te1:SetValue(0)",
+        "\t\te1:SetReset(RESET_EVENT+RESETS_STANDARD+RESET_PHASE+PHASE_END)",
+        "\t\ttc:RegisterEffect(e1)",
+        "\t\tlocal e2=e1:Clone()",
+        "\t\te2:SetCode(EFFECT_SET_DEFENSE_FINAL)",
+        "\t\ttc:RegisterEffect(e2)",
+        "\t\tn=n+1",
+        "\tend",
+        "end",
+        "return n",
+    ]);
 }

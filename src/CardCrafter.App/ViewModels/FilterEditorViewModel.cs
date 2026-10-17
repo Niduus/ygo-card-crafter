@@ -87,6 +87,7 @@ public sealed partial class FilterEditorViewModel : ObservableObject
             _f.That = value.Value;
             if (_f.That != CardRef.None) ThisCard = false;
             OnPropertyChanged(nameof(IsThat));
+            OnPropertyChanged(nameof(ShowOr));
             OnPropertyChanged(nameof(ShowThisCard));
             OnPropertyChanged(nameof(ShowWhere));
             OnPropertyChanged(nameof(ShowOwner));
@@ -197,6 +198,40 @@ public sealed partial class FilterEditorViewModel : ObservableObject
         get => Options.Find(Lists.SpellTrapKinds, _f.SpellTrapKind);
         set { if (value is null || Equals(_f.SpellTrapKind, value.Value)) return; _f.SpellTrapKind = value.Value; Changed(); }
     }
+
+    /// <summary>"a Normal or Quick-Play Spell": another kind it may be instead.</summary>
+    public Option<SpellTrapKind> SpellTrapKind2
+    {
+        get => Options.Find(Lists.SpellTrapKinds, _f.SpellTrapKind2);
+        set { if (value is null || Equals(_f.SpellTrapKind2, value.Value)) return; _f.SpellTrapKind2 = value.Value; Changed(); }
+    }
+
+    /// <summary>"in this card's column".</summary>
+    public bool InThisColumn { get => _f.InThisColumn; set { if (_f.InThisColumn == value) return; _f.InThisColumn = value; Changed(); } }
+
+    /// <summary>An editor inside another one, for its "or another kind of card": it has no "or" of its own.</summary>
+    public bool Nested { get; init; }
+
+    public bool ShowOr => !Nested && !IsThat;
+
+    /// <summary>"1 "Ancient Gear" monster or 1 "Geartown"": another kind of card that counts too.</summary>
+    public bool HasOrCards
+    {
+        get => _f.OrCards is not null;
+        set
+        {
+            if (HasOrCards == value) return;
+            _f.OrCards = value ? new CardFilter { CardType = FilterCardType.Any } : null;
+            _orEditor = null;
+            OnPropertyChanged(nameof(OrEditor));
+            Changed(nameof(HasOrCards));
+        }
+    }
+
+    private FilterEditorViewModel? _orEditor;
+
+    /// <summary>What the other kind of card is (where it is comes from this picker).</summary>
+    public FilterEditorViewModel? OrEditor => _f.OrCards is null ? null : _orEditor ??= new FilterEditorViewModel(_f.OrCards, Zone.None, true, _pack, () => Changed()) { Nested = true };
 
     public IReadOnlyList<Option<FilterSummoned>> SummonedOptions => Lists.Summoned;
     public Option<FilterSummoned> Summoned

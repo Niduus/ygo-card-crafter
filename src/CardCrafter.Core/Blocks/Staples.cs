@@ -193,18 +193,33 @@ public sealed class SummonedUsingCondition : ConditionBlock
     public override string Id => BlockId;
     public override string Group => "This card";
     public override string Name => "This card was Summoned using certain materials";
-    public override string Sentence => "This card was Summoned using {count} {kind} as material";
-    public override string Help => "Like S:P Little Knight. With \"If this card is Link Summoned\" the card reads \"If this card is Link Summoned using ... as material\".";
+    public override string Sentence => "This card was Summoned using {count} {kind} {mat_cards} as material";
+    public override string Help => "Like S:P Little Knight. With \"If this card is Link Summoned\" the card reads \"If this card is Link Summoned using ... as material\". " +
+                                   "\"A monster like this\" picks what the material is: \"using a Link Monster with 0 original ATK\" (Marincess Truth Heart), " +
+                                   "\"using \"Salamangreat Heatleo\"\".";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Int("count", "At least", 1, 1, 6),
-        ParamSpec.Choice("kind", "Material", Kinds),
+        ParamSpec.Choice("kind", "Material", [.. Kinds, new("picked", "", "a monster like this (picked below)")]),
+        new ParamSpec
+        {
+            Key = "mat_cards", Label = "The material", Type = ParamType.Cards, WhereFromBlock = true,
+            DefaultFilter = () => new CardFilter { Owner = CardOwner.Either, Zones = Zone.None, CardType = FilterCardType.Monster, MonsterKind = MonsterKind.Link },
+        }.Unprinted().WhenUsed().ShowIf(b => b.Values.GetValueOrDefault("kind") == "picked"),
     ];
 
     /// <summary>"using a Fusion, Synchro, Xyz, or Link Monster as material", "using 3 or more monsters as material".</summary>
     public static string Using(BlockArgs args)
     {
         var n = args.Int("count");
+        if (args.Choice("kind") == "picked")
+        {
+            // "using a Link Monster with 0 original ATK as material", "using "Salamangreat Heatleo" as material".
+            var f = args.Cards("mat_cards");
+            var words = Text.FilterText.Describe(f, args.Pack, plural: n > 1, withLocation: false, ownName: args.CardName);
+            if (n > 1) return $"using {n} or more {words} as material";
+            return f.CardCode != 0 ? $"using {words} as material" : $"using {SummonWording.Article(words)} {words} as material";
+        }
         var kind = args.Describe("kind");
         if (n == 1) return $"using {("AEIOUX".Contains(kind[0]) ? "an" : "a")} {kind} as material";
         var plural = args.Choice("kind") switch { "extra" => "Fusion, Synchro, Xyz, or Link Monsters", "monster" => "monsters", _ => kind + "s" };
@@ -215,8 +230,12 @@ public sealed class SummonedUsingCondition : ConditionBlock
 
     public override void Compile(BlockContext ctx)
     {
-        var f = ctx.Script.AddFunction("matfilter", "c", [$"return {Check(ctx.Args.Choice("kind"))}"]);
-        ctx.Effect.Conditions.Add($"e:GetHandler():GetMaterial():FilterCount({f},nil)>={ctx.Args.Int("count")}");
+        var f = ctx.Args.Choice("kind") == "picked"
+            ? ctx.Script.MaterialFilter(ctx.Args.Cards("mat_cards"))
+            : ctx.Script.AddFunction("matfilter", "c", [$"return {Check(ctx.Args.Choice("kind"))}"]);
+        if (f == "nil") f = "Card.IsType";
+        var arg = f == "Card.IsType" ? ",nil,TYPE_MONSTER" : ",nil";
+        ctx.Effect.Conditions.Add($"e:GetHandler():GetMaterial():FilterCount({f}{arg})>={ctx.Args.Int("count")}");
     }
 
     /// <summary>The check a material must pass for each kind.</summary>
@@ -305,7 +324,7 @@ public sealed class PlaceAction : CardGroupAction
     protected override string TargetedWording => "place {0} face-up";
     public override string Id => BlockId;
     public override string Name => "Place cards face-up (Spell & Trap, Field or Pendulum Zone)";
-    public override string Sentence => "Place {amount} {count_cards} {count} {cards} {pick} {sum} {target} face-up {where} {as} {chooser}";
+    public override string Sentence => "Place {amount} {count_cards} {count} {cards} {pick} {pick2} {pick3} {sum} {inc_cards} {target} face-up {where} {as} {chooser}";
     public override string Help => "Like \"place 1 Continuous Trap from your Deck face-up in your Spell & Trap Zone\". Placed cards aren't activated. " +
                                    "\"As a Continuous Spell\" also places monsters, like the Crystal Beasts. \"In its owner's Spell & Trap Zone\" puts each card " +
                                    "in the zones of the player who owns it (Snake-Eye); a card whose owner has no free zone left is sent to the GY.";

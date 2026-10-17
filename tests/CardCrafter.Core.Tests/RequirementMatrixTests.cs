@@ -497,6 +497,11 @@ public class RequirementMatrixChoiceTests
         Row("link_summoned", false, Is("main_zone")), Row("link_summoned", true, IsNot("main_zone")), Row("link", true, Is("main_zone")), Row("link", false, IsNot("main_zone")),
         Row("stat", true, Is("targetable")), Row("stat", false, IsNot("targetable")), Row("untargetable", false, Is("targetable")), Row("untargetable", true, IsNot("targetable")),
         Row("counters", true, Is("counters")), Row("counters", false, IsNot("counters")), Row("stat", false, Is("counters")), Row("stat", true, IsNot("counters")),
+        // Gizmek Taniguku: ATK equal to its own DEF (0 and 0 too); a Link Monster has no DEF to equal.
+        Row("zero_any", true, Is("atk_eq_def")), Row("zero_any", false, IsNot("atk_eq_def")), Row("stat", false, Is("atk_eq_def")), Row("stat", true, IsNot("atk_eq_def")),
+        Row("link", false, Is("atk_eq_def")),
+        // Heretic Eradicator: an Xyz Monster cannot be Normal Summoned/Set; a Normal Monster can.
+        Row("xyz", true, Is("not_summonable")), Row("xyz", false, IsNot("not_summonable")), Row("stat", false, Is("not_summonable")), Row("stat", true, IsNot("not_summonable")),
     ];
 
     [EngineTheory]
@@ -629,6 +634,10 @@ public class RequirementMatrixTextTests
         [Is("ref_orig_level", (long)CardRef.Cost), "with the same original Level as that monster"],
         [IsNot("ref_orig_name", (long)CardRef.Cost), "with a different original name"],
         [Is("ref_atk_le", (long)CardRef.Target), "with ATK less than or equal to that monster's ATK"],
+        [Is("ref_mentioned", (long)CardRef.Cost), "whose name is mentioned on that monster"],
+        [Is("atk_eq_def"), "whose ATK equals its own DEF"],
+        [IsNot("not_summonable"), "that can be Normal Summoned/Set"],
+        [Is("not_summonable"), "that cannot be Normal Summoned/Set"],
     ];
 
     private static CardPack Pack() => new()

@@ -69,6 +69,16 @@ public static class FilterCompiler
     /// <param name="hasEffect">The function has the effect and its player (e, tp), for requirements that need them.</param>
     public static List<string> Conditions(CardFilter f, string card = "c", SummonProcedureKind material = SummonProcedureKind.None, bool hasEffect = true)
     {
+        // "1 "Ancient Gear" monster or 1 "Geartown"": either kind, each with what this filter says about where it is.
+        if (f.OrCards is { } alt && !f.IsSpecific())
+        {
+            var main = f.Clone();
+            main.OrCards = null;
+            var one = Conditions(main, card, material, hasEffect);
+            var two = Conditions(Alternative(f, alt), card, material, hasEffect);
+            if (one.Count == 0 || two.Count == 0) return [];
+            return ["((" + string.Join(" and ", one) + ") or (" + string.Join(" and ", two) + "))"];
+        }
         var parts = new List<string>();
         var (isType, isAttr, isRace, isSet, isCode) = material switch
         {
@@ -93,16 +103,10 @@ public static class FilterCompiler
             parts.Add($"{card}:{isCode}({string.Join(",", new[] { f.CardCode }.Concat(f.AltCodes).Select(Lua.Num))})");
         if (f.MentionsCode != 0)
             parts.Add(f.MentionsOrIs ? $"aux.IsCodeOrListed({card},{Lua.Num(f.MentionsCode)})" : $"aux.IsCodeListed({card},{Lua.Num(f.MentionsCode)})");
-        switch (f.SpellTrapKind)
-        {
-            case SpellTrapKind.Normal: parts.Add($"{card}:GetType()&(TYPE_CONTINUOUS+TYPE_QUICKPLAY+TYPE_FIELD+TYPE_EQUIP+TYPE_RITUAL+TYPE_COUNTER+TYPE_MONSTER)==0"); break;
-            case SpellTrapKind.Continuous: parts.Add($"{card}:IsType(TYPE_CONTINUOUS)"); break;
-            case SpellTrapKind.QuickPlay: parts.Add($"{card}:IsType(TYPE_QUICKPLAY)"); break;
-            case SpellTrapKind.Field: parts.Add($"{card}:IsType(TYPE_FIELD)"); break;
-            case SpellTrapKind.Equip: parts.Add($"{card}:IsType(TYPE_EQUIP)"); break;
-            case SpellTrapKind.Ritual: parts.Add($"{card}:IsType(TYPE_RITUAL) and {card}:IsType(TYPE_SPELL)"); break;
-            case SpellTrapKind.Counter: parts.Add($"{card}:IsType(TYPE_COUNTER)"); break;
-        }
+        // "a Normal or Quick-Play Spell": either kind.
+        var kinds = new[] { f.SpellTrapKind, f.SpellTrapKind2 }.Where(k => k != SpellTrapKind.Any).Distinct().Select(k => KindTest(k, card)).ToList();
+        if (kinds.Count == 1) parts.Add(kinds[0]);
+        else if (kinds.Count > 1) parts.Add("(" + string.Join(" or ", kinds.Select(k => $"({k})")) + ")");
         switch (f.Position)
         {
             case FilterPosition.Attack: parts.Add($"{card}:IsAttackPos()"); break;
@@ -140,14 +144,30 @@ public static class FilterCompiler
         if (f.AtkMax is { } amax) parts.Add($"{card}:IsAttackBelow({amax})");
         if (f.PointedToByThisCard) parts.Add($"e:GetHandler():GetLinkedGroup():IsContains({card})");
         if (f.CenterZone) parts.Add($"{card}:IsLocation(LOCATION_MZONE) and {card}:GetSequence()==2");
+        if (f.InThisColumn) parts.Add($"e:GetHandler():GetColumnGroup():IsContains({card})");
         // The filter's further requirements, from the property catalog: "original ATK 2000 or more", "not DARK".
         // A material's Type, Attribute, archetype or name in its material form, as the filter's own fields check them.
         string Material(string test) => material == SummonProcedureKind.None ? test : System.Text.RegularExpressions.Regex.Replace(test, @"\bc:Is(Type|Attribute|Race|SetCard|Code)\(",
             m => "c:" + m.Groups[1].Value switch { "Type" => isType, "Attribute" => isAttr, "Race" => isRace, "SetCard" => isSet, _ => isCode } + "(");
-        var tests = f.Requirements.Select(r => CardProperties.Lua(r, hasEffect)).OfType<string>().Select(Material)
-            .Select(test => card == "c" ? test : System.Text.RegularExpressions.Regex.Replace(test, @"\bc:", card + ":")).ToList();
-        if (f.AnyRequirement && tests.Count > 1) parts.Add("(" + string.Join(" or ", tests) + ")");
-        else parts.AddRange(tests);
+        string? Test(CardRequirement r) => CardProperties.Lua(r, hasEffect) is { } t
+            ? Material(card == "c" ? t : System.Text.RegularExpressions.Regex.Replace(t, @"\bc:", card + ":"))
+            : null;
+        if (f.AnyRequirement)
+        {
+            var tests = f.Requirements.Select(Test).OfType<string>().ToList();
+            if (tests.Count > 1) parts.Add("(" + string.Join(" or ", tests) + ")");
+            else parts.AddRange(tests);
+        }
+        else
+        {
+            // Requirements in the same "or" group: any one of them; every group and every other requirement: all.
+            foreach (var group in f.Requirements.GroupBy(r => r.Group > 0 ? r.Group : -1 - f.Requirements.IndexOf(r)))
+            {
+                var tests = group.Select(Test).OfType<string>().ToList();
+                if (tests.Count > 1) parts.Add("(" + string.Join(" or ", tests) + ")");
+                else parts.AddRange(tests);
+            }
+        }
         if (f.FaceDownOnly) parts.Add($"{card}:IsFacedown()");
         else if (f.FaceUpOnly)
         {
@@ -159,5 +179,41 @@ public static class FilterCompiler
                 : $"({card}:IsFaceup() or not {card}:IsLocation(LOCATION_ONFIELD+LOCATION_REMOVED{(f.Zones.HasFlag(Zone.ExtraDeck) ? "+LOCATION_EXTRA" : "")}))");
         }
         return parts;
+    }
+
+    /// <summary>The Lua test of a kind of Spell or Trap: "Continuous", "Quick-Play"; a Normal Spell/Trap has none of the others.</summary>
+    private static string KindTest(SpellTrapKind kind, string card) => kind switch
+    {
+        SpellTrapKind.Normal => $"{card}:GetType()&(TYPE_CONTINUOUS+TYPE_QUICKPLAY+TYPE_FIELD+TYPE_EQUIP+TYPE_RITUAL+TYPE_COUNTER+TYPE_MONSTER)==0",
+        SpellTrapKind.Continuous => $"{card}:IsType(TYPE_CONTINUOUS)",
+        SpellTrapKind.QuickPlay => $"{card}:IsType(TYPE_QUICKPLAY)",
+        SpellTrapKind.Field => $"{card}:IsType(TYPE_FIELD)",
+        SpellTrapKind.Equip => $"{card}:IsType(TYPE_EQUIP)",
+        SpellTrapKind.Ritual => $"{card}:IsType(TYPE_RITUAL) and {card}:IsType(TYPE_SPELL)",
+        _ => $"{card}:IsType(TYPE_COUNTER)",
+    };
+
+    /// <summary>
+    /// The other kind of card of "X or Y" as a filter of its own: what <paramref name="alt"/> says the card is, and what
+    /// <paramref name="f"/> says about where it is, whether it is face-up, "other" and "except".
+    /// </summary>
+    public static CardFilter Alternative(CardFilter f, CardFilter alt)
+    {
+        var two = alt.Clone();
+        two.OrCards = null;
+        two.Owner = f.Owner;
+        two.Zones = f.Zones;
+        two.FaceUpOnly = f.FaceUpOnly;
+        two.FaceDownOnly = f.FaceDownOnly;
+        two.NotRevealed = f.NotRevealed;
+        two.ExcludeThisCard = f.ExcludeThisCard;
+        two.ExceptOwnName = f.ExceptOwnName;
+        two.ExceptCode = f.ExceptCode;
+        two.PointedToByThisCard = f.PointedToByThisCard;
+        two.CenterZone = f.CenterZone;
+        two.InThisColumn = f.InThisColumn;
+        two.ThisCard = false;
+        two.That = CardRef.None;
+        return two;
     }
 }

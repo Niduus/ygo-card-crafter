@@ -160,8 +160,8 @@ public abstract partial class CardGroupAction : ActionBlock
     protected virtual IReadOnlyList<ParamSpec> BuildParams() =>
     [
         // "any number of" says how many itself (Selections.cs).
-        ParamSpec.Int("count", "How many", 1, 1, MaxCount).ShowIf(b => b.Values.GetValueOrDefault("amount") is not ("any" or "number_of")),
-        ModeParam.ShowIf(b => b.Values.GetValueOrDefault("amount") is not ("any" or "number_of")),
+        ParamSpec.Int("count", "How many", 1, 1, MaxCount).ShowIf(b => b.Values.GetValueOrDefault("amount") is not ("any" or "number_of" or "materials")),
+        ModeParam.ShowIf(b => b.Values.GetValueOrDefault("amount") is not ("any" or "number_of" or "materials")),
         new ParamSpec { Key = "cards", Label = "Which cards", Type = ParamType.Cards, DefaultFilter = DefaultCards, AllowThisCard = AllowsThisCard },
         ParamSpec.Flag("target", "(targeting)", false),
         .. SelectionParams,
@@ -396,7 +396,7 @@ public abstract partial class CardGroupAction : ActionBlock
         if (CardRefs.ActivationCheck(filter.That, f.Function) is { } known) e.TargetChecks.Add(known);
         PlusChecks(ctx);
         if (Category.Length > 0)
-            e.TargetLines.Add(filter.That is CardRef.BattleTarget or CardRef.Battling
+            e.TargetLines.Add(filter.That is CardRef.BattleTarget or CardRef.Battling or CardRef.Attacker
                 ? $"Duel.SetOperationInfo(0,{Category},{CardRefs.Card(filter.That)},1,0,0)"
                 : $"Duel.SetOperationInfo(0,{Category},nil,1,0,0)");
         var g = e.NewLocal("g");
@@ -421,7 +421,7 @@ public sealed class AddToHandAction : CardGroupAction
     protected override string TargetedWording => "add {0} to your hand";
     public override string Id => "do.add_to_hand";
     public override string Name => "Add cards to your hand (search)";
-    public override string Sentence => "Add {amount} {count_cards} {count} {cards} {pick} {sum} to your hand {target} {chooser}";
+    public override string Sentence => "Add {amount} {count_cards} {count} {cards} {pick} {pick2} {pick3} {sum} {inc_cards} to your hand {target} {chooser}";
     protected override string Category => "CATEGORY_TOHAND";
     protected override string Hint => "HINTMSG_ATOHAND";
     protected override Func<CardFilter> DefaultCards => () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Deck, CardType = FilterCardType.Monster };
@@ -440,7 +440,7 @@ public sealed class SpecialSummonAction : CardGroupAction
     protected override string TargetedWording => "Special Summon {0}";
     public override string Id => "do.special_summon";
     public override string Name => "Special Summon monsters";
-    public override string Sentence => "Special Summon {count} {cards} {pick} {sum} {target} {position} {zone} {as} {chooser}";
+    public override string Sentence => "Special Summon {count} {cards} {pick} {pick2} {pick3} {sum} {inc_cards} {target} {position} {zone} {as} {chooser}";
 
     public override string Describe(BlockArgs args)
     {
@@ -450,9 +450,16 @@ public sealed class SpecialSummonAction : CardGroupAction
         return text + (args.Bool("ignore") && !Selection.OpponentPicks(args) ? ", ignoring its Summoning conditions" : "") + Negated(args);
     }
 
-    /// <summary>", but negate its effects", ", but negate their effects".</summary>
-    private static string Negated(BlockArgs args) =>
-        !args.Bool("negate") ? "" : args.IsPlural || CardRefs.Plus(args) == "this" ? ", but negate their effects" : ", but negate its effects";
+    /// <summary>", but negate its effects", ", but negate their effects", ", but it cannot be used as Link Material".</summary>
+    private static string Negated(BlockArgs args)
+    {
+        var plural = args.IsPlural || CardRefs.Plus(args) == "this";
+        var text = !args.Bool("negate") ? "" : plural ? ", but negate their effects" : ", but negate its effects";
+        // Ars Magna Academic Arcane Apparition Acropolis: "Special Summon that monster ..., but it cannot be used as Link Material".
+        if (args.Bool("no_link")) text += text.Length > 0 ? (plural ? ", also they cannot be used as Link Material" : ", also it cannot be used as Link Material")
+            : plural ? ", but they cannot be used as Link Material" : ", but it cannot be used as Link Material";
+        return text;
+    }
 
     protected override bool Together => true;
 
@@ -476,6 +483,7 @@ public sealed class SpecialSummonAction : CardGroupAction
         TreatedAsSummon.Param,
         // Saved before this was offered: the Summoned monsters keep their effects.
         ParamSpec.Flag("negate", "but negate its effects", false),
+        ParamSpec.Flag("no_link", "but it cannot be used as Link Material", false),
     ];
 
     protected override string TargetedAction(BlockArgs args, string pronoun, bool single)
@@ -492,24 +500,39 @@ public sealed class SpecialSummonAction : CardGroupAction
     /// (EFFECT_DISABLE and EFFECT_DISABLE_EFFECT), then the Summon is completed, as official scripts do. The call on
     /// <paramref name="g"/>, returning how many were Special Summoned.
     /// </summary>
-    public static string NegatedSummon(ScriptBuilder script, string g, string value, string ignore, string limit, string pos, string? zone = null) =>
-        script.AddFunction("spnegate", "g,e,tp,v,nocheck,nolimit,pos" + (zone is null ? "" : ",zone"),
+    public static string NegatedSummon(ScriptBuilder script, string g, string value, string ignore, string limit, string pos, string? zone = null, bool negate = true, bool noLink = false) =>
+        script.AddFunction(negate ? "spnegate" : "spnolink", "g,e,tp,v,nocheck,nolimit,pos" + (zone is null ? "" : ",zone"),
         [
             "local c=e:GetHandler()",
             "local n=0",
             "for tc in aux.Next(g) do",
             $"\tif Duel.SpecialSummonStep(tc,v,tp,tp,nocheck,nolimit,pos{(zone is null ? "" : ",zone")}) then",
-            "\t\tlocal e1=Effect.CreateEffect(c)",
-            "\t\te1:SetType(EFFECT_TYPE_SINGLE)",
-            "\t\te1:SetCode(EFFECT_DISABLE)",
-            "\t\te1:SetReset(RESET_EVENT+RESETS_STANDARD)",
-            "\t\ttc:RegisterEffect(e1)",
-            "\t\tlocal e2=Effect.CreateEffect(c)",
-            "\t\te2:SetType(EFFECT_TYPE_SINGLE)",
-            "\t\te2:SetCode(EFFECT_DISABLE_EFFECT)",
-            "\t\te2:SetValue(RESET_TURN_SET)",
-            "\t\te2:SetReset(RESET_EVENT+RESETS_STANDARD)",
-            "\t\ttc:RegisterEffect(e2)",
+            .. negate ? new[]
+            {
+                "\t\tlocal e1=Effect.CreateEffect(c)",
+                "\t\te1:SetType(EFFECT_TYPE_SINGLE)",
+                "\t\te1:SetCode(EFFECT_DISABLE)",
+                "\t\te1:SetReset(RESET_EVENT+RESETS_STANDARD)",
+                "\t\ttc:RegisterEffect(e1)",
+                "\t\tlocal e2=Effect.CreateEffect(c)",
+                "\t\te2:SetType(EFFECT_TYPE_SINGLE)",
+                "\t\te2:SetCode(EFFECT_DISABLE_EFFECT)",
+                "\t\te2:SetValue(RESET_TURN_SET)",
+                "\t\te2:SetReset(RESET_EVENT+RESETS_STANDARD)",
+                "\t\ttc:RegisterEffect(e2)",
+            } : [],
+            // "But it cannot be used as Link Material", as Ars Magna Academic Arcane Apparition Acropolis's script does it.
+            .. noLink ? new[]
+            {
+                "\t\tlocal e3=Effect.CreateEffect(c)",
+                "\t\te3:SetDescription(3312)",
+                "\t\te3:SetType(EFFECT_TYPE_SINGLE)",
+                "\t\te3:SetProperty(EFFECT_FLAG_CANNOT_DISABLE+EFFECT_FLAG_CLIENT_HINT)",
+                "\t\te3:SetCode(EFFECT_CANNOT_BE_LINK_MATERIAL)",
+                "\t\te3:SetValue(1)",
+                "\t\te3:SetReset(RESET_EVENT+RESETS_STANDARD)",
+                "\t\ttc:RegisterEffect(e3)",
+            } : [],
             "\t\tn=n+1",
             "\tend",
             "end",
@@ -554,7 +577,8 @@ public sealed class SpecialSummonAction : CardGroupAction
         };
         // "This card itself" is Special Summoned by its own effect: SUMMON_VALUE_SELF, as official cards do.
         var value = ctx.Args.Cards("cards").ThisCard ? "SUMMON_VALUE_SELF" : "0";
-        if (ctx.Args.Bool("negate")) return NegatedSummon(ctx.Script, g, value, Ignore(ctx), "false", pos, PointsTo(ctx) ? "e:GetHandler():GetLinkedZone(tp)" : null);
+        if (ctx.Args.Bool("negate") || ctx.Args.Bool("no_link"))
+            return NegatedSummon(ctx.Script, g, value, Ignore(ctx), "false", pos, PointsTo(ctx) ? "e:GetHandler():GetLinkedZone(tp)" : null, ctx.Args.Bool("negate"), ctx.Args.Bool("no_link"));
         return PointsTo(ctx)
             ? $"Duel.SpecialSummon({g},{value},tp,tp,{Ignore(ctx)},false,{pos},e:GetHandler():GetLinkedZone(tp))"
             : $"Duel.SpecialSummon({g},{value},tp,tp,{Ignore(ctx)},false,{pos})";
@@ -578,9 +602,9 @@ public sealed class SpecialSummonAction : CardGroupAction
         if (PointsTo(ctx) && !ctx.Card.IsLink)
             ctx.Effect.Error("\"To a zone this card points to\" needs this card to be a Link monster.");
         if (As(ctx) != "none" && !TreatedAsSummon.Check(ctx, Name, ctx.Args.Cards("cards").ThisCard ? 1 : ctx.Args.Int("count"), FaceDown(ctx))) return;
-        if (ctx.Args.Bool("negate") && (As(ctx) != "none" || FaceDown(ctx)))
+        if ((ctx.Args.Bool("negate") || ctx.Args.Bool("no_link")) && (As(ctx) != "none" || FaceDown(ctx)))
         {
-            ctx.Effect.Error($"\"{Name}\": \"but negate its effects\" is for monsters Special Summoned face-up, not {(FaceDown(ctx) ? "face-down" : "treated as another Summon")}.");
+            ctx.Effect.Error($"\"{Name}\": \"but negate its effects\" and \"cannot be used as Link Material\" are for monsters Special Summoned face-up, not {(FaceDown(ctx) ? "face-down" : "treated as another Summon")}.");
             return;
         }
         base.Compile(ctx);
@@ -594,7 +618,7 @@ public sealed class DestroyAction : CardGroupAction
     protected override string TargetedWording => "destroy {0}";
     public override string Id => "do.destroy";
     public override string Name => "Destroy cards";
-    public override string Sentence => "Destroy {amount} {count_cards} {count} {cards} {pick} {sum} {target} {chooser}";
+    public override string Sentence => "Destroy {amount} {count_cards} {count} {cards} {pick} {pick2} {pick3} {sum} {inc_cards} {target} {chooser}";
     protected override string Category => "CATEGORY_DESTROY";
     protected override string Hint => "HINTMSG_DESTROY";
     protected override Func<CardFilter> DefaultCards => () => CardFilter.OpponentField();
@@ -608,7 +632,7 @@ public sealed class BanishAction : CardGroupAction
     protected override string TargetedWording => "banish {0}";
     public override string Id => "do.banish";
     public override string Name => "Banish cards";
-    public override string Sentence => "Banish {amount} {count_cards} {count} {cards} {pick} {sum} {target} {facedown} {until} {chooser}";
+    public override string Sentence => "Banish {amount} {count_cards} {count} {cards} {pick} {pick2} {pick3} {sum} {inc_cards} {target} {facedown} {until} {chooser}";
     protected override string Category => "CATEGORY_REMOVE";
     protected override string Hint => "HINTMSG_REMOVE";
     protected override Func<CardFilter> DefaultCards => () => CardFilter.OpponentField();
@@ -700,7 +724,7 @@ public sealed class SendToGraveAction : CardGroupAction
     protected override string TargetedWording => "send {0} to the GY";
     public override string Id => "do.send_to_gy";
     public override string Name => "Send cards to the GY";
-    public override string Sentence => "Send {amount} {count_cards} {count} {cards} {pick} {sum} to the GY {target} {chooser}";
+    public override string Sentence => "Send {amount} {count_cards} {count} {cards} {pick} {pick2} {pick3} {sum} {inc_cards} to the GY {target} {chooser}";
     protected override string Category => "CATEGORY_TOGRAVE";
     protected override string Hint => "HINTMSG_TOGRAVE";
     protected override Func<CardFilter> DefaultCards => () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Deck };
@@ -715,7 +739,7 @@ public sealed class ReturnToHandAction : CardGroupAction
     protected override string TargetedWording => "return {0} to the hand";
     public override string Id => "do.return_to_hand";
     public override string Name => "Return cards to the hand (bounce)";
-    public override string Sentence => "Return {amount} {count_cards} {count} {cards} {pick} {sum} to the hand {target} {chooser}";
+    public override string Sentence => "Return {amount} {count_cards} {count} {cards} {pick} {pick2} {pick3} {sum} {inc_cards} to the hand {target} {chooser}";
     protected override string Category => "CATEGORY_TOHAND";
     protected override string Hint => "HINTMSG_RTOHAND";
     protected override Func<CardFilter> DefaultCards => () => CardFilter.OpponentField();
@@ -730,7 +754,7 @@ public sealed class ShuffleIntoDeckAction : CardGroupAction
     protected override string TargetedWording => "shuffle {0} into the Deck";
     public override string Id => "do.shuffle_into_deck";
     public override string Name => "Shuffle cards into the Deck";
-    public override string Sentence => "Shuffle {amount} {count_cards} {count} {cards} {pick} {sum} into the Deck {target} {chooser}";
+    public override string Sentence => "Shuffle {amount} {count_cards} {count} {cards} {pick} {pick2} {pick3} {sum} {inc_cards} into the Deck {target} {chooser}";
     protected override string Category => "CATEGORY_TODECK";
     protected override string Hint => "HINTMSG_TODECK";
     protected override Func<CardFilter> DefaultCards => () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Graveyard };
@@ -769,7 +793,9 @@ public sealed class DrawAction : ActionBlock
     public override string Sentence => "{who} draw(s) {count} card(s)";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
-        ParamSpec.Choice("who", "Who", new("you", "You"), new("opponent", "Your opponent")),
+        ParamSpec.Choice("who", "Who", new("you", "You"), new("opponent", "Your opponent"), new("each", "Each player"),
+            // The Secret Crane Princess Who Returns A Favor: "then your opponent can draw 1 card, and if they do, ...".
+            new("opponent_may", "Your opponent can", "Your opponent can (if they choose to)")),
         ParamSpec.Int("count", "How many", 1, 1, 10),
         PerParam,
     ];
@@ -778,17 +804,40 @@ public sealed class DrawAction : ActionBlock
     {
         var n = args.Int("count");
         var cards = n == 1 ? "1 card" : $"{n} cards";
-        var text = args.Choice("who") == "you" ? $"draw {cards}" : $"your opponent draws {cards}";
+        var text = args.Choice("who") switch
+        {
+            "you" => $"draw {cards}",
+            "each" => $"each player draws {cards}",
+            "opponent_may" => $"your opponent can draw {cards}",
+            _ => $"your opponent draws {cards}",
+        };
         return args.Describe("per") is { Length: > 0 } per ? $"{text} {per}" : text;
     }
 
     public override void Compile(BlockContext ctx)
     {
-        var p = PlayerOf(ctx.Args.Choice("who"));
+        var who = ctx.Args.Choice("who");
+        var p = PlayerOf(who is "opponent_may" ? "opponent" : who);
         var n = ctx.Args.Int("count");
         var per = Multiplier(ctx);
         var r = ctx.Effect.NewLocal("r");
         ctx.Effect.AddCategory("CATEGORY_DRAW");
+        switch (who)
+        {
+            case "each":
+                ctx.Effect.TargetChecks.Add($"Duel.IsPlayerCanDraw(tp,{n}) and Duel.IsPlayerCanDraw(1-tp,{n})");
+                ctx.Effect.TargetLines.Add($"Duel.SetOperationInfo(0,CATEGORY_DRAW,nil,0,PLAYER_ALL,{n})");
+                ctx.Effect.AddStep([$"local {r}=Duel.Draw(tp,{n}{per},REASON_EFFECT)+Duel.Draw(1-tp,{n}{per},REASON_EFFECT)"], r, ctx.Link);
+                return;
+            case "opponent_may":
+                // Their choice as it resolves: nothing is checked as it is activated.
+                ctx.Effect.AddStep(
+                [
+                    $"local {r}=0",
+                    $"if Duel.IsPlayerCanDraw(1-tp,{n}) and Duel.SelectYesNo(1-tp,aux.Stringid(id,{Math.Min(ctx.Effect.Index, 16) - 1})) then {r}=Duel.Draw(1-tp,{n}{per},REASON_EFFECT) end",
+                ], r, ctx.Link);
+                return;
+        }
         ctx.Effect.TargetChecks.Add($"Duel.IsPlayerCanDraw({p},{n})");
         ctx.Effect.TargetLines.Add($"Duel.SetOperationInfo(0,CATEGORY_DRAW,nil,0,{p},{n})");
         ctx.Effect.AddStep([$"local {r}=Duel.Draw({p},{n}{per},REASON_EFFECT)"], r, ctx.Link);

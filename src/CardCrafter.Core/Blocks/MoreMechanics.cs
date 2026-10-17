@@ -192,13 +192,13 @@ public sealed class PlaceOnDeckAction : CardGroupAction
     protected override string TargetedWording => "place {0}";
     protected override bool AllowsThisCard => true;
     protected override bool AllowsAll => false;
-    protected override int MaxCount => 1;
+    protected override int MaxCount => 5;
     protected override Func<CardFilter> DefaultCards => () => new CardFilter { Owner = CardOwner.Opponent, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster };
 
     protected override IReadOnlyList<ParamSpec> BuildParams() =>
     [
-        // One card at a time: "place it on top of the Deck".
-        ParamSpec.Int("count", "How many", 1, 1, 1).ShowIf(_ => false),
+        // Yummyusment☆Mignon: "place this card, and them, on the bottom of the Deck in any order".
+        ParamSpec.Int("count", "How many", 1, 1, 5),
         new ParamSpec { Key = "cards", Label = "Which card", Type = ParamType.Cards, DefaultFilter = DefaultCards, AllowThisCard = true },
         ParamSpec.Flag("target", "(targeting)", false),
         ParamSpec.Choice("where", "Where", new("top", "on top", "on top of the Deck"), new("bottom", "on the bottom", "on the bottom of the Deck")),
@@ -206,19 +206,37 @@ public sealed class PlaceOnDeckAction : CardGroupAction
 
     private static bool FromDeck(CardFilter f) => !f.ThisCard && f.Zones == Zone.Deck;
 
+    /// <summary>Several cards go to the bottom of the Deck: their owner places them in any order.</summary>
+    private static bool Several(BlockArgs args) => !args.IsThisCard && (args.IsPlural || CardRefs.Plus(args) != "none");
+
+    private static string Order(BlockArgs args) => args.Choice("where") == "bottom" && Several(args) ? " in any order" : "";
+
     public override string Describe(BlockArgs args)
     {
         var f = args.Cards("cards");
         if (FromDeck(f)) return $"take {Some(args)} and place it on top of your Deck{args.ExceptText()}";
-        return $"place {Some(args)} {args.Describe("where")} of the Deck{args.ExceptText()}";
+        return $"place {Some(args)} {args.Describe("where")} of the Deck{Order(args)}{args.ExceptText()}";
     }
 
-    protected override string TargetedAction(BlockArgs args, string pronoun, bool single) => $"place {pronoun} {args.Describe("where")} of the Deck";
+    /// <summary>"Target 2 ...; place this card, and them, on the bottom of the Deck": this card isn't a target.</summary>
+    public override (string Target, string Action)? DescribeTargeting(BlockArgs args)
+    {
+        if (base.DescribeTargeting(args) is not { } t || CardRefs.Plus(args) != "this") return base.DescribeTargeting(args);
+        var n = args.Int("count").ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var count = args.CountMode == "up_to" ? "up to " + n : n;
+        return ($"target {count} {args.Describe("cards")}{args.ExceptText()}{Selection.EachText(args)}", t.Action);
+    }
+
+    protected override string TargetedAction(BlockArgs args, string pronoun, bool single) =>
+        CardRefs.Plus(args) == "this" ? $"place this card, and {pronoun}, {args.Describe("where")} of the Deck{Order(args)}"
+            : $"place {pronoun} {args.Describe("where")} of the Deck{Order(args)}";
 
     protected override string? AbleCheck(BlockContext ctx) => FromDeck(ctx.Args.Cards("cards")) ? null : "c:IsAbleToDeck()";
 
     protected override string Apply(string g, BlockContext ctx) =>
-        $"Duel.SendtoDeck({g},nil,{(ctx.Args.Choice("where") == "bottom" ? "SEQ_DECKBOTTOM" : "SEQ_DECKTOP")},REASON_EFFECT)";
+        // Several cards on the bottom: placed in the order their owner picks, as official scripts do (aux.PlaceCardsOnDeckBottom).
+        ctx.Args.Choice("where") == "bottom" && Several(ctx.Args) ? $"aux.PlaceCardsOnDeckBottom(tp,{g})"
+            : $"Duel.SendtoDeck({g},nil,{(ctx.Args.Choice("where") == "bottom" ? "SEQ_DECKBOTTOM" : "SEQ_DECKTOP")},REASON_EFFECT)";
 
     public override void Compile(BlockContext ctx)
     {

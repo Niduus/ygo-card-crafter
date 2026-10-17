@@ -49,12 +49,14 @@ public sealed class ExtraDeckSummonAction : ActionBlock
     [
         ParamSpec.Choice("kind", "Summon", new("synchro", "Synchro"), new("xyz", "Xyz"), new("link", "Link")),
         ParamSpec.Cards("cards", "Which monster", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.ExtraDeck, CardType = FilterCardType.Monster }, Zone.ExtraDeck),
-        ParamSpec.Choice("using", "Materials", new("control", "monsters you control", "any monsters you control"), new("only", "only", "only some monsters you control (picked below)")),
+        ParamSpec.Choice("using", "Materials", new("control", "monsters you control", "any monsters you control"), new("only", "only", "only some monsters you control (picked below)"),
+            // Yummy★Snatchy: "Synchro Summon using monsters you control as material, including a "Yummy" monster".
+            new("including", "monsters you control, including", "monsters you control, including at least 1 picked below")),
         new ParamSpec
         {
-            Key = "mats", Label = "Only these materials", Type = ParamType.Cards, WhereFromBlock = true, AllowedZones = Zone.MonsterZone,
+            Key = "mats", Label = "Only these materials / including", Type = ParamType.Cards, WhereFromBlock = true, AllowedZones = Zone.MonsterZone,
             DefaultFilter = () => new CardFilter { Owner = CardOwner.You, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster },
-        }.ShowIf(b => b.Values.GetValueOrDefault("using") == "only"),
+        }.ShowIf(b => b.Values.GetValueOrDefault("using") is "only" or "including"),
     ];
 
     private static CardFilter Target(BlockArgs args)
@@ -83,6 +85,11 @@ public sealed class ExtraDeckSummonAction : ActionBlock
         var mats = args.Choice("using") == "only"
             ? $"using only {FilterText.Describe(Materials(args), args.Pack, plural: true, withLocation: false)} you control"
             : args.Choice("kind") == "link" ? "using monster(s) you control as material" : "using monsters you control as material";
+        if (args.Choice("using") == "including")
+        {
+            var inc = FilterText.Describe(Materials(args), args.Pack, plural: false, withLocation: false);
+            mats += $", including {SummonWording.Article(inc)} {inc}";
+        }
         var text = $"{kind} Summon 1 {FilterText.Describe(Target(args), args.Pack, withLocation: false)} {mats}";
         // "You can Xyz Summon ...", but "..., then immediately after this effect resolves, Xyz Summon ...".
         return SummonWording.AfterYouCan(args) ? text : "immediately after this effect resolves, " + text;
@@ -90,6 +97,11 @@ public sealed class ExtraDeckSummonAction : ActionBlock
 
     public override void Compile(BlockContext ctx)
     {
+        if (ctx.Args.Choice("using") == "including")
+        {
+            CompileIncluding(ctx);
+            return;
+        }
         var kind = ctx.Args.Choice("kind");
         var only = ctx.Args.Choice("using") == "only";
         string? mg = null;
@@ -140,6 +152,82 @@ public sealed class ExtraDeckSummonAction : ActionBlock
             $"\t{r}=1",
             "end",
         ]);
+        ctx.Effect.AddStep(body, r, ctx.Link);
+    }
+
+    /// <summary>
+    /// "Synchro Summon using monsters you control as material, including a "Yummy" monster": the materials are picked as a
+    /// group that has such a monster, as Yummy★Snatchy's script does (Synchro and Xyz), or the Link Summon must use one.
+    /// </summary>
+    private void CompileIncluding(BlockContext ctx)
+    {
+        var kind = ctx.Args.Choice("kind");
+        var conds = FilterCompiler.Conditions(Target(ctx.Args));
+        var inc = ctx.Script.Filter(Materials(ctx.Args), "c:IsFaceup()", "edsinc").Function;
+        var target = ctx.Script.AddFunction("edstarget", "c,e,tp", [$"return {string.Join(" and ", conds)}"]);
+        // The monsters the Summon may use, and a check that a group of them, with one of the included kind, can Summon sc.
+        var pool = kind == "synchro" ? "Duel.GetSynchroMaterial(tp)" : "Duel.GetMatchingGroup(Card.IsFaceup,tp,LOCATION_MZONE,0,nil)";
+        string fits, summon;
+        string? check = null;
+        switch (kind)
+        {
+            case "link":
+                // The Link Summon itself picks the rest: lc is a monster it must use.
+                fits = ctx.Script.AddFunction("edsfits", "c,e,tp,mg",
+                    [$"return {target}(c,e,tp) and mg:IsExists(function(lc) return {inc}(lc,e,tp) and c:IsLinkSummonable(nil,lc) end,1,nil)"]);
+                summon = "";
+                break;
+            case "xyz":
+                check = ctx.Script.AddFunction("edscheck", "g,e,tp,sc", [$"return g:IsExists({inc},1,nil,e,tp) and sc:IsXyzSummonable(g,#g,#g)"]);
+                fits = ctx.Script.AddFunction("edsfits", "c,e,tp,mg", [$"return {target}(c,e,tp) and mg:CheckSubGroup({check},1,#mg,e,tp,c)"]);
+                summon = "Duel.XyzSummon(tp,{0},{1},#{1},#{1})";
+                break;
+            default:
+                check = ctx.Script.AddFunction("edscheck", "g,e,tp,sc", [$"return g:IsExists({inc},1,nil,e,tp) and sc:IsSynchroSummonable(nil,g,#g-1,#g-1)"]);
+                fits = ctx.Script.AddFunction("edsfits", "c,e,tp,mg",
+                [
+                    $"if not {target}(c,e,tp) then return false end",
+                    "aux.GCheckAdditional=aux.SynGroupCheckLevelAddition(c)",
+                    $"local res=mg:CheckSubGroup({check},2,#mg,e,tp,c)",
+                    "aux.GCheckAdditional=nil",
+                    "return res",
+                ]);
+                summon = "Duel.SynchroSummon(tp,{0},nil,{1},#{1}-1,#{1}-1)";
+                break;
+        }
+        ctx.Effect.AddCategory("CATEGORY_SPECIAL_SUMMON");
+        if (!ctx.Effect.HasSteps)
+            ctx.Effect.TargetChecks.Add($"Duel.IsPlayerCanSpecialSummon(tp) and Duel.IsExistingMatchingCard({fits},tp,LOCATION_EXTRA,0,1,nil,e,tp,{pool})");
+        ctx.Effect.TargetLines.Add("Duel.SetOperationInfo(0,CATEGORY_SPECIAL_SUMMON,nil,1,tp,LOCATION_EXTRA)");
+        var (r, mg, g, sc, tg) = (ctx.Effect.NewLocal("r"), ctx.Effect.NewLocal("mg"), ctx.Effect.NewLocal("g"), ctx.Effect.NewLocal("sc"), ctx.Effect.NewLocal("tg"));
+        var body = new List<string>
+        {
+            $"local {r}=0",
+            $"local {mg}={pool}",
+            $"local {g}=Duel.GetMatchingGroup({fits},tp,LOCATION_EXTRA,0,nil,e,tp,{mg})",
+            $"if {g}:GetCount()>0 then",
+            "	Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_SPSUMMON)",
+            $"	local {sc}={g}:Select(tp,1,1,nil):GetFirst()",
+        };
+        if (kind == "link")
+        {
+            body.AddRange(
+            [
+                "	Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_LMATERIAL)",
+                $"	local {tg}={mg}:FilterSelect(tp,function(lc) return {inc}(lc,e,tp) and {sc}:IsLinkSummonable(nil,lc) end,1,1,nil):GetFirst()",
+                $"	Duel.LinkSummon(tp,{sc},nil,{tg})",
+            ]);
+        }
+        else
+        {
+            var hint = kind == "xyz" ? "HINTMSG_XMATERIAL" : "HINTMSG_SMATERIAL";
+            if (kind == "synchro") body.Add($"	aux.GCheckAdditional=aux.SynGroupCheckLevelAddition({sc})");
+            body.Add($"	Duel.Hint(HINT_SELECTMSG,tp,{hint})");
+            body.Add($"	local {tg}={mg}:SelectSubGroup(tp,{check},false,{(kind == "xyz" ? "1" : "2")},#{mg},e,tp,{sc})");
+            if (kind == "synchro") body.Add("	aux.GCheckAdditional=nil");
+            body.Add($"	{string.Format(System.Globalization.CultureInfo.InvariantCulture, summon, sc, tg)}");
+        }
+        body.AddRange([$"	{r}=1", "end"]);
         ctx.Effect.AddStep(body, r, ctx.Link);
     }
 }

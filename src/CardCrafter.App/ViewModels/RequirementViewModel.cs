@@ -132,6 +132,13 @@ public sealed partial class RequirementViewModel : ObservableObject
         set { var v = (int)(value ?? 0); if (v == _r.Value2) return; _r.Value2 = v; _changed(); }
     }
 
+    /// <summary>The requirement's "or" group, 0 for none: any one requirement of a group is enough.</summary>
+    public decimal? Group
+    {
+        get => _r.Group;
+        set { var v = Math.Clamp((int)(value ?? 0), 0, 9); if (v == _r.Group) return; _r.Group = v; _changed(); }
+    }
+
     public ObservableCollection<RequirementChoice> Choices { get; } = [];
 
     private void BuildChoices()

@@ -24,6 +24,11 @@ public sealed class CardRequirement
     public int Value2 { get; set; }
     /// <summary>The picked choices: Attribute or Type bits, archetype codes, passcodes, Summon kinds...</summary>
     public List<long> Values { get; set; } = [];
+    /// <summary>
+    /// An "or" group, 0 for none: requirements with the same group number need only one of them to hold ("Level 4 or
+    /// lower, or a Tuner"), while each group, and every requirement in none, must hold.
+    /// </summary>
+    public int Group { get; set; }
 
-    public CardRequirement Clone() => new() { Property = Property, Op = Op, Value = Value, Value2 = Value2, Values = [.. Values] };
+    public CardRequirement Clone() => new() { Property = Property, Op = Op, Value = Value, Value2 = Value2, Values = [.. Values], Group = Group };
 }

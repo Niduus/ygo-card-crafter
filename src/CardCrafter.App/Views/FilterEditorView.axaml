@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:CardCrafter.App.ViewModels"
              xmlns:blocks="using:CardCrafter.Core.Blocks"
+             xmlns:local="using:CardCrafter.App.Views"
              x:Class="CardCrafter.App.Views.FilterEditorView"
              x:DataType="vm:FilterEditorViewModel"
              Width="396">
@@ -92,6 +93,8 @@
       <StackPanel Grid.Row="0" Grid.Column="2">
         <TextBlock Classes="label" Text="Spell/Trap kind" />
         <ComboBox ItemsSource="{Binding SpellTrapKindOptions}" SelectedItem="{Binding SpellTrapKind}" HorizontalAlignment="Stretch" />
+        <ComboBox ItemsSource="{Binding SpellTrapKindOptions}" SelectedItem="{Binding SpellTrapKind2}" HorizontalAlignment="Stretch" Margin="0,4,0,0"
+                  ToolTip.Tip="Or this kind: &quot;a Normal or Quick-Play Spell&quot;. Leave as &quot;Any Spell/Trap kind&quot; for none." />
       </StackPanel>
       <StackPanel Grid.Row="1" Grid.Column="0">
         <TextBlock Classes="label" Text="How it was Summoned" />
@@ -127,6 +130,11 @@
                 <ComboBox Grid.Column="2" ItemsSource="{Binding OpOptions}" SelectedItem="{Binding Op}" HorizontalAlignment="Stretch" ToolTip.Tip="How it compares" />
                 <Button Grid.Column="4" Classes="icon" Content="✕" Command="{Binding RemoveCommand}" ToolTip.Tip="Remove this requirement" />
               </Grid>
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <TextBlock Text="&quot;Or&quot; group" VerticalAlignment="Center" />
+                <NumericUpDown Value="{Binding Group}" Minimum="0" Maximum="9" FormatString="0" Width="64" ShowButtonSpinner="True"
+                               ToolTip.Tip="0: this requirement must hold. Requirements with the same number (1-9): any one of them is enough, and each group must hold." />
+              </StackPanel>
               <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding IsNumber}">
                 <NumericUpDown Value="{Binding Value}" Minimum="0" Maximum="999999" FormatString="0" Width="96" ShowButtonSpinner="False" />
                 <TextBlock Text="and" VerticalAlignment="Center" IsVisible="{Binding IsRange}" />
@@ -185,6 +193,19 @@
     </CheckBox>
     <CheckBox Content="Only the monster in the center Main Monster Zone" IsChecked="{Binding CenterZone}" IsVisible="{Binding !MaterialMode}"
               ToolTip.Tip="Elfnote-style: the monster in the middle of the five Main Monster Zones" />
+    <CheckBox Content="Only cards in this card's column" IsChecked="{Binding InThisColumn}" IsVisible="{Binding !MaterialMode}"
+              ToolTip.Tip="Javelin Beetle of the Alliance: &quot;1 other card in this card's column&quot;, on either side of the field" />
+    <CheckBox Content="Or another kind of card (picked below)" IsChecked="{Binding HasOrCards}" IsVisible="{Binding ShowOr}" Margin="0,6,0,0"
+              ToolTip.Tip="&quot;1 &quot;Ancient Gear&quot; monster or 1 &quot;Geartown&quot;&quot;: cards of the kind below count too. Where they are, face-up and &quot;other&quot; come from this picker." />
+    <Border BorderBrush="#33FFFFFF" BorderThickness="1" CornerRadius="4" Padding="6" IsVisible="{Binding HasOrCards}">
+      <ContentControl Content="{Binding OrEditor}">
+        <ContentControl.ContentTemplate>
+          <DataTemplate DataType="vm:FilterEditorViewModel">
+            <local:FilterEditorView />
+          </DataTemplate>
+        </ContentControl.ContentTemplate>
+      </ContentControl>
+    </Border>
     </StackPanel>
   </StackPanel>
   </ScrollViewer>
