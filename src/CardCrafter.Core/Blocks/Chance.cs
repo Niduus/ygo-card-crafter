@@ -104,7 +104,7 @@ public sealed class DeclareLevelAction : ActionBlock
             "\tDuel.Hint(HINT_SELECTMSG,tp,HINTMSG_LVRANK)",
             $"\tlocal {lv}=Duel.AnnounceNumber(tp,{levels})",
             "\tlocal le=Effect.CreateEffect(c)", "\tle:SetType(EFFECT_TYPE_SINGLE)", "\tle:SetCode(EFFECT_CHANGE_LEVEL)",
-            $"\tle:SetValue({lv})", $"\tle:SetReset({Resets.Of(ctx)}+RESET_DISABLE)", "\tc:RegisterEffect(le)",
+            $"\tle:SetValue({lv})", $"\tle:SetReset({Resets.Of(ctx, "+RESET_DISABLE")})", "\tc:RegisterEffect(le)",
             $"\t{r}=1",
             "end",
         ], r, ctx.Link);

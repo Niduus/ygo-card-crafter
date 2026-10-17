@@ -151,10 +151,12 @@ public static partial class EffectTextGenerator
 
     /// <summary>The name of the card being described, for "except "Card Name"".</summary>
     [ThreadStatic] private static string? _cardName;
+    [ThreadStatic] private static CardData? _card;
 
     private static string Describe(EffectEvent effect, CardData card, CardPack? pack, bool limitSentence)
     {
         _cardName = card.Name;
+        _card = card;
         if (TriggerSplit.NeedsSplit(effect))
         {
             effect = PackSerializer.Clone(effect);
@@ -264,6 +266,7 @@ public static partial class EffectTextGenerator
     public static IReadOnlyList<string> OptionTexts(EffectEvent effect, CardData card, CardPack? pack = null)
     {
         _cardName = card.Name;
+        _card = card;
         if (effect.When?.BlockId == "when.while_face_up" || Chance.HasResultOptions(effect.Do)) return [];
         var options = SplitOptions(effect.Do);
         if (options.Count <= 1) return [];
@@ -402,7 +405,7 @@ public static partial class EffectTextGenerator
         foreach (var b in blocks)
         {
             if (BlockRegistry.Find(b.BlockId) is not { } def) continue;
-            var args = new BlockArgs(def, b, pack) { Effect = effect, CardName = _cardName };
+            var args = new BlockArgs(def, b, pack) { Effect = effect, CardName = _cardName, Card = _card };
             string t;
             if (target is null && def.DescribeTargeting(args) is { } targeted)
             {
@@ -470,7 +473,7 @@ public static partial class EffectTextGenerator
     private static string Text(BlockInstance b, CardPack? pack, EffectEvent? effect = null)
     {
         var def = BlockRegistry.Find(b.BlockId);
-        return def is null ? "" : SentenceCase.Lower(Clean(def.Describe(new BlockArgs(def, b, pack) { Effect = effect, CardName = _cardName })));
+        return def is null ? "" : SentenceCase.Lower(Clean(def.Describe(new BlockArgs(def, b, pack) { Effect = effect, CardName = _cardName, Card = _card })));
     }
 
     /// <summary>

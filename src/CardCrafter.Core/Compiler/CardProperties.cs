@@ -71,6 +71,10 @@ public static class CardProperties
         new("base_def", "Original DEF", PropertyKind.Number, "GetBaseDefense()", "original DEF", Guard: "c:IsType(TYPE_MONSTER) and not c:IsType(TYPE_LINK)"),
         new("level", "Level", PropertyKind.Number, "GetLevel()", "Level", Guard: "c:GetLevel()>0"),
         new("orig_level", "Original Level", PropertyKind.Number, "GetOriginalLevel()", "original Level", Guard: "c:GetOriginalLevel()>0"),
+        // A Monster Card's Level wherever it is: its current Level in a Monster Zone, its printed one elsewhere (a monster
+        // placed as a Continuous Spell has none of its own), as Heart of Gaia checks it.
+        new("card_level", "Level as a Monster Card (also in the Spell & Trap Zone)", PropertyKind.Number,
+            "(c:IsLocation(LOCATION_MZONE) and c:GetLevel() or c:GetOriginalLevel())", "Level", Guard: "c:GetOriginalType()&TYPE_MONSTER~=0"),
         new("rank", "Rank", PropertyKind.Number, "GetRank()", "Rank", Guard: "c:IsType(TYPE_XYZ)"),
         new("link", "Link Rating", PropertyKind.Number, "GetLink()", "Link Rating", Guard: "c:IsType(TYPE_LINK)"),
         new("scale", "Pendulum Scale", PropertyKind.Number, "GetLeftScale()", "Pendulum Scale", Guard: "c:IsType(TYPE_PENDULUM)"),
@@ -210,7 +214,7 @@ public static class CardProperties
         {
             case PropertyKind.Number:
             {
-                var v = p.Key == CounterCount ? Blocks.Counters.Inline("c", CounterOf(r)) : $"c:{p.Lua}";
+                var v = p.Key == CounterCount ? Blocks.Counters.Inline("c", CounterOf(r)) : p.Lua.StartsWith('(') ? p.Lua : $"c:{p.Lua}";
                 string N(int n) => n.ToString(CultureInfo.InvariantCulture);
                 var (lo, hi) = (Math.Min(r.Value, r.Value2), Math.Max(r.Value, r.Value2));
                 test = r.Op switch
@@ -344,7 +348,7 @@ public static class CardProperties
             return r.Op is RequirementOp.NotEqual or RequirementOp.Outside ? $"whose {p.Noun} is {amount}" : $"with {amount} {p.Noun}";
         }
         // Levels and the like go up and down: "whose Level is 4 or lower", "whose Rank is higher than 4".
-        if (p.Key is "level" or "orig_level" or "rank" or "link" or "scale")
+        if (p.Key is "level" or "orig_level" or "card_level" or "rank" or "link" or "scale")
         {
             var amount = r.Op switch
             {

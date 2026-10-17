@@ -19,8 +19,10 @@ public sealed class SetLifeAction : ActionBlock
         ParamSpec.Choice("how", "Become",
             new("half", "half", "half (rounded up)"),
             new("value", "", "a number:"),
-            new("other", "equal to the other player's", "the same as the other player's LP")),
-        ParamSpec.Int("amount", "Number", 4000, 0, 999999).ShowIf(b => b.Values.GetValueOrDefault("how") == "value"),
+            new("other", "equal to the other player's", "the same as the other player's LP"),
+            // The Unstoppable Exodia Incarnate: "Lose 1000 LP" (not damage, not a cost).
+            new("lose", "", "lower by a number (lose LP):")),
+        ParamSpec.Int("amount", "Number", 4000, 0, 999999).ShowIf(b => b.Values.GetValueOrDefault("how") is "value" or "lose"),
     ];
 
     public override string Describe(BlockArgs args)
@@ -29,6 +31,12 @@ public sealed class SetLifeAction : ActionBlock
         return args.Choice("how") switch
         {
             "value" => $"{whose} become {args.Int("amount").ToString(CultureInfo.InvariantCulture)}",
+            "lose" => args.Choice("who") switch
+            {
+                "you" => $"lose {args.Int("amount").ToString(CultureInfo.InvariantCulture)} LP",
+                "both" => $"both players lose {args.Int("amount").ToString(CultureInfo.InvariantCulture)} LP",
+                _ => $"your opponent loses {args.Int("amount").ToString(CultureInfo.InvariantCulture)} LP",
+            },
             "other" => args.Choice("who") switch
             {
                 "you" => "your LP become equal to your opponent's",
@@ -47,6 +55,10 @@ public sealed class SetLifeAction : ActionBlock
         {
             case "value":
                 lines.AddRange(players.Select(p => $"Duel.SetLP({p},{ctx.Args.Int("amount").ToString(CultureInfo.InvariantCulture)})"));
+                break;
+            case "lose":
+                // As the official card does it (the game keeps LP at 0 or more).
+                lines.AddRange(players.Select(p => $"Duel.SetLP({p},Duel.GetLP({p})-{ctx.Args.Int("amount").ToString(CultureInfo.InvariantCulture)})"));
                 break;
             case "other":
                 lines.Add(ctx.Args.Choice("who") switch
@@ -84,6 +96,7 @@ public sealed class EquipValuePassive : PassiveBlock
 
     public override void Compile(BlockContext ctx)
     {
+        ValueSources.CheckStat(ctx);
         var lose = ctx.Args.Choice("dir") == "lose";
         var value = ctx.Script.AddFunction("equipval", "e,c", [$"return {(lose ? "-" : "")}({ValueSources.Lua(ctx, "c", "e:GetHandlerPlayer()", ev: false)})"]);
         foreach (var code in ValueSources.Codes(ctx.Args.Choice("stat"), ctx.Args.Choice("dir")))

@@ -302,7 +302,7 @@ public class RequirementMatrixNumberTests
     public static readonly (string Property, string Setup, int Value)[] Numbers =
     [
         ("atk", "stat", 2000), ("def", "stat", 1200), ("base_atk", "stat", 2000), ("base_def", "stat", 1200),
-        ("level", "stat", 4), ("orig_level", "stat", 4), ("rank", "xyz", 4), ("link", "link", 2), ("scale", "pendulum", 3),
+        ("level", "stat", 4), ("orig_level", "stat", 4), ("card_level", "stat", 4), ("rank", "xyz", 4), ("link", "link", 2), ("scale", "pendulum", 3),
         ("materials", "xyz_summoned", 2), ("equips", "equipped2", 2), ("linked", "pointed_at", 1), ("attacks", "direct_attack", 1),
         // 3 counters of one kind; the requirement without a kind counts every counter.
         ("counter_count", "counters", 3),
@@ -348,6 +348,8 @@ public class RequirementMatrixNumberTests
         ["base_atk", "boosted", RequirementOp.Equal, 2000, true], ["base_atk", "boosted", RequirementOp.Equal, 2500, false],
         ["def", "boosted", RequirementOp.Equal, 1700, true], ["base_def", "boosted", RequirementOp.Equal, 1200, true], ["base_def", "boosted", RequirementOp.Equal, 1700, false],
         ["level", "boosted", RequirementOp.Equal, 5, true], ["orig_level", "boosted", RequirementOp.Equal, 4, true], ["orig_level", "boosted", RequirementOp.Equal, 5, false],
+        // A Monster Card's Level is its current one in a Monster Zone; Spells and Traps have none.
+        ["card_level", "boosted", RequirementOp.Equal, 5, true], ["card_level", "spell_any", RequirementOp.LessOrEqual, 0, false],
     ];
 
     [EngineTheory]
@@ -527,6 +529,7 @@ public class RequirementMatrixTextTests
         [R("level", RequirementOp.Between, 5, 3), "whose Level is between 3 and 5"],
         [R("level", RequirementOp.GreaterOrEqual, 7), "whose Level is 7 or higher"],
         [R("orig_level", RequirementOp.Less, 5), "whose original Level is lower than 5"],
+        [R("card_level", RequirementOp.GreaterOrEqual, 5), "whose Level is 5 or higher"],
         [R("rank", RequirementOp.Outside, 3, 5), "whose Rank is lower than 3 or higher than 5"],
         [R("link", RequirementOp.Equal, 2), "whose Link Rating is 2"],
         [R("scale", RequirementOp.NotEqual, 4), "whose Pendulum Scale is other than 4"],
@@ -611,9 +614,23 @@ public class RequirementMatrixTextTests
         Assert.Equal(phrase, CardProperties.Text(r, Pack()));
         // Choices cards write before the noun ("EARTH or LIGHT monster", "Xyz Monster", "non-DARK monster"): see BeforeTheNoun.
         if (r.Property is "attribute" or "race" or "archetype" or "monster_type" && (r.Op == RequirementOp.Is || r.Values.Count == 1)) return;
+        // So does a Monster Card's Level: see CardLevel_ReadsBeforeTheNoun.
+        if (r.Property == "card_level") return;
         var filter = RequirementMatrix.Monsters();
         filter.Requirements = [r];
         Assert.Equal("monster " + phrase, FilterText.Describe(filter, Pack(), withLocation: false));
+    }
+
+    /// <summary>A Monster Card's Level reads as a Level does, before the noun: "a Level 5 or higher Monster Card".</summary>
+    [Fact]
+    public void CardLevel_ReadsBeforeTheNoun()
+    {
+        var filter = RequirementMatrix.Monsters();
+        filter.MonsterCards = true;
+        filter.Requirements = [R("card_level", RequirementOp.GreaterOrEqual, 5)];
+        Assert.Equal("Level 5 or higher Monster Card", FilterText.Describe(filter, Pack(), withLocation: false));
+        filter.Requirements = [R("card_level", RequirementOp.Greater, 4)];
+        Assert.Equal("Monster Card whose Level is higher than 4", FilterText.Describe(filter, Pack(), withLocation: false));
     }
 
     public static IEnumerable<object[]> BeforeTheNoun() =>

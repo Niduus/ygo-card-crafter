@@ -77,6 +77,11 @@ public sealed class CardFilter
     public bool FaceUpOnly { get; set; }
     /// <summary>Only face-down cards: "Face-down cards in your Spell & Trap Zone".</summary>
     public bool FaceDownOnly { get; set; }
+    /// <summary>
+    /// With <see cref="FilterCardType.Monster"/>: "Monster Cards", which also counts monsters placed in the Spell &amp; Trap
+    /// Zone as Continuous Spells (what the card is printed as, not what it is treated as now).
+    /// </summary>
+    public bool MonsterCards { get; set; }
     public bool ExcludeThisCard { get; set; }
     /// <summary>This exact card, not any card with its name: "Special Summon this card from your hand".</summary>
     public bool ThisCard { get; set; }

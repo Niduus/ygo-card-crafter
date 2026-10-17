@@ -10,10 +10,14 @@ public sealed class ImmunePassive : PassiveBlock
 {
     public override string Id => "passive.immune";
     public override string Group => "This card";
-    public override string Name => "This card is unaffected by effects";
-    public override string Sentence => "This card is unaffected by {whose}";
+    public override string Name => "This card (or chosen monsters) is unaffected by effects";
+    public override string Sentence => "{cards} is unaffected by {whose} {attribute} {except}";
+    public override string Help => "Pick monsters instead of this card for a lasting effect on them, like Salamangreat Shrine: \"\"Salamangreat\" monsters you " +
+                                   "control are unaffected by your opponent's activated FIRE monsters' effects\".";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
+        // Saved before monsters could be picked: this card.
+        ParamSpec.Cards("cards", "Which monsters", () => new CardFilter { ThisCard = true }, Zone.MonsterZone, thisCard: true),
         ParamSpec.Choice("whose", "By",
             new("opponent", "your opponent's card effects"),
             new("other", "other cards' effects"),
@@ -27,13 +31,47 @@ public sealed class ImmunePassive : PassiveBlock
             new("opp_activated", "your opponent's activated effects"),
             new("opp_activated_monster", "your opponent's activated monster effects"),
             new("other_activated", "other cards' activated effects"),
-            new("opp_spelltrap", "your opponent's Spell/Trap effects")),
+            new("opp_spelltrap", "your opponent's Spell/Trap effects"),
+            // Abyss Vagrada, Divine Anima Infinity.
+            new("less_atk", "the activated effects of monsters with ATK less than this card"),
+            // Omega Vidolium: "Unaffected by card effects, except "Power Patron" cards'".
+            new("except_cards", "card effects, except", "card effects, except those of the cards picked below"),
+            // Qliphort Genius.
+            new("other_link", "the activated effects of other Link Monsters"),
+            new("spelltrap_other_link", "Spell/Trap effects and the activated effects of other Link Monsters"),
+            // Salamangreat Shrine: "your opponent's activated FIRE monsters' effects".
+            new("opp_activated_attr", "your opponent's activated", "your opponent's activated monster effects of an Attribute:")),
+        new ParamSpec { Key = "attribute", Label = "Attribute", Type = ParamType.Choice, Default = MonsterChoices.Attributes[0].Value, Choices = MonsterChoices.Attributes }
+            .Unprinted().ShowIf(b => b.Values.GetValueOrDefault("whose") == "opp_activated_attr"),
+        ParamSpec.Cards("except", "Except the effects of", () => new CardFilter { Zones = Zone.None }).Unprinted().WhenUsed()
+            .ShowIf(b => b.Values.GetValueOrDefault("whose") == "except_cards"),
     ];
+
+    /// <summary>"your opponent's activated FIRE monsters' effects", "card effects, except "Power Patron" cards'".</summary>
+    private static string Whose(BlockArgs args) => args.Choice("whose") switch
+    {
+        "opp_activated_attr" => $"your opponent's activated {MonsterChoices.Attributes.First(a => a.Value == args.Choice("attribute")).Label} monsters' effects",
+        "except_cards" => $"card effects, except {FilterText.Describe(args.Cards("except"), args.Pack, plural: true, withLocation: false, ownName: args.CardName)}'",
+        _ => args.Describe("whose"),
+    };
+
+    public override string Describe(BlockArgs args)
+    {
+        var f = args.Cards("cards");
+        if (f.ThisCard) return $"this card is unaffected by {Whose(args)}";
+        return $"{FilterText.Describe(f, args.Pack, plural: true, preposition: "", ownName: args.CardName)} are unaffected by {Whose(args)}";
+    }
 
     public override void Compile(BlockContext ctx)
     {
         var test = ctx.Args.Choice("whose") switch
         {
+            "less_atk" => "te:IsActivated() and te:IsActiveType(TYPE_MONSTER) and te:GetHandler():GetAttack()<e:GetHandler():GetAttack()",
+            "except_cards" => ctx.Script.MaterialFilter(ctx.Args.Cards("except"), "immexfilter") is var ex && ex != "nil" ? $"not {ex}(te:GetHandler())" : "true",
+            "other_link" => "te:IsActiveType(TYPE_LINK) and te:IsActivated() and te:GetOwner()~=e:GetOwner()",
+            "spelltrap_other_link" => "te:IsActiveType(TYPE_SPELL+TYPE_TRAP) or te:IsActiveType(TYPE_LINK) and te:IsActivated() and te:GetOwner()~=e:GetOwner()",
+            "opp_activated_attr" => "te:GetOwnerPlayer()~=e:GetHandlerPlayer() and te:IsActivated() and te:IsActiveType(TYPE_MONSTER) and te:GetHandler():IsAttribute("
+                                    + EnumNames.LuaConstant(Enum.Parse<CardAttribute>(ctx.Args.Choice("attribute"))) + ")",
             "other" => "te:GetOwner()~=e:GetOwner()",
             "spelltrap" => "te:IsActiveType(TYPE_SPELL+TYPE_TRAP)",
             "monster" => "te:IsActiveType(TYPE_MONSTER) and te:GetOwner()~=e:GetOwner()",
@@ -50,7 +88,21 @@ public sealed class ImmunePassive : PassiveBlock
         };
         var fn = ctx.Script.AddFunction("immval", "e,te", [$"return {test}"]);
         var range = RangeOf(ctx);
-        ctx.Effect.AddPassive(v => SelfEffect(v, range, "EFFECT_IMMUNE_EFFECT", fn));
+        var filter = ctx.Args.Cards("cards").Clone();
+        if (filter.ThisCard)
+        {
+            ctx.Effect.AddPassive(v => SelfEffect(v, range, "EFFECT_IMMUNE_EFFECT", fn));
+            return;
+        }
+        // The monsters the picker allows, as long as this card applies it.
+        filter.Zones = Zone.MonsterZone;
+        var f = ctx.Script.Filter(filter);
+        var target = ctx.Script.AddFunction("immtg", "e,c", [$"return {f.Function}(c,e,e:GetHandlerPlayer())" + (filter.ExcludeThisCard ? " and c~=e:GetHandler()" : "")]);
+        ctx.Effect.AddPassive(v =>
+        [
+            $"{v}:SetType(EFFECT_TYPE_FIELD)", $"{v}:SetCode(EFFECT_IMMUNE_EFFECT)", $"{v}:SetRange({range})",
+            $"{v}:SetTargetRange({f.Self},{f.Opp})", $"{v}:SetTarget({target})", $"{v}:SetValue({fn})",
+        ]);
     }
 }
 
@@ -75,7 +127,9 @@ public sealed class SelfRulePassive : PassiveBlock
             new("must_attack", "This card must attack, if able"),
             new("battle_safe", "If this card battles a monster, neither can be destroyed by that battle"),
             new("opp_no_battle_damage", "Your opponent takes no battle damage from attacks involving this card"),
-            new("reflect_battle", "Your opponent takes any battle damage you would have taken from battles involving this card")),
+            new("reflect_battle", "Your opponent takes any battle damage you would have taken from battles involving this card"),
+            // Heart of the Blue-Eyes.
+            new("control_fixed", "Control of this card cannot switch")),
     ];
 
     public override void Compile(BlockContext ctx)
@@ -102,6 +156,7 @@ public sealed class SelfRulePassive : PassiveBlock
             "must_attack" => [("EFFECT_MUST_ATTACK", "1")],
             "opp_no_battle_damage" => [("EFFECT_NO_BATTLE_DAMAGE", "1")],
             "reflect_battle" => [("EFFECT_REFLECT_BATTLE_DAMAGE", "1")],
+            "control_fixed" => [("EFFECT_CANNOT_CHANGE_CONTROL", "1")],
             _ => [("EFFECT_CANNOT_ATTACK", "1")],
         };
         foreach (var (code, value) in codes) ctx.Effect.AddPassive(v => SelfEffect(v, range, code, value));
@@ -128,7 +183,9 @@ public sealed class CardsRulePassive : PassiveBlock
             new("pierce", "inflict piercing battle damage"),
             new("must_attack", "must attack, if able"),
             new("direct", "can attack directly"),
-            new("cannot_direct", "cannot attack directly")),
+            new("cannot_direct", "cannot attack directly"),
+            // Lethargisaurus, Infinitrack Road Roller: "Face-up monsters your opponent controls are changed to Defense Position".
+            new("to_defense", "are changed to Defense Position")),
     ];
 
     public override string Describe(BlockArgs args)
@@ -164,12 +221,15 @@ public sealed class CardsRulePassive : PassiveBlock
                 "must_attack" => (["EFFECT_MUST_ATTACK"], "1"),
                 "direct" => (["EFFECT_DIRECT_ATTACK"], "1"),
                 "cannot_direct" => (["EFFECT_CANNOT_DIRECT_ATTACK"], "1"),
+                "to_defense" => (["EFFECT_SET_POSITION"], "POS_FACEUP_DEFENSE"),
                 _ => (["EFFECT_CANNOT_ATTACK"], "1"),
             };
             OnThisCard(ctx, selfCodes, selfValue);
             return;
         }
         filter.Zones = Zone.MonsterZone;
+        // Only face-up monsters change position (face-down ones stay Set), as official cards target them.
+        if (ctx.Args.Choice("rule") == "to_defense") filter.FaceUpOnly = true;
         var f = ctx.Script.Filter(filter);
         var target = ctx.Script.AddFunction("ruletg", "e,c", [$"return {f.Function}(c,e,e:GetHandlerPlayer())" + (filter.ExcludeThisCard ? " and c~=e:GetHandler()" : "")]);
         var range = RangeOf(ctx);
@@ -184,6 +244,7 @@ public sealed class CardsRulePassive : PassiveBlock
             "must_attack" => (["EFFECT_MUST_ATTACK"], "1"),
             "direct" => (["EFFECT_DIRECT_ATTACK"], "1"),
             "cannot_direct" => (["EFFECT_CANNOT_DIRECT_ATTACK"], "1"),
+            "to_defense" => (["EFFECT_SET_POSITION"], "POS_FACEUP_DEFENSE"),
             _ => (["EFFECT_CANNOT_ATTACK"], "1"),
         };
         foreach (var code in codes)
@@ -219,7 +280,9 @@ public sealed class PlayerRulePassive : PassiveBlock
             new("opp_no_extra", "Your opponent cannot Special Summon monsters from the Extra Deck"),
             new("opp_no_special", "Your opponent cannot Special Summon monsters"),
             new("opp_no_draw_extra", "Your opponent cannot add cards from their Deck to their hand except by drawing them"),
-            new("opp_no_bp_activate", "Your opponent cannot activate cards or effects during the Battle Phase")),
+            new("opp_no_bp_activate", "Your opponent cannot activate cards or effects during the Battle Phase"),
+            // Lethargisaurus.
+            new("no_own_response", "Neither player can activate cards or effects in response to the activation of their own cards or effects")),
     ];
 
     public override void Compile(BlockContext ctx)
@@ -293,6 +356,13 @@ public sealed class PlayerRulePassive : PassiveBlock
             case "opp_no_draw_extra":
                 ctx.Effect.AddPassive(v => Player(v, "EFFECT_CANNOT_TO_HAND", "0", "1", null, ctx.Script.AddFunction("thlimit", "e,c", ["return c:IsLocation(LOCATION_DECK)"])));
                 break;
+            case "no_own_response":
+            {
+                // Each activation: only the other player may chain to it (a chain limit set as it is activated).
+                var op = ctx.Script.AddFunction("ownchainop", "e,tp,eg,ep,ev,re,r,rp", ["Duel.SetChainLimit(function(ce,cp,ctp) return cp~=rp end)"]);
+                ctx.Effect.AddPassive(v => [$"{v}:SetType(EFFECT_TYPE_FIELD+EFFECT_TYPE_CONTINUOUS)", $"{v}:SetCode(EVENT_CHAINING)", $"{v}:SetRange({range})", $"{v}:SetOperation({op})"]);
+                break;
+            }
             case "opp_no_bp_activate":
             {
                 var con = ctx.Script.AddFunction("bpcon", "e", ["local ph=Duel.GetCurrentPhase()", "return ph>=PHASE_BATTLE_START and ph<=PHASE_BATTLE"]);
