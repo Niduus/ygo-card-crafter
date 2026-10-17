@@ -275,6 +275,8 @@
                         <Button Content="✕" Command="{Binding RemoveOrCommand}" IsVisible="{Binding HasOr}" Padding="6,0" ToolTip.Tip="Remove the &quot;or&quot;" />
                         <Button Content="+ or another kind" Command="{Binding AddOrCommand}" IsVisible="{Binding !HasOr}" Padding="8,2" FontSize="12"
                                 ToolTip.Tip="Let this material be another kind of card too, like Dragoon's &quot;Red-Eyes Black Dragon&quot; or 1 Dragon Effect Monster" />
+                        <ComboBox ItemsSource="{Binding PlaceOptions}" SelectedItem="{Binding PlaceChoice}" FontSize="12"
+                                  ToolTip.Tip="Lava Golem, Steelcage of the Sun God: &quot;1 &quot;Sun God&quot; monster you control + 2 face-up monsters on the field&quot;" />
                       </StackPanel>
                     </Grid>
                   </DataTemplate>
@@ -302,8 +304,10 @@
                     <CheckBox Content="the opponent's cards too" IsChecked="{Binding ContactOpponent}" Margin="0,0,12,0" />
                     <CheckBox Content="to the opponent's Main Monster Zone" IsChecked="{Binding ContactToOpponent}" Margin="0,0,12,0"
                               ToolTip.Tip="Lava Golem, Steelcage of the Sun God: Special Summoned to your opponent's Main Monster Zone" />
-                    <CheckBox Content="then you can only Special Summon once more this turn" IsChecked="{Binding ContactOneMoreSummon}"
+                    <CheckBox Content="then you can only Special Summon once more this turn" IsChecked="{Binding ContactOneMoreSummon}" Margin="0,0,12,0"
                               ToolTip.Tip="&quot;..., but if you Special Summon this card with the second method, you can only Special Summon once for the rest of this turn&quot;" />
+                    <CheckBox Content="once per turn this way, no matter which method" IsChecked="{Binding ContactOncePerTurn}"
+                              ToolTip.Tip="&quot;You can only Special Summon ... once per turn this way, no matter which method you use&quot;: its Fusion Summon and its Contact Fusion share one per turn" />
                   </WrapPanel>
                   <ComboBox ItemsSource="{Binding ContactRuleOptions}" SelectedItem="{Binding ContactRuleChoice}" HorizontalAlignment="Stretch" />
                   <TextBlock Text="{Binding ContactText}" TextWrapping="Wrap" FontStyle="Italic" />

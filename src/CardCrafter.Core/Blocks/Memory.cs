@@ -203,7 +203,8 @@ public static class Memory
         {
             case "affected":
                 if (e.LastResult is null) { e.Error($"\"{ctx.Args.Definition.Name}\": \"the cards the step before affected\" needs a DO block before it that moves, destroys or Summons cards."); return null; }
-                return "Duel.GetOperatedGroup():Clone()";
+                // Cards the engine doesn't keep as its operated group (the cards shown), kept by the step itself.
+                return e.LastResultStep?.Affected is { } kept ? $"{kept}:Clone()" : "Duel.GetOperatedGroup():Clone()";
             case "target":
                 if (!Targets(e)) { e.Error($"\"{ctx.Args.Definition.Name}\": \"this effect's target\" needs a DO block of this effect that targets."); return null; }
                 return "Duel.GetChainInfo(0,CHAININFO_TARGET_CARDS):Filter(Card.IsRelateToEffect,nil,e)";
@@ -213,6 +214,9 @@ public static class Memory
                 return "(eg and eg:Clone() or Group.CreateGroup())";
             case "battle":
                 return "Group.FromCards(c:GetBattleTarget())";
+            // Time Chain: both monsters still in the battle.
+            case "battling":
+                return $"{CardRefs.BattlersLua(ctx.Script)}:Filter(Card.IsRelateToBattle,nil)";
             default:
                 return GroupLua(ctx.Script, slot);
         }
@@ -469,7 +473,7 @@ public sealed class LaterAction : ActionBlock
     public override string Id => BlockId;
     public override string Group => "Memory";
     public override string Name => "Later: Special Summon, return, destroy... it during the next Standby Phase / End Phase";
-    public override string Sentence => "{how} {what} {slot} {when}";
+    public override string Sentence => "{how} {what} {slot} {when} {until}";
     public override string Help => "Cards that leave where they are before then (or are no longer the same cards) are not affected. To bring a " +
                                    "banished card back, use \"Banish cards\" with \"until the next Standby Phase\".";
 
@@ -481,6 +485,19 @@ public sealed class LaterAction : ActionBlock
         new("end", "during the End Phase"),
         new("end_next", "during the End Phase of the next turn"),
         new("battle_end", "at the end of the Battle Phase", "at the end of this turn's Battle Phase"),
+        // Time Chain: "banish them after damage calculation ...", for an effect used during a battle.
+        new("battled", "after damage calculation", "after this battle's damage calculation"),
+    ];
+
+    /// <summary>How long "banish ... until ..." keeps the cards banished, as the "Banish cards" block's timings.</summary>
+    public static readonly ChoiceOption[] Untils =
+    [
+        new("standby_your", "until your next Standby Phase"),
+        new("standby_next", "until the next Standby Phase"),
+        new("standby_opp", "until your opponent's next Standby Phase"),
+        new("end", "until the End Phase"),
+        // Time Chain: each card comes back during the 2nd Standby Phase of the player who controlled it.
+        new("standby_ctrl2", "until their controller's 2nd Standby Phase"),
     ];
 
     public override IReadOnlyList<ParamSpec> Params { get; } =
@@ -491,13 +508,16 @@ public sealed class LaterAction : ActionBlock
             new("destroy", "destroy"),
             new("banish", "banish"),
             new("grave", "send to the GY:"),
-            new("deck", "shuffle into the Deck:")),
+            new("deck", "shuffle into the Deck:"),
+            new("banish_until", "banish", "banish, until (they come back):")),
         ParamSpec.Choice("what", "Which cards",
             new("affected", "", "the card(s) the step before affected"),
             new("target", "", "this effect's target(s)"),
-            new("memory", "", "the remembered cards in")),
+            new("memory", "", "the remembered cards in"),
+            new("battling", "", "both battling monsters")),
         Memory.SlotParam().ShowIf(b => b.Values.GetValueOrDefault("what") == "memory"),
         ParamSpec.Choice("when", "When", Whens),
+        ParamSpec.Choice("until", "Until", Untils).ShowIf(b => b.Values.GetValueOrDefault("how") == "banish_until"),
     ];
 
     /// <summary>"it" or "them" for the cards of the step before, "the target", or "the remembered cards".</summary>
@@ -507,6 +527,8 @@ public sealed class LaterAction : ActionBlock
         {
             case "target": return Memory.Targets(args) == "the targets" ? "them" : "it";
             case "memory": return "the remembered cards";
+            // "Neither battling monster can be destroyed by that battle, also banish them ...": the step before names them.
+            case "battling": return args.Effect?.Do.Any(b => b.Filters.Values.Any(f => f.That == CardRef.Battlers)) == true ? "them" : "both battling monsters";
         }
         var dos = args.Effect?.Do;
         var at = dos?.FindIndex(b => ReferenceEquals(b, args.Instance)) ?? -1;
@@ -523,6 +545,8 @@ public sealed class LaterAction : ActionBlock
             "special" => $"Special Summon {it} {when}",
             "hand" => $"return {it} to the hand {when}",
             "banish" => $"banish {it} {when}",
+            // Time Chain: "banish them after damage calculation until their controller's 2nd Standby Phase".
+            "banish_until" => $"banish {it} {when} {args.Describe("until")}",
             "grave" => $"send {it} to the GY {when}",
             "deck" => $"shuffle {it} into the Deck {when}",
             _ => $"destroy {it} {when}",
@@ -570,6 +594,22 @@ public sealed class LaterAction : ActionBlock
             $"{v}:SetLabel(fid,0)",
             $"{v}:SetReset(RESET_PHASE+PHASE_END)",
         ], null),
+        // After this battle's damage calculation, as Time Chain's script waits for it (gone with the Damage Step).
+        "battled" =>
+        ("EVENT_BATTLED",
+        [
+            $"{v}:SetLabel(fid,0)",
+            $"{v}:SetReset(RESET_PHASE+PHASE_DAMAGE)",
+        ], null),
+        // The 2nd Standby Phase of the player the delayed effect is registered for (Time Chain registers it for each
+        // card's controller): this turn's if it is still to come, otherwise the player's next turns.
+        "standby_ctrl2" =>
+        ("EVENT_PHASE+PHASE_STANDBY",
+        [
+            "local own=Duel.GetTurnPlayer()==tp",
+            $"{v}:SetLabel(fid,Duel.GetTurnCount()+(own and Duel.GetCurrentPhase()<PHASE_STANDBY and 2 or own and 4 or 3))",
+            $"{v}:SetReset(RESET_PHASE+PHASE_STANDBY+RESET_SELF_TURN,2)",
+        ], "Duel.GetTurnPlayer()==tp and Duel.GetTurnCount()==turn"),
         _ => ("EVENT_PHASE+PHASE_END", [$"{v}:SetLabel(fid,0)"], null),
     };
 
@@ -623,19 +663,37 @@ public sealed class LaterAction : ActionBlock
     /// scripts banish with position 0), and returned to the field then if it is still the same banished card. The call
     /// on <paramref name="g"/>, returning how many were banished.
     /// </summary>
-    public static string BanishUntil(ScriptBuilder script, string g, string when) =>
-        script.AddFunction("banishuntil", "g,e,tp",
+    public static string BanishUntil(ScriptBuilder script, string g, string when)
+    {
+        if (when != "standby_ctrl2")
+            return script.AddFunction("banishuntil", "g,e,tp",
+            [
+                "local n=Duel.Remove(g,0,REASON_EFFECT+REASON_TEMPORARY)",
+                "local og=Duel.GetOperatedGroup():Filter(Card.IsLocation,nil,LOCATION_REMOVED)",
+                "if og:GetCount()==0 then return n end",
+                .. Delayed(script, "og", when, "for tc in aux.Next(g) do Duel.ReturnToField(tc) end"),
+                "return n",
+            ]) + $"({g},e,tp)";
+        // "Until their controller's 2nd Standby Phase": each player's cards come back on that player's own count.
+        var back = script.AddFunction("banishuntilfor", "og,e,tp", Delayed(script, "og", when, "for tc in aux.Next(g) do Duel.ReturnToField(tc) end"));
+        return script.AddFunction("banishuntil", "g,e,tp",
         [
             "local n=Duel.Remove(g,0,REASON_EFFECT+REASON_TEMPORARY)",
             "local og=Duel.GetOperatedGroup():Filter(Card.IsLocation,nil,LOCATION_REMOVED)",
-            "if og:GetCount()==0 then return n end",
-            .. Delayed(script, "og", when, "for tc in aux.Next(g) do Duel.ReturnToField(tc) end"),
+            "for p=0,1 do",
+            "\tlocal pg=og:Filter(Card.IsPreviousControler,nil,p)",
+            $"\tif pg:GetCount()>0 then {back}(pg,e,p) end",
+            "end",
             "return n",
         ]) + $"({g},e,tp)";
+    }
 
     /// <summary>The delayed step on "g": the Special Summon checks each card can be Summoned and the zones free, as delayed Summons do.</summary>
-    private static string Act(ScriptBuilder script, string how)
+    private static string Act(ScriptBuilder script, string how, string until)
     {
+        // Banished for a while: marked as banished by this card's effect when the card reads them (Time Chain).
+        if (how == "banish_until") return CardRefs.MarkBanished(script, BanishUntil(script, "g", until));
+        if (how == "banish") return CardRefs.MarkBanished(script, EndPhaseAction.Call(how, "g"));
         if (how != "special") return how == "hand" ? "Duel.SendtoHand(g,nil,REASON_EFFECT)" : EndPhaseAction.Call(how, "g");
         return script.AddFunction("laterspsummon", "e,tp,g",
         [
@@ -663,7 +721,7 @@ public sealed class LaterAction : ActionBlock
         var g = e.NewLocal("lg");
         var r = e.NewLocal("r");
         var lines = new List<string> { $"local {r}=0", $"local {g}={group}", $"if {g}:GetCount()>0 then" };
-        lines.AddRange(Delayed(ctx.Script, g, ctx.Args.Choice("when"), Act(ctx.Script, how)).Select(l => "\t" + l));
+        lines.AddRange(Delayed(ctx.Script, g, ctx.Args.Choice("when"), Act(ctx.Script, how, ctx.Args.Choice("until"))).Select(l => "\t" + l));
         lines.Add($"\t{r}={g}:GetCount()");
         lines.Add("end");
         e.AddStep(lines, r, ctx.Link);

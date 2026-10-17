@@ -101,6 +101,9 @@ public static partial class EffectTextGenerator
         var card = project.Card;
         if (!card.IsMonster || card.SummonRule == SummonRule.Normal) return "";
         // "Must be either Fusion Summoned, or Special Summoned by ...": the procedure from the Extra Deck says it.
+        // Omega Vidolium: "Must first be Fusion Summoned." (it can be Special Summoned later once it was).
+        if (!card.IsMainDeckNonRitual && card.IsExtraDeck && card.SummonRule == SummonRule.SpecialSummonOnly && !project.Effects.Any(IsExtraDeckProcedure))
+            return $"Must first be {card.Frame} Summoned.";
         if (!card.IsMainDeckNonRitual)
             return card.SummonRule == SummonRule.ProcedureOnly && !project.Effects.Any(IsExtraDeckProcedure) ? $"Must be {card.Frame} Summoned." : "";
         if (card.SummonRule == SummonRule.ByCardEffect) return "Cannot be Normal Summoned/Set. Must be Special Summoned by a card effect.";
@@ -192,6 +195,9 @@ public static partial class EffectTextGenerator
         else if (passive)
         {
             text = head.Length == 0 ? SentenceCase.Upper(actions) : $"{SentenceCase.Upper(head)}, {actions}";
+            // "Unaffected by other cards' effects.", "Cannot be used as Fusion Material.": this card's own rules, as printed cards start them.
+            foreach (var (said, printed) in new[] { ("This card is unaffected by ", "Unaffected by "), ("This card cannot be used as ", "Cannot be used as ") })
+                if (head.Length == 0 && text.StartsWith(said, StringComparison.Ordinal)) text = printed + text[said.Length..];
             // "If this card attacks, ... until the end of the Damage Step."
             foreach (var b in effect.If)
                 if (BlockRegistry.Find(b.BlockId) is ConditionBlock cd && cd.Until(new BlockArgs(cd, b, pack) { Effect = effect, CardName = card.Name }) is { Length: > 0 } until)
@@ -249,6 +255,10 @@ public static partial class EffectTextGenerator
                 // "... Special Summon this card (while you control no monsters, this effect and its activation cannot be negated).":
                 // a remark in parentheses that is not a sentence of its own goes inside the effect's sentence.
                 text = after is ['(', var first, ..] && char.IsLower(first) && text.EndsWith('.') ? $"{text[..^1]} {after}." : text + (after.StartsWith('\n') ? "" : " ") + after;
+        // Time Chain: "Destroy this card during your opponent's 2nd Standby Phase after activation. Activate this card when ...".
+        foreach (var b in effect.Cost)
+            if (BlockRegistry.Find(b.BlockId) is { } bd && bd.Foreword(new BlockArgs(bd, b, pack) { Effect = effect, CardName = card.Name }) is { Length: > 0 } before)
+                text = before + " " + text;
 
         // "Tribute this card instead" is a lasting effect that still takes "once per turn".
         var limited = !passive || effect.Do.Any(b => b.BlockId == ReplaceDestroyPassive.BlockId);
@@ -514,6 +524,9 @@ public static partial class EffectTextGenerator
         // "If your opponent controls a card, you can activate this card from your hand": a rule, not a lasting "while".
         var joiner = when.Length > 0 || passive && !effect.Do.All(b => b.BlockId is ActivateFromHandPassive.BlockId or NoTributeSummonPassive.BlockId or SelfDestroyPassive.BlockId or ActivateSetTurnPassive.BlockId or CannotBeSummonedPassive.BlockId or WinPassive.BlockId) ? "while" : "if";
         cond = TimingFirst(during, cond, joiner);
+        // Omega Vidolium: "When your opponent activates a monster effect while they control 2 or more monsters ...".
+        if (when.StartsWith("When your opponent ", StringComparison.OrdinalIgnoreCase) && joiner == "while")
+            cond = cond.Replace("your opponent controls", "they control", StringComparison.Ordinal).Replace("your opponent has", "they have", StringComparison.Ordinal);
 
         // "When your opponent Normal Summons a monster during their turn", not "during your opponent's turn".
         if (trigger is QuickTrigger or ActivateTrigger && Timing.IsOpponents(effect.When!.Values.GetValueOrDefault("timing") ?? ""))
@@ -587,6 +600,8 @@ public static partial class EffectTextGenerator
             // A floodgate is its own sentence: "Spell Cards ... cannot be activated. Negate all Spell effects on the field."
             var gate = def is LockPassive or NegateAllPassive or BanishInsteadPassive or ToonRulesPassive;
             var wasGate = previous is LockPassive or NegateAllPassive or BanishInsteadPassive or ToonRulesPassive;
+            // Time Chain, Bye Bye Damage: "... cannot be destroyed by that battle, also ...".
+            var afterBattleSafe = previous is BattleSafeAction;
             // "toss a coin and if the result is heads, ..., or if the result is tails, ...".
             if (ChanceJoiner(b, previous, ref chanceCases) is { } chanceJoin && sb.Length > 0)
             {
@@ -629,10 +644,12 @@ public static partial class EffectTextGenerator
                     ActionLink.IfYouDo when ownIfYouDo is null && previousText.StartsWith("your opponent ", StringComparison.Ordinal) => ", and if they do, ",
                     ActionLink.IfYouDo => $", and {ownIfYouDo ?? "if you do"}, ",
                     ActionLink.Then => ", then ",
+                    // Millennium Ankh: "..., also you cannot Summon for the rest of this turn": a lock that applies whatever happened.
+                    ActionLink.AlsoAfterThat when def is SummonRestrictionAction => ", also ",
                     ActionLink.AlsoAfterThat => ". Also, after that, ",
                     ActionLink.IfYouDont => ", and if you don't, ",
                     // "..., also you cannot Special Summon ... for the rest of this turn": a lock is added with "also".
-                    _ when def is SummonRestrictionAction => ", also ",
+                    _ when def is SummonRestrictionAction || afterBattleSafe => ", also ",
                     // Therion "King" Regulus: "... gains 700 ATK, also it can activate the 2nd effect listed above ...".
                     _ when def is GrantEffectPassive && t.StartsWith("it ", StringComparison.Ordinal) => ", also ",
                     _ => ", and ",

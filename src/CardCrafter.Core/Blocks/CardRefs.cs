@@ -28,6 +28,9 @@ public static class CardRefs
         (CardRef.Equipped, "The monster this card is equipped to"),
         (CardRef.Event, "The cards that started this effect (\"those monsters\")"),
         (CardRef.Attacker, "The attacking monster (whose attack this effect answers)"),
+        (CardRef.Activated, "The card whose activation this effect responds to (\"that monster\")"),
+        (CardRef.Battlers, "Both battling monsters (the attacker and the attack target)"),
+        (CardRef.BanishedByThis, "The cards banished by this card's effect (still banished)"),
     ];
 
     /// <summary>
@@ -100,8 +103,11 @@ public static class CardRefs
             case CardRef.Cost:
                 return CostBlock(args.Effect) is { } c && int.TryParse(c.Values.GetValueOrDefault("count", "1"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) && n > 1;
             // "If your opponent Special Summons a monster(s)": the event may be about several cards.
-            case CardRef.Event:
+            case CardRef.Event or CardRef.Battlers:
                 return true;
+            // "Special Summon the monster banished by this card's effect", "as many monsters banished by this card's effect as possible".
+            case CardRef.BanishedByThis:
+                return args.Definition.Param("count") is { Type: ParamType.Integer } && args.Int("count") != 1 || args.CountMode == "all";
             default:
                 return false;
         }
@@ -151,10 +157,17 @@ public static class CardRefs
             CardRef.Equipped => "the equipped monster",
             CardRef.Event => EventNoun(f, plural: true),
             CardRef.Attacker => "the attacking monster",
+            CardRef.Activated => f.CardType == FilterCardType.Monster ? "that monster" : "that card",
+            CardRef.Battlers => "the battling monsters",
+            CardRef.BanishedByThis => BanishedNoun(f, plural),
             _ => "",
         };
         return Plus(args) == "this" ? $"both {words} and this card" : words;
     }
+
+    /// <summary>"the monster banished by this card's effect", "the cards banished by this card's effect".</summary>
+    public static string BanishedNoun(CardFilter f, bool plural) =>
+        $"the {(f.CardType == FilterCardType.Monster ? "monster" : "card")}{(plural ? "s" : "")} banished by this card's effect";
 
     /// <summary>
     /// The count's words with the cards that go with the block's own: "this card from your hand and 1" ("Special Summon
@@ -228,9 +241,64 @@ public static class CardRefs
                 if (!IsBattle(e)) e.Warn($"\"{name}\": a battling monster is only there during battle; use a WHEN about battle, like \"If this card destroys a monster by battle\".");
                 var card = Card(that, "c");
                 return $"({card} and Group.FromCards({card}) or Group.CreateGroup()):Filter(Card.IsRelateToEffect,nil,e)";
+            case CardRef.Battlers:
+            {
+                // Time Chain: both monsters, related to the effect as it is activated, so one that left the battle is not used.
+                var both = BattlersLua(ctx.Script);
+                var relate = $"for bc in aux.Next({both}) do bc:CreateEffectRelation(e) end";
+                if (!e.TargetLines.Contains(relate)) e.TargetLines.Add(relate);
+                if (!IsBattle(e)) e.Warn($"\"{name}\": the battling monsters are only there during battle; use a WHEN about battle, like \"when your monster is targeted for an attack\".");
+                return $"{both}:Filter(Card.IsRelateToEffect,nil,e)";
+            }
+            case CardRef.Activated:
+                // Omega Vidolium: "banish that monster": the card whose activation this effect responds to.
+                if (e.Code != "EVENT_CHAINING")
+                    e.Warn($"\"{name}\": \"the card whose activation this effect responds to\" needs a WHEN that responds to an activation, like \"When your opponent activates a monster effect\".");
+                return "(re and Group.FromCards(re:GetHandler()) or Group.CreateGroup()):Filter(Card.IsRelateToEffect,nil,re)";
+            case CardRef.BanishedByThis:
+                return $"Duel.GetMatchingGroup({BanishedFilter(ctx.Script)},tp,LOCATION_REMOVED,LOCATION_REMOVED,nil,e:GetHandler())";
             default:
                 return null;
         }
+    }
+
+    /// <summary>"s.battlers()": the attacker and the attack target, the monsters in the battle now.</summary>
+    public static string BattlersLua(ScriptBuilder script) => script.AddFunction("battlers", "",
+    [
+        "local g=Group.CreateGroup()",
+        "local a,d=Duel.GetAttacker(),Duel.GetAttackTarget()",
+        "if a then g:AddCard(a) end",
+        "if d then g:AddCard(d) end",
+        "return g",
+    ]) + "()";
+
+    /// <summary>
+    /// "s.banishedby": a banished card this card's effect banished. The banished card is related to this card while it
+    /// stays banished, wherever this card goes ("If this card is sent to the GY: ... the monster banished by this card's effect").
+    /// </summary>
+    public static string BanishedFilter(ScriptBuilder script) =>
+        script.AddFunction("banishedby", "c,h", ["return c:IsLocation(LOCATION_REMOVED) and c:IsRelateToCard(h)"]);
+
+    /// <summary>Whether the card uses "the cards banished by this card's effect", so its banishing effects mark the cards they banish.</summary>
+    public static bool UsesBanishedByThis(CardProject? project) => project is not null && project.Effects
+        .SelectMany(e => e.Do.Concat(e.If).Concat(e.Cost))
+        .SelectMany(b => b.Filters.Values)
+        .Any(f => f.That == CardRef.BanishedByThis || f.Requirements.Any(r => IsRequirement(r.Property) && r.Values.Contains((long)CardRef.BanishedByThis)));
+
+    /// <summary>
+    /// A banishing call, then the cards it banished (Duel.GetOperatedGroup) marked as banished by this card's effect, when
+    /// the card reads them; otherwise the call as it is.
+    /// </summary>
+    public static string MarkBanished(ScriptBuilder script, string call)
+    {
+        if (!UsesBanishedByThis(script.Project)) return call;
+        // As Time Chain's script ties them: a relation that ends when the banished card moves.
+        var fn = script.AddFunction("markbanished", "n,e",
+        [
+            "for tc in aux.Next(Duel.GetOperatedGroup()) do if tc:IsLocation(LOCATION_REMOVED) then tc:CreateRelation(e:GetHandler(),RESET_EVENT+RESETS_STANDARD) end end",
+            "return n",
+        ]);
+        return $"{fn}({call},e)";
     }
 
     private static bool IsBattle(EffectBuilder e) =>
@@ -259,8 +327,13 @@ public static class CardRefs
     /// The activation check of a step on "that card": only a battling monster is known when the effect is activated (as
     /// official scripts check it); targets, the cards the step before affects and cost cards are not, so there is none.
     /// </summary>
-    public static string? ActivationCheck(CardRef that, string function) =>
-        that is CardRef.BattleTarget or CardRef.Battling or CardRef.Equipped or CardRef.Attacker ? $"{Card(that)}~=nil and {function}({Card(that)},e,tp)" : null;
+    public static string? ActivationCheck(CardRef that, string function) => that switch
+    {
+        CardRef.BattleTarget or CardRef.Battling or CardRef.Equipped or CardRef.Attacker => $"{Card(that)}~=nil and {function}({Card(that)},e,tp)",
+        // Both battling monsters: there is a battle with an attack target.
+        CardRef.Battlers => "Duel.GetAttacker()~=nil and Duel.GetAttackTarget()~=nil",
+        _ => null,
+    };
 
     /// <summary>
     /// The group a picker requirement compares with ("with a different Attribute from that monster"), or nil while the
@@ -271,6 +344,12 @@ public static class CardRefs
         CardRef.Target => "(function(te,tg) if te~=e or not tg then return nil end return tg:Filter(Card.IsRelateToEffect,nil,e) end)(Duel.GetChainInfo(0,CHAININFO_TRIGGERING_EFFECT,CHAININFO_TARGET_CARDS))",
         CardRef.Affected => "(function(te) if te~=e then return nil end return Duel.GetOperatedGroup() end)(Duel.GetChainInfo(0,CHAININFO_TRIGGERING_EFFECT))",
         CardRef.Cost => "(function(te) if te~=e then return nil end return e:GetLabelObject() end)(Duel.GetChainInfo(0,CHAININFO_TRIGGERING_EFFECT))",
+        // The card whose activation is the last chain link while this effect checks whether it can respond (Omega
+        // Vidolium's "while they control 2 or more monsters with the same Type as that monster"); none for its own link.
+        CardRef.Activated => "(function(te) if not te or te==e then return nil end return Group.FromCards(te:GetHandler()) end)(Duel.GetChainInfo(0,CHAININFO_TRIGGERING_EFFECT))",
+        CardRef.Battlers => "(function(a,d) local g=Group.CreateGroup() if a then g:AddCard(a) end if d then g:AddCard(d) end return g end)(Duel.GetAttacker(),Duel.GetAttackTarget())",
+        // Time Chain: "monsters that are currently banished by this card's effect", always known.
+        CardRef.BanishedByThis => "Duel.GetMatchingGroup(function(bc) return bc:IsRelateToCard(e:GetHandler()) end,0,LOCATION_REMOVED,LOCATION_REMOVED,nil)",
         // The equipped monster and a battling monster are known whenever the effect is used.
         _ => $"(function(bc) return bc and Group.FromCards(bc) or nil end)({Card(that)})",
     };
@@ -298,6 +377,8 @@ public static class CardRefs
         };
         // "A different Attribute from that monster": there must be that monster to differ from.
         var test = not ? $"rg:GetCount()>0 and not rg:IsExists(function(rc) return {same} end,1,nil)" : $"rg:IsExists(function(rc) return {same} end,1,nil)";
+        // A face-down card on the field has no Type, Attribute, Level or name to share with the activated monster.
+        if (that == CardRef.Activated && key != "ref_atk_le") test = $"(not c:IsOnField() or c:IsFaceup()) and {test}";
         return $"(function(rg) if not rg then return true end return {test} end)({GuardedGroup(that)})";
     }
 

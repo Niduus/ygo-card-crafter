@@ -42,9 +42,10 @@ public static class ContactFusion
         var self = Lua.Locations(zones);
         var opp = proc.ContactOpponent ? Lua.Locations(zones & Zone.Field) : "0";
         var (filter, move) = Of(proc.ContactMove);
-        var lines = proc.ContactToOpponent || proc.ContactOneMoreSummon
+        var lines = proc.ContactToOpponent || proc.ContactOneMoreSummon || proc.ContactOncePerTurn
             ? OwnProcedure(proc, script, filter, self, opp)
             : [$"aux.AddContactFusionProcedure(c,{filter},{self},{opp},{move})"];
+        if (proc.ContactOncePerTurn) lines.AddRange(OncePerTurn(script));
         // "Must be ..." rules are written with the other summoning rules; "Must first be ..." ones here.
         if (card.CannotBeSpecialSummoned || card.OnlyByOwnProcedure) return lines;
         var limit = card.SummonRule == SummonRule.SpecialSummonOnly
@@ -81,7 +82,7 @@ public static class ContactFusion
             "if c:IsType(TYPE_PENDULUM) and c:IsFaceup() then return false end",
             "local tp=c:GetControler()",
             $"local mg={materials}",
-            $"return {Room("mg")} and c:CheckFusionMaterial(mg,nil,tp|0x200)",
+            $"return {Room("mg")} and c:CheckFusionMaterial(mg,nil,tp|0x200){(proc.ContactOncePerTurn ? $" and Duel.GetFlagEffect(tp,{OnceFlag})==0" : "")}",
         ]);
         var tg = script.AddFunction("contacttg", "e,tp,eg,ep,ev,re,r,rp,chk,c",
         [
@@ -103,6 +104,8 @@ public static class ContactFusion
             _ => "aux.ContactFusionSendToDeck(c)(g)",
         };
         var body = new List<string> { "local g=e:GetLabelObject()", "c:SetMaterial(g)", move, "g:DeleteGroup()" };
+        // Summoned this way: noted on the card, which counts its player's once per turn when the Summon succeeds.
+        if (proc.ContactOncePerTurn) body.Add($"c:RegisterFlagEffect({OnceFlag},RESET_EVENT+RESETS_STANDARD-RESET_TOFIELD+RESET_PHASE+PHASE_END,0,1)");
         if (proc.ContactOneMoreSummon)
         {
             // Counted before this Summon: this card and one more Special Summon are allowed.
@@ -133,6 +136,39 @@ public static class ContactFusion
         if (proc.ContactToOpponent) lines.AddRange(["cp:SetTargetRange(POS_FACEUP,1)", $"cp:SetValue({script.AddFunction("contactzone", "e,c", ["return 0,0x1f"])})"]);
         lines.AddRange(["cp:SetRange(LOCATION_EXTRA)", $"cp:SetCondition({con})", $"cp:SetTarget({tg})", $"cp:SetOperation({op})", "c:RegisterEffect(cp)"]);
         return lines;
+    }
+
+    /// <summary>The flag of "once per turn this way, no matter which method": on the card Summoned this way, then on its player.</summary>
+    private const string OnceFlag = "id+8300";
+
+    /// <summary>
+    /// "You can only Special Summon "X" once per turn this way, no matter which method you use": once it is Fusion Summoned
+    /// or Summoned by its Contact Fusion, the player who Summoned it can do neither again this turn, as official scripts
+    /// count it (Dark Magician of Destruction).
+    /// </summary>
+    private static IEnumerable<string> OncePerTurn(ScriptBuilder script)
+    {
+        var con = script.AddFunction("contactoncecon", "e,tp,eg,ep,ev,re,r,rp",
+            ["local c=e:GetHandler()", $"return c:IsSummonType(SUMMON_TYPE_FUSION) or c:GetFlagEffect({OnceFlag})>0"]);
+        var op = script.AddFunction("contactonceop", "e,tp,eg,ep,ev,re,r,rp", [$"Duel.RegisterFlagEffect(e:GetHandler():GetSummonPlayer(),{OnceFlag},RESET_PHASE+PHASE_END,0,1)"]);
+        var limit = script.AddFunction("contactoncelimit", "e,se,sp,st", [$"return st&SUMMON_TYPE_FUSION~=SUMMON_TYPE_FUSION or Duel.GetFlagEffect(sp,{OnceFlag})==0"]);
+        return
+        [
+            "--Once per turn this way, no matter which method",
+            "local co=Effect.CreateEffect(c)",
+            "co:SetType(EFFECT_TYPE_SINGLE+EFFECT_TYPE_CONTINUOUS)",
+            "co:SetProperty(EFFECT_FLAG_CANNOT_DISABLE)",
+            "co:SetCode(EVENT_SPSUMMON_SUCCESS)",
+            $"co:SetCondition({con})",
+            $"co:SetOperation({op})",
+            "c:RegisterEffect(co)",
+            "local cl=Effect.CreateEffect(c)",
+            "cl:SetType(EFFECT_TYPE_SINGLE)",
+            "cl:SetProperty(EFFECT_FLAG_CANNOT_DISABLE+EFFECT_FLAG_UNCOPYABLE)",
+            "cl:SetCode(EFFECT_SPSUMMON_CONDITION)",
+            $"cl:SetValue({limit})",
+            "c:RegisterEffect(cl)",
+        ];
     }
 
     /// <summary>"shuffling the above cards you control into the Deck", "banishing the above cards from your hand, field, and/or GY".</summary>
@@ -169,6 +205,13 @@ public static class ContactFusion
         var but = proc.ContactOneMoreSummon ? ", but if you Special Summon this card with the second method, you can only Special Summon once for the rest of this turn" : "";
         // Lava Golem, Steelcage of the Sun God: "Special Summoned (from your Extra Deck) to your opponent's Main Monster Zone by ...".
         var to = proc.ContactToOpponent ? " to your opponent's Main Monster Zone" : "";
+        // "You can only Special Summon "X" once per turn this way, no matter which method you use."
+        var once = proc.ContactOncePerTurn ? $" You can only Special Summon \"{card.Name}\" once per turn this way, no matter which method you use." : "";
+        return Rule(card, how, to, but) + once;
+    }
+
+    private static string Rule(CardData card, string how, string to, string but)
+    {
         if (card.CannotBeSpecialSummoned) return $"Must be Special Summoned (from your Extra Deck){to} by {how}{but}.";
         return card.SummonRule switch
         {

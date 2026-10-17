@@ -184,11 +184,24 @@ public sealed class NegateAction : ActionBlock
         ParamSpec.Choice("and", "And",
             new("nothing", "", "and nothing else"),
             new("destroy", "and if you do, destroy that card"),
-            new("banish", "and if you do, banish that card")),
+            new("banish", "and if you do, banish that card"),
+            // Omega Vidolium: "negate the activation, and if you do, banish that monster face-down".
+            new("banish_facedown", "and if you do, banish that card face-down")),
     ];
 
-    public override string Describe(BlockArgs args) =>
-        args.Choice("and") == "nothing" ? $"negate {args.Describe("what")}" : $"negate {args.Describe("what")}, {args.Describe("and")}";
+    public override string Describe(BlockArgs args)
+    {
+        if (args.Choice("and") == "nothing") return $"negate {args.Describe("what")}";
+        var and = args.Describe("and");
+        // "banish that monster face-down" when the effect responds to monster effects only.
+        if (args.Choice("and") == "banish_facedown" && RespondsToMonsterEffects(args.Effect)) and = and.Replace("that card", "that monster", StringComparison.Ordinal);
+        return $"negate {args.Describe("what")}, {and}";
+    }
+
+    /// <summary>The effect's WHEN is "When ... activates a monster effect".</summary>
+    private static bool RespondsToMonsterEffects(EffectEvent? effect) => effect?.When is { } w
+        && (w.BlockId == ActivationTrigger.BlockId && w.Values.GetValueOrDefault("what") == "monster"
+            || w.Values.GetValueOrDefault("timing") is "chain_monster" or "chain_monster_field" or "chain_monster_any");
 
     public override void Compile(BlockContext ctx)
     {
@@ -213,10 +226,10 @@ public sealed class NegateAction : ActionBlock
             e.TargetLines.Add("\tDuel.SetOperationInfo(0,CATEGORY_DESTROY,eg,1,0,0)");
             e.TargetLines.Add("end");
         }
-        if (follow == "banish")
+        if (follow is "banish" or "banish_facedown")
         {
             e.AddCategory("CATEGORY_REMOVE");
-            e.TargetLines.Add("if re:GetHandler():IsAbleToRemove() and re:GetHandler():IsRelateToEffect(re) then");
+            e.TargetLines.Add($"if re:GetHandler():IsAbleToRemove({(follow == "banish" ? "" : "tp,POS_FACEDOWN")}) and re:GetHandler():IsRelateToEffect(re) then");
             e.TargetLines.Add("\tDuel.SetOperationInfo(0,CATEGORY_REMOVE,eg,1,0,0)");
             e.TargetLines.Add("end");
         }
@@ -227,7 +240,8 @@ public sealed class NegateAction : ActionBlock
             $"\t{r}=1",
         };
         if (follow == "destroy") lines.AddRange(["\tif re:GetHandler():IsRelateToEffect(re) then", "\t\tDuel.Destroy(eg,REASON_EFFECT)", "\tend"]);
-        if (follow == "banish") lines.AddRange(["\tif re:GetHandler():IsRelateToEffect(re) then", "\t\tDuel.Remove(eg,POS_FACEUP,REASON_EFFECT)", "\tend"]);
+        if (follow is "banish" or "banish_facedown")
+            lines.AddRange(["\tif re:GetHandler():IsRelateToEffect(re) then", $"\t\t{CardRefs.MarkBanished(ctx.Script, $"Duel.Remove(eg,{(follow == "banish" ? "POS_FACEUP" : "POS_FACEDOWN")},REASON_EFFECT)")}", "\tend"]);
         lines.Add("end");
         e.AddStep(lines, r, ctx.Link);
     }

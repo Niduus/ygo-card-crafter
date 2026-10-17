@@ -62,6 +62,13 @@ public sealed partial class CardViewModel
         set { if (Proc.ContactOneMoreSummon == value) return; Proc.ContactOneMoreSummon = value; ContactChanged(nameof(ContactOneMoreSummon)); }
     }
 
+    /// <summary>"You can only Special Summon "X" once per turn this way, no matter which method you use."</summary>
+    public bool ContactOncePerTurn
+    {
+        get => Proc.ContactOncePerTurn;
+        set { if (Proc.ContactOncePerTurn == value) return; Proc.ContactOncePerTurn = value; ContactChanged(nameof(ContactOncePerTurn)); }
+    }
+
     /// <summary>The four rules official Contact Fusion Monsters have; each is a summoning rule of the card.</summary>
     public IReadOnlyList<Option<string>> ContactRuleOptions { get; } = Options.Of(
         ("first_or_fusion", "Must first be either Fusion Summoned, or Special Summoned this way"),

@@ -11,6 +11,12 @@ public enum MaterialGroupRule { None, DifferentNames, DifferentTypesAndAttribute
 /// <summary>What a Contact Fusion does with its materials: shuffles them into the Deck, banishes, sends to the GY or Tributes them.</summary>
 public enum ContactFusionMove { ShuffleIntoDeck, Banish, SendToGrave, Tribute }
 
+/// <summary>
+/// Where a Fusion Material must be: anywhere the Summon takes it from, a monster you control ("1 "Sun God" monster you
+/// control"), or a monster on the field ("2 face-up monsters on the field"), as Lava Golem, Steelcage of the Sun God says.
+/// </summary>
+public enum MaterialPlace { Any, YouControl, OnField }
+
 /// <summary>How an Extra Deck monster is summoned. Compiles to the engine's built-in procedures.</summary>
 public sealed class SummonProcedure
 {
@@ -86,6 +92,11 @@ public sealed class SummonProcedure
     /// of this turn": after a Contact Fusion, its player can Special Summon only once more that turn.
     /// </summary>
     public bool ContactOneMoreSummon { get; set; }
+    /// <summary>
+    /// "You can only Special Summon "X" once per turn this way, no matter which method you use": its Fusion Summon and its
+    /// Contact Fusion share one Special Summon per turn, for the player who Summoned it.
+    /// </summary>
+    public bool ContactOncePerTurn { get; set; }
 }
 
 /// <summary>One Fusion Material: a card, or any card that passes the filter, <see cref="Min"/> to <see cref="Max"/> of them.</summary>
@@ -97,6 +108,9 @@ public sealed class MaterialSlot
     public int Min { get; set; } = 1;
     /// <summary>0 means "or more" (1+).</summary>
     public int Max { get; set; } = 1;
+    /// <summary>Where the material must be: "you control" or "on the field" (a face-up one when its filter says face-up).</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public MaterialPlace Place { get; set; }
     public bool Repeats => Min != 1 || Max != 1;
 }
 

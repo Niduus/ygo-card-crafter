@@ -112,7 +112,7 @@ public sealed class ScriptBuilder(CardProject project, CardPack? pack)
             CardType = f.CardType, MonsterKind = f.MonsterKind, Race = f.Race, Attribute = f.Attribute, Archetype = f.Archetype, Archetype2 = f.Archetype2,
             CardCode = f.CardCode, AltCodes = f.AltCodes, ExceptOwnName = f.ExceptOwnName, ExceptCode = f.ExceptCode, MentionsCode = f.MentionsCode, MentionsOrIs = f.MentionsOrIs,
             LevelMin = f.LevelMin, LevelMax = f.LevelMax, AtkMin = f.AtkMin, AtkMax = f.AtkMax, DefMin = f.DefMin, DefMax = f.DefMax,
-            Requirements = f.Requirements, AnyRequirement = f.AnyRequirement, OrCards = f.OrCards,
+            Requirements = f.Requirements, AnyRequirement = f.AnyRequirement, OrCards = f.OrCards, Summoned = f.Summoned, Except = f.Except,
         }, "c", kind, hasEffect: false);
         parts.Remove("c:IsType(TYPE_MONSTER)");
         if (parts.Count == 0) return "nil";

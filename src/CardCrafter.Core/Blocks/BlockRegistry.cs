@@ -227,6 +227,10 @@ public static class BlockRegistry
         new WinAction(), new WinPassive(), new HaveNamesCondition(), new DodgePassive(), new BindAction(), new CopyEffectAction(), new DestroyLaterCost(),
         // Names for a while, negating by original name, looking at random cards (Names.cs)
         new NameBecomesAction(), new NegateSameNameAction(), new LookRandomAction(), new RevealedCondition(), new SameNameLinkPassive(),
+        // Showing cards, and what a Spell/Trap does with itself after activation (Reveals.cs)
+        new RevealAction(), new AfterActivationCost(),
+        // "Cannot be destroyed by that battle", and negating activated effects as they resolve (BattleAndNegation.cs)
+        new BattleSafeAction(), new NegateActivatedPassive(),
     ];
 
     private static readonly Dictionary<string, BlockDefinition> ById = All.ToDictionary(b => b.Id);

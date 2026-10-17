@@ -340,6 +340,10 @@ public static class CardProperties
         var (lo, hi) = (Math.Min(r.Value, r.Value2), Math.Max(r.Value, r.Value2));
         if (p.Kind == PropertyKind.Number) return NumberText(p, r, N(r.Value), N(lo), N(hi));
         if (p.Kind == PropertyKind.State) return (r.Op == RequirementOp.IsNot ? p.IsNotText : p.IsText) ?? "";
+        // Time Chain: "with the same original name as monsters that are currently banished by this card's effect".
+        if (Blocks.CardRefs.IsRequirement(p.Key) && r.Values.Contains((long)CardRef.BanishedByThis))
+            return System.Text.RegularExpressions.Regex.Replace((r.Op == RequirementOp.IsNot ? p.IsNotText : p.IsText) ?? "", @"that (monster|card)('s)?$",
+                m => "monsters that are currently banished by this card's effect" + (m.Groups[2].Success ? "'" : ""));
         // Every Attribute but one: "that is non-EARTH", as cards say an Attribute other than EARTH.
         if (p.Key == "attribute" && r.Op == RequirementOp.Is && p.Choices!.Where(c => !r.Values.Contains(c.Value)).ToList() is [var missing] && r.Values.Distinct().Count() == p.Choices!.Count - 1)
             return $"that is non-{missing.Label}";

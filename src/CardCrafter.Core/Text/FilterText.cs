@@ -17,6 +17,11 @@ public static class FilterText
         // ", except Equip Spells": the Spell/Trap kinds a requirement leaves out.
         foreach (var r in f.Requirements.Where(r => SaidAsExcept(f, r)))
             except.Add(string.Join(" or ", Compiler.CardProperties.Find(r.Property)!.Choices!.Where(c => r.Values.Contains(c.Value)).Select(c => c.Label + "s")));
+        // Kinds left out, each with its own words: ""Exodia" Monster Cards whose original Levels are 10 or higher, and "Millennium" Monster Cards".
+        var kinds = (f.Except ?? []).Select(x => Describe(x, pack, plural: true, withLocation: false, ownName: ownName)
+                .Replace(" Level is ", " Levels are ", StringComparison.Ordinal).Replace(" Rank is ", " Ranks are ", StringComparison.Ordinal))
+            .Where(t => t.Length > 0).ToList();
+        if (kinds.Count > 0) except.Add(kinds.Count == 1 ? kinds[0] : string.Join(", ", kinds.Take(kinds.Count - 1)) + ", and " + kinds[^1]);
         return except.Count == 0 || f.IsSpecific() ? "" : ", except " + string.Join(" or ", except);
     }
 
@@ -42,6 +47,9 @@ public static class FilterText
             CardRef.Equipped => "the equipped monster",
             CardRef.Event => Blocks.CardRefs.EventNoun(f, plural),
             CardRef.Attacker => "the attacking monster",
+            CardRef.Activated => f.CardType == FilterCardType.Monster ? "that monster" : "that card",
+            CardRef.Battlers => "the battling monsters",
+            CardRef.BanishedByThis => Blocks.CardRefs.BanishedNoun(f, plural),
             _ => "your battling monster",
         };
         // "1 "Ancient Gear" monster or 1 "Geartown" from your Deck": both kinds, then where they are.
@@ -163,6 +171,8 @@ public static class FilterText
             if (plural) noun = noun.EndsWith("Spell/Trap", StringComparison.Ordinal) ? noun[..^"Spell/Trap".Length] + "Spells/Traps" : noun + "s";
         }
         words.Add(noun);
+        // Omega Vidolium: "3 monsters Special Summoned from the Extra Deck with 3000 or more ATK".
+        if (f.Summoned == FilterSummoned.FromExtra) words.Add("Special Summoned from the Extra Deck");
         if (f.CardCode == 0 && f.LevelMin is <= 1 && f.LevelMax is null && Lv(f) == "Level") words.Add("with a Level");
 
         if (f.AtkMin is { } amin && f.AtkMax is { } amax) words.Add(amin == amax ? $"with {amin} ATK" : $"with {amin} to {amax} ATK");
@@ -205,8 +215,7 @@ public static class FilterText
             if (withs.Count > 0) words.Add(Join(withs, "and"));
             if (others.Count > 0) words.Add(Join(others, "and"));
         }
-        if (f.Summoned == FilterSummoned.FromExtra) words.Add("Special Summoned from the Extra Deck");
-        else if (f.Summoned == FilterSummoned.ThisTurn) words.Add("Summoned this turn");
+        if (f.Summoned == FilterSummoned.ThisTurn) words.Add("Summoned this turn");
         if (f.MentionsCode != 0)
         {
             var mentioned = CardNames.Find(f.MentionsCode, pack) is { } mn ? $"\"{mn}\"" : $"passcode {f.MentionsCode}";

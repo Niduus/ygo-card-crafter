@@ -169,6 +169,8 @@ public static class MaterialText
         var onlyCode = f.CardCode != 0;
         var plural = m.Max != 1;
         var noun = FilterText.Describe(f, pack, plural, withLocation: false);
+        // Lava Golem, Steelcage of the Sun God: "1 "Sun God" monster you control + 2 face-up monsters on the field".
+        noun += m.Place switch { MaterialPlace.YouControl => " you control", MaterialPlace.OnField => " on the field", _ => "" };
         if (onlyCode && !m.Repeats) return noun; // "Dark Magician" + ...
         var count = m.Max == 0 ? $"{m.Min}+" : m.Min == m.Max ? $"{m.Min}" : $"{m.Min}+";
         return $"{count} {noun}";

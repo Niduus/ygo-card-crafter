@@ -56,6 +56,16 @@ public sealed partial class MaterialSlotViewModel : ObservableObject
     public MaterialSlot Slot { get; }
     public FilterEditorViewModel Filter { get; }
 
+    /// <summary>Where the material must be: "1 "Sun God" monster you control + 2 face-up monsters on the field".</summary>
+    public IReadOnlyList<Option<MaterialPlace>> PlaceOptions { get; } = Options.Of(
+        (MaterialPlace.Any, "anywhere the Summon takes it from"), (MaterialPlace.YouControl, "you control"), (MaterialPlace.OnField, "on the field"));
+
+    public Option<MaterialPlace> PlaceChoice
+    {
+        get => Options.Find(PlaceOptions, Slot.Place);
+        set { if (value is null || value.Value == Slot.Place) return; Slot.Place = value.Value; OnPropertyChanged(); _changed(); }
+    }
+
     public decimal? Min
     {
         get => Slot.Min;

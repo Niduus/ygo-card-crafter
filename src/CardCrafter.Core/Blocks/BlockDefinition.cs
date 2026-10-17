@@ -147,6 +147,9 @@ public abstract class BlockDefinition
     /// <summary>A sentence that goes after the effect's text, e.g. a restriction a cost puts on the turn. Usually empty.</summary>
     public virtual string Afterword(BlockArgs args) => "";
 
+    /// <summary>A sentence that goes before the effect's text ("Destroy this card during ... after activation. Activate this card ..."). Usually empty.</summary>
+    public virtual string Foreword(BlockArgs args) => "";
+
     /// <summary>
     /// For DO blocks: how "and if you do" reads after this step, when the card says it in its own words ("and if you banish
     /// any"). Null for "if you do".

@@ -53,6 +53,12 @@ public enum CardRef
     Event,
     /// <summary>The attacking monster (Duel.GetAttacker): the one whose attack the effect answers or negated.</summary>
     Attacker,
+    /// <summary>The card whose activation this effect responds to (re:GetHandler()): "the same Type as that monster".</summary>
+    Activated,
+    /// <summary>Both monsters in the battle (the attacker and the attack target): "neither battling monster".</summary>
+    Battlers,
+    /// <summary>The cards this card's effects banished, while they are still banished: "the monster banished by this card's effect".</summary>
+    BanishedByThis,
 }
 
 public enum MonsterKind
@@ -135,6 +141,12 @@ public sealed class CardFilter
     /// </summary>
     public CardFilter? OrCards { get; set; }
 
+    /// <summary>
+    /// Kinds of cards left out, each described by its own filter (where they are doesn't matter): Millennium Ankh's
+    /// "..., except "Exodia" Monster Cards whose original Levels are 10 or higher, and "Millennium" Monster Cards". Null for none.
+    /// </summary>
+    public List<CardFilter>? Except { get; set; }
+
     /// <summary>The cards are given, not picked: this card itself, or "that card" (<see cref="That"/>).</summary>
     public bool IsSpecific() => ThisCard || That != CardRef.None;
 
@@ -144,6 +156,7 @@ public sealed class CardFilter
         copy.AltCodes = [.. AltCodes];
         copy.Requirements = Requirements.Select(r => r.Clone()).ToList();
         copy.OrCards = OrCards?.Clone();
+        copy.Except = Except?.Select(x => x.Clone()).ToList();
         return copy;
     }
 

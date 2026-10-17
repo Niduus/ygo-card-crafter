@@ -378,6 +378,9 @@ public sealed class AttackDeclaredTrigger : BlockDefinition
         var a = args.Cards("attacker");
         switch (args.Choice("how"))
         {
+            // The Winged Dragon of Ra, Sun God of Darkness: "When an attack is declared involving this card".
+            case "involving" when args.Cards("mine").ThisCard:
+                return "an attack is declared involving this card";
             case "involving":
                 return $"an attack is declared involving your {FilterText.Describe(args.Cards("mine"), args.Pack, false, "", withLocation: false)}";
             case "targeted":
