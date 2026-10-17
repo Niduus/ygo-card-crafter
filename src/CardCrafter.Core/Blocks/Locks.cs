@@ -43,25 +43,31 @@ internal static class Locks
         new("activate_trap_cards", "activate Trap Cards"),
         new("activate_gy", "activate the effects of cards in the GY"),
         new("pendulum", "Pendulum Summon monsters"),
+        // Yummy★Snatchy: "you cannot Link Summon Link-3 or higher Link Monsters".
+        new("link_of", "Link Summon these monsters:"),
+        // Mimighoul Dungeon: "cannot Normal Summon monsters" (Setting is still allowed).
+        new("normal_only", "Normal Summon monsters (Setting them is still allowed)"),
+        // Droll & Lock Bird: "cards cannot be added from either player's Main Deck to the hand", drawing included.
+        new("search_all", "add cards from the Main Deck to the hand (drawing them too)"),
     ];
 
     /// <summary>The engine effects a lock is made of: one per kind of Summon it stops ("Normal or Special Summon" is two).</summary>
     public static int Parts(string what) => what switch
     {
-        "normal" or "normal_special" => 2,
+        "normal" or "normal_special" or "search_all" => 2,
         "summon_any" => 3,
         _ => 1,
     };
 
     private static bool IsSummonLock(string what) =>
-        what is "special" or "special_extra" or "normal_special" or "summon_any" or "normal" or "special_hand" or "special_deck" or "special_gy" or "pendulum";
+        what is "special" or "special_extra" or "normal_special" or "summon_any" or "normal" or "special_hand" or "special_deck" or "special_gy" or "pendulum" or "normal_only";
 
     /// <summary>The locks a turn-long restriction on yourself can be: the ones modern cards put on their own player.</summary>
     public static readonly ChoiceOption[] TurnWhat = What.Where(w => w.Value is "special" or "special_extra" or "activate_any" or "activate_monster" or "activate_monster_of" or "special_of" or "attack" or "bp" or "normal_special"
-        or "activate_monster_hand_gy").ToArray();
+        or "activate_monster_hand_gy" or "link_of").ToArray();
 
     /// <summary>Locks whose card picker names what is locked ("the effects of LIGHT monsters"), not an exception.</summary>
-    public static bool Names(string what) => what is "activate_monster_of" or "special_of";
+    public static bool Names(string what) => what is "activate_monster_of" or "special_of" or "link_of";
 
     public static readonly ChoiceOption[] Who =
     [
@@ -82,7 +88,7 @@ internal static class Locks
 
     /// <summary>True when the "except" filter picks some monsters, not every one: only then is there an exception.</summary>
     public static bool HasExcept(string what, CardFilter f) =>
-        what is not ("search" or "bp" or "activate_cards" or "activate_spell_cards" or "activate_trap_cards" or "activate_gy") && !Names(what) && (FilterCompiler.Conditions(f).Any(c => c != "c:IsType(TYPE_MONSTER)") || f.ExceptOwnName || f.ExceptCode != 0);
+        what is not ("search" or "search_all" or "bp" or "activate_cards" or "activate_spell_cards" or "activate_trap_cards" or "activate_gy") && !Names(what) && (FilterCompiler.Conditions(f).Any(c => c != "c:IsType(TYPE_MONSTER)") || f.ExceptOwnName || f.ExceptCode != 0);
 
     /// <summary>Locks on activating monster effects, wherever they are activated from.</summary>
     private static bool MonsterEffects(string what) => what is "activate_monster" or "activate_monster_hand" or "activate_monster_field" or "activate_monster_gy"
@@ -121,6 +127,14 @@ internal static class Locks
             var kind = what switch { "activate_spell" => "Spell", "activate_trap" => "Trap", "activate_spelltrap" => "Spell/Trap", _ => null };
             if (kind is not null) return $"{kind} Cards, and their effects on the field, cannot be activated";
         }
+        // Droll & Lock Bird: "cards cannot be added from either player's Main Deck to the hand".
+        if (what == "search_all")
+            return who switch
+            {
+                "both" => "cards cannot be added from either player's Main Deck to the hand",
+                "opponent" => "cards cannot be added from your opponent's Main Deck to their hand",
+                _ => "cards cannot be added from your Main Deck to your hand",
+            };
         if (what == "search")
             return who switch
             {
@@ -139,7 +153,7 @@ internal static class Locks
     {
         // "the effects of EARTH, WATER, FIRE, and WIND monsters": all of them are locked.
         var cards = FilterText.Describe(f, args.Pack, plural: true, withLocation: false, ownName: args.CardName).Replace(", or ", ", and ", StringComparison.Ordinal);
-        return what == "special_of" ? $"Special Summon {cards}" : $"activate the effects of {cards}";
+        return what switch { "special_of" => $"Special Summon {cards}", "link_of" => $"Link Summon {cards}", _ => $"activate the effects of {cards}" };
     }
 
     /// <summary>"you cannot Special Summon from the Extra Deck" and ", except Xyz Monsters" apart, for wording that puts the turn between them.</summary>
@@ -171,7 +185,7 @@ internal static class Locks
         // Normal Summons, Sets and Flip Summons: the monster is all the engine passes.
         string? NonSpecial() => (what, part) switch
         {
-            ("normal", 0) or ("normal_special", 0) or ("summon_any", 0) => "EFFECT_CANNOT_SUMMON",
+            ("normal", 0) or ("normal_special", 0) or ("summon_any", 0) or ("normal_only", 0) => "EFFECT_CANNOT_SUMMON",
             ("normal", 1) => "EFFECT_CANNOT_MSET",
             ("summon_any", 1) => "EFFECT_CANNOT_FLIP_SUMMON",
             _ => null,
@@ -226,6 +240,21 @@ internal static class Locks
                 Player("EFFECT_CANNOT_TO_HAND");
                 lines.Add($"{v}:SetTarget(aux.TargetBoolFunction(Card.IsLocation,LOCATION_DECK))");
                 break;
+            // Droll & Lock Bird: nothing goes from the Main Deck to the hand, and nobody draws.
+            case "search_all" when part == 0:
+                Player("EFFECT_CANNOT_TO_HAND");
+                lines.Add($"{v}:SetTarget(aux.TargetBoolFunction(Card.IsLocation,LOCATION_DECK))");
+                break;
+            case "search_all":
+                Player("EFFECT_CANNOT_DRAW");
+                break;
+            case "link_of":
+            {
+                Player("EFFECT_CANNOT_SPECIAL_SUMMON");
+                var test = "bit.band(sumtype,SUMMON_TYPE_LINK)==SUMMON_TYPE_LINK" + (f == "nil" ? "" : $" and {f}(c)");
+                lines.Add($"{v}:SetTarget({ctx.Script.AddFunction("linklimit", "e,c,sump,sumtype,sumpos,targetp,se", [$"return {test}"])})");
+                break;
+            }
             case "attack":
             {
                 if (property is not null) lines.Add($"{v}:SetProperty({property})");
@@ -365,7 +394,7 @@ public sealed class BanishInsteadPassive : PassiveBlock
     public override string Id => "passive.banish_instead";
     public override string Group => "Players";
     public override string Name => "Floodgate: cards sent to the GY are banished instead";
-    public override string Sentence => "Any {what} sent to {whose} is banished instead";
+    public override string Sentence => "Any {what} sent {from} to {whose} is banished instead";
     public override IReadOnlyList<ParamSpec> Params { get; } = BanishInstead.Params;
 
     public override string Describe(BlockArgs args) => BanishInstead.Text(args);
@@ -383,7 +412,7 @@ public sealed class BanishInsteadAction : ActionBlock
     public override string Id => "do.banish_instead";
     public override string Group => "Turn";
     public override string Name => "Cards sent to the GY are banished instead, for a while";
-    public override string Sentence => "{duration}, any {what} sent to {whose} is banished instead";
+    public override string Sentence => "{duration}, any {what} sent {from} to {whose} is banished instead";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Choice("duration", "For", new("turn", "For the rest of this turn"), new("next", "Until the end of the next turn")),
@@ -409,9 +438,12 @@ internal static class BanishInstead
     [
         ParamSpec.Choice("what", "What", new("card", "card"), new("monster", "monster")),
         ParamSpec.Choice("whose", "Whose GY", new("either", "the GY"), new("opponent", "your opponent's GY"), new("you", "your GY")),
+        // Herald of the Arc Light: "Any monster sent from the hand or Main Deck to the GY is banished instead".
+        ParamSpec.Choice("from", "From", new("anywhere", "", "from anywhere"), new("hand_deck", "from the hand or Main Deck")),
     ];
 
-    public static string Text(BlockArgs args) => $"any {args.Describe("what")} sent to {args.Describe("whose")} is banished instead";
+    public static string Text(BlockArgs args) =>
+        $"any {args.Describe("what")} sent {(args.Choice("from") == "hand_deck" ? args.Describe("from") + " " : "")}to {args.Describe("whose")} is banished instead";
 
     public static List<string> Lines(BlockContext ctx, string v, string? range)
     {
@@ -423,15 +455,18 @@ internal static class BanishInstead
         var lines = new List<string>
         {
             $"{v}:SetType(EFFECT_TYPE_FIELD)",
-            $"{v}:SetProperty(EFFECT_FLAG_SET_AVAILABLE+EFFECT_FLAG_IGNORE_RANGE+EFFECT_FLAG_IGNORE_IMMUNE)",
+            ctx.Args.Choice("from") == "hand_deck" ? $"{v}:SetProperty(EFFECT_FLAG_SET_AVAILABLE+EFFECT_FLAG_IGNORE_IMMUNE)"
+                : $"{v}:SetProperty(EFFECT_FLAG_SET_AVAILABLE+EFFECT_FLAG_IGNORE_RANGE+EFFECT_FLAG_IGNORE_IMMUNE)",
             $"{v}:SetCode(EFFECT_TO_GRAVE_REDIRECT)",
         };
         if (range is not null) lines.Add($"{v}:SetRange({range})");
+        // Everywhere (the engine ignores the range then), or only from the hand and Main Deck.
+        var from = ctx.Args.Choice("from") == "hand_deck" ? "LOCATION_HAND+LOCATION_DECK" : "LOCATION_DECK";
         lines.Add(whose switch
         {
-            "opponent" => $"{v}:SetTargetRange(0,LOCATION_DECK)",
-            "you" => $"{v}:SetTargetRange(LOCATION_DECK,0)",
-            _ => $"{v}:SetTargetRange(LOCATION_DECK,LOCATION_DECK)",
+            "opponent" => $"{v}:SetTargetRange(0,{from})",
+            "you" => $"{v}:SetTargetRange({from},0)",
+            _ => $"{v}:SetTargetRange({from},{from})",
         });
         lines.Add($"{v}:SetValue(LOCATION_REMOVED)");
         if (tests.Count > 0) lines.Add($"{v}:SetTarget({ctx.Script.AddFunction("rmtg", "e,c", [$"return {string.Join(" and ", tests)}"])})");

@@ -219,6 +219,8 @@ public sealed class BlockArgs(BlockDefinition def, BlockInstance inst, CardPack?
     public EffectEvent? Effect { get; init; }
     /// <summary>The card's name, for "except "Card Name"".</summary>
     public string? CardName { get; init; }
+    /// <summary>The card itself, when the wording depends on what it is ("return this card to the Extra Deck").</summary>
+    public CardData? Card { get; init; }
 
     /// <summary>Whether the block's cards read as plural: a count other than 1, or "all".</summary>
     public bool IsPlural => (Definition.Param("count") is { Type: ParamType.Integer } && Int("count") != 1) || CountMode == "all" || Selection.Uncounted(this);

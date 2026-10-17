@@ -44,6 +44,9 @@ public static class FilterText
         else if (f.LevelMax is { } max) words.Add($"{Lv(f)} {max} or lower");
         // "Level 1 or higher" is any Level: "a monster with a Level", said after the noun.
         else if (f.LevelMin is { } min && !(min <= 1 && Lv(f) == "Level")) words.Add($"{Lv(f)} {min} or higher");
+        // A Monster Card's Level reads as a Level does: "a Level 5 or higher Monster Card".
+        var cardLevels = f.CardCode != 0 || f.AnyRequirement ? [] : f.Requirements.Where(r => r.Property == "card_level" && CardLevelWords(r) is not null).ToList();
+        words.AddRange(cardLevels.Select(r => CardLevelWords(r)!));
         // "EARTH or LIGHT", "Aqua, Fish, or Sea Serpent", ""Ember" or "Flame"": choices of the requirements, said as the fields say theirs.
         var described = f.CardCode != 0 || f.AnyRequirement ? [] : f.Requirements.Where(r => r.Op == RequirementOp.Is && r.Property is "attribute" or "race" or "archetype").ToList();
         described.RemoveAll(prefixed.Contains);
@@ -82,7 +85,7 @@ public static class FilterText
                 ? $"{stKind} {(f.CardType == FilterCardType.Trap || f.SpellTrapKind == SpellTrapKind.Counter ? "Trap" : f.CardType == FilterCardType.Spell || f.SpellTrapKind is SpellTrapKind.QuickPlay or SpellTrapKind.Field or SpellTrapKind.Equip or SpellTrapKind.Ritual ? "Spell" : "Spell/Trap")}"
                 : KindNoun(f.MonsterKind) is { Non: false } kind ? kind.Noun : kinds is not null ? KindsNoun(kinds)! : f.CardType switch
             {
-                FilterCardType.Monster => "monster",
+                FilterCardType.Monster => f.MonsterCards ? "Monster Card" : "monster",
                 FilterCardType.Spell => "Spell",
                 FilterCardType.Trap => "Trap",
                 FilterCardType.SpellTrap => "Spell/Trap",
@@ -117,7 +120,7 @@ public static class FilterText
         // declared Type", but "1 card with the declared name from your Deck". So does "that was remembered".
         var declared = f.AnyRequirement || !withLocation || Location(f, preposition, plural).StartsWith("from ", StringComparison.Ordinal) ? []
             : f.Requirements.Where(r => Compiler.CardProperties.IsDeclared(r.Property) || r.Property == "remembered").ToList();
-        var extra = f.Requirements.Except(prefixed).Except(described).Except(declared).Select(r => Compiler.CardProperties.Text(r, pack)).Where(t => t.Length > 0)
+        var extra = f.Requirements.Except(prefixed).Except(described).Except(declared).Except(cardLevels).Select(r => Compiler.CardProperties.Text(r, pack)).Where(t => t.Length > 0)
             .Select(t => plural ? Plural(t) : t).ToList();
         static bool IsWith(string t) => t.StartsWith("with ", StringComparison.Ordinal) || t.StartsWith("equipped with ", StringComparison.Ordinal);
         static string Join(List<string> parts, string word) => parts.Count switch
@@ -178,6 +181,20 @@ public static class FilterText
             "archetype" when v != 0 => $"non-\"{(pack is not null ? pack.ArchetypeName((int)v) : ArchetypeNames.Find((int)v) ?? $"0x{v:x}")}\"",
             "monster_type" when Compiler.CardProperties.Find("monster_type")!.Choices!.FirstOrDefault(c => c.Value == v).Label is { } label =>
                 "non-" + label.Replace(" Monster", "", StringComparison.Ordinal).Replace(" monster", "", StringComparison.Ordinal),
+            _ => null,
+        };
+    }
+
+    /// <summary>"Level 5 or higher", "Level 4 or lower", "Level 7": a Monster Card's Level requirement as cards put it before the noun.</summary>
+    private static string? CardLevelWords(CardRequirement r)
+    {
+        var (lo, hi) = (Math.Min(r.Value, r.Value2), Math.Max(r.Value, r.Value2));
+        return r.Op switch
+        {
+            RequirementOp.GreaterOrEqual => $"Level {r.Value} or higher",
+            RequirementOp.LessOrEqual => $"Level {r.Value} or lower",
+            RequirementOp.Equal => $"Level {r.Value}",
+            RequirementOp.Between => $"Level {lo} to {hi}",
             _ => null,
         };
     }

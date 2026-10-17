@@ -176,6 +176,7 @@ public sealed partial class FilterEditorViewModel : ObservableObject
 
     public decimal? DefMin { get => _f.DefMin; set { if (_f.DefMin == (int?)value) return; _f.DefMin = (int?)value; Changed(); } }
     public decimal? DefMax { get => _f.DefMax; set { if (_f.DefMax == (int?)value) return; _f.DefMax = (int?)value; Changed(); } }
+    public bool MonsterCards { get => _f.MonsterCards; set { if (_f.MonsterCards == value) return; _f.MonsterCards = value; Changed(); } }
     public bool NotRevealed { get => _f.NotRevealed; set { if (_f.NotRevealed == value) return; _f.NotRevealed = value; Changed(); } }
     public bool MentionsOrIs { get => _f.MentionsOrIs; set { if (_f.MentionsOrIs == value) return; _f.MentionsOrIs = value; Changed(); } }
 

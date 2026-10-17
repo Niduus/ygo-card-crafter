@@ -80,6 +80,8 @@ public static class FilterCompiler
         };
         switch (f.CardType)
         {
+            // "Monster Cards": also the monsters placed in the Spell & Trap Zone as Continuous Spells, as official cards check them.
+            case FilterCardType.Monster when f.MonsterCards && material == SummonProcedureKind.None: parts.Add($"{card}:GetOriginalType()&TYPE_MONSTER~=0"); break;
             case FilterCardType.Monster: parts.Add($"{card}:IsType(TYPE_MONSTER)"); break;
             case FilterCardType.Spell: parts.Add($"{card}:IsType(TYPE_SPELL)"); break;
             case FilterCardType.Trap: parts.Add($"{card}:IsType(TYPE_TRAP)"); break;

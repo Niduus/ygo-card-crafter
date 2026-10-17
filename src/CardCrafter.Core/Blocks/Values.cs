@@ -305,6 +305,14 @@ public static class ValueSources
     /// <summary>The engine codes for gaining, losing or becoming a stat.</summary>
     public static string[] Codes(string stat, string dir) => (stat, dir) switch
     {
+        // "The original ATK of this card becomes ...": what it is printed with, so later changes still apply (Apollousa).
+        // Gaining or losing original ATK is gaining or losing ATK (CheckStat warns).
+        ("orig_atk", "becomes") => ["EFFECT_SET_BASE_ATTACK"],
+        ("orig_def", "becomes") => ["EFFECT_SET_BASE_DEFENSE"],
+        ("orig_both", "becomes") => ["EFFECT_SET_BASE_ATTACK", "EFFECT_SET_BASE_DEFENSE"],
+        ("orig_atk", _) => ["EFFECT_UPDATE_ATTACK"],
+        ("orig_def", _) => ["EFFECT_UPDATE_DEFENSE"],
+        ("orig_both", _) => ["EFFECT_UPDATE_ATTACK", "EFFECT_UPDATE_DEFENSE"],
         ("def", "becomes") => ["EFFECT_SET_DEFENSE_FINAL"],
         ("both", "becomes") => ["EFFECT_SET_ATTACK_FINAL", "EFFECT_SET_DEFENSE_FINAL"],
         (_, "becomes") when stat != "level" => ["EFFECT_SET_ATTACK_FINAL"],
@@ -316,7 +324,18 @@ public static class ValueSources
     };
 
     public static readonly ChoiceOption[] Dirs = [new("gain", "gain(s)"), new("lose", "lose(s)"), new("becomes", "becomes")];
-    public static readonly ChoiceOption[] Stats = [new("atk", "ATK"), new("def", "DEF"), new("both", "ATK/DEF"), new("level", "Level")];
+    public static readonly ChoiceOption[] Stats =
+    [
+        new("atk", "ATK"), new("def", "DEF"), new("both", "ATK/DEF"), new("level", "Level"),
+        new("orig_atk", "original ATK"), new("orig_def", "original DEF"), new("orig_both", "original ATK/DEF"),
+    ];
+
+    /// <summary>The original stats only "become" a value: gaining or losing them is gaining or losing ATK/DEF, which the card should say.</summary>
+    public static void CheckStat(BlockContext ctx)
+    {
+        if (ctx.Args.Choice("stat").StartsWith("orig_", StringComparison.Ordinal) && ctx.Args.Choice("dir") != "becomes")
+            ctx.Effect.Warn("An original ATK or DEF only \"becomes\" a value; gaining or losing it is gaining or losing ATK/DEF: pick ATK, DEF or ATK/DEF.");
+    }
 
     /// <summary>
     /// "this card gains ATK equal to ...", "the Levels of monsters you control become equal to ...", "its ATK becomes ...".
@@ -352,7 +371,7 @@ public static class ValueSources
         }
         var unit = " " + args.Describe("stat");
         // "the ATK of monsters you control becomes ...", but "its ATK/DEF become ...".
-        if (dir == "becomes") return $"{Whose(unit.Trim())} {(stat == "both" ? "become" : "becomes")} {Phrase(args, "", forEach: false)}";
+        if (dir == "becomes") return $"{Whose(unit.Trim())} {(stat is "both" or "orig_both" ? "become" : "becomes")} {Phrase(args, "", forEach: false)}";
         var gain = dir == "lose" ? (plural ? "lose" : "loses") : (plural ? "gain" : "gains");
         // "this card gains that much ATK", as cards that pay LP in multiples say it (Cosmic Tree Irmistil, Psychic Blade).
         if (args.Choice("value") == "lp_paid" && args.Choice("how") == "equal") return $"{subject} {gain} that much{unit}";
@@ -393,6 +412,7 @@ public sealed class StatsFromValuePassive : PassiveBlock
 
     public override void Compile(BlockContext ctx)
     {
+        ValueSources.CheckStat(ctx);
         var lose = ctx.Args.Choice("dir") == "lose";
         var value = ctx.Script.AddFunction("liveval", "e,c", [$"return {(lose ? "-" : "")}({ValueSources.Lua(ctx, "c", "e:GetHandlerPlayer()", ev: false)})"]);
         var codes = ValueSources.Codes(ctx.Args.Choice("stat"), ctx.Args.Choice("dir"));
@@ -473,7 +493,8 @@ public sealed class StatsFromValueAction : CardGroupAction
 
     public override void Compile(BlockContext ctx)
     {
-        if (ctx.Args.Choice("stat") is "def" or "both") ctx.Effect.AddCategory("CATEGORY_DEFCHANGE");
+        ValueSources.CheckStat(ctx);
+        if (ctx.Args.Choice("stat") is "def" or "both" or "orig_def" or "orig_both") ctx.Effect.AddCategory("CATEGORY_DEFCHANGE");
         base.Compile(ctx);
     }
 
@@ -483,7 +504,7 @@ public sealed class StatsFromValueAction : CardGroupAction
         var codes = ValueSources.Codes(ctx.Args.Choice("stat"), ctx.Args.Choice("dir"));
         var value = ValueSources.Lua(ctx, "tc", "tp");
         // What this card gives itself is lost when its effects are negated, like "This card gains or loses ATK/DEF".
-        var reset = Resets.Of(ctx) + (ctx.Args.Cards("cards").ThisCard ? "+RESET_DISABLE" : "");
+        var reset = Resets.Of(ctx, ctx.Args.Cards("cards").ThisCard ? "+RESET_DISABLE" : "");
         var lines = new List<string> { "local n=0", "for tc in aux.Next(g) do", "\tif tc:IsFaceup() then", $"\t\tlocal v={value}" };
         foreach (var code in codes)
         {

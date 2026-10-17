@@ -178,6 +178,10 @@ public class AllBlocksTests
             case DeclaredLockAction.BlockId:
                 project.Effects[0].Do.Insert(0, BlockRegistry.Find(DeclareAction.BlockId)!.CreateInstance());
                 break;
+            // "That Attribute": what a declaration before it declared.
+            case BecomeAction.BlockId when inst.Values.GetValueOrDefault("what") is "declared_attribute" or "declared_race":
+                project.Effects[0].Do.Insert(0, BlockRegistry.Find(DeclareAction.BlockId)!.CreateInstance().With("what", inst.Values["what"] == "declared_race" ? "race" : "attribute"));
+                break;
             // Remembering or a delayed step on "the cards the step before affected" or "the target": after a block that targets them.
             case RememberAction.BlockId or LaterAction.BlockId:
                 project.Effects[0].Do.Insert(0, BlockRegistry.Find("do.destroy")!.CreateInstance().With("target", true));

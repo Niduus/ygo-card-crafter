@@ -279,8 +279,14 @@ public abstract partial class CardGroupAction
     /// </summary>
     protected virtual bool OffersSelections => false;
 
+    /// <summary>
+    /// Whether "any number of" is offered: on the blocks that can take every card, and on those that place as many cards
+    /// as the player likes where each needs a zone ("place any number of monsters ... in their owners' Spell &amp; Trap Zones").
+    /// </summary>
+    protected virtual bool OffersAnyNumber => AllowsAll;
+
     /// <summary>The selection blanks for <see cref="BuildParams"/>.</summary>
-    protected IReadOnlyList<ParamSpec> SelectionParams => OffersSelections ? Selection.Params(AllowsAll) : [];
+    protected IReadOnlyList<ParamSpec> SelectionParams => OffersSelections ? Selection.Params(OffersAnyNumber) : [];
 
     /// <summary>"Your opponent chooses 1 monster in your GY, and you Special Summon it."</summary>
     public override string Describe(BlockArgs args)
@@ -552,8 +558,11 @@ public sealed class RevealPickAction : ActionBlock
             DefaultFilter = () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Deck, CardType = FilterCardType.Monster },
         },
         ParamSpec.Choice("how", "How your opponent picks", new("chooses", "chooses"), new("random", "randomly picks")),
-        ParamSpec.Choice("then", "What you do with it", new("hand", "add to your hand"), new("summon", "Special Summon"), new("set", "Set")),
-        ParamSpec.Choice("rest", "The rest", new("deck", "shuffle the rest into the Deck"), new("grave", "send the rest to the GY")),
+        ParamSpec.Choice("then", "What you do with it", new("hand", "add to your hand"), new("summon", "Special Summon"), new("set", "Set"),
+            // Mimighoul Maker: "for you to Special Summon to their field in face-down Defense Position".
+            new("summon_opponent", "Special Summon to their field in face-down Defense Position")),
+        ParamSpec.Choice("rest", "The rest", new("deck", "shuffle the rest into the Deck"), new("grave", "send the rest to the GY"),
+            new("hand", "add the rest to your hand")),
         ParamSpec.Flag("names", "with different names", false),
     ];
 
@@ -561,7 +570,9 @@ public sealed class RevealPickAction : ActionBlock
     {
         var f = args.Cards("cards");
         var cards = FilterText.Describe(f, args.Pack, plural: true, ownName: args.CardName, withExcept: false, beforeLocation: args.Bool("names") ? "with different names" : null);
-        return $"reveal {args.Int("count")} {cards}{args.ExceptText()}, your opponent {args.Describe("how")} 1 for you to {args.Describe("then")}, and you {args.Describe("rest")}";
+        // "and you add the other to your hand": of 2 revealed cards, 1 is left.
+        var rest = args.Int("count") == 2 ? args.Describe("rest").Replace("the rest", "the other", StringComparison.Ordinal) : args.Describe("rest");
+        return $"reveal {args.Int("count")} {cards}{args.ExceptText()}, your opponent {args.Describe("how")} 1 for you to {args.Describe("then")}, and you {rest}";
     }
 
     public override void Compile(BlockContext ctx)
@@ -581,15 +592,28 @@ public sealed class RevealPickAction : ActionBlock
             e.Error($"\"{Name}\": only Spells and Traps are Set this way. Pick Spells or Traps, or another way to use the card.");
             return;
         }
-        if (then == "summon" && filter.CardType == FilterCardType.Any) filter.CardType = FilterCardType.Monster;
-        var able = then switch { "hand" => "c:IsAbleToHand()", "summon" => "c:IsCanBeSpecialSummoned(e,0,tp,false,false)", _ => "c:IsSSetable()" };
+        if (then is "summon" or "summon_opponent" && filter.CardType == FilterCardType.Any) filter.CardType = FilterCardType.Monster;
+        var able = then switch
+        {
+            "hand" => "c:IsAbleToHand()",
+            "summon" => "c:IsCanBeSpecialSummoned(e,0,tp,false,false)",
+            "summon_opponent" => "c:IsCanBeSpecialSummoned(e,0,tp,false,false,POS_FACEDOWN_DEFENSE,1-tp)",
+            _ => "c:IsSSetable()",
+        };
         if (a.Choice("rest") == "grave") able += " and c:IsAbleToGrave()";
+        if (a.Choice("rest") == "hand") able += " and c:IsAbleToHand()";
         var f = ctx.Script.Filter(filter, able);
         var n = Num(a.Int("count"));
         var names = a.Bool("names");
         var pool = $"Duel.GetMatchingGroup({f.Function},tp,LOCATION_DECK,0,{f.Exclude},e,tp)";
         e.TargetChecks.Add(names ? $"{pool}:GetClassCount(Card.GetCode)>={n}" : $"Duel.IsExistingMatchingCard({f.Function},tp,LOCATION_DECK,0,{n},{f.Exclude},e,tp)");
-        var room = then switch { "summon" => "Duel.GetLocationCount(tp,LOCATION_MZONE)>0", "set" => "Duel.GetLocationCount(tp,LOCATION_SZONE)>0", _ => null };
+        var room = then switch
+        {
+            "summon" => "Duel.GetLocationCount(tp,LOCATION_MZONE)>0",
+            "summon_opponent" => "Duel.GetLocationCount(1-tp,LOCATION_MZONE,tp)>0",
+            "set" => "Duel.GetLocationCount(tp,LOCATION_SZONE)>0",
+            _ => null,
+        };
         if (then == "set" && filter.SpellTrapKind == SpellTrapKind.Field) room = null;
         if (room is not null) e.TargetChecks.Add(room);
         switch (then)
@@ -599,10 +623,16 @@ public sealed class RevealPickAction : ActionBlock
                 e.AddCategory("CATEGORY_SEARCH");
                 e.TargetLines.Add("Duel.SetOperationInfo(0,CATEGORY_TOHAND,nil,1,tp,LOCATION_DECK)");
                 break;
-            case "summon":
+            case "summon" or "summon_opponent":
                 e.AddCategory("CATEGORY_SPECIAL_SUMMON");
                 e.TargetLines.Add("Duel.SetOperationInfo(0,CATEGORY_SPECIAL_SUMMON,nil,1,tp,LOCATION_DECK)");
                 break;
+        }
+        if (a.Choice("rest") == "hand" && then != "hand")
+        {
+            e.AddCategory("CATEGORY_TOHAND");
+            e.AddCategory("CATEGORY_SEARCH");
+            e.TargetLines.Add($"Duel.SetOperationInfo(0,CATEGORY_TOHAND,nil,{Num(a.Int("count") - 1)},tp,LOCATION_DECK)");
         }
         if (a.Choice("rest") == "grave")
         {
@@ -610,7 +640,7 @@ public sealed class RevealPickAction : ActionBlock
             e.TargetLines.Add($"Duel.SetOperationInfo(0,CATEGORY_TOGRAVE,nil,{Num(a.Int("count") - 1)},tp,LOCATION_DECK)");
         }
         var (pg, sg, tg, r) = (e.NewLocal("pg"), e.NewLocal("sg"), e.NewLocal("tg"), e.NewLocal("r"));
-        var hint = then switch { "hand" => "HINTMSG_ATOHAND", "summon" => "HINTMSG_SPSUMMON", _ => "HINTMSG_SET" };
+        var hint = then switch { "hand" => "HINTMSG_ATOHAND", "summon" or "summon_opponent" => "HINTMSG_SPSUMMON", _ => "HINTMSG_SET" };
         var enough = names ? $"{pg}:GetClassCount(Card.GetCode)>={n}" : $"{pg}:GetCount()>={n}";
         var lines = new List<string>
         {
@@ -630,12 +660,21 @@ public sealed class RevealPickAction : ActionBlock
             // The card was just shown to both players: it isn't shown again as it is added.
             "hand" => [$"\t\t{tg}:GetFirst():SetStatus(STATUS_TO_HAND_WITHOUT_CONFIRM,true)", $"\t\t{r}=Duel.SendtoHand({tg},nil,REASON_EFFECT)"],
             "summon" => [$"\t\t{r}=Duel.SpecialSummon({tg},0,tp,tp,false,false,POS_FACEUP)"],
+            // Face-down on the opponent's field: its owner still knows which card it is.
+            "summon_opponent" => [$"\t\t{r}=Duel.SpecialSummon({tg},0,tp,1-tp,false,false,POS_FACEDOWN_DEFENSE)", $"\t\tif {r}>0 then Duel.ConfirmCards(tp,{tg}) end"],
             _ => [$"\t\t{r}=Duel.SSet(tp,{tg})"],
         });
         if (a.Choice("rest") == "grave")
         {
             lines.Add($"\t\t{sg}:Sub({tg})");
             lines.Add($"\t\tDuel.SendtoGrave({sg},REASON_EFFECT)");
+        }
+        else if (a.Choice("rest") == "hand")
+        {
+            // Already shown to both players: not shown again as they are added.
+            lines.Add($"\t\t{sg}:Sub({tg})");
+            lines.Add($"\t\tfor hc in aux.Next({sg}) do hc:SetStatus(STATUS_TO_HAND_WITHOUT_CONFIRM,true) end");
+            lines.Add($"\t\tDuel.SendtoHand({sg},nil,REASON_EFFECT)");
         }
         lines.AddRange(["\tend", "end"]);
         e.AddStep(lines, r, ctx.Link);

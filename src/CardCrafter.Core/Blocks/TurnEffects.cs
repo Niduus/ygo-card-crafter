@@ -34,7 +34,8 @@ public sealed class TurnFieldAction : ActionBlock
             new("cannot_attack", "cannot attack"),
             new("pierce", "inflict piercing battle damage"),
             new("direct", "can attack directly"),
-            new("negated", "have their effects negated")),
+            new("negated", "have their effects negated"),
+            new("cannot_direct", "cannot attack directly")),
         ParamSpec.Int("amount", "Amount", 500, 1, 99999).ShowIf(b => b.Values.GetValueOrDefault("rule", "gain_atk") is "gain_atk" or "gain_def" or "gain_both" or "lose_atk" or "lose_both"),
     ];
 
@@ -79,6 +80,7 @@ public sealed class TurnFieldAction : ActionBlock
             "pierce" => (["EFFECT_PIERCE"], "1"),
             "direct" => (["EFFECT_DIRECT_ATTACK"], "1"),
             "negated" => (["EFFECT_DISABLE", "EFFECT_DISABLE_EFFECT"], "1"),
+            "cannot_direct" => (["EFFECT_CANNOT_DIRECT_ATTACK"], "1"),
             _ => (["EFFECT_CANNOT_ATTACK"], "1"),
         };
         if (Stat(rule)) ctx.Effect.AddCategory(rule.Contains("def") && !rule.Contains("both") ? "CATEGORY_DEFCHANGE" : "CATEGORY_ATKCHANGE");
@@ -91,7 +93,7 @@ public sealed class TurnFieldAction : ActionBlock
             lines.Add($"{v}:SetCode({codes[i]})");
             lines.Add($"{v}:SetTargetRange({f.Self},{f.Opp})");
             lines.Add($"{v}:SetTarget({target})");
-            if (value != "1" || codes[i] is not ("EFFECT_DISABLE" or "EFFECT_DISABLE_EFFECT" or "EFFECT_CANNOT_ATTACK")) lines.Add($"{v}:SetValue({value})");
+            if (value != "1" || codes[i] is not ("EFFECT_DISABLE" or "EFFECT_DISABLE_EFFECT" or "EFFECT_CANNOT_ATTACK" or "EFFECT_CANNOT_DIRECT_ATTACK")) lines.Add($"{v}:SetValue({value})");
             if (filter.ExcludeThisCard) lines.Add($"{v}:SetLabelObject(e:GetHandler())");
             lines.Add($"{v}:SetReset(RESET_PHASE+PHASE_END)");
             lines.Add($"Duel.RegisterEffect({v},tp)");
@@ -117,7 +119,8 @@ public sealed class TurnPlayerRuleAction : ActionBlock
             new("half", "any damage you take is halved"),
             new("opp_double_battle", "battle damage your opponent takes is doubled"),
             new("opp_half_battle", "battle damage your opponent takes is halved"),
-            new("reflect", "effect damage you would take is inflicted to your opponent instead")),
+            new("reflect", "effect damage you would take is inflicted to your opponent instead"),
+            new("opp_no_battle", "your opponent takes no battle damage")),
     ];
 
     public override string Describe(BlockArgs args) => $"for the rest of this turn, {args.Describe("rule")}";
@@ -142,6 +145,7 @@ public sealed class TurnPlayerRuleAction : ActionBlock
         switch (ctx.Args.Choice("rule"))
         {
             case "no_battle": Player("EFFECT_AVOID_BATTLE_DAMAGE", "1", "0", "1"); break;
+            case "opp_no_battle": Player("EFFECT_AVOID_BATTLE_DAMAGE", "0", "1", "1"); break;
             case "no_effect":
                 Player("EFFECT_CHANGE_DAMAGE", "1", "0", Fn("damval", "if bit.band(r,REASON_EFFECT)~=0 then return 0 end return val"));
                 Player("EFFECT_NO_EFFECT_DAMAGE", "1", "0", null);

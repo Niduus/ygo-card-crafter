@@ -561,6 +561,29 @@ public sealed class ShuffleIntoDeckAction : CardGroupAction
     protected override Func<CardFilter> DefaultCards => () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Graveyard };
     protected override string? AbleCheck(BlockContext ctx) => "c:IsAbleToDeck()";
     protected override string Apply(string g, BlockContext ctx) => $"Duel.SendtoDeck({g},nil,SEQ_DECKSHUFFLE,REASON_EFFECT)";
+
+    /// <summary>
+    /// Fusion, Synchro, Xyz and Link Monsters go back to the Extra Deck, and cards say so: "return all Fusion, Synchro, Xyz,
+    /// and Link Monsters your opponent controls to the Extra Deck", "return this card to the Extra Deck".
+    /// </summary>
+    public static bool ToExtraDeck(BlockArgs args)
+    {
+        var f = args.Cards("cards");
+        if (f.ThisCard) return args.Card?.IsExtraDeck == true;
+        if (f.MonsterKind is MonsterKind.Fusion or MonsterKind.Synchro or MonsterKind.Xyz or MonsterKind.Link) return true;
+        const long extra = 0x40 | 0x2000 | 0x800000 | 0x4000000;
+        return f.MonsterKind == MonsterKind.Any && !f.AnyRequirement && f.Requirements.Any(r =>
+            r.Property == "monster_type" && r.Op == RequirementOp.Is && r.Values.Count > 0 && r.Values.All(v => v != 0 && (v & ~extra) == 0));
+    }
+
+    private static string ExtraWording(string text) => text
+        .Replace("Shuffle ", "Return ", StringComparison.Ordinal).Replace("shuffle ", "return ", StringComparison.Ordinal)
+        .Replace(" into the Deck", " to the Extra Deck", StringComparison.Ordinal);
+
+    public override string Describe(BlockArgs args) => ToExtraDeck(args) ? ExtraWording(base.Describe(args)) : base.Describe(args);
+
+    protected override string TargetedAction(BlockArgs args, string pronoun, bool single) =>
+        ToExtraDeck(args) ? ExtraWording(base.TargetedAction(args, pronoun, single)) : base.TargetedAction(args, pronoun, single);
 }
 
 public sealed class DrawAction : ActionBlock
@@ -685,12 +708,14 @@ public sealed class SpecialSummonSelfAction : ActionBlock
     public override string Id => "do.special_summon_self";
     public override string Group => "This card";
     public override string Name => "Special Summon this card";
-    public override string Sentence => "Special Summon this card {from} {position} {as}";
+    public override string Sentence => "Special Summon this card {from} {side} {position} {as} {halved}";
     public override string Help => "Summons this card from wherever the effect is used: the WHEN block's \"in the hand\" or \"in the GY\". " +
                                    "\"From where its cost put it\" Summons it after the effect's own cost banished it or sent it to the GY or hand.";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Choice("from", "From", new("zone", "", "from where this effect is used"), new("cost", "", "from where its cost put it")),
+        // Mimighoul: "Special Summon this card from your hand to your opponent's field in face-down Defense Position".
+        ParamSpec.Choice("side", "Whose field", new("you", "", "to your field"), new("opponent", "to your opponent's field")),
         ParamSpec.Choice("position", "Position",
             new("faceup", "", "face-up"),
             new("attack", "in Attack Position"),
@@ -699,6 +724,8 @@ public sealed class SpecialSummonSelfAction : ActionBlock
         ParamSpec.Flag("ignore", "ignoring its Summoning conditions", false),
         ParamSpec.Flag("banish", "but banish it when it leaves the field", false),
         TreatedAsSummon.Param,
+        // Heavy Freight Train Derricrane: "Special Summon this card from your hand, but its original ATK/DEF become halved".
+        ParamSpec.Flag("halved", "but its original ATK/DEF become halved", false),
     ];
 
     /// <summary>"(This is treated as a Synchro Summon.)"</summary>
@@ -713,8 +740,10 @@ public sealed class SpecialSummonSelfAction : ActionBlock
         else if (zone is not null && Zones.From(zone) is { } from) what += " " + from;
         // A Pendulum Effect's "Special Summon this card from your Pendulum Zone".
         else if (zone == "pendulum_zone") what += " from your Pendulum Zone";
+        if (args.Describe("side") is { Length: > 0 } side) what += " " + side;
         what = $"{what} {args.Describe("position")}".TrimEnd();
         if (args.Bool("ignore")) what += ", ignoring its Summoning conditions";
+        if (args.Bool("halved")) what += ", but its original ATK/DEF become halved";
         return args.Bool("banish") ? what + ", but banish it when it leaves the field" : what;
     }
 
@@ -752,6 +781,10 @@ public sealed class SpecialSummonSelfAction : ActionBlock
         var pos = Position(ctx);
         var ignore = ctx.Args.Bool("ignore") ? "true" : "false";
         var treated = ctx.Args.Choice("as");
+        // To the opponent's field: in their Monster Zones, under their control.
+        var opp = ctx.Args.Choice("side") == "opponent";
+        var p = opp ? "1-tp" : "tp";
+        if (opp && treated != "none") { ctx.Effect.Error($"\"{Name}\": a Summon treated as a Fusion, Synchro... Summon goes to your own field."); return; }
         if (treated != "none" && !TreatedAsSummon.Check(ctx, Name, 1, pos == "POS_FACEDOWN_DEFENSE")) return;
         // Ritual and Extra Deck Monsters (and "must be Special Summoned" ones) must be properly Summoned before they can
         // come back from the GY or banishment, unless the effect ignores their Summoning conditions (or, treated as a
@@ -763,15 +796,29 @@ public sealed class SpecialSummonSelfAction : ActionBlock
                             "after it was properly Summoned first. Tick \"ignoring its Summoning conditions\" if this effect should work anyway.");
         var r = ctx.Effect.NewLocal("r");
         ctx.Effect.AddCategory("CATEGORY_SPECIAL_SUMMON");
-        var room = treated == "none" ? "Duel.GetLocationCount(tp,LOCATION_MZONE)>0" : TreatedAsSummon.SpaceCheck(ctx, treated, Zone.Hand)!;
+        var room = treated == "none" ? (opp ? "Duel.GetLocationCount(1-tp,LOCATION_MZONE,tp)>0" : "Duel.GetLocationCount(tp,LOCATION_MZONE)>0") : TreatedAsSummon.SpaceCheck(ctx, treated, Zone.Hand)!;
         ctx.Effect.TargetChecks.Add(room);
         // The second switch also lifts "must first be properly Summoned" (the engine's revive limit).
         ctx.Effect.TargetChecks.Add(treated == "none"
-            ? $"e:GetHandler():IsCanBeSpecialSummoned(e,0,tp,{ignore},{ignore},{pos})"
+            ? $"e:GetHandler():IsCanBeSpecialSummoned(e,0,tp,{ignore},{ignore},{pos}{(opp ? ",1-tp" : "")})"
             : $"e:GetHandler():IsCanBeSpecialSummoned(e,{TreatedAsSummon.SummonType(treated)},tp,{ignore},{TreatedAsSummon.NoLimit(treated, ignore)},{pos})");
         ctx.Effect.TargetLines.Add("Duel.SetOperationInfo(0,CATEGORY_SPECIAL_SUMMON,e:GetHandler(),1,0,0)");
         var lines = new List<string> { $"local {r}=0", $"if c:IsRelateToEffect(e) and {room} then" };
-        if (treated == "none") lines.Add($"\t{r}=Duel.SpecialSummon(c,SUMMON_VALUE_SELF,tp,tp,{ignore},{ignore},{pos})");
+        if (treated == "none" && ctx.Args.Bool("halved"))
+        {
+            // Its original ATK/DEF are halved as it is Summoned, as Derricrane does it (one Summon step, then the change).
+            lines.AddRange(
+            [
+                $"\tif Duel.SpecialSummonStep(c,SUMMON_VALUE_SELF,tp,{p},{ignore},{ignore},{pos}) then",
+                "\t\tlocal hb=Effect.CreateEffect(c)", "\t\thb:SetType(EFFECT_TYPE_SINGLE)", "\t\thb:SetCode(EFFECT_SET_BASE_ATTACK)",
+                "\t\thb:SetValue(math.ceil(c:GetBaseAttack()/2))", "\t\thb:SetReset(RESET_EVENT+RESETS_STANDARD+RESET_DISABLE)", "\t\tc:RegisterEffect(hb)",
+                "\t\tlocal hd=hb:Clone()", "\t\thd:SetCode(EFFECT_SET_BASE_DEFENSE)", "\t\thd:SetValue(math.ceil(c:GetBaseDefense()/2))", "\t\tc:RegisterEffect(hd)",
+                $"\t\t{r}=1",
+                "\tend",
+                "\tDuel.SpecialSummonComplete()",
+            ]);
+        }
+        else if (treated == "none") lines.Add($"\t{r}=Duel.SpecialSummon(c,SUMMON_VALUE_SELF,tp,{p},{ignore},{ignore},{pos})");
         else
         {
             // Treated as a Fusion Summon...: it counts as properly Summoned afterwards, though it had no materials.
@@ -785,6 +832,8 @@ public sealed class SpecialSummonSelfAction : ActionBlock
             lines.AddRange(BanishWhenLeaves("c", "rd").Select(l => "\t\t" + l));
             lines.Add("\tend");
         }
+        // A face-down monster on the opponent's field: its owner may still look at it.
+        if (opp && pos == "POS_FACEDOWN_DEFENSE") lines.Add($"\tif {r}>0 then Duel.ConfirmCards(tp,c) end");
         lines.Add("end");
         ctx.Effect.AddStep(lines, r, ctx.Link);
     }
@@ -801,7 +850,7 @@ public sealed class ChangeSelfStatsAction : ActionBlock
         ParamSpec.Choice("dir", "Gains/loses", new("gain", "gains"), new("lose", "loses")),
         ParamSpec.Int("amount", "Amount", 500, 1, 99999),
         ParamSpec.Choice("stat", "Stat", new("atk", "ATK"), new("def", "DEF"), new("both", "ATK/DEF")),
-        ParamSpec.Choice("duration", "Until", new("turn", "until the end of this turn"), new("always", "", "while face-up")),
+        ParamSpec.Choice("duration", "Until", Resets.Duration),
         PerParam,
     ];
 
@@ -817,9 +866,12 @@ public sealed class ChangeSelfStatsAction : ActionBlock
         Zones.RequireMonster(ctx, Name);
         var per = Multiplier(ctx);
         var amount = ctx.Args.Int("amount") * (ctx.Args.Choice("dir") == "lose" ? -1 : 1);
-        var reset = ctx.Args.Choice("duration") == "turn"
-            ? "RESET_EVENT+RESETS_STANDARD+RESET_DISABLE+RESET_PHASE+PHASE_END"
-            : "RESET_EVENT+RESETS_STANDARD+RESET_DISABLE";
+        var reset = ctx.Args.Choice("duration") switch
+        {
+            "turn" => "RESET_EVENT+RESETS_STANDARD+RESET_DISABLE+RESET_PHASE+PHASE_END",
+            "always" => "RESET_EVENT+RESETS_STANDARD+RESET_DISABLE",
+            _ => Resets.Of(ctx, "+RESET_DISABLE"),
+        };
         var codes = ctx.Args.Choice("stat") switch
         {
             "def" => new[] { "EFFECT_UPDATE_DEFENSE" },

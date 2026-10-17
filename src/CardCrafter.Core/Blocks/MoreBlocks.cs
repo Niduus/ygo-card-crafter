@@ -294,7 +294,7 @@ public sealed class ChangeStatsAction : CardGroupAction
         ParamSpec.Choice("dir", "Gain/lose", new("gain", "gain(s)"), new("lose", "lose(s)")),
         ParamSpec.Int("amount", "Amount", 500, 1, 99999),
         ParamSpec.Choice("stat", "Stat", new("atk", "ATK"), new("def", "DEF"), new("both", "ATK/DEF")),
-        ParamSpec.Choice("duration", "Until", new("turn", "until the end of this turn"), new("always", "", "while face-up")),
+        ParamSpec.Choice("duration", "Until", Resets.Duration),
         KeptParam,
     ];
 
@@ -318,9 +318,7 @@ public sealed class ChangeStatsAction : CardGroupAction
     protected override string Apply(string group, BlockContext ctx)
     {
         var amount = ctx.Args.Int("amount") * (ctx.Args.Choice("dir") == "lose" ? -1 : 1);
-        var reset = ctx.Args.Choice("duration") == "turn"
-            ? "RESET_EVENT+RESETS_STANDARD+RESET_PHASE+PHASE_END"
-            : "RESET_EVENT+RESETS_STANDARD";
+        var reset = Resets.Of(ctx);
         var codes = ctx.Args.Choice("stat") switch
         {
             "def" => new[] { "EFFECT_UPDATE_DEFENSE" },
@@ -449,8 +447,10 @@ public sealed class ThisCardAction : ActionBlock
             new("destroy", "Destroy"),
             new("banish", "Banish"),
             new("grave", "Send to the GY"),
-            new("deck", "Shuffle into the Deck"),
-            new("discard", "Discard")),
+            new("deck", "Shuffle into the Deck", "Shuffle into the Deck (an Extra Deck monster: return to the Extra Deck)"),
+            new("discard", "Discard"),
+            // Mimighoul: "Give control of this card to your opponent".
+            new("control", "Give control to your opponent")),
     ];
 
     public override IReadOnlyList<MenuShortcut> Shortcuts { get; } =
@@ -461,6 +461,8 @@ public sealed class ThisCardAction : ActionBlock
         new("Send this card to the GY", new Dictionary<string, string> { ["how"] = "grave" }),
         new("Return this card to the hand", new Dictionary<string, string> { ["how"] = "hand" }),
         new("Shuffle this card into the Deck", new Dictionary<string, string> { ["how"] = "deck" }),
+        new("Return this card to the Extra Deck", new Dictionary<string, string> { ["how"] = "deck" }),
+        new("Give control of this card to your opponent", new Dictionary<string, string> { ["how"] = "control" }),
     ];
 
     public override string Describe(BlockArgs args) => args.Choice("how") switch
@@ -470,6 +472,9 @@ public sealed class ThisCardAction : ActionBlock
         "banish" => "banish this card",
         "grave" => "send this card to the GY",
         "discard" => "discard this card",
+        "control" => "give control of this card to your opponent",
+        // A Fusion, Synchro, Xyz or Link Monster goes back to the Extra Deck, and cards say so.
+        _ when args.Card?.IsExtraDeck == true => "return this card to the Extra Deck",
         _ => "shuffle this card into the Deck",
     };
 
@@ -482,6 +487,8 @@ public sealed class ThisCardAction : ActionBlock
             "grave" => ("CATEGORY_TOGRAVE", "e:GetHandler():IsAbleToGrave()", "Duel.SendtoGrave(c,REASON_EFFECT)"),
             "deck" => ("CATEGORY_TODECK", "e:GetHandler():IsAbleToDeck()", "Duel.SendtoDeck(c,nil,SEQ_DECKSHUFFLE,REASON_EFFECT)"),
             "discard" => ("CATEGORY_HANDES", "e:GetHandler():IsDiscardable(REASON_EFFECT)", "Duel.SendtoGrave(c,REASON_EFFECT+REASON_DISCARD)"),
+            // It moves to the opponent's field as official Mimighoul do: no check, as it may be applied in sequence.
+            "control" => ("CATEGORY_CONTROL", null, "Duel.GetControl(c,1-tp)"),
             _ => ("CATEGORY_TOHAND", "e:GetHandler():IsAbleToHand()", "Duel.SendtoHand(c,nil,REASON_EFFECT)"),
         };
         var r = ctx.Effect.NewLocal("r");
@@ -500,10 +507,11 @@ public sealed class ProtectCardsPassive : PassiveBlock
     public override string Group => "Monsters";
     public override string Name => "Monsters can't be destroyed";
     public override string Sentence => "{cards} cannot be destroyed {by}";
-    public override string Help => "For example: monsters this card points to cannot be destroyed by battle.";
+    public override string Help => "For example: monsters this card points to cannot be destroyed by battle. Pick the Spell & Trap Zone too (and tick " +
+                                   "\"Monster Cards\") for monsters placed there as Continuous Spells: \"Monster Cards you control cannot be destroyed by card effects\".";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
-        ParamSpec.Cards("cards", "Which monsters", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster }, Zone.MonsterZone, thisCard: true),
+        ParamSpec.Cards("cards", "Which monsters", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster }, Zone.Field, thisCard: true),
         ParamSpec.Choice("by", "By",
             new("battle", "by battle"),
             new("effect", "by card effects"),
@@ -524,7 +532,8 @@ public sealed class ProtectCardsPassive : PassiveBlock
                 _ => new[] { "EFFECT_INDESTRUCTABLE_BATTLE" },
             }, selfBy == "opponent_effect" ? "aux.indoval" : "1")) return;
         var filter = ctx.Args.Cards("cards").Clone();
-        filter.Zones = Zone.MonsterZone;
+        // Monster Cards in the Spell & Trap Zone too, when the picker names that zone; otherwise the Monster Zones.
+        filter.Zones = filter.Zones.HasFlag(Zone.SpellTrapZone) ? filter.Zones & Zone.Field : Zone.MonsterZone;
         var f = ctx.Script.Filter(filter);
         var target = ctx.Script.AddFunction("protecttg", "e,c", [$"return {f.Function}(c,e,e:GetHandlerPlayer())" + (filter.ExcludeThisCard ? " and c~=e:GetHandler()" : "")]);
         var range = RangeOf(ctx);

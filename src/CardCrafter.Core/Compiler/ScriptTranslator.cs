@@ -431,7 +431,7 @@ public static partial class ScriptTranslator
             if (LockOf(set, fns) is { } lockout && CombinedLock([lockout.What]) is not null)
                 gate = Block("passive.lock").With("who", lockout.Who).With("what", lockout.What).With("cards", lockout.Except);
             else if (BanishInsteadOf(set, fns) is { } instead)
-                gate = Block("passive.banish_instead").With("what", instead.What).With("whose", instead.Whose);
+                gate = Block("passive.banish_instead").With("what", instead.What).With("whose", instead.Whose).With("from", instead.From);
             else if (NegateAllOf(type, set, fns) is { } negate)
                 gate = Block("passive.negate_all").With("what", negate);
             if (gate is not null)
@@ -2070,21 +2070,29 @@ public static partial class ScriptTranslator
     }
 
     /// <summary>"Any card sent to the GY is banished instead": who and what it covers, or null for another effect.</summary>
-    private static (string What, string Whose)? BanishInsteadOf(Dictionary<string, string> set, Functions fns)
+    private static (string What, string Whose, string From)? BanishInsteadOf(Dictionary<string, string> set, Functions fns)
     {
         if (set.GetValueOrDefault("Code") != "EFFECT_TO_GRAVE_REDIRECT") return null;
         if (set.GetValueOrDefault("Value") != "LOCATION_REMOVED") throw No("it sends cards somewhere else instead of the GY");
-        var whose = (set.GetValueOrDefault("TargetRange") ?? "").Replace(" ", "") switch
+        // Herald of the Arc Light: only cards sent from the hand or Main Deck (the range counts without EFFECT_FLAG_IGNORE_RANGE).
+        const string handDeck = "LOCATION_HAND+LOCATION_DECK";
+        var range = (set.GetValueOrDefault("TargetRange") ?? "").Replace(" ", "").Replace("LOCATION_DECK+LOCATION_HAND", handDeck, StringComparison.Ordinal);
+        var from = range.Contains(handDeck, StringComparison.Ordinal) && !(set.GetValueOrDefault("Property") ?? "").Contains("EFFECT_FLAG_IGNORE_RANGE", StringComparison.Ordinal)
+            ? "hand_deck" : "anywhere";
+        var whose = range switch
         {
-            "LOCATION_DECK,LOCATION_DECK" or "0xff,0xff" => "either",
-            "0,LOCATION_DECK" or "0,0xff" => "opponent",
-            "LOCATION_DECK,0" or "0xff,0" => "you",
+            "LOCATION_DECK,LOCATION_DECK" or "0xff,0xff" or handDeck + "," + handDeck => "either",
+            "0,LOCATION_DECK" or "0,0xff" or "0," + handDeck => "opponent",
+            "LOCATION_DECK,0" or "0xff,0" or handDeck + ",0" => "you",
             var r => throw No($"its \"banished instead\" covers cards the blocks can't ({r})"),
         };
+        if (from == "anywhere" && range.Contains("LOCATION_HAND", StringComparison.Ordinal)) throw No($"its \"banished instead\" covers cards the blocks can't ({range})");
         var what = "card";
         if (set.GetValueOrDefault("Target") is { } target)
         {
             if (target == "aux.DimensionalFissureTarget") what = "monster";
+            // Cards from the hand or Deck are what they are printed as: a monster there is a Monster Card.
+            else if (from == "hand_deck" && Body(target, fns) == "return c:IsType(TYPE_MONSTER)") what = "monster";
             else
             {
                 var body = Body(target, fns);
@@ -2093,7 +2101,7 @@ public static partial class ScriptTranslator
                 else throw No($"its \"banished instead\" picks cards in a way the blocks can't ({Short(body)})");
             }
         }
-        return (what, whose);
+        return (what, whose, from);
     }
 
     /// <summary>Negating Spell/Trap/monster effects on the field (Imperial Order, Royal Decree, Skill Drain), or null.</summary>
@@ -2172,7 +2180,7 @@ public static partial class ScriptTranslator
                     return Block("do.summon_restriction").With("duration", lasts).With("who", l.Who).With("what", what).With("cards", l.Except);
             }
             if (parts.Count == 1 && BanishInsteadOf(first, fns) is { } bi)
-                return Block("do.banish_instead").With("duration", lasts).With("what", bi.What).With("whose", bi.Whose);
+                return Block("do.banish_instead").With("duration", lasts).With("what", bi.What).With("whose", bi.Whose).With("from", bi.From);
             return LastingTemp(temp, target, targetCard, fns) ?? throw No($"it puts an effect on a player the blocks don't have ({codes[0]})");
         }
         if (holder == "c")
@@ -2559,6 +2567,21 @@ public static partial class ScriptTranslator
             return Block("do.gain_lp").With("who", Who(m.Groups[1].Value)).With("amount", Amount(m.Groups[2].Value));
         if ((m = Regex.Match(line, @"^Duel\.DiscardDeck\((tp|1-tp),(\d+),REASON_EFFECT\)$")).Success)
             return Block("do.mill").With("whose", m.Groups[1].Value == "tp" ? "you" : "opponent").With("count", Int(m.Groups[2].Value));
+        // "Lose 1000 LP" (The Unstoppable Exodia Incarnate): the LP set lower, not damage.
+        if ((m = Regex.Match(line, @"^Duel\.SetLP\((tp|1-tp),Duel\.GetLP\(\1\)-(\d+)\)$")).Success)
+            return Block(SetLifeAction.BlockId).With("who", m.Groups[1].Value == "tp" ? "you" : "opponent").With("how", "lose").With("amount", Int(m.Groups[2].Value));
+        // Mimighoul: "Special Summon this card from your hand to your opponent's field in face-down Defense Position".
+        if (Regex.IsMatch(line, @"^(?:if )?Duel\.SpecialSummon\(c,0,tp,1-tp,false,false,POS_FACEDOWN_DEFENSE\)(?:>0 then Duel\.ConfirmCards\(tp,c\) end)?$"))
+        {
+            self = true;
+            return Block("do.special_summon_self").With("side", "opponent").With("position", "defense_facedown");
+        }
+        // Mimighoul: "Give control of this card to your opponent".
+        if (line is "Duel.GetControl(c,1-tp)" or "Duel.GetControl(e:GetHandler(),1-tp)")
+        {
+            self = true;
+            return Block("do.this_card").With("how", "control");
+        }
         if (line == "Duel.NegateActivation(ev)") return Block("do.negate").With("what", "activation");
         if (line == "Duel.NegateAttack()") return Block("do.negate_attack");
         if ((m = Regex.Match(line, @"^Duel\.DiscardHand\((tp|1-tp),nil,(\d+),\2,REASON_EFFECT\+REASON_DISCARD\)$")).Success)
@@ -2580,6 +2603,7 @@ public static partial class ScriptTranslator
             (@"^Duel\.SpecialSummon\((\w+),0,tp,tp,false,false,(POS_FACEUP|POS_FACEUP_ATTACK|POS_FACEUP_DEFENSE)\)$", "do.special_summon"),
             (@"^Duel\.SpecialSummon\((\w+),0,tp,tp,true,false,(POS_FACEUP|POS_FACEUP_ATTACK|POS_FACEUP_DEFENSE)\)$", "ignoring"),
             (@"^Duel\.GetControl\((\w+),tp,PHASE_END,1\)$", "control_turn"),
+            (@"^Duel\.GetControl\((\w+),tp,PHASE_BATTLE,1\)$", "control_battle"),
             (@"^Duel\.GetControl\((\w+),tp\)$", "control"),
             (@"^Duel\.ChangePosition\((\w+),POS_FACEUP_DEFENSE,POS_FACEUP_DEFENSE,POS_FACEUP_ATTACK,POS_FACEUP_ATTACK\)$", "pos_toggle"),
             (@"^Duel\.ChangePosition\((\w+),POS_FACEDOWN_DEFENSE\)$", "pos_facedown"),
@@ -2606,7 +2630,7 @@ public static partial class ScriptTranslator
             var id = blockId switch
             {
                 "hand" => (filter.Zones & (Model.Zone.Deck | Model.Zone.Graveyard | Model.Zone.Banished)) != 0 && (filter.Zones & Model.Zone.Field) == 0 ? "do.add_to_hand" : "do.return_to_hand",
-                "control" or "control_turn" => "do.take_control",
+                "control" or "control_turn" or "control_battle" => "do.take_control",
                 "pos_toggle" or "pos_facedown" => "do.change_position",
                 "ignoring" => "do.special_summon",
                 _ => blockId,
@@ -2625,7 +2649,7 @@ public static partial class ScriptTranslator
                 if (BlockRegistry.Find(id)!.Param("mode")?.Choices.Any(c => c.Value == "all") != true) throw No("it acts on every matching card, which that block can't");
                 block = block.With("mode", "all");
             }
-            if (blockId is "control" or "control_turn") block = block.With("duration", blockId == "control_turn" ? "turn" : "always");
+            if (blockId is "control" or "control_turn" or "control_battle") block = block.With("duration", blockId switch { "control_turn" => "turn", "control_battle" => "battle", _ => "always" });
             if (blockId is "pos_toggle" or "pos_facedown") block = block.With("to", blockId == "pos_toggle" ? "toggle" : "facedown");
             if (blockId == "ignoring") block = block.With("ignore", true);
             if (BlockRegistry.Find(id)!.Param("target") is not null) block = block.With("target", targeted);
@@ -2695,6 +2719,14 @@ public static partial class ScriptTranslator
                 case "EFFECT_CANNOT_BE_BATTLE_TARGET" when value == "aux.imval1": effect.Do.Add(Block("passive.self_rule").With("rule", "not_attack_target")); return effect;
                 case "EFFECT_AVOID_BATTLE_DAMAGE" when value == "1": effect.Do.Add(Block("passive.self_rule").With("rule", "no_battle_damage")); return effect;
                 case "EFFECT_CANNOT_CHANGE_POSITION": effect.Do.Add(Block("passive.self_rule").With("rule", "cannot_change_position")); return effect;
+                // "Control of this card cannot switch" (Heart of the Blue-Eyes).
+                case "EFFECT_CANNOT_CHANGE_CONTROL" when value is null or "1": effect.Do.Add(Block("passive.self_rule").With("rule", "control_fixed")); return effect;
+                // The Crystal Beasts: "If this card is destroyed while in the Monster Zone, you can place it ... as a Continuous Spell".
+                case "EFFECT_TO_GRAVE_REDIRECT_CB" when PlacedInstead(set, fns):
+                    // Its condition is the block's own check, not an IF block.
+                    set.Remove("Condition");
+                    effect.Do.Add(Block(PlaceInsteadPassive.BlockId));
+                    return effect;
                 case "EFFECT_ATTACK_ALL" when value == "1": effect.Do.Add(Block("passive.self_rule").With("rule", "attack_all")); return effect;
                 case "EFFECT_MUST_ATTACK": effect.Do.Add(Block("passive.self_rule").With("rule", "must_attack")); return effect;
                 case "EFFECT_INDESTRUCTABLE_EFFECT" when value == "aux.indoval": effect.Do.Add(Block("passive.indestructible").With("by", "opponent_effect")); return effect;
@@ -2962,8 +2994,24 @@ public static partial class ScriptTranslator
             "return te:IsActiveType(TYPE_SPELL) and te:GetOwnerPlayer()~=e:GetHandlerPlayer()" => "opp_spell",
             "return te:IsActiveType(TYPE_TRAP) and te:GetOwnerPlayer()~=e:GetHandlerPlayer()" => "opp_trap",
             "return te:GetOwnerPlayer()~=e:GetHandlerPlayer() and te:IsActivated()" or "return e:GetHandlerPlayer()~=te:GetOwnerPlayer() and te:IsActivated()" => "opp_activated",
+            "return te:IsActiveType(TYPE_LINK) and te:IsActivated() and te:GetOwner()~=e:GetOwner()" => "other_link",
+            "if te:IsActiveType(TYPE_SPELL+TYPE_TRAP) then return true else return te:IsActiveType(TYPE_LINK) and te:IsActivated() and te:GetOwner()~=e:GetOwner() end" => "spelltrap_other_link",
             _ => ImmuneWhose(body),
         };
+    }
+
+    /// <summary>
+    /// "Place it face-up in your Spell &amp; Trap Zone as a Continuous Spell, instead of sending it to the GY": the redirect's
+    /// check is that this face-up monster is destroyed in the Monster Zone, and it only makes the card a Continuous Spell.
+    /// </summary>
+    private static bool PlacedInstead(Dictionary<string, string> set, Functions fns)
+    {
+        if (set.GetValueOrDefault("Condition") is not { } con || set.GetValueOrDefault("Operation") is not { } op) return false;
+        string body, operation;
+        try { (body, operation) = (Body(con, fns), Body(op, fns)); } catch (Untranslatable) { return false; }
+        if (body != "return c:IsFaceup() and c:IsLocation(LOCATION_MZONE) and c:IsReason(REASON_DESTROY)") return false;
+        return operation.Contains("e1:SetCode(EFFECT_CHANGE_TYPE)", StringComparison.Ordinal) && operation.Contains("e1:SetValue(TYPE_SPELL+TYPE_CONTINUOUS)", StringComparison.Ordinal)
+               && !operation.Contains("Duel.", StringComparison.Ordinal) && Regex.Matches(operation, @"RegisterEffect\(").Count == 1;
     }
 
     /// <summary>"Cannot be destroyed by Spell/Trap effects" and the like: the block's choice for a value function, or null.</summary>

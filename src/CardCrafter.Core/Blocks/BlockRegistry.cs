@@ -190,6 +190,9 @@ public static class BlockRegistry
         new EquipToThisAction(),
         new CannotBeNegatedCost(),
         new BecomePassive(),
+        // Monster Cards in the Spell & Trap Zone, Attributes and Types for a while (MonsterCards.cs).
+        new PlaceInsteadPassive(),
+        new BecomeAction(),
         new DamageBothAction(),
         new SwapControlAction(),
         new EndPhaseAction(),

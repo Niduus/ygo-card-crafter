@@ -14,9 +14,25 @@ internal static class Resets
     public const string WhileFaceUp = "RESET_EVENT+RESETS_STANDARD";
 
     public static ChoiceOption[] Duration =>
-        [new("turn", "until the end of this turn"), new("always", "", "while face-up")];
+    [
+        new("turn", "until the end of this turn"), new("always", "", "while face-up"),
+        new("opp_turn", "until the end of your opponent's turn"), new("next", "until the end of the next turn"),
+    ];
 
-    public static string Of(BlockContext ctx) => ctx.Args.Choice("duration") == "turn" ? EndOfTurn : WhileFaceUp;
+    /// <summary>
+    /// The SetReset arguments for the block's "duration", with <paramref name="extra"/> flags (such as "+RESET_DISABLE")
+    /// added: "until the end of your opponent's turn" lasts 2 End Phases when used in your turn, 1 in theirs, whoever
+    /// controls the monster, and "the next turn" always 2.
+    /// </summary>
+    public static string Of(BlockContext ctx, string extra = "") => Of(ctx.Args.Choice("duration"), extra);
+
+    public static string Of(string duration, string extra = "") => duration switch
+    {
+        "turn" => EndOfTurn + extra,
+        "opp_turn" => EndOfTurn + extra + ",Duel.GetTurnPlayer()==e:GetHandlerPlayer() and 2 or 1",
+        "next" => EndOfTurn + extra + ",2",
+        _ => WhileFaceUp + extra,
+    };
 }
 
 // ---------------------------------------------------------------- negating Summons and attacks
@@ -173,7 +189,9 @@ public sealed class ChangePositionAction : CardGroupAction
             new("defense", "to face-up Defense Position"),
             new("attack", "to face-up Attack Position"),
             new("facedown", "to face-down Defense Position"),
-            new("toggle", "to the other battle position", "to the other battle position")),
+            new("toggle", "to the other battle position", "to the other battle position"),
+            // Mimighoul: "change 1 face-down monster on the field to face-up Attack or Defense Position".
+            new("faceup_choice", "to face-up Attack or Defense Position", "to face-up Attack or Defense Position (your choice)")),
     ];
 
     public override string Describe(BlockArgs args)
@@ -191,6 +209,7 @@ public sealed class ChangePositionAction : CardGroupAction
         "facedown" => "c:IsCanTurnSet()",
         "defense" => "c:IsCanChangePosition() and not c:IsPosition(POS_FACEUP_DEFENSE)",
         "attack" => "c:IsCanChangePosition() and not c:IsPosition(POS_FACEUP_ATTACK)",
+        "faceup_choice" => "c:IsFacedown() and c:IsCanChangePosition()",
         _ => "c:IsCanChangePosition()",
     };
 
@@ -199,6 +218,8 @@ public sealed class ChangePositionAction : CardGroupAction
         "facedown" => $"Duel.ChangePosition({g},POS_FACEDOWN_DEFENSE)",
         "defense" => $"Duel.ChangePosition({g},POS_FACEUP_DEFENSE)",
         "attack" => $"Duel.ChangePosition({g},POS_FACEUP_ATTACK)",
+        // Each one as the player chooses, as official Mimighoul do (Duel.SelectPosition).
+        "faceup_choice" => $"{ctx.Script.AddFunction("choosepos", "g,tp", ["local n=0", "for tc in aux.Next(g) do", "\tlocal pos=Duel.SelectPosition(tp,tc,POS_FACEUP)", "\tn=n+Duel.ChangePosition(tc,pos)", "end", "return n"])}({g},tp)",
         _ => $"Duel.ChangePosition({g},POS_FACEUP_DEFENSE,POS_FACEUP_DEFENSE,POS_FACEUP_ATTACK,POS_FACEUP_ATTACK)",
     };
 }
@@ -219,9 +240,12 @@ public sealed class TakeControlAction : CardGroupAction
     protected override IReadOnlyList<ParamSpec> BuildParams() =>
     [
         ParamSpec.Int("count", "How many", 1, 1, 5),
+        // Saved before "all" was offered: no mode is "exactly". Sun God Domination: "take control of all monsters your opponent controls".
+        ModeParam,
         ParamSpec.Cards("cards", "Which monsters", DefaultCards, Zone.MonsterZone),
         ParamSpec.Flag("target", "(targeting)", true),
-        ParamSpec.Choice("duration", "Until", new("turn", "until the End Phase"), new("always", "", "permanently")),
+        ParamSpec.Choice("duration", "Until", new("turn", "until the End Phase"), new("always", "", "permanently"),
+            new("battle", "until the end of the Battle Phase")),
     ];
 
     protected override string TargetedAction(BlockArgs args, string pronoun, bool single) =>
@@ -229,8 +253,13 @@ public sealed class TakeControlAction : CardGroupAction
 
     protected override string? AbleCheck(BlockContext ctx) => "c:IsControlerCanBeChanged()";
     protected override string? SpaceCheck(int count, CardFilter f, BlockContext ctx) => $"Duel.GetLocationCount(tp,LOCATION_MZONE,tp,LOCATION_REASON_CONTROL)>={count}";
-    protected override string Apply(string g, BlockContext ctx) =>
-        ctx.Args.Choice("duration") == "turn" ? $"Duel.GetControl({g},tp,PHASE_END,1)" : $"Duel.GetControl({g},tp)";
+    protected override string Apply(string g, BlockContext ctx) => ctx.Args.Choice("duration") switch
+    {
+        "turn" => $"Duel.GetControl({g},tp,PHASE_END,1)",
+        // Number F0: Utopic Future: back to its controller as the Battle Phase ends.
+        "battle" => $"Duel.GetControl({g},tp,PHASE_BATTLE,1)",
+        _ => $"Duel.GetControl({g},tp)",
+    };
 }
 
 public sealed class AttachMaterialAction : CardGroupAction
@@ -288,11 +317,13 @@ public sealed class TokenAction : ActionBlock
     public override string Id => "do.tokens";
     public override string Group => "Monsters";
     public override string Name => "Special Summon Tokens";
-    public override string Sentence => "Special Summon {count} Token(s) (passcode {token}) {position} {side}";
+    public override string Sentence => "Special Summon {count} {max} Token(s) (passcode {token}) {position} {side}";
     public override string Help => "Make the Token as its own card in this pack (Monster, frame \"Token\") and enter its passcode here; its Level, Type, Attribute, ATK and DEF come from that card.";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Int("count", "How many", 1, 1, 5),
+        // Number 42: Galaxy Tomahawk: "Special Summon as many "Battle Eagle Tokens" ... as possible".
+        ParamSpec.Flag("max", "as many as possible", false),
         ParamSpec.Int("token", "Token passcode", 0, 0, int.MaxValue),
         ParamSpec.Choice("position", "Position", new("faceup", "", "face-up"), new("attack", "in Attack Position"), new("defense", "in Defense Position")),
         ParamSpec.Choice("side", "Whose field", new("you", "", "to your field"), new("opponent", "to your opponent's field")),
@@ -311,6 +342,9 @@ public sealed class TokenAction : ActionBlock
         if (t is not null && !t.Name.Contains("Token", StringComparison.OrdinalIgnoreCase)) name += " Token";
         var side = args.Choice("side") == "opponent" ? " to your opponent's field" : "";
         var pos = args.Describe("position");
+        // "as many "Battle Eagle Tokens" as possible": the plural inside the name's quotes.
+        var many = name.EndsWith('"') ? name[..^1] + "s\"" : name + "s";
+        if (args.Bool("max")) return $"Special Summon as many {many}{stats} as possible{(pos.Length > 0 ? " " + pos : "")}{side}";
         return $"Special Summon {(n == 1 ? "1" : n.ToString(CultureInfo.InvariantCulture))} {name}{(n == 1 ? "" : "s")}{stats}{(pos.Length > 0 ? " " + pos : "")}{side}";
     }
 
@@ -329,6 +363,31 @@ public sealed class TokenAction : ActionBlock
         var check = $"Duel.IsPlayerCanSpecialSummonMonster(tp,{t.Id},0,TYPES_TOKEN_MONSTER,{t.Atk},{t.Def},{t.Level},{EnumNames.LuaConstant(t.Race)},{EnumNames.LuaConstant(t.Attribute)},{pos},{p})";
         e.AddCategory("CATEGORY_SPECIAL_SUMMON");
         e.AddCategory("CATEGORY_TOKEN");
+        if (ctx.Args.Bool("max"))
+        {
+            // One for each free Monster Zone, or 1 while only 1 monster can be Summoned at a time (Blue-Eyes Spirit Dragon).
+            e.TargetChecks.Add($"Duel.GetLocationCount({p},LOCATION_MZONE,tp)>0");
+            e.TargetChecks.Add(check);
+            e.TargetLines.Add($"local ft=Duel.GetLocationCount({p},LOCATION_MZONE,tp)");
+            e.TargetLines.Add("if Duel.IsPlayerAffectedByEffect(tp,59822133) then ft=1 end");
+            e.TargetLines.Add("Duel.SetOperationInfo(0,CATEGORY_TOKEN,nil,ft,0,0)");
+            e.TargetLines.Add("Duel.SetOperationInfo(0,CATEGORY_SPECIAL_SUMMON,nil,ft,0,0)");
+            var rm = e.NewLocal("r");
+            e.AddStep(
+            [
+                $"local {rm}=0",
+                $"local ft=Duel.GetLocationCount({p},LOCATION_MZONE,tp)",
+                "if Duel.IsPlayerAffectedByEffect(tp,59822133) then ft=math.min(ft,1) end",
+                $"if ft>0 and {check} then",
+                "\tfor i=1,ft do",
+                $"\t\tlocal token=Duel.CreateToken(tp,{t.Id})",
+                $"\t\tif Duel.SpecialSummonStep(token,0,tp,{p},false,false,{pos}) then {rm}={rm}+1 end",
+                "\tend",
+                "\tDuel.SpecialSummonComplete()",
+                "end",
+            ], rm, ctx.Link);
+            return;
+        }
         e.TargetChecks.Add($"Duel.GetLocationCount({p},LOCATION_MZONE,tp)>={n}");
         if (n > 1) e.TargetChecks.Add("not Duel.IsPlayerAffectedByEffect(tp,59822133)");
         e.TargetChecks.Add(check);
@@ -355,8 +414,10 @@ public sealed class SetAttackAction : CardGroupAction
 {
     public override string Id => "do.set_atk";
     public override string Group => "Monsters";
-    public override string Name => "Monsters' ATK becomes a value (halve, 0...)";
-    public override string Sentence => "{count} {cards} {target}: ATK becomes {mode} {amount} {duration}";
+    public override string Name => "Monsters' ATK/DEF become a value (halve, 0, another monster's ATK...)";
+    public override string Sentence => "{count} {cards} {target}: {stat} becomes {mode} {amount} {source} {duration}";
+    public override string Help => "\"Original ATK\" changes what the monster is printed with, so later gains and losses still apply to it (Apollousa). " +
+                                   "\"The ATK of 1 ...\" picks that card as the effect resolves.";
     protected override string Category => "CATEGORY_ATKCHANGE";
     protected override string Hint => "HINTMSG_FACEUP";
     protected override string TargetedWording => "{0}";
@@ -370,47 +431,118 @@ public sealed class SetAttackAction : CardGroupAction
         CountModeParam,
         ParamSpec.Cards("cards", "Which monsters", DefaultCards, Zone.MonsterZone, thisCard: true),
         ParamSpec.Flag("target", "(targeting)", true),
-        ParamSpec.Choice("mode", "Becomes", new("half", "half its current ATK"), new("zero", "0"), new("value", "", "a number:")),
+        // Saved before the stat was a choice: ATK.
+        ParamSpec.Choice("stat", "Stat", new("atk", "ATK"), new("def", "DEF"), new("both", "ATK/DEF"),
+            new("orig_atk", "original ATK"), new("orig_def", "original DEF"), new("orig_both", "original ATK/DEF")),
+        ParamSpec.Choice("mode", "Becomes", new("half", "half its current ATK"), new("zero", "0"), new("value", "", "a number:"),
+            new("of_card", "the ATK of 1", "the ATK of 1 card picked below")),
         ParamSpec.Int("amount", "Number (for \"a number\")", 0, 0, 99999),
+        ParamSpec.Cards("source", "The card whose ATK it becomes",
+                () => new CardFilter { Owner = CardOwner.Either, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster, FaceUpOnly = true })
+            .WhenUsed().ShowIf(b => b.Values.GetValueOrDefault("mode") == "of_card"),
         ParamSpec.Choice("duration", "Until", Resets.Duration),
         KeptParam,
     ];
 
+    /// <summary>"ATK", "ATK/DEF", "original ATK/DEF".</summary>
+    private static string Stat(BlockArgs args) => args.Describe("stat");
+
+    /// <summary>"ATK/DEF" are two stats: they "become".</summary>
+    private static bool Both(BlockArgs args) => args.Choice("stat") is "both" or "orig_both";
+
+    /// <summary>"halved", "0", "1000", "the ATK of 1 monster in your GY" (its DEF, for DEF).</summary>
     private static string Becomes(BlockArgs args) => args.Choice("mode") switch
     {
         "half" => "halved",
         "zero" => "0",
+        "of_card" => $"the {(args.Choice("stat") is "def" or "orig_def" ? "DEF" : "ATK")} of 1 {FilterText.Describe(args.Cards("source"), args.Pack, ownName: args.CardName)}",
         _ => args.Int("amount").ToString(CultureInfo.InvariantCulture),
     };
 
+    private static string Tail(BlockArgs args) => args.Describe("duration") is { Length: > 0 } d ? " " + d : "";
+
+    /// <summary>"is halved", "becomes 0", "are halved" and "become 0" for ATK/DEF or several monsters.</summary>
+    private static string Verb(BlockArgs args, bool single) => args.Choice("mode") == "half"
+        ? (single && !Both(args) ? "is halved" : "are halved")
+        : $"{(single && !Both(args) ? "becomes" : "become")} {Becomes(args)}";
+
     public override string Describe(BlockArgs args)
     {
-        var verb = args.Choice("mode") == "half" ? "is halved" : $"becomes {Becomes(args)}";
-        if (args.IsThisCard) return $"this card's ATK {verb} {args.Describe("duration")}".TrimEnd();
-        return $"the ATK of {Some(args)} {(One(args) ? verb : verb.Replace("is halved", "are halved"))} {args.Describe("duration")}".TrimEnd() + args.ExceptText();
+        if (args.IsThisCard) return $"this card's {Stat(args)} {Verb(args, true)}{Tail(args)}";
+        return $"the {Stat(args)} of {Some(args)} {Verb(args, One(args))}{Tail(args)}" + args.ExceptText();
     }
 
     protected override string TargetedAction(BlockArgs args, string pronoun, bool single) =>
-        (args.Choice("mode") == "half" ? $"{(single ? "its ATK is" : "their ATK are")} halved" : $"{(single ? "its" : "their")} ATK become{(single ? "s" : "")} {Becomes(args)}")
-        + (args.Describe("duration") is { Length: > 0 } d ? " " + d : "");
+        $"{(single ? "its" : "their")} {Stat(args)} {Verb(args, single)}{Tail(args)}";
 
     protected override string? AbleCheck(BlockContext ctx) => "c:IsFaceup()";
 
+    private static FilterRef SourceFilter(BlockContext ctx) => ctx.Script.Filter(ctx.Args.Cards("source"), "c:IsType(TYPE_MONSTER)", "atksrcfilter");
+
+    public override void Compile(BlockContext ctx)
+    {
+        if (ctx.Args.Choice("stat") is "def" or "orig_def") ctx.Effect.AddCategory("CATEGORY_DEFCHANGE");
+        if (ctx.Args.Choice("mode") == "of_card")
+        {
+            var src = SourceFilter(ctx);
+            ctx.Effect.TargetChecks.Add($"Duel.IsExistingMatchingCard({src.Function},tp,{src.Self},{src.Opp},1,{src.Exclude},e,tp)");
+        }
+        base.Compile(ctx);
+    }
+
     protected override string Apply(string g, BlockContext ctx)
     {
-        var value = ctx.Args.Choice("mode") switch
+        var stat = ctx.Args.Choice("stat");
+        // The engine's codes: the final ATK/DEF, or the original ones (later changes still apply to those).
+        var codes = stat switch
         {
-            "half" => "math.ceil(tc:GetAttack()/2)",
-            "zero" => "0",
-            _ => ctx.Args.Int("amount").ToString(CultureInfo.InvariantCulture),
+            "def" => new[] { ("EFFECT_SET_DEFENSE_FINAL", "GetDefense") },
+            "both" => [("EFFECT_SET_ATTACK_FINAL", "GetAttack"), ("EFFECT_SET_DEFENSE_FINAL", "GetDefense")],
+            "orig_atk" => [("EFFECT_SET_BASE_ATTACK", "GetBaseAttack")],
+            "orig_def" => [("EFFECT_SET_BASE_DEFENSE", "GetBaseDefense")],
+            "orig_both" => [("EFFECT_SET_BASE_ATTACK", "GetBaseAttack"), ("EFFECT_SET_BASE_DEFENSE", "GetBaseDefense")],
+            _ => [("EFFECT_SET_ATTACK_FINAL", "GetAttack")],
         };
-        var fn = ctx.Script.AddFunction("setatk", "g,e",
-        [
-            "local n=0", "local tc=g:GetFirst()", "while tc do", "\tif tc:IsFaceup() then",
-            "\t\tlocal e1=Effect.CreateEffect(e:GetHandler())", "\t\te1:SetType(EFFECT_TYPE_SINGLE)", .. KeptLines(ctx, "e1", "\t\t"), "\t\te1:SetCode(EFFECT_SET_ATTACK_FINAL)",
-            $"\t\te1:SetValue({value})", $"\t\te1:SetReset({Resets.Of(ctx)})", "\t\ttc:RegisterEffect(e1)", "\t\tn=n+1",
-            "\tend", "\ttc=g:GetNext()", "end", "return n",
-        ]);
+        var body = new List<string> { "local n=0", "local tc=g:GetFirst()", "while tc do", "\tif tc:IsFaceup() then" };
+        var indent = "\t\t";
+        if (ctx.Args.Choice("mode") == "of_card")
+        {
+            // The card whose ATK it becomes, picked as the effect resolves.
+            var src = SourceFilter(ctx);
+            var get = stat is "def" or "orig_def" ? "GetDefense" : "GetAttack";
+            body.AddRange(
+            [
+                "\t\tlocal tp=e:GetHandlerPlayer()",
+                "\t\tDuel.Hint(HINT_SELECTMSG,tp,HINTMSG_FACEUP)",
+                $"\t\tlocal sc=Duel.SelectMatchingCard(tp,{src.Function},tp,{src.Self},{src.Opp},1,1,tc,e,tp):GetFirst()",
+                "\t\tif sc then",
+                "\t\t\tif sc:IsOnField() then Duel.HintSelection(Group.FromCards(sc)) else Duel.ConfirmCards(1-tp,sc) end",
+                $"\t\t\tlocal v=math.max(sc:{get}(),0)",
+            ]);
+            indent = "\t\t\t";
+        }
+        var i = 0;
+        foreach (var (code, getter) in codes)
+        {
+            var value = ctx.Args.Choice("mode") switch
+            {
+                "half" => $"math.ceil(tc:{getter}()/2)",
+                "zero" => "0",
+                "of_card" => "v",
+                _ => ctx.Args.Int("amount").ToString(CultureInfo.InvariantCulture),
+            };
+            // The first effect keeps its old name, so cards saved before the other stats compile the same.
+            var v = i++ == 0 ? "e1" : $"e{i}";
+            body.AddRange(
+            [
+                $"{indent}local {v}=Effect.CreateEffect(e:GetHandler())", $"{indent}{v}:SetType(EFFECT_TYPE_SINGLE)", .. KeptLines(ctx, v, indent), $"{indent}{v}:SetCode({code})",
+                $"{indent}{v}:SetValue({value})", $"{indent}{v}:SetReset({Resets.Of(ctx)})", $"{indent}tc:RegisterEffect({v})",
+            ]);
+        }
+        body.Add($"{indent}n=n+1");
+        if (ctx.Args.Choice("mode") == "of_card") body.Add("\t\tend");
+        body.AddRange(["\tend", "\ttc=g:GetNext()", "end", "return n"]);
+        var fn = ctx.Script.AddFunction("setatk", "g,e", body);
         return $"{fn}({g},e)";
     }
 }
@@ -420,7 +552,10 @@ public sealed class ChangeLevelAction : CardGroupAction
     public override string Id => "do.change_level";
     public override string Group => "Monsters";
     public override string Name => "Change monsters' Levels";
-    public override string Sentence => "{count} {cards} {target}: Level {mode} {amount} {duration}";
+    public override string Sentence => "{count} {cards} {target}: Level {mode} {amount} {source} {duration}";
+    public override string Help => "\"Becomes the Level/Rank of 1 ...\" picks that monster as the effect resolves (Convex Knight). The two \"with this card\" " +
+                                   "ways take 1 monster and this card: \"the Level of that monster or this card becomes the Level of the other\", \"the Levels of both " +
+                                   "that monster and this card become the combined original Levels of those 2 monsters\".";
     protected override string Category => "";
     protected override string Hint => "HINTMSG_FACEUP";
     protected override string TargetedWording => "{0}";
@@ -434,51 +569,190 @@ public sealed class ChangeLevelAction : CardGroupAction
         CountModeParam,
         ParamSpec.Cards("cards", "Which monsters", DefaultCards, Zone.MonsterZone, thisCard: true),
         ParamSpec.Flag("target", "(targeting)", true),
-        ParamSpec.Choice("mode", "Level", new("becomes", "becomes"), new("up", "increases by"), new("down", "decreases by")),
-        ParamSpec.Int("amount", "Amount", 1, 1, 12),
+        ParamSpec.Choice("mode", "Level", new("becomes", "becomes"), new("up", "increases by"), new("down", "decreases by"),
+            new("updown", "increases or decreases by", "increases or decreases by (your choice)"),
+            new("of_card", "becomes the Level/Rank of 1", "becomes the Level/Rank of 1 monster picked below"),
+            new("one_other", "", "with this card: one becomes the other's Level"),
+            new("combined", "", "with this card: both become their combined original Levels")),
+        ParamSpec.Int("amount", "Amount", 1, 1, 12).ShowIf(b => b.Values.GetValueOrDefault("mode", "becomes") is "becomes" or "up" or "down" or "updown"),
+        ParamSpec.Cards("source", "The monster whose Level/Rank it becomes",
+                () => new CardFilter { Owner = CardOwner.Either, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster, FaceUpOnly = true }, Zone.Field)
+            .WhenUsed().ShowIf(b => b.Values.GetValueOrDefault("mode") == "of_card"),
         ParamSpec.Choice("duration", "Until", Resets.Duration),
         KeptParam,
     ];
+
+    /// <summary>The ways that pair the picked monster with this card.</summary>
+    private static bool WithThisCard(string mode) => mode is "one_other" or "combined";
 
     private static string Change(BlockArgs args, bool single) => args.Choice("mode") switch
     {
         "up" => $"Level{(single ? "" : "s")} increase{(single ? "s" : "")} by {args.Int("amount")}",
         "down" => $"Level{(single ? "" : "s")} decrease{(single ? "s" : "")} by {args.Int("amount")}",
+        "of_card" => $"Level{(single ? "" : "s")} become{(single ? "s" : "")} the Level/Rank of 1 {Source(args)}",
         _ => $"Level{(single ? "" : "s")} become{(single ? "s" : "")} {args.Int("amount")}",
     };
 
+    /// <summary>"Machine monster on the field": the monster whose Level/Rank it becomes.</summary>
+    private static string Source(BlockArgs args) => FilterText.Describe(args.Cards("source"), args.Pack, ownName: args.CardName);
+
+    private static string Duration(BlockArgs args) => args.Describe("duration") is { Length: > 0 } d ? " " + d : "";
+
+    /// <summary>
+    /// "the Level of that monster or this card becomes the Level of the other", "the Levels of both that monster and this
+    /// card become the combined original Levels of those 2 monsters, until the end of this turn".
+    /// </summary>
+    private static string Paired(BlockArgs args, string monster) => args.Choice("mode") == "combined"
+        ? $"the Levels of both {monster} and this card become the combined original Levels of those 2 monsters{(Duration(args) is { Length: > 0 } d ? "," + d : "")}"
+        : $"the Level of {monster} or this card becomes the Level of the other{Duration(args)}";
+
     public override string Describe(BlockArgs args)
     {
-        if (args.IsThisCard) return $"this card's {Change(args, true)} {args.Describe("duration")}".TrimEnd();
+        var mode = args.Choice("mode");
+        if (WithThisCard(mode) && !args.IsThisCard) return Paired(args, Some(args)) + args.ExceptText();
+        // "increase or decrease the Level of 1 monster on the field by 1".
+        if (mode == "updown")
+            return args.IsThisCard ? $"increase or decrease this card's Level by {args.Int("amount")}{Duration(args)}"
+                : $"increase or decrease the Level{(One(args) ? "" : "s")} of {Some(args)} by {args.Int("amount")}{Duration(args)}{args.ExceptText()}";
+        if (args.IsThisCard) return $"this card's {Change(args, true)}{Duration(args)}";
         // "the Level of 1 monster becomes 4", "the Levels of all face-up monsters you control increase by 1".
         var change = Change(args, One(args));
         var noun = change.IndexOf(' ');
-        return ($"the {change[..noun]} of {Some(args)} {change[(noun + 1)..]} {args.Describe("duration")}".TrimEnd() + args.ExceptText())
-            .Replace("the Level becomes", "the Level becomes", StringComparison.Ordinal);
+        return $"the {change[..noun]} of {Some(args)} {change[(noun + 1)..]}{Duration(args)}" + args.ExceptText();
     }
 
-    protected override string TargetedAction(BlockArgs args, string pronoun, bool single) =>
-        $"{(single ? "its" : "their")} {Change(args, single)} {args.Describe("duration")}".TrimEnd();
+    protected override string TargetedAction(BlockArgs args, string pronoun, bool single) => args.Choice("mode") switch
+    {
+        "one_other" or "combined" => Paired(args, "that monster"),
+        "updown" => $"increase or decrease {(single ? "its Level" : "their Levels")} by {args.Int("amount")}{Duration(args)}",
+        _ => $"{(single ? "its" : "their")} {Change(args, single)}{Duration(args)}",
+    };
 
     protected override string? AbleCheck(BlockContext ctx) => "c:IsFaceup() and c:IsLevelAbove(1)";
+
+    public override void Compile(BlockContext ctx)
+    {
+        var mode = ctx.Args.Choice("mode");
+        if (WithThisCard(mode))
+        {
+            Zones.RequireMonster(ctx, Name);
+            if (ctx.Args.Cards("cards").ThisCard || ctx.Args.Int("count") != 1 || ctx.Args.CountMode != "exact")
+            {
+                ctx.Effect.Error($"\"{Name}\": \"with this card\" takes exactly 1 other monster (tick \"other\" in the picker) and this card.");
+                return;
+            }
+            if (!ctx.Args.Cards("cards").ExcludeThisCard) ctx.Effect.Warn($"\"{Name}\": tick \"other\" in the picker, so the monster paired with this card isn't this card.");
+            ctx.Effect.TargetChecks.Add("e:GetHandler():IsLevelAbove(1)");
+        }
+        if (mode == "of_card")
+        {
+            var src = SourceFilter(ctx);
+            // A monster whose Level/Rank this one can take, other than the one changing when that is this card.
+            ctx.Effect.TargetChecks.Add($"Duel.IsExistingMatchingCard({src.Function},tp,{src.Self},{src.Opp},1,{(ctx.Args.Cards("cards").ThisCard ? "e:GetHandler()" : src.Exclude)},e,tp)");
+        }
+        base.Compile(ctx);
+    }
+
+    private static FilterRef SourceFilter(BlockContext ctx) =>
+        ctx.Script.Filter(ctx.Args.Cards("source"), "(c:IsType(TYPE_XYZ) and c:GetRank()>0 or c:GetLevel()>0)", "lvsrcfilter");
 
     protected override string Apply(string g, BlockContext ctx)
     {
         var amount = ctx.Args.Int("amount");
-        var (code, value) = ctx.Args.Choice("mode") switch
+        var mode = ctx.Args.Choice("mode");
+        var reset = Resets.Of(ctx);
+        var kept = KeptLines(ctx, "e1", "\t\t").ToList();
+        // One Level change on a monster: lv is the new Level (CHANGE) or the change (UPDATE).
+        List<string> Register(string code, string value, string indent) =>
+        [
+            $"{indent}local e1=Effect.CreateEffect(e:GetHandler())", $"{indent}e1:SetType(EFFECT_TYPE_SINGLE)", .. kept.Select(k => indent + k.TrimStart('\t')),
+            $"{indent}e1:SetCode({code})", $"{indent}e1:SetValue({value})", $"{indent}e1:SetReset({reset})", $"{indent}tc:RegisterEffect(e1)",
+        ];
+        switch (mode)
+        {
+            case "one_other" or "combined":
+            {
+                var body = new List<string>
+                {
+                    "local c=e:GetHandler()",
+                    "local tc=g:GetFirst()",
+                    "if not tc or not c:IsRelateToEffect(e) or c:IsFacedown() or not c:IsLocation(LOCATION_MZONE) or tc:IsFacedown() then return 0 end",
+                };
+                if (mode == "combined")
+                {
+                    // Both take the total of their original Levels.
+                    body.Add("local lv=c:GetOriginalLevel()+tc:GetOriginalLevel()");
+                    body.Add("for mc in aux.Next(Group.FromCards(c,tc)) do");
+                    body.AddRange(Register("EFFECT_CHANGE_LEVEL", "lv", "\t").Select(l => l.Replace("tc:RegisterEffect", "mc:RegisterEffect", StringComparison.Ordinal)));
+                    body.AddRange(["end", "return 2"]);
+                }
+                else
+                {
+                    // The player picks the one that changes; it takes the other's Level.
+                    body.AddRange(
+                    [
+                        "if tc:GetLevel()==c:GetLevel() then return 0 end",
+                        "local pg=Group.FromCards(c,tc)",
+                        "Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_FACEUP)",
+                        "local mc=pg:Select(tp,1,1,nil):GetFirst()",
+                        "local lv=(mc==c and tc or c):GetLevel()",
+                    ]);
+                    body.AddRange(Register("EFFECT_CHANGE_LEVEL", "lv", "").Select(l => l.Replace("tc:RegisterEffect", "mc:RegisterEffect", StringComparison.Ordinal)));
+                    body.Add("return 1");
+                }
+                var paired = ctx.Script.AddFunction("pairlv", "g,e,tp", body);
+                return $"{paired}({g},e,tp)";
+            }
+            case "updown":
+            {
+                // Up or down as the player declares the new Level; a Level the change can't take below 1 only goes up.
+                var n = amount.ToString(CultureInfo.InvariantCulture);
+                var fn = ctx.Script.AddFunction("updownlv", "g,e,tp",
+                [
+                    "local n=0", "local tc=g:GetFirst()", "while tc do", "\tif tc:IsFaceup() then",
+                    "\t\tlocal lv=tc:GetLevel()",
+                    $"\t\tlocal d={n}",
+                    $"\t\tif lv>{n} then",
+                    "\t\t\tDuel.Hint(HINT_SELECTMSG,tp,HINTMSG_LVRANK)",
+                    $"\t\t\td=Duel.AnnounceNumber(tp,lv+{n},lv-{n})-lv",
+                    "\t\tend",
+                    .. Register("EFFECT_UPDATE_LEVEL", "d", "\t\t"), "\t\tn=n+1",
+                    "\tend", "\ttc=g:GetNext()", "end", "return n",
+                ]);
+                return $"{fn}({g},e,tp)";
+            }
+            case "of_card":
+            {
+                var src = SourceFilter(ctx);
+                var fn = ctx.Script.AddFunction("copylv", "g,e,tp",
+                [
+                    "local n=0", "local tc=g:GetFirst()", "while tc do", "\tif tc:IsFaceup() then",
+                    "\t\tDuel.Hint(HINT_SELECTMSG,tp,HINTMSG_FACEUP)",
+                    $"\t\tlocal sc=Duel.SelectMatchingCard(tp,{src.Function},tp,{src.Self},{src.Opp},1,1,tc,e,tp):GetFirst()",
+                    "\t\tif sc then",
+                    "\t\t\tDuel.HintSelection(Group.FromCards(sc))",
+                    "\t\t\tlocal lv=sc:IsType(TYPE_XYZ) and sc:GetRank() or sc:GetLevel()",
+                    .. Register("EFFECT_CHANGE_LEVEL", "lv", "\t\t\t"), "\t\t\tn=n+1",
+                    "\t\tend",
+                    "\tend", "\ttc=g:GetNext()", "end", "return n",
+                ]);
+                return $"{fn}({g},e,tp)";
+            }
+        }
+        var (code, value) = mode switch
         {
             "up" => ("EFFECT_UPDATE_LEVEL", amount.ToString(CultureInfo.InvariantCulture)),
             "down" => ("EFFECT_UPDATE_LEVEL", (-amount).ToString(CultureInfo.InvariantCulture)),
             _ => ("EFFECT_CHANGE_LEVEL", amount.ToString(CultureInfo.InvariantCulture)),
         };
-        var fn = ctx.Script.AddFunction("changelv", "g,e",
+        var changed = ctx.Script.AddFunction("changelv", "g,e",
         [
             "local n=0", "local tc=g:GetFirst()", "while tc do", "\tif tc:IsFaceup() then",
             "\t\tlocal e1=Effect.CreateEffect(e:GetHandler())", "\t\te1:SetType(EFFECT_TYPE_SINGLE)", .. KeptLines(ctx, "e1", "\t\t"), $"\t\te1:SetCode({code})",
-            $"\t\te1:SetValue({value})", $"\t\te1:SetReset({Resets.Of(ctx)})", "\t\ttc:RegisterEffect(e1)", "\t\tn=n+1",
+            $"\t\te1:SetValue({value})", $"\t\te1:SetReset({reset})", "\t\ttc:RegisterEffect(e1)", "\t\tn=n+1",
             "\tend", "\ttc=g:GetNext()", "end", "return n",
         ]);
-        return $"{fn}({g},e)";
+        return $"{changed}({g},e)";
     }
 }
 
@@ -514,7 +788,7 @@ public sealed class SelfLevelAction : ActionBlock
             "\tle:SetType(EFFECT_TYPE_SINGLE)",
             $"\tle:SetCode({code})",
             $"\tle:SetValue({value.ToString(CultureInfo.InvariantCulture)})",
-            $"\tle:SetReset({Resets.Of(ctx)}+RESET_DISABLE)",
+            $"\tle:SetReset({Resets.Of(ctx, "+RESET_DISABLE")})",
             "\tc:RegisterEffect(le)",
             $"\t{r}=1",
             "end",
@@ -553,7 +827,9 @@ public sealed class BattleRuleAction : CardGroupAction
             new("cannot_declare", "cannot declare an attack"),
             new("cannot_be_targeted_any", "cannot be targeted by card effects"),
             new("unaffected_other", "is unaffected by other cards' effects"),
-            new("tuner", "is treated as a Tuner")),
+            new("tuner", "is treated as a Tuner"),
+            new("cannot_direct", "cannot attack directly"),
+            new("cannot_be_destroyed_opp", "cannot be destroyed by your opponent's card effects")),
         KeptParam,
     ];
 
@@ -571,6 +847,8 @@ public sealed class BattleRuleAction : CardGroupAction
         // "Unaffected by card effects, except its own": the value function is written per script.
         "unaffected_other" => [("EFFECT_IMMUNE_EFFECT", "@unaffected")],
         "tuner" => [("EFFECT_ADD_TYPE", "TYPE_TUNER")],
+        "cannot_direct" => [("EFFECT_CANNOT_DIRECT_ATTACK", "1")],
+        "cannot_be_destroyed_opp" => [("EFFECT_INDESTRUCTABLE_EFFECT", "aux.indoval")],
         _ => [("EFFECT_CANNOT_ATTACK", "1")],
     };
 

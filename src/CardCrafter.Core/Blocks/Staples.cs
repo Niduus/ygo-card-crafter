@@ -298,13 +298,17 @@ public sealed class PlaceAction : CardGroupAction
     public const string BlockId = "do.place";
     protected override bool AllowsThisCard => true;
     protected override bool AllowsAll => false;
+    /// <summary>"Place any number of monsters you control face-up in their owners' Spell &amp; Trap Zones" (Diabellze).</summary>
+    protected override bool OffersSelections => true;
+    protected override bool OffersAnyNumber => true;
     protected override int MaxCount => 5;
     protected override string TargetedWording => "place {0} face-up";
     public override string Id => BlockId;
     public override string Name => "Place cards face-up (Spell & Trap, Field or Pendulum Zone)";
-    public override string Sentence => "Place {count} {cards} {target} face-up {where} {as}";
+    public override string Sentence => "Place {amount} {count_cards} {count} {cards} {pick} {sum} {target} face-up {where} {as} {chooser}";
     public override string Help => "Like \"place 1 Continuous Trap from your Deck face-up in your Spell & Trap Zone\". Placed cards aren't activated. " +
-                                   "\"As a Continuous Spell\" also places monsters, like the Crystal Beasts.";
+                                   "\"As a Continuous Spell\" also places monsters, like the Crystal Beasts. \"In its owner's Spell & Trap Zone\" puts each card " +
+                                   "in the zones of the player who owns it (Snake-Eye); a card whose owner has no free zone left is sent to the GY.";
     protected override string Category => "";
     protected override string Hint => "HINTMSG_TOFIELD";
     protected override Func<CardFilter> DefaultCards => () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Deck, CardType = FilterCardType.SpellTrap, SpellTrapKind = SpellTrapKind.Continuous };
@@ -323,13 +327,22 @@ public sealed class PlaceAction : CardGroupAction
     protected override IReadOnlyList<ParamSpec> BuildParams() =>
     [
         .. base.BuildParams(),
-        ParamSpec.Choice("where", "Where", new("szone", "in your Spell & Trap Zone"), new("fzone", "in your Field Zone"), new("pzone", "in your Pendulum Zone")),
+        ParamSpec.Choice("where", "Where", new("szone", "in your Spell & Trap Zone"), new("fzone", "in your Field Zone"), new("pzone", "in your Pendulum Zone"),
+            new("owner_szone", "in its owner's Spell & Trap Zone")),
         ParamSpec.Choice("as", "As", new("keep", "", "as itself"), new("continuous_spell", "as a Continuous Spell"), new("continuous_trap", "as a Continuous Trap")),
     ];
 
     protected override string TargetedAction(BlockArgs args, string pronoun, bool single) => args.Choice("where") == "pzone"
         ? $"place {pronoun} {PendulumZones(args, single)}"
-        : $"place {pronoun} face-up {args.Describe("where")}" + (args.Choice("as") == "keep" ? "" : " " + args.Describe("as"));
+        : Plural($"place {pronoun} face-up {args.Describe("where")}" + (args.Choice("as") == "keep" ? "" : " " + args.Describe("as")), single);
+
+    /// <summary>"in their owners' Spell &amp; Trap Zones as Continuous Spells": the zones and kinds for more than one card.</summary>
+    private static string Plural(string text, bool single) => single ? text
+        : text.Replace("in its owner's Spell & Trap Zone", "in their owners' Spell & Trap Zones", StringComparison.Ordinal)
+            .Replace("as a Continuous Spell", "as Continuous Spells", StringComparison.Ordinal)
+            .Replace("as a Continuous Trap", "as Continuous Traps", StringComparison.Ordinal);
+
+    private static bool Single(BlockArgs args) => !args.IsPlural && !(args.CountMode == "up_to" && args.Int("count") > 1);
 
     /// <summary>"in your Pendulum Zone", or "Zones" for more than one card.</summary>
     private static string PendulumZones(BlockArgs args, bool single) => single ? "in your Pendulum Zone" : "in your Pendulum Zones";
@@ -337,7 +350,10 @@ public sealed class PlaceAction : CardGroupAction
     /// <summary>"Place this card in your Pendulum Zone": cards there are always face-up, so the card doesn't say it.</summary>
     public override string Describe(BlockArgs args) => args.Choice("where") == "pzone"
         ? FillSentence("Place {count} {cards} {target} " + PendulumZones(args, One(args) && args.CountMode != "up_to"), args)
-        : base.Describe(args);
+        : Plural(base.Describe(args), Single(args));
+
+    /// <summary>"In its owner's Spell &amp; Trap Zone": each card goes to the zones of the player who owns it.</summary>
+    private static bool ToOwner(BlockContext ctx) => ctx.Args.Choice("where") == "owner_szone";
 
     private static string Location(BlockContext ctx) => ctx.Args.Choice("where") switch { "fzone" => "LOCATION_FZONE", "pzone" => "LOCATION_PZONE", _ => "LOCATION_SZONE" };
 
@@ -369,13 +385,16 @@ public sealed class PlaceAction : CardGroupAction
     {
         "fzone" => "c:IsType(TYPE_FIELD) and not c:IsForbidden()",
         "pzone" => "c:IsType(TYPE_PENDULUM) and not c:IsForbidden()",
+        // A free zone of its owner's (taking control of it, as official cards check, when the opponent controls it now).
+        "owner_szone" => "not c:IsForbidden() and c:CheckUniqueOnField(c:GetOwner()) and (c:IsControler(c:GetOwner()) or not c:IsLocation(LOCATION_MZONE) or c:IsAbleToChangeControler())"
+            + " and Duel.GetLocationCount(c:GetOwner(),LOCATION_SZONE,tp,c:IsLocation(LOCATION_MZONE) and not c:IsControler(c:GetOwner()) and LOCATION_REASON_CONTROL or LOCATION_REASON_TOFIELD)>0",
         _ => ctx.Args.Choice("as") == "keep" ? "c:IsType(TYPE_SPELL+TYPE_TRAP) and not c:IsType(TYPE_FIELD) and not c:IsForbidden() and c:CheckUniqueOnField(tp)"
             : "not c:IsForbidden() and c:CheckUniqueOnField(tp)",
     };
 
     protected override string? SpaceCheck(int count, CardFilter f, BlockContext ctx) => ctx.Args.Choice("where") switch
     {
-        "fzone" => null,
+        "fzone" or "owner_szone" => null,
         "pzone" => count > 1 ? "(Duel.CheckLocation(tp,LOCATION_PZONE,0) and Duel.CheckLocation(tp,LOCATION_PZONE,1))"
             : "(Duel.CheckLocation(tp,LOCATION_PZONE,0) or Duel.CheckLocation(tp,LOCATION_PZONE,1))",
         _ => $"Duel.GetLocationCount(tp,LOCATION_SZONE)>={count}",
@@ -385,13 +404,14 @@ public sealed class PlaceAction : CardGroupAction
     {
         var loc = Location(ctx);
         var type = ctx.Args.Choice("as") switch { "continuous_spell" => "TYPE_SPELL+TYPE_CONTINUOUS", "continuous_trap" => "TYPE_TRAP+TYPE_CONTINUOUS", _ => null };
-        if (ctx.Args.Choice("where") != "szone" && type is not null)
+        if (ctx.Args.Choice("where") is not ("szone" or "owner_szone") && type is not null)
             ctx.Effect.Warn("\"As a Continuous Spell/Trap\" places cards in the Spell & Trap Zone; pick that zone.");
         var body = new List<string> { "local n=0", "local tc=g:GetFirst()", "while tc do" };
         // A new Field Spell replaces the old one, which goes to the GY.
         if (loc == "LOCATION_FZONE")
             body.AddRange(["\tlocal fc=Duel.GetFieldCard(tp,LOCATION_FZONE,0)", "\tif fc then Duel.SendtoGrave(fc,REASON_RULE) Duel.BreakEffect() end"]);
-        body.Add($"\tif Duel.MoveToField(tc,tp,tp,{loc},POS_FACEUP,true) then");
+        // Its owner's zone: a card whose owner has no free zone left is sent to the GY by the game.
+        body.Add($"\tif Duel.MoveToField(tc,tp,{(ToOwner(ctx) ? "tc:GetOwner()" : "tp")},{loc},POS_FACEUP,true) then");
         body.Add("\t\tn=n+1");
         if (type is not null)
         {

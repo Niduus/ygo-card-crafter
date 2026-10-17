@@ -168,6 +168,8 @@
     <CheckBox Content="Face-up only" IsChecked="{Binding FaceUpOnly}" IsVisible="{Binding !MaterialMode}" Margin="0,6,0,0" />
     <CheckBox Content="Not revealed already (cards in the hand)" IsChecked="{Binding NotRevealed}" IsVisible="{Binding !MaterialMode}"
               ToolTip.Tip="For &quot;reveal 1 card in your hand&quot;: a card that isn't revealed already" />
+    <CheckBox Content="Monster Cards (also monsters placed in the Spell &amp; Trap Zone)" IsChecked="{Binding MonsterCards}" IsVisible="{Binding !MaterialMode}"
+              ToolTip.Tip="With card type Monster: what the card is printed as, so a monster placed as a Continuous Spell counts, like &quot;Monster Cards you control&quot;" />
     <CheckBox Content="Face-down only" IsChecked="{Binding FaceDownOnly}" IsVisible="{Binding !MaterialMode}"
               ToolTip.Tip="Only face-down cards, like &quot;face-down cards in your Spell &amp; Trap Zone&quot;" />
     <CheckBox Content="Not this card itself (&quot;other&quot;)" IsChecked="{Binding ExcludeThisCard}" IsVisible="{Binding !MaterialMode}" />
