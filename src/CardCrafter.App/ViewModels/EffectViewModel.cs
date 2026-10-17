@@ -232,6 +232,12 @@ public sealed partial class EffectViewModel : ObservableObject
                 s.Editor.RefreshArchetypes();
     }
 
+    /// <summary>Re-reads the choices that depend on the rest of the card (the Memories its blocks fill).</summary>
+    public void RefreshChoices()
+    {
+        foreach (var b in Trigger.Concat(Conditions).Concat(Costs).Concat(Actions)) b.RefreshChoices();
+    }
+
     [RelayCommand] private void Remove() => Owner.RemoveEffect(this);
     [RelayCommand] private void MoveUp() => Owner.MoveEffect(this, -1);
     [RelayCommand] private void MoveDown() => Owner.MoveEffect(this, +1);

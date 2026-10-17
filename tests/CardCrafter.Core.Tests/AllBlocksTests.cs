@@ -178,7 +178,15 @@ public class AllBlocksTests
             case DeclaredLockAction.BlockId:
                 project.Effects[0].Do.Insert(0, BlockRegistry.Find(DeclareAction.BlockId)!.CreateInstance());
                 break;
+            // Remembering or a delayed step on "the cards the step before affected" or "the target": after a block that targets them.
+            case RememberAction.BlockId or LaterAction.BlockId:
+                project.Effects[0].Do.Insert(0, BlockRegistry.Find("do.destroy")!.CreateInstance().With("target", true));
+                // Cards are forgotten when they move, not while this card is face-up: that time is for numbers.
+                if (inst.Values.GetValueOrDefault("duration") == "face_up") inst.Values["what"] = "value";
+                break;
         }
+        // "The LP paid" needs the cost that pays LP in multiples.
+        if (inst.Values.GetValueOrDefault("value") == "lp_paid") project.Effects[0].Cost.Add(new BlockInstance("cost.pay_lp").With("how", "multiple"));
         // "The result" of a die roll and "the number of heads" need the roll or toss before them.
         if (inst.Values.GetValueOrDefault("value") is "roll" or "heads" && def.Kind == BlockKind.Action)
             project.Effects[0].Do.Insert(0, BlockRegistry.Find(inst.Values["value"] == "roll" ? RollDieAction.BlockId : TossCoinAction.BlockId)!.CreateInstance());

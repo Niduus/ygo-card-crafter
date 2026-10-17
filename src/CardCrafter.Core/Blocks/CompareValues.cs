@@ -15,7 +15,7 @@ public sealed class CompareValuesCondition : ConditionBlock
     public override string Id => BlockId;
     public override string Group => "Values";
     public override string Name => "Compare values (LP, counts, totals, ...) with a number or each other";
-    public override string Sentence => "{value} {counter} {counter_id} {of} {op} {right} {amount} {amount2} {scale} {value2} {counter2} {counter_id2} {of2}";
+    public override string Sentence => "{value} {mem} {counter} {counter_id} {of} {op} {right} {amount} {amount2} {scale} {value2} {mem2} {counter2} {counter_id2} {of2}";
     public override string Help => "For example: your LP compared with double your opponent's LP, or the number of cards in your hand with the number in your opponent's.";
 
     private static IEnumerable<ChoiceOption> NoEvent => ValueSources.Sources.Where(o => !ValueSources.AtResolution(o.Value) && !o.Value.StartsWith("its_", StringComparison.Ordinal));
@@ -23,6 +23,7 @@ public sealed class CompareValuesCondition : ConditionBlock
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Choice("value", "Value", NoEvent.ToArray()),
+        ValueSources.MemoryParam(),
         ParamSpec.Cards(ValueSources.CardsKey, "Which cards (for counts and totals)", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Hand })
             .ShowIf(b => ValueSources.UsesCards(b.Values.GetValueOrDefault("value", "lp_diff"))),
         .. Counters.Params(withAny: true, b => ValueSources.UsesCounter(b.Values.GetValueOrDefault("value", "lp_diff"))),
@@ -34,6 +35,7 @@ public sealed class CompareValuesCondition : ConditionBlock
         ParamSpec.Int("amount2", "and", 4000, 0, 999999).ShowIf(b => b.Values.GetValueOrDefault("op") is "between" or "outside"),
         ParamSpec.Choice("scale", "Of", new("one", "", "1x"), new("half", "half", "half of"), new("double", "double", "double")).ShowIf(Other),
         ParamSpec.Choice("value2", "Other value", NoEvent.ToArray()).ShowIf(Other),
+        ValueSources.MemoryParam("value2", "2").ShowIf(b => Other(b) && ValueSources.Remembered(b.Values.GetValueOrDefault("value2", "lp_diff"))),
         ParamSpec.Cards("of2", "Which cards (other value)", () => new CardFilter { Owner = CardOwner.Opponent, Zones = Zone.Hand })
             .ShowIf(b => Other(b) && ValueSources.UsesCards(b.Values.GetValueOrDefault("value2", "lp_diff"))),
         .. Counters.Params(withAny: true, b => Other(b) && ValueSources.UsesCounter(b.Values.GetValueOrDefault("value2", "lp_diff")), suffix: "2"),

@@ -497,8 +497,8 @@ public class RequirementMatrixChoiceTests
         var tested = RequirementMatrixNumberTests.Numbers.Select(n => n.Property)
             .Concat(new[] { Flags(), Options(), States() }.SelectMany(rows => rows).SelectMany(r => ((CardRequirement[])r[2]).Select(q => q.Property)))
             .ToHashSet();
-        // What an effect declared, and coin tossing and die rolling effects: ChanceAndDeclarationTests plays them.
-        foreach (var p in CardProperties.All.Where(p => !CardProperties.IsDeclared(p.Key) && p.Key is not ("coin_effect" or "dice_effect")))
+        // What an effect declared, and coin tossing and die rolling effects: ChanceAndDeclarationTests plays them; remembered cards, MemoryTests.
+        foreach (var p in CardProperties.All.Where(p => !CardProperties.IsDeclared(p.Key) && p.Key is not ("coin_effect" or "dice_effect" or "remembered")))
         {
             Assert.Contains(p.Key, tested);
             if (p.Kind == PropertyKind.Number) continue;
@@ -594,6 +594,8 @@ public class RequirementMatrixTextTests
         [IsNot("orig_card_type", 0x1000000), "that is not originally a Pendulum Monster"],
         [Is("location", 0x10), "in the GY"],
         [IsNot("location", 0x2, 0x10), "not in the hand or the GY"],
+        [Is("remembered", 0), "that was remembered"],
+        [IsNot("remembered", 1), "that was not remembered"],
     ];
 
     private static CardPack Pack() => new()

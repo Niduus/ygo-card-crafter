@@ -47,6 +47,11 @@ public sealed class ParamSpec
     public bool WhereFromBlock { get; init; }
     /// <summary>For numbers: the editor shows and takes it in hexadecimal ("0x1f"), as engine ids are written.</summary>
     public bool Hex { get; init; }
+    /// <summary>
+    /// For choices that depend on the card being edited, like the Memories its other blocks fill: the choices as the
+    /// editor shows them for that card. The values are always those of <see cref="Choices"/>.
+    /// </summary>
+    public Func<CardProject, IReadOnlyList<ChoiceOption>>? EditorChoices { get; init; }
 
     /// <summary>When set, the editor shows this blank only while it applies, like "from the GY" for Special Summons only.</summary>
     public Func<BlockInstance, bool>? ShownWhen { get; private set; }

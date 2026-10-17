@@ -160,6 +160,10 @@ public static class CardProperties
         new("declared_level", "Has the declared Level", PropertyKind.State, "c:IsLevel(v)", "", IsText: "with the declared Level", IsNotText: "without the declared Level", NeedsEffect: true),
         new("declared_type", "Is the declared card type", PropertyKind.State, "c:IsType(v)", "",
             IsText: "of the declared card type", IsNotText: "that is not of the declared card type", NeedsEffect: true),
+        // A card a "Remember" block of this card remembers (it carries the Memory's flag: Blocks/Memory.cs).
+        new("remembered", "Remembered by this card (Memory A-E)", PropertyKind.Options, "", "memory",
+            Choices: Blocks.Memory.Slots.Select((s, i) => ((long)i, "Memory " + s.Value, Blocks.Memory.RequirementLua(i))).ToArray(),
+            IsText: "that was remembered", IsNotText: "that was not remembered"),
     ];
 
     /// <summary>

@@ -71,18 +71,27 @@ public sealed class HexSegmentViewModel(ParamSpec spec, BlockInstance inst, Acti
     }
 }
 
-public sealed class ChoiceSegmentViewModel(ParamSpec spec, BlockInstance inst, Action changed) : SegmentViewModel
+/// <param name="project">The card being edited, for choices that say how the card uses them (the Memories its blocks fill).</param>
+public sealed class ChoiceSegmentViewModel(ParamSpec spec, BlockInstance inst, Action changed, Func<CardProject?>? project = null) : SegmentViewModel
 {
     public string Label => spec.Label;
-    public IReadOnlyList<ChoiceOption> Choices => spec.Choices;
+    public IReadOnlyList<ChoiceOption> Choices => spec.EditorChoices is { } editor && project?.Invoke() is { } p ? editor(p) : spec.Choices;
 
     /// <summary>False while the blank doesn't apply, like "from the GY" on a Normal Summon.</summary>
     public bool IsShown => spec.ShownWhen?.Invoke(inst) ?? true;
     public void RefreshShown() => OnPropertyChanged(nameof(IsShown));
 
+    /// <summary>Choices that depend on the rest of the card are read again after any change to it.</summary>
+    public void RefreshChoices()
+    {
+        if (spec.EditorChoices is null) return;
+        OnPropertyChanged(nameof(Choices));
+        OnPropertyChanged(nameof(Selected));
+    }
+
     public ChoiceOption? Selected
     {
-        get => spec.Choices.FirstOrDefault(c => c.Value == inst.Values.GetValueOrDefault(spec.Key, spec.Default)) ?? spec.Choices[0];
+        get => Choices.FirstOrDefault(c => c.Value == inst.Values.GetValueOrDefault(spec.Key, spec.Default)) ?? Choices[0];
         set
         {
             if (value is null || inst.Values.GetValueOrDefault(spec.Key, spec.Default) == value.Value) return;

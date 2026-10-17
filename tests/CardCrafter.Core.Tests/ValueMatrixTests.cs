@@ -127,11 +127,12 @@ public class ValueMatrixTests
 
     // "That amount", a die roll's result and a toss's heads only exist while an effect resolves: their own tests play them
     // (this file for "that amount", ChanceAndDeclarationTests for the die and the coin).
-    public static IEnumerable<object[]> SourceKeys() => ValueSources.Sources.Where(o => !ValueSources.AtResolution(o.Value)).Select(o => new object[] { o.Value });
+    // What this card remembers needs a block that remembers it first: MemoryTests plays those.
+    public static IEnumerable<object[]> SourceKeys() => ValueSources.Sources.Where(o => !ValueSources.AtResolution(o.Value) && !ValueSources.Remembered(o.Value)).Select(o => new object[] { o.Value });
 
     [Fact]
     public void EverySource_HasABoard() =>
-        Assert.Equal(ValueSources.Sources.Select(o => o.Value).Where(v => !ValueSources.AtResolution(v)).OrderBy(v => v), Sources.Keys.OrderBy(v => v));
+        Assert.Equal(ValueSources.Sources.Select(o => o.Value).Where(v => !ValueSources.AtResolution(v) && !ValueSources.Remembered(v)).OrderBy(v => v), Sources.Keys.OrderBy(v => v));
 
     private static EngineScenario Scenario(Source src, BlockInstance block, bool action)
     {
@@ -577,6 +578,8 @@ public class ValueMatrixTests
             var when = source == "event" ? new BlockInstance("when.event").With("event", "you_damage") : new BlockInstance("when.ignition");
             projects.Add(Mon(Id, null, new EffectEvent { When = when, Do = [.. Before(source), B(LifeFromValueAction.BlockId, ("value", source), ("how", how), ("what", what), ("who", who))] }));
         }
+        // "The LP paid" is paid by the effect's cost.
+        if (source == "lp_paid") foreach (var p in projects) p.Effects[0].Cost.Add(B("cost.pay_lp", ("how", "multiple")));
         foreach (var p in projects)
         {
             var r = ScriptCompiler.Compile(p);

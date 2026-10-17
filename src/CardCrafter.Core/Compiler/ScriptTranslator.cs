@@ -73,6 +73,7 @@ public static partial class ScriptTranslator
         lua = EqualToStat(lua);
         lua = MechanicsRewrite(lua);
         lua = TreatedAsRewrite(lua);
+        lua = BanishUntilRewrite(lua);
         var pieces = LuaPieces.Split(lua, id, strings);
         _ritualCalls = null;
         foreach (var piece in pieces)
@@ -334,6 +335,7 @@ public static partial class ScriptTranslator
         if (set.ContainsKey("Reset") || set.ContainsKey("Label") || set.ContainsKey("LabelObject"))
             throw No("it keeps extra state the blocks don't model");
         bool alsoSpecial = merge.AlsoSpecial;
+        _lpPaid = false;
 
         var effect = new EffectEvent { Label = piece.Title };
         var type = Flags(set.GetValueOrDefault("Type") ?? throw No("it has no effect type"));
@@ -1404,6 +1406,7 @@ public static partial class ScriptTranslator
     private static List<BlockInstance> Costs(string reference, Functions fns, (CardFilter Filter, int Min, int Max)? preset = null)
     {
         if (reference == "aux.bfgcost") return [Block("cost.this_card").With("how", "banish")];
+        if (LpMultiplesCost(reference, fns) is { } lpCost) return lpCost;
         var (_, rawBody) = fns.Get(reference);
         var (body, temps) = FoldTempEffects(rawBody);
         var blocks = new List<BlockInstance>();
@@ -2505,6 +2508,7 @@ public static partial class ScriptTranslator
             : Regex.IsMatch(d, @"^\d+$") ? Int(d) : throw No($"its amount comes from the duel ({d})");
         if (CounterAction(line, target, targetCard) is { } counter) return counter;
         if (MechanicsAction(line, groups, target, targetCard, card, ref self) is { } mechanicsAction) return mechanicsAction;
+        if (MemoryAction(line, groups, target, targetCard) is { } memoryAction) return memoryAction;
         if (TreatedAsSummonAction(line, groups, target, targetCard) is { } treatedSummon) return treatedSummon;
 
         // "inflict 300 damage for each card in your opponent's hand": an amount worked out when it resolves.
