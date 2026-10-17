@@ -37,6 +37,8 @@ public static class ScriptCompiler
             : StringSlots(project, pack).Select(s => s.Text).ToList();
 
         CheckCard(project, script.Diagnostics);
+        // "(This card is always treated as a "X" card.)" missing from the typed card text.
+        if (Text.ArchetypeReminder.Check(project, pack) is { } reminder) script.Diagnostics.Add(reminder);
 
         if (project.UseCustomLua)
         {

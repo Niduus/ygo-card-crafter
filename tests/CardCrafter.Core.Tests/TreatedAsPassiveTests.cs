@@ -134,7 +134,8 @@ public class TreatedAsPassiveTests
     public void AlwaysAnArchetype_IsTheDatabaseEntry()
     {
         var b = B(TreatedAsPassive.BlockId).With("as", new CardFilter { CardType = FilterCardType.Any, Archetype = Arch });
-        var card = Card(b);
+        // Its name says its own archetype, so only the other one is reminded.
+        var card = Card(b, name: "Treated Power Patron");
         card.Card.Archetypes = [Arch2];
         Assert.Equal("(This card is always treated as an \"Elfnote\" card.)", EffectTextGenerator.Generate(card, Pack(card)));
         // No effect: the archetype goes in the card's setcode, beside its own.

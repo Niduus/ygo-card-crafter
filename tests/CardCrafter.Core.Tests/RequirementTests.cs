@@ -133,7 +133,7 @@ public class TreatedAsTests
         CardNames.Set([(46986414, "Dark Magician")]);
         try
         {
-            Assert.Equal("(This card is always treated as a \"HERO\" card.) This card's name is also treated as \"Dark Magician\", and this card is also treated as a DARK Tuner.",
+            Assert.Equal("(This card is always treated as a \"HERO\" card.)\nThis card's name is also treated as \"Dark Magician\", and this card is also treated as a DARK Tuner.",
                 EffectTextGenerator.Generate(p, new CardPack { Cards = [p], Archetypes = [new Archetype { Code = 0x8, Name = "HERO" }] }));
         }
         finally { CardNames.Set([]); }

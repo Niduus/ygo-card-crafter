@@ -57,23 +57,30 @@ public static partial class EffectTextGenerator
         // Printed cards keep the materials on their own line; everything else is one paragraph.
         var paragraph = new List<string>();
         if (MaterialText.Alternate(project, pack) is { Length: > 0 } alternate) paragraph.Add(alternate);
-        if (project.Card.OnlyOneOnField) paragraph.Add($"You can only control 1 \"{project.Card.Name}\".");
         if (EquipText(project, pack) is { Length: > 0 } equip) paragraph.Add(equip);
         if (ContactFusion.Text(project) is { Length: > 0 } contact) paragraph.Add(contact);
         else if (RuleText(project) is { Length: > 0 } rule) paragraph.Add(rule);
+        var combined = CombinedLimit(project, effects);
+        // The Summoning conditions come first, as printed cards have them: "Cannot be Normal Summoned/Set. Must first be
+        // Special Summoned ...", then "You can only Special Summon ... once per turn." and "You can only control 1 ...".
+        var reminder = ArchetypeReminder.Line(project, pack);
+        string Said(EffectEvent e)
+        {
+            var text = Describe(e, project.Card, pack, limitSentence: combined is null || !UsesCombinedLimit(e));
+            // A "This card is always treated as" block's own reminder is the card's line instead (none when the name says it).
+            return project.Card.ArchetypeReminder ? ArchetypeReminder.WithoutReminder(text) : text;
+        }
+        bool Procedure(EffectEvent e) => e.When?.BlockId == SummonProcedureTrigger.BlockId;
+        paragraph.AddRange(effects.Where(Procedure).Select(Said).Where(s => s.Length > 0));
         if (project.Card.IsMonster && project.Card.CannotBeSpecialSummoned && !project.Card.OnlyByOwnProcedure && !ContactFusion.Applies(project)) paragraph.Add("Cannot be Special Summoned.");
         if (project.Card.IsMonster && project.Card.SpecialSummonOncePerTurn) paragraph.Add($"You can only Special Summon \"{project.Card.Name}\" once per turn.");
+        if (project.Card.OnlyOneOnField) paragraph.Add($"You can only control 1 \"{project.Card.Name}\".");
         if (SpiritText(project) is { Length: > 0 } spirit) paragraph.Add(spirit);
-        var combined = CombinedLimit(project, effects);
         if (GeminiText(project, pack, combined) is { Length: > 0 } gemini) paragraph.Add(gemini);
-        paragraph.AddRange(effects.Where(e => !GeminiCondition.Has(e))
-            .Select(e => Describe(e, project.Card, pack, limitSentence: combined is null || !UsesCombinedLimit(e)))
-            .Where(s => s.Length > 0));
+        paragraph.AddRange(effects.Where(e => !GeminiCondition.Has(e) && !Procedure(e)).Select(Said).Where(s => s.Length > 0));
         if (combined is not null) paragraph.Add(combined);
-        var text = Join(paragraph);
-        return MaterialText.Describe(project, pack) is { Length: > 0 } materials
-            ? (text.Length == 0 ? materials : materials + "\n" + text)
-            : text;
+        // The materials, then "(This card is always treated as a "X" card.)", each on its own line.
+        return string.Join("\n", new[] { MaterialText.Describe(project, pack), reminder, Join(paragraph) }.Where(s => s.Length > 0));
     }
 
     /// <summary>
@@ -130,7 +137,11 @@ public static partial class EffectTextGenerator
         var groups = hard.Select(x => x.e.SharedLimitGroup > 0 ? x.e.SharedLimitGroup : -(x.i + 1)).ToList();
         var name = project.Card.Name;
         if (groups.Distinct().Count() == groups.Count) return $"You can only use each effect of \"{name}\" once per turn.";
-        if (groups.Distinct().Count() == 1) return $"You can only use 1 of these effects of \"{name}\" per turn, and only once that turn.";
+        if (groups.Distinct().Count() == 1)
+            // "You can only use 1 "X" effect per turn, and only once that turn." when every activated effect shares it.
+            return effects.Count(e => e.When is { } w && BlockRegistry.Find(w.BlockId) is { } t && t is not (WhileFaceUpTrigger or SummonProcedureTrigger)) == hard.Count
+                ? $"You can only use 1 \"{name}\" effect per turn, and only once that turn."
+                : $"You can only use 1 of these effects of \"{name}\" per turn, and only once that turn.";
         return null;
     }
 
@@ -160,7 +171,7 @@ public static partial class EffectTextGenerator
 
         var head = Head(trigger, effect, pack, passive);
         if (effect.Limit == OncePerTurn.Soft && !passive)
-            head = head.Length == 0 ? "Once per turn" : "Once per turn, " + SentenceCase.Lower(head);
+            head = head.Length == 0 ? "Once per turn" : head.StartsWith('(') ? "Once per turn " + head : "Once per turn, " + SentenceCase.Lower(head);
 
         // Lasting effects with nothing before them read as separate sentences, like "Neither player can ... Negate all ...".
         var (targetClause, actions) = Actions(effect.Do, pack, effect, sentences: passive && head.Length == 0);
@@ -328,26 +339,30 @@ public static partial class EffectTextGenerator
             return $"unless you have {SummonWording.Article(noun)} {noun}";
         }
         var conditions = ifs.Select(b => Text(b, pack)).Where(t => t.Length > 0).ToList();
+        // "During the Main Phase, if ...": the turn and phase come first (TimingFirst).
+        var during = During(conditions);
         // "While you have no cards in your hand, if this card attacks": a clause that brings its own "if" comes last.
         var own = conditions.Where(t => t.StartsWith("if ", StringComparison.Ordinal)).ToList();
-        var cond = string.Join(" and ", conditions.Except(own));
+        var cond = string.Join(" and ", conditions.Except(own).Except(during));
         if (own.Count > 0) cond = cond.Length == 0 ? string.Join(", ", own) : $"{cond}, {string.Join(", ", own)}";
-
-        // "When your opponent Normal Summons a monster during their turn", not "during your opponent's turn".
-        if (trigger is QuickTrigger or ActivateTrigger && Timing.IsOpponents(effect.When!.Values.GetValueOrDefault("timing") ?? ""))
-            cond = cond.Replace("during your opponent's turn", "during their turn", StringComparison.Ordinal);
 
         // Where this card must be, when no cost or action on this card says it: "If this card is in your GY".
         if (trigger is QuickTrigger or IgnitionTrigger or EventTrigger or CardsEventTrigger or PhaseTrigger or ActivationTrigger or AttackDeclaredTrigger
                 or BattleWindowTrigger or SummonAttemptTrigger
             && effect.When!.Values.GetValueOrDefault("zone") is { } zone && Zones.Where(zone) is { } where && !SaysWhereThisCardIs(effect))
             cond = cond.Length == 0 ? $"this card is {where}" : $"this card is {where} and {cond}";
+        // "If your opponent controls a card, you can activate this card from your hand": a rule, not a lasting "while".
+        var joiner = when.Length > 0 || passive && !effect.Do.All(b => b.BlockId is ActivateFromHandPassive.BlockId or NoTributeSummonPassive.BlockId or SelfDestroyPassive.BlockId or ActivateSetTurnPassive.BlockId or CannotBeSummonedPassive.BlockId) ? "while" : "if";
+        cond = TimingFirst(during, cond, joiner);
+
+        // "When your opponent Normal Summons a monster during their turn", not "during your opponent's turn".
+        if (trigger is QuickTrigger or ActivateTrigger && Timing.IsOpponents(effect.When!.Values.GetValueOrDefault("timing") ?? ""))
+            cond = cond.Replace("during your opponent's turn", "during their turn", StringComparison.Ordinal);
 
         string head;
         if (cond.Length == 0) head = when;
-        // "If your opponent controls a card, you can activate this card from your hand": a rule, not a lasting "while".
-        else if (when.Length == 0) head = Clause(cond, passive && !effect.Do.All(b => b.BlockId is ActivateFromHandPassive.BlockId or NoTributeSummonPassive.BlockId or SelfDestroyPassive.BlockId or ActivateSetTurnPassive.BlockId or CannotBeSummonedPassive.BlockId) ? "while" : "if");
-        else head = $"{when} {Clause(cond, "while")}";
+        else if (when.Length == 0) head = Clause(cond, joiner);
+        else head = $"{when} {Clause(cond, joiner)}";
 
         // "During your opponent's Main Phase", not "During the Main Phase during your opponent's turn".
         head = PhaseTurn().Replace(head, m => $"{m.Groups[1].Value} {(m.Groups[3].Value == "your opponent's" ? "your opponent's" : "your")} {m.Groups[2].Value} Phase");
@@ -462,7 +477,7 @@ public static partial class EffectTextGenerator
         }
         var clauses = groups.Select(g =>
         {
-            var labels = g.Labels.ToList();
+            var labels = SummonOrder(g.Labels.ToList());
             // "destroyed by battle or card effect".
             var battle = labels.IndexOf("destroyed by battle");
             if (battle >= 0 && labels.Remove("destroyed by a card effect")) labels[labels.IndexOf("destroyed by battle")] = "destroyed by battle or card effect";

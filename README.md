@@ -58,6 +58,17 @@ Level, ATK, face-up, or "other than this card".
 name ("You can only use this effect of X once per turn"). Give effects the same *shared group* number
 when they share one use.
 
+**Organize.** The **Organize** button on the Effects tab puts the effects in the order official cards print them
+(Summon procedures, a Spell/Trap's activation, protection and rules, effects from the hand, "If this card is Summoned",
+other lasting effects, effects you activate, Quick Effects, other triggers, GY effects last), puts conditions and costs
+in reading order, removes repeated conditions, and joins effects that only differ in what starts them with "or when".
+DO blocks are never reordered, every change is checked against the compiled script so the card does exactly the same,
+and **Undo** puts it back.
+
+**Archetypes in the text.** A card whose name doesn't say one of its archetypes gets "(This card is always treated as
+a "X" card.)" as the first line of its suggested text, as official cards do. Untick it on the Card tab for a card that
+doesn't need it; if you typed the card text yourself, the Card tab offers to add the line.
+
 **Link Arrows.** Link monsters can use their arrows in effects. Any card picker has "only cards this card points to",
 so you can build "monsters this card points to gain 500 ATK" or "can't be destroyed". There are also IF blocks for
 "this card is linked / co-linked / points to 2 or more monsters", and Special Summons "to a zone this card points to".

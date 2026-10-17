@@ -43,6 +43,11 @@ public sealed class CardData
 
     /// <summary>Archetype codes (setcodes), up to four.</summary>
     public List<int> Archetypes { get; set; } = [];
+    /// <summary>
+    /// The suggested text starts with "(This card is always treated as a "X" card.)" for archetypes the name doesn't say,
+    /// as official cards do. Untick for a card whose name says it in another way.
+    /// </summary>
+    public bool ArchetypeReminder { get; set; } = true;
 
     // Database values Card Crafter doesn't edit, kept so opening and saving a database never loses them.
     /// <summary>The "ot" value for this card when it differs from the pack's.</summary>

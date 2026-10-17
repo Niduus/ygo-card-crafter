@@ -182,7 +182,11 @@ public class OncePerTurnWordingTests
     [Fact]
     public void ASharedLimit_SaysOneOfTheseEffects()
     {
+        // Every effect shares it: "You can only use 1 "X" effect per turn, and only once that turn.", as official cards say.
         var text = CardCrafter.Core.Text.EffectTextGenerator.Generate(Card(Effect(OncePerTurn.Hard, 1), Effect(OncePerTurn.Hard, 1)));
+        Assert.EndsWith("You can only use 1 \"New Monster\" effect per turn, and only once that turn.", text);
+        // Another effect without it: "1 of these effects".
+        text = CardCrafter.Core.Text.EffectTextGenerator.Generate(Card(Effect(OncePerTurn.Hard, 1), Effect(OncePerTurn.Hard, 1), Effect(OncePerTurn.None)));
         Assert.EndsWith("You can only use 1 of these effects of \"New Monster\" per turn, and only once that turn.", text);
     }
 

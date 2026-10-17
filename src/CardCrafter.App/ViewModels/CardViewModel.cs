@@ -167,6 +167,7 @@ public sealed partial class CardViewModel : ObservableObject
             }
             SuggestedText = EffectTextGenerator.Generate(Project, pack);
             SuggestedPendulumText = EffectTextGenerator.GeneratePendulum(Project, pack);
+            RefreshOrganizeAndReminder(pack);
             OnPropertyChanged(nameof(MaterialsText));
             OnPropertyChanged(nameof(HasMaterialsText));
             OnPropertyChanged(nameof(HasErrors));

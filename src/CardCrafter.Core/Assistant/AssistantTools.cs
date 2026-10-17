@@ -84,6 +84,12 @@ public sealed class AssistantTools(IAssistantWorkspace workspace)
             "Removes one effect of the selected card.",
             """{"number":{"type":"integer","description":"The effect's 1-based number."}}""",
             ["number"]),
+        new("organize_card",
+            "Tidies the selected card so its text reads like an official card, without changing what it does: effects in printed order (Summon procedures, "
+            + "a Spell/Trap's activation, lasting effects, hand effects, \"if this card is Summoned\", effects you activate, Quick Effects, other triggers, GY effects last), "
+            + "conditions in reading order, costs on this card first, repeated conditions removed, and effects that only differ in what starts them merged with \"or when\". "
+            + "DO blocks are never reordered. Each change is kept only if the compiled script does the same. Returns what changed.",
+            "{}", []),
         new("compile_card",
             "Builds the selected card's Lua script, as it will be installed into YGO Omega, with every problem the compiler and the script checker find.",
             "{}", []),
@@ -119,6 +125,7 @@ public sealed class AssistantTools(IAssistantWorkspace workspace)
                 "add_effect" => AddEffect(input),
                 "replace_effect" => ReplaceEffect(input),
                 "remove_effect" => RemoveEffect(Int(input, "number") ?? 0),
+                "organize_card" => OrganizeCard(),
                 "compile_card" => CompileCard(),
                 "translate_script" => TranslateScript(Str(input, "lua") ?? ""),
                 "set_script" => SetScript(input),
@@ -385,6 +392,16 @@ public sealed class AssistantTools(IAssistantWorkspace workspace)
         project.Effects.RemoveAt(number - 1);
         workspace.CardChanged();
         return Verdict(project, $"Removed effect {number} of \"{project.Card.Name}\"");
+    }
+
+    private ToolOutcome OrganizeCard()
+    {
+        var project = Card;
+        var result = CardOrganizer.Organize(project, workspace.Pack);
+        if (result.Skipped is { } why) return new ToolOutcome(why);
+        if (!result.Changed) return Verdict(project, $"\"{project.Card.Name}\" is already organized; nothing changed");
+        workspace.CardChanged();
+        return Verdict(project, $"Organized \"{project.Card.Name}\":\n{result.Summary}");
     }
 
     /// <summary>

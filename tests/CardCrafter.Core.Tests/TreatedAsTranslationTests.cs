@@ -198,7 +198,8 @@ public class TreatedAsTranslationTests
         };
         ScriptTranslator.ApplyTo(project, pack, out var applied);
         Assert.True(applied);
-        Assert.StartsWith("(This card is always treated as a \"Blue-Eyes\" card.) This card gains 100 ATK.", EffectTextGenerator.Generate(project, pack));
+        // The card's own line: its name doesn't say "Blue-Eyes".
+        Assert.StartsWith("(This card is always treated as a \"Blue-Eyes\" card.)\nThis card gains 100 ATK.", EffectTextGenerator.Generate(project, pack));
         // The archetype is the card's own already: nothing is added to the script or the database entry.
         Assert.Equal([0xdd], TreatedAsPassive.Setcodes(project));
     }

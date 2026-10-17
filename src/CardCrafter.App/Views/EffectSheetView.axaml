@@ -10,9 +10,20 @@
         <Button Content="+ New effect" Command="{Binding AddEffectCommand}" />
         <Button Content="+ From a template…" Click="OnTemplates"
                 ToolTip.Tip="Start from an effect modelled on a well-known card, then change any part of it" />
+        <Button Name="OrganizeButton" Content="Organize" Command="{Binding OrganizeCommand}"
+                ToolTip.Tip="Puts the effects in the order official cards print them and tidies them: conditions in reading order, costs on this card first, repeated conditions removed, effects that only differ in what starts them joined with &quot;or when&quot;. DO blocks are never reordered, and every change keeps what the card does. You can undo it." />
         <TextBlock VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" FontSize="12"
                    Text="Each effect reads left to right: WHEN it starts and IF it's allowed, then the COST and what it DOes." />
       </StackPanel>
+    </Border>
+
+    <Border DockPanel.Dock="Top" IsVisible="{Binding HasOrganizeReport}" Background="#16251C" CornerRadius="6" Padding="10" Margin="0,0,0,10">
+      <Grid ColumnDefinitions="*,Auto,Auto">
+        <SelectableTextBlock Name="OrganizeReportText" Text="{Binding OrganizeReport}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,12,0" />
+        <Button Grid.Column="1" Name="UndoOrganizeButton" Content="Undo" Command="{Binding UndoOrganizeCommand}" IsVisible="{Binding CanUndoOrganize}"
+                VerticalAlignment="Top" Margin="0,0,6,0" ToolTip.Tip="Put the effects back as they were before Organize" />
+        <Button Grid.Column="2" Classes="icon" Content="✕" Command="{Binding DismissOrganizeReportCommand}" VerticalAlignment="Top" ToolTip.Tip="Hide" />
+      </Grid>
     </Border>
 
     <Border DockPanel.Dock="Top" IsVisible="{Binding UseCustomLua}" Background="#3B2F12" CornerRadius="6" Padding="10" Margin="0,0,0,10">

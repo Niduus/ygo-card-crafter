@@ -90,6 +90,8 @@ public static class AssistantGuide
           script shows the blocks the app uses for it, and get_template gives ready-made effects.
         - After each change the tool answers with the card text the app generated and the compiler's problems. Read them:
           fix every error, and check that the text says what the user wants. The generated text is what goes on the card.
+        - When a card's effects are done, organize_card puts them in the order official cards print them and tidies them
+          without changing what the card does; it lists what it changed.
         - Only write a hand-written script (set_script) when the user asks for one or no block can express the effect; say
           which part needs it. Scripts use the ocgcore Lua API (Duel., Card., Effect., aux.).
         - Never change cards the user didn't ask about. Before larger rewrites of an existing card, say what you will change.

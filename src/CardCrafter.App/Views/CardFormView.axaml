@@ -392,6 +392,8 @@
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>
+          <CheckBox Name="ArchetypeReminderBox" Content="Say &quot;(This card is always treated as a &quot;X&quot; card.)&quot; when the name doesn't" IsChecked="{Binding ArchetypeReminder}"
+                    ToolTip.Tip="Official cards print this line first for each archetype whose name isn't in the card's name. The suggested text has it; untick it for a card whose name says the archetype another way." />
         </StackPanel>
 
         <TextBlock Classes="h2" Text="Card text" />
@@ -401,6 +403,14 @@
           <TextBlock Classes="label" Text="Monster Effect" />
         </StackPanel>
         <TextBox Text="{Binding Text}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="110" />
+        <Border IsVisible="{Binding HasArchetypeReminderNote}" Background="#1B2433" CornerRadius="6" Padding="10,6" Margin="0,6,0,0">
+          <StackPanel Spacing="6">
+            <TextBlock Text="{Binding ArchetypeReminderNote}" TextWrapping="Wrap" Foreground="#BFDBFE" />
+            <Button Name="AddArchetypeReminderButton" Content="Add the archetype line" Command="{Binding AddArchetypeReminderCommand}"
+                    HorizontalAlignment="Left" Padding="8,2" FontSize="12"
+                    ToolTip.Tip="Puts the line where official cards print it: first, after an Extra Deck monster's materials, or after a Normal Monster's flavor text" />
+          </StackPanel>
+        </Border>
         <TextBlock Classes="label" Text="Suggested text from your effects" />
         <Border Background="#16171C" CornerRadius="6" Padding="10,6" IsVisible="{Binding IsPendulum}" Margin="0,0,0,4">
           <StackPanel>
