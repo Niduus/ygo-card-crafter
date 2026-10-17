@@ -201,6 +201,15 @@ public class AllBlocksTests
             project.Effects[0].Do.Insert(0, BlockRegistry.Find("do.destroy")!.CreateInstance());
         // A card Special Summons itself from where it is, never from the field.
         if (def.Id == "do.special_summon_self") project.Effects[0].When = new BlockInstance("when.ignition").With("zone", "hand");
+        // "From where its cost put it": a cost that banishes this card.
+        if (def.Id == "do.special_summon_self" && inst.Values.GetValueOrDefault("from") == "cost")
+            project.Effects[0].Cost.Add(new BlockInstance("cost.this_card").With("how", "banish"));
+        // "If the activation of this card ... was negated": a Trap whose activation watches for it.
+        if (def.Id == NegatedActivationTrigger.BlockId)
+        {
+            project.Card.Kind = CardKind.Trap;
+            project.Effects.Insert(0, new EffectEvent { When = new BlockInstance("when.activate"), Do = [BlockRegistry.Find("do.draw")!.CreateInstance()] });
+        }
         return project;
     }
 

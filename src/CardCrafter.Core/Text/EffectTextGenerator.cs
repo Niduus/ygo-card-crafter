@@ -64,9 +64,10 @@ public static partial class EffectTextGenerator
         // The Summoning conditions come first, as printed cards have them: "Cannot be Normal Summoned/Set. Must first be
         // Special Summoned ...", then "You can only Special Summon ... once per turn." and "You can only control 1 ...".
         var reminder = ArchetypeReminder.Line(project, pack);
+        var late = LateActivationLimit(effects);
         string Said(EffectEvent e)
         {
-            var text = Describe(e, project.Card, pack, limitSentence: combined is null || !UsesCombinedLimit(e));
+            var text = Describe(e, project.Card, pack, limitSentence: (combined is null || !UsesCombinedLimit(e)) && !ReferenceEquals(e, late));
             // A "This card is always treated as" block's own reminder is the card's line instead (none when the name says it).
             return project.Card.ArchetypeReminder ? ArchetypeReminder.WithoutReminder(text) : text;
         }
@@ -78,6 +79,7 @@ public static partial class EffectTextGenerator
         if (SpiritText(project) is { Length: > 0 } spirit) paragraph.Add(spirit);
         if (GeminiText(project, pack, combined) is { Length: > 0 } gemini) paragraph.Add(gemini);
         paragraph.AddRange(effects.Where(e => !GeminiCondition.Has(e) && !Procedure(e)).Select(Said).Where(s => s.Length > 0));
+        if (late is not null) paragraph.Add(ActivationLimit(late, project.Card.Name));
         if (combined is not null) paragraph.Add(combined);
         // The materials, then "(This card is always treated as a "X" card.)", each on its own line.
         return string.Join("\n", new[] { MaterialText.Describe(project, pack), reminder, Join(paragraph) }.Where(s => s.Length > 0));
@@ -222,15 +224,11 @@ public static partial class EffectTextGenerator
         // "Tribute this card instead" is a lasting effect that still takes "once per turn".
         var limited = !passive || effect.Do.Any(b => b.BlockId == ReplaceDestroyPassive.BlockId);
         if (effect.Limit == OncePerTurn.Hard && limited && limitSentence)
-            text += activation
-                ? $" You can only activate 1 \"{card.Name}\" per turn."
-                : $" You can only use this effect of \"{card.Name}\" once per turn.";
+            text += activation ? " " + ActivationLimit(effect, card.Name) : $" You can only use this effect of \"{card.Name}\" once per turn.";
         if (effect.Limit == OncePerTurn.Chain && limited)
             text += $" You can only activate this effect of \"{card.Name}\" once per Chain.";
-        if (effect.Limit == OncePerTurn.Duel && limited)
-            text += activation
-                ? $" You can only activate 1 \"{card.Name}\" per Duel."
-                : $" You can only use this effect of \"{card.Name}\" once per Duel.";
+        if (effect.Limit == OncePerTurn.Duel && limited && (limitSentence || !activation))
+            text += activation ? " " + ActivationLimit(effect, card.Name) : $" You can only use this effect of \"{card.Name}\" once per Duel.";
         return text;
     }
 
@@ -446,6 +444,8 @@ public static partial class EffectTextGenerator
                     ActionLink.Then => ", then ",
                     ActionLink.AlsoAfterThat => ". Also, after that, ",
                     ActionLink.IfYouDont => ", and if you don't, ",
+                    // "..., also you cannot Special Summon ... for the rest of this turn": a lock is added with "also".
+                    _ when def is SummonRestrictionAction => ", also ",
                     _ => ", and ",
                 });
             }

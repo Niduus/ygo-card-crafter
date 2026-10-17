@@ -691,7 +691,7 @@ public class EngineTemplateTests
             case "Activate 1 of these effects": s.Card(id, 0, "mzone").ExpectActivations(1).Check("Duel.GetFieldGroupCount(0,LOCATION_HAND,0)==2"); break;
             // Archetype mechanics: played for real in UniqueEngineTests.
             case "Tribute this card instead" or "Opponent discards, or it's negated": s.Card(id, 0, "mzone").ExpectActivations(0); break;
-            case "Ritual Summon":
+            case "Ritual Summon" or "Fusion Summon using Extra Deck monsters":
                 s.Card(id, 0, "hand").ExpectActivations(0); break;
             case "Negate a summoning effect": s.Card(id, 0, "szone").ExpectActivations(0); break;
             case "Activate from the hand": s.Card(id, 0, "hand").ExpectActivations(0); break;

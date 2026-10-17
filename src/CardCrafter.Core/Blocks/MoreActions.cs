@@ -679,8 +679,24 @@ public sealed class SummonRestrictionAction : ActionBlock
         _ => "for the rest of this turn",
     };
 
-    public override string Describe(BlockArgs args) =>
-        args.Bool("from_hand") ? "" : $"{Duration(args)}, {Locks.Sentence(args.Choice("who"), Locks.WhatOf(args), args.Cards("cards"), args)}";
+    public override string Describe(BlockArgs args)
+    {
+        if (args.Bool("from_hand")) return "";
+        var what = Locks.WhatOf(args);
+        // A Spell/Trap Card's activation: the lock starts when the card resolves, and printed cards say so. Your own lock
+        // with an exception reads as Over Tuning's: "you cannot ... for the rest of this turn after this card resolves, except ...".
+        if (args.Choice("duration") == "turn" && DetailedTriggers.ActivatesThisCard(args.Effect))
+        {
+            const string after = "for the rest of this turn after this card resolves";
+            if (args.Choice("who") == "you" && what != "search" && Locks.HasExcept(what, args.Cards("cards")))
+            {
+                var (head, except) = Locks.Split(what, args.Cards("cards"), args);
+                return $"{head} {after}{except}";
+            }
+            return $"{after}, {Locks.Sentence(args.Choice("who"), what, args.Cards("cards"), args)}";
+        }
+        return $"{Duration(args)}, {Locks.Sentence(args.Choice("who"), what, args.Cards("cards"), args)}";
+    }
 
     /// <summary>Dominus: "If you activated this card from your hand, you cannot activate the effects of LIGHT monsters for the rest of this Duel."</summary>
     public override string Afterword(BlockArgs args) =>

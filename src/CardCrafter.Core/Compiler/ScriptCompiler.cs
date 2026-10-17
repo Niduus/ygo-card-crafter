@@ -56,16 +56,22 @@ public static class ScriptCompiler
             built.Add(effect);
         }
 
-        if (NeedsActivationEffect(card, built) && card.Kind == CardKind.Spell && card.SpellKind == SpellKind.Equip)
+        var equip = NeedsActivationEffect(card, built) && card.Kind == CardKind.Spell && card.SpellKind == SpellKind.Equip;
+        var plain = NeedsActivationEffect(card, built) && !equip;
+        // "If the activation of this card ... was negated": the activation notices its negation (Cyber Emergency).
+        var watch = NegatedActivationTrigger.Watches(project);
+        if (watch) NegatedActivationTrigger.Watch(script, built, plain);
+        if (equip)
         {
             init.AddRange(EquipActivation(project, script));
         }
-        else if (NeedsActivationEffect(card, built))
+        else if (plain)
         {
             init.Add("--Activate");
             init.Add("local e0=Effect.CreateEffect(c)");
             init.Add("e0:SetType(EFFECT_TYPE_ACTIVATE)");
             init.Add("e0:SetCode(EVENT_FREE_CHAIN)");
+            if (watch) init.Add($"e0:SetCost({script.AddFunction("e0cost", "e,tp,eg,ep,ev,re,r,rp,chk", ["if chk==0 then return true end", .. NegatedActivationTrigger.WatchLines(script)])})");
             init.Add("c:RegisterEffect(e0)");
         }
 

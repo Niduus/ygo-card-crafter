@@ -28,6 +28,7 @@ internal static class Locks
         new("activate_monster_field", "activate the effects of monsters on the field"),
         new("activate_monster_gy", "activate the effects of monsters in the GY or that are banished"),
         new("activate_monster_offfield", "activate the effects of monsters in the hand, GY, and banishment"),
+        new("activate_monster_hand_gy", "activate monster effects in the hand or GY"),
         new("activate_spell", "activate Spell Cards or Spell effects on the field"),
         new("activate_trap", "activate Trap Cards or Trap effects on the field"),
         new("activate_spelltrap", "activate Spell/Trap Cards or their effects on the field"),
@@ -56,7 +57,8 @@ internal static class Locks
         what is "special" or "special_extra" or "normal_special" or "summon_any" or "normal" or "special_hand" or "special_deck" or "special_gy" or "pendulum";
 
     /// <summary>The locks a turn-long restriction on yourself can be: the ones modern cards put on their own player.</summary>
-    public static readonly ChoiceOption[] TurnWhat = What.Where(w => w.Value is "special" or "special_extra" or "activate_any" or "activate_monster" or "activate_monster_of" or "special_of" or "attack" or "bp" or "normal_special").ToArray();
+    public static readonly ChoiceOption[] TurnWhat = What.Where(w => w.Value is "special" or "special_extra" or "activate_any" or "activate_monster" or "activate_monster_of" or "special_of" or "attack" or "bp" or "normal_special"
+        or "activate_monster_hand_gy").ToArray();
 
     /// <summary>Locks whose card picker names what is locked ("the effects of LIGHT monsters"), not an exception.</summary>
     public static bool Names(string what) => what is "activate_monster_of" or "special_of";
@@ -82,6 +84,10 @@ internal static class Locks
     public static bool HasExcept(string what, CardFilter f) =>
         what is not ("search" or "bp" or "activate_cards" or "activate_spell_cards" or "activate_trap_cards" or "activate_gy") && !Names(what) && (FilterCompiler.Conditions(f).Any(c => c != "c:IsType(TYPE_MONSTER)") || f.ExceptOwnName || f.ExceptCode != 0);
 
+    /// <summary>Locks on activating monster effects, wherever they are activated from.</summary>
+    private static bool MonsterEffects(string what) => what is "activate_monster" or "activate_monster_hand" or "activate_monster_field" or "activate_monster_gy"
+        or "activate_monster_offfield" or "activate_monster_hand_gy";
+
     private static string Verb(string what) => What.First(w => w.Value == what).Label;
 
     private static string Subject(string who) => who switch
@@ -100,6 +106,8 @@ internal static class Locks
         {
             "attack" => $", except with {cards}",
             _ when IsSummonLock(what) || what == "sset" => $", except {cards}",
+            // "you cannot activate monster effects, except "Prediction Princess" monsters'".
+            _ when MonsterEffects(what) && cards.EndsWith('s') => $", except {cards}'",
             _ => $", except those of {cards}",
         };
     }
@@ -245,6 +253,7 @@ internal static class Locks
         "activate_monster_field" => "re:IsActiveType(TYPE_MONSTER) and re:GetActivateLocation()==LOCATION_MZONE",
         "activate_monster_gy" => "re:IsActiveType(TYPE_MONSTER) and (re:GetActivateLocation()==LOCATION_GRAVE or re:GetActivateLocation()==LOCATION_REMOVED)",
         "activate_monster_offfield" => "re:IsActiveType(TYPE_MONSTER) and re:GetActivateLocation()&(LOCATION_HAND+LOCATION_GRAVE+LOCATION_REMOVED)~=0",
+        "activate_monster_hand_gy" => "re:IsActiveType(TYPE_MONSTER) and (re:GetActivateLocation()==LOCATION_HAND or re:GetActivateLocation()==LOCATION_GRAVE)",
         "activate_spell" => "re:IsActiveType(TYPE_SPELL) and (re:GetHandler():IsOnField() or re:IsHasType(EFFECT_TYPE_ACTIVATE))",
         "activate_trap" => "re:IsActiveType(TYPE_TRAP) and (re:GetHandler():IsOnField() or re:IsHasType(EFFECT_TYPE_ACTIVATE))",
         "activate_spelltrap" => "re:IsActiveType(TYPE_SPELL+TYPE_TRAP) and (re:GetHandler():IsOnField() or re:IsHasType(EFFECT_TYPE_ACTIVATE))",
@@ -293,9 +302,13 @@ internal static class Locks
                 activity = "ACTIVITY_ATTACK";
                 filter = ctx.Script.AddFunction("counterfilter", "c", [$"return {(f == "nil" ? "false" : $"{f}(c)")}"]);
                 break;
-            case "activate_any" or "activate_monster" or "activate_monster_of":
+            case "activate_any" or "activate_monster" or "activate_monster_of" or "activate_monster_hand_gy":
             {
-                var breaks = ActivationTest(what) + (f == "nil" ? "" : Names(what) ? $" and {f}(re:GetHandler())" : $" and not {f}(re:GetHandler())");
+                // Where an effect was activated is the chain's triggering location, as Karnol's counter reads it.
+                var test = what == "activate_monster_hand_gy"
+                    ? "re:IsActiveType(TYPE_MONSTER) and Duel.GetChainInfo(cid,CHAININFO_TRIGGERING_LOCATION)&(LOCATION_HAND+LOCATION_GRAVE)~=0"
+                    : ActivationTest(what);
+                var breaks = test + (f == "nil" ? "" : Names(what) ? $" and {f}(re:GetHandler())" : $" and not {f}(re:GetHandler())");
                 activity = "ACTIVITY_CHAIN";
                 filter = ctx.Script.AddFunction("chainfilter", "re,tp,cid", [$"return not ({breaks})"]);
                 break;

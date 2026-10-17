@@ -37,6 +37,7 @@ public static class BlockRegistry
         new SummonAttemptTrigger(),
         new BattleWindowTrigger(),
         new ThisCardDetailTrigger(),
+        new NegatedActivationTrigger(),
         new CardsDetailTrigger(),
         new EventThisTurnCondition(),
         new CompareValuesCondition(),
