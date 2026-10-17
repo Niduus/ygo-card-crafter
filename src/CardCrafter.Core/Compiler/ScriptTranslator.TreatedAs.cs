@@ -498,7 +498,8 @@ public static partial class ScriptTranslator
                     if (!Regex.IsMatch(tg, @"^[\w]+\.\w+$") || !(m = Regex.Match(Squashed(tg, fns), @"^return (.+)$")).Success) throw No("its double Xyz material is for Xyz Monsters the block can't pick");
                     checks = m.Groups[1].Value;
                 }
-                limit = CountLimit(set.GetValueOrDefault("CountLimit"), piece.SourceId, out group);
+                limit = CountLimit(set.GetValueOrDefault("CountLimit"), piece.SourceId, out group, out var times);
+                if (times != 1) throw No("its double Xyz material can be used more than once per turn");
                 block = Block(MaterialTreatedAsPassive.BlockId).With("kind", "xyz_double").With("for", SummonedBy(checks, "c"));
                 break;
             }

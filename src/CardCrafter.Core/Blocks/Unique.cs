@@ -308,7 +308,7 @@ public sealed class OpponentActivatedCondition : ConditionBlock
     public override string Id => "if.opponent_activated";
     public override string Group => "Turn";
     public override string Name => "Your opponent activated something this turn";
-    public override string Sentence => "Your opponent has activated {what} this turn";
+    public override string Sentence => "Your opponent has activated {what} {during} this turn";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Choice("what", "What",
@@ -316,9 +316,14 @@ public sealed class OpponentActivatedCondition : ConditionBlock
             new("monster", "a monster effect"),
             new("spelltrap", "a Spell/Trap Card"),
             new("any", "a card or effect")),
+        // Triple Tactics Talent: "If your opponent has activated a monster effect during your Main Phase this turn".
+        ParamSpec.Choice("during", "When", new("any", "", "at any time"), new("your_main", "during your Main Phase"),
+            new("main", "during the Main Phase", "during the Main Phase (either player's)")),
     ];
 
-    public override string Describe(BlockArgs args) => $"your opponent has activated {args.Describe("what")} this turn";
+    public override string Describe(BlockArgs args) => args.Choice("during") == "any"
+        ? $"your opponent has activated {args.Describe("what")} this turn"
+        : $"your opponent has activated {args.Describe("what")} {args.Describe("during")} this turn";
 
     public override void Compile(BlockContext ctx)
     {
@@ -329,7 +334,16 @@ public sealed class OpponentActivatedCondition : ConditionBlock
             "spelltrap" => "re:IsHasType(EFFECT_TYPE_ACTIVATE)",
             _ => "true",
         };
-        var filter = ctx.Script.AddFunction("chainfilter", "re,tp,cid", [$"return not ({test})"]);
+        // The counter's filter gets the player who activated: "your Main Phase" is one where they aren't the turn player.
+        var during = ctx.Args.Choice("during") switch
+        {
+            "main" => "(ph==PHASE_MAIN1 or ph==PHASE_MAIN2)",
+            "your_main" => "(ph==PHASE_MAIN1 or ph==PHASE_MAIN2) and Duel.GetTurnPlayer()~=tp",
+            _ => null,
+        };
+        var filter = during is null
+            ? ctx.Script.AddFunction("chainfilter", "re,tp,cid", [$"return not ({test})"])
+            : ctx.Script.AddFunction("chainfilter", "re,tp,cid", ["local ph=Duel.GetCurrentPhase()", $"return not ({(test == "true" ? "" : test + " and ")}{during})"]);
         var counter = ctx.Script.ActivityCounter("ACTIVITY_CHAIN", filter);
         ctx.Effect.Conditions.Add($"Duel.GetCustomActivityCount({counter},1-tp,ACTIVITY_CHAIN)>0");
     }

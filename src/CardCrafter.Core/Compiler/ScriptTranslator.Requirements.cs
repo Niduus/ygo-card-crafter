@@ -532,6 +532,8 @@ public static partial class ScriptTranslator
         if ((m = Regex.Match(t, @"^c:IsStatus\(([\w+|]+)\)$")).Success && m.Groups[1].Value.Split('+', '|').Order(StringComparer.Ordinal).SequenceEqual(["STATUS_FLIP_SUMMON_TURN", "STATUS_SPSUMMON_TURN", "STATUS_SUMMON_TURN"]))
             return Plain(Req("summoned_turn", isOp));
         if (t == "c:IsStatus(STATUS_SPSUMMON_TURN)") return Plain(Req("spsummoned_turn", isOp));
+        if ((m = Regex.Match(t, @"^c:IsStatus\(([\w+|]+)\)$")).Success && m.Groups[1].Value.Split('+', '|').Order(StringComparer.Ordinal).SequenceEqual(["STATUS_SPSUMMON_TURN", "STATUS_SUMMON_TURN"]))
+            return Plain(Req("normal_special_turn", isOp));
         // In an Extra Monster Zone: the sequence says so only of a card in a Monster Zone, which SettleRequirements checks.
         if (!not && t is "c:GetSequence()>4" or "c:GetSequence()>=5") return Plain(Req("extra_zone", RequirementOp.Is));
         // ATK changed. A card that isn't a monster has 0 for both, so "~=" leaves it out, but "==" and "not IsAttack" pick it;

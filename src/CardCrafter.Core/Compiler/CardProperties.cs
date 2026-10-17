@@ -125,6 +125,9 @@ public static class CardProperties
         new("negated", "Its effects are negated", PropertyKind.State, "c:IsDisabled()", "", IsText: "whose effects are negated", IsNotText: "whose effects are not negated"),
         new("summoned_turn", "Summoned this turn", PropertyKind.State, "c:IsStatus(STATUS_SUMMON_TURN+STATUS_FLIP_SUMMON_TURN+STATUS_SPSUMMON_TURN)", "",
             IsText: "that was Summoned this turn", IsNotText: "that was not Summoned this turn"),
+        // Mimighoul Dungeon: ""Mimighoul" monsters you control that were not Normal or Special Summoned this turn".
+        new("normal_special_turn", "Normal or Special Summoned this turn", PropertyKind.State, "c:IsStatus(STATUS_SUMMON_TURN+STATUS_SPSUMMON_TURN)", "",
+            IsText: "that was Normal or Special Summoned this turn", IsNotText: "that was not Normal or Special Summoned this turn"),
         new("spsummoned_turn", "Special Summoned this turn", PropertyKind.State, "c:IsStatus(STATUS_SPSUMMON_TURN)", "",
             IsText: "that was Special Summoned this turn", IsNotText: "that was not Special Summoned this turn"),
         new("attacked_turn", "Declared an attack this turn", PropertyKind.State, "c:GetAttackAnnouncedCount()>0", "",

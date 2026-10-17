@@ -63,8 +63,8 @@ public static partial class ScriptTranslator
         _sourceId = id;
         _sourceCard = card;
         _sourceLua = lua;
-        _chainCounter = Regex.Match(lua, @"Duel\.AddCustomActivityCounter\((?:id|\d+),ACTIVITY_CHAIN,s\.(\w+)\)") is { Success: true } cm
-            && Regex.Match(lua, $@"function s\.{cm.Groups[1].Value}\(re,tp,cid\)\s*\n(.*?)\nend", RegexOptions.Singleline) is { Success: true } fm
+        _chainCounter = Regex.Match(lua, @"Duel\.AddCustomActivityCounter\((?:id|\d+),ACTIVITY_CHAIN,(s|c\d+)\.(\w+)\)") is { Success: true } cm
+            && Regex.Match(lua, $@"function {cm.Groups[1].Value}\.{cm.Groups[2].Value}\(re,tp,cid\)\s*\n(.*?)\nend", RegexOptions.Singleline) is { Success: true } fm
             ? string.Join(" ", fm.Groups[1].Value.Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0)) : null;
         // "Return it to the hand/Extra Deck": sending to the hand puts Extra Deck monsters back there.
         lua = lua.Replace("aux.OR(Card.IsAbleToHand,Card.IsAbleToExtra)", "Card.IsAbleToHand", StringComparison.Ordinal);
@@ -345,14 +345,23 @@ public static partial class ScriptTranslator
         var code = set.GetValueOrDefault("Code") ?? "";
         var range = set.GetValueOrDefault("Range");
         var props = Flags(set.GetValueOrDefault("Property") ?? "");
-        effect.Limit = CountLimit(set.GetValueOrDefault("CountLimit"), piece.SourceId, out var group);
+        effect.Limit = CountLimit(set.GetValueOrDefault("CountLimit"), piece.SourceId, out var group, out var times);
         effect.SharedLimitGroup = group;
+        effect.Times = times;
+        // "Once while face-up on the field": the effect's own count isn't given back each turn.
+        if (props.Remove("EFFECT_FLAG_NO_TURN_RESET"))
+        {
+            if (times != 1 || effect.Limit is not (OncePerTurn.Soft or OncePerTurn.Hard)) throw No("its use comes back in a way the limits don't say");
+            (effect.Limit, effect.SharedLimitGroup) = effect.Limit == OncePerTurn.Soft ? (OncePerTurn.FaceUp, 0) : (OncePerTurn.FaceUpAndHard, group);
+        }
 
         // "Activate this card" with nothing else: Card Crafter adds that itself for Continuous, Field and Equip cards.
         if (type.SetEquals(["EFFECT_TYPE_ACTIVATE"]) && code == "EVENT_FREE_CHAIN" && !set.ContainsKey("Operation") && !set.ContainsKey("Target")
-            && !set.ContainsKey("Cost") && !set.ContainsKey("Condition") && effect.Limit == OncePerTurn.None)
+            && (!set.ContainsKey("Cost") || IsActivationFlag(set["Cost"])) && !set.ContainsKey("Condition") && effect.Limit == OncePerTurn.None)
             return new TranslatedPiece { Piece = piece, Ignored = true };
         if (IsCannotNegateCompanion(type, code, set, card)) return new TranslatedPiece { Piece = piece, Ignored = true };
+        // "If this card destroyed a monster by battle": the watcher on its battles, which the IF block writes itself.
+        if (BattleWatcher(type, code, set) is not null) return new TranslatedPiece { Piece = piece, Ignored = true };
 
         // "Must be Fusion Summoned" and the like: a rule on the Card tab, not an effect.
         if (type.SetEquals(["EFFECT_TYPE_SINGLE"]) && code == "EFFECT_SPSUMMON_CONDITION"
@@ -470,7 +479,7 @@ public static partial class ScriptTranslator
         if (condition is not null && !usedCondition) effect.If.AddRange(Conditions(condition, fns));
         effect.If.AddRange(TakePendingIf());
         // An activation watching for its own negation: the negated trigger block writes that (ScriptTranslator.Negated.cs).
-        if (set.GetValueOrDefault("Cost") is { } cost && !(type.SetEquals(["EFFECT_TYPE_ACTIVATE"]) && IsNegationWatch(cost))) effect.Cost.AddRange(Costs(cost, fns));
+        if (set.GetValueOrDefault("Cost") is { } cost && !(type.SetEquals(["EFFECT_TYPE_ACTIVATE"]) && (IsNegationWatch(cost) || IsActivationFlag(cost)))) effect.Cost.AddRange(Costs(cost, fns));
         effect.Cost.AddRange(MechanicsCosts(type, props));
         // A Ritual helper's effect, and Polymerization's family: one Ritual or Fusion Summon block.
         if (RitualOf(set) is { } ritual)
@@ -787,16 +796,20 @@ public static partial class ScriptTranslator
 
     private static HashSet<string> Flags(string expr) => expr.Split('+').Select(s => s.Trim()).Where(s => s.Length > 0).ToHashSet();
 
-    private static OncePerTurn CountLimit(string? args, long id, out int group)
+    private static OncePerTurn CountLimit(string? args, long id, out int group, out int times)
     {
         group = 0;
+        times = 1;
         if (args is null) return OncePerTurn.None;
         var parts = args.Split(',').Select(a => a.Trim()).ToArray();
-        if (parts[0] != "1") throw No("it can be used more than once per turn");
+        // "Up to twice per turn", "You can only use this effect of X thrice per turn".
+        if (parts[0] is not ("1" or "2" or "3" or "4" or "5")) throw No("it can be used more than once per turn");
+        times = Int(parts[0]);
         if (parts.Length == 1) return OncePerTurn.Soft;
-        if (parts.Length == 2 && parts[1] == "EFFECT_COUNT_CODE_CHAIN") return OncePerTurn.Chain;
-        // "Once per turn" kept by this copy of the card even when it changes control or its effects are split.
-        if (parts.Length == 2 && parts[1] == "EFFECT_COUNT_CODE_SINGLE") return OncePerTurn.Soft;
+        if (parts.Length == 2 && parts[1] == "EFFECT_COUNT_CODE_CHAIN" && times == 1) return OncePerTurn.Chain;
+        // "Once per turn" kept by this copy of the card even when it changes control or its effects are split, and
+        // shared by every effect of the card that keeps it (Voloferniges' Ignition and Quick Effects).
+        if (parts.Length == 2 && parts[1] == "EFFECT_COUNT_CODE_SINGLE") { group = 1; return OncePerTurn.Soft; }
         var key = parts[1].Replace(id.ToString(CultureInfo.InvariantCulture), "id").Replace("+EFFECT_COUNT_CODE_OATH", "").Replace(" ", "");
         var perDuel = key.Contains("+EFFECT_COUNT_CODE_DUEL", StringComparison.Ordinal);
         key = key.Replace("+EFFECT_COUNT_CODE_DUEL", "");
@@ -982,6 +995,10 @@ public static partial class ScriptTranslator
                 ("EVENT_BATTLE_DAMAGE", "return ep==1-tp" or "return ep~=tp") => "opp_battle_damage",
                 ("EVENT_CHAINING", "return rp==1-tp") => "opp_activates",
                 ("EVENT_REMOVE", null) => "banished_any",
+                ("EVENT_CHAIN_NEGATED", null) => "activation_negated",
+                ("EVENT_DRAW", "return ep==tp and r==REASON_RULE" or "return ep==tp and bit.band(r,REASON_RULE)~=0" or "return ep==tp and (r&REASON_RULE)>0") => "you_normal_draw",
+                ("EVENT_DRAW", "return ep~=tp and r==REASON_RULE" or "return ep==1-tp and r==REASON_RULE" or "return ep==1-tp and bit.band(r,REASON_RULE)~=0") => "opp_normal_draw",
+                ("EVENT_CHAINING", "return rp==tp and re:IsActiveType(TYPE_MONSTER)") => "you_monster_effect",
                 _ => null,
             };
             if (ev is not null)
@@ -1343,9 +1360,25 @@ public static partial class ScriptTranslator
         if (body.StartsWith("return ", StringComparison.Ordinal) && ExistsCheck(body[7..], fns) is { } exists) return [exists];
         // Dominus Spark: "During the turn in which your opponent has activated a monster effect in the hand or GY".
         if ((m = Regex.Match(body, @"^return Duel\.GetCustomActivityCount\((?:id|\d+),1-tp,ACTIVITY_CHAIN\)(?:>0|~=0)$")).Success && ChainCounterKind() is { } kind)
-            return [Block("if.opponent_activated").With("what", kind)];
+            return [Block("if.opponent_activated").With("what", kind.What).With("during", kind.During)];
+        // "If this card was Normal or Special Summoned this turn", "except during the turn this card was Special Summoned".
+        if ((m = Regex.Match(body, @"^return (not )?e:GetHandler\(\):IsStatus\((STATUS_[A-Z_]+(?:[+|]STATUS_[A-Z_]+)*)\)$")).Success && SummonedTurn(m.Groups[2].Value) is { } how)
+            return [Block("if.summoned_this_turn").With("how", how).With("was", m.Groups[1].Success ? "not" : "was")];
+        // "If this card destroyed a monster by battle", "if this card was activated this turn": a flag the script keeps.
+        if (FlagConditionBlock(body) is { } flagged) return [flagged];
         return ConditionMatch(body);
     }
+
+    /// <summary>Which Summons "this card was Summoned this turn" names, from the statuses checked; null for other statuses.</summary>
+    private static string? SummonedTurn(string statuses) => string.Join("+", statuses.Split('+', '|').Order(StringComparer.Ordinal)) switch
+    {
+        "STATUS_SUMMON_TURN" => "normal",
+        "STATUS_SPSUMMON_TURN" => "special",
+        "STATUS_FLIP_SUMMON_TURN" => "flip",
+        "STATUS_SPSUMMON_TURN+STATUS_SUMMON_TURN" => "normal_special",
+        "STATUS_FLIP_SUMMON_TURN+STATUS_SPSUMMON_TURN+STATUS_SUMMON_TURN" => "any",
+        _ => null,
+    };
 
     private static List<BlockInstance> ConditionMatch(string body) => body switch
     {
@@ -1370,6 +1403,10 @@ public static partial class ScriptTranslator
         "return Duel.IsBattlePhase()" or "return Duel.GetCurrentPhase()>=PHASE_BATTLE_START and Duel.GetCurrentPhase()<=PHASE_BATTLE" => [Block("if.phase").With("phase", "battle")],
         "return Duel.GetCurrentPhase()==PHASE_STANDBY" => [Block("if.phase").With("phase", "standby")],
         "return Duel.GetCurrentPhase()==PHASE_END" => [Block("if.phase").With("phase", "end")],
+        "return Duel.GetCurrentPhase()==PHASE_DRAW" => [Block("if.phase").With("phase", "draw")],
+        "return Duel.GetCurrentPhase()~=PHASE_DRAW" or "return not Duel.IsPhase(PHASE_DRAW)" => [Block("if.phase").With("phase", "draw").With("is", "not")],
+        // "and this card is already face-up in your Spell & Trap Zone": it wasn't just activated.
+        "return e:GetHandler():IsStatus(STATUS_EFFECT_ENABLED)" => [Block(AlreadyFaceUpCondition.BlockId)],
         "return e:GetHandler():IsAttackPos()" => [Block("if.position").With("pos", "attack")],
         "return e:GetHandler():IsDefensePos()" => [Block("if.position").With("pos", "defense")],
         var b when SummonTypes.TryGetValue(b, out var how) => [Block("if.summoned_by").With("how", how)],
@@ -3100,13 +3137,15 @@ public static partial class ScriptTranslator
     [ThreadStatic] private static string? _chainCounter;
 
     /// <summary>What the script's activity counter counts, as a choice of "your opponent has activated ... this turn".</summary>
-    private static string? ChainCounterKind() => _chainCounter switch
+    private static (string What, string During)? ChainCounterKind() => _chainCounter switch
     {
         "local loc=Duel.GetChainInfo(cid,CHAININFO_TRIGGERING_LOCATION) return not (re:IsActiveType(TYPE_MONSTER) and loc&(LOCATION_HAND|LOCATION_GRAVE)>0)"
-            or "local loc=Duel.GetChainInfo(cid,CHAININFO_TRIGGERING_LOCATION) return not (re:IsActiveType(TYPE_MONSTER) and loc&(LOCATION_HAND+LOCATION_GRAVE)>0)" => "monster_hand_gy",
-        "return not re:IsActiveType(TYPE_MONSTER)" => "monster",
-        "return not re:IsHasType(EFFECT_TYPE_ACTIVATE)" => "spelltrap",
-        "return false" => "any",
+            or "local loc=Duel.GetChainInfo(cid,CHAININFO_TRIGGERING_LOCATION) return not (re:IsActiveType(TYPE_MONSTER) and loc&(LOCATION_HAND+LOCATION_GRAVE)>0)" => ("monster_hand_gy", "any"),
+        "return not re:IsActiveType(TYPE_MONSTER)" => ("monster", "any"),
+        "return not re:IsHasType(EFFECT_TYPE_ACTIVATE)" => ("spelltrap", "any"),
+        "return false" => ("any", "any"),
+        // Triple Tactics Talent: a monster effect during a Main Phase.
+        "local ph=Duel.GetCurrentPhase() return not (re:IsActiveType(TYPE_MONSTER) and (ph==PHASE_MAIN1 or ph==PHASE_MAIN2))" => ("monster", "main"),
         _ => null,
     };
 

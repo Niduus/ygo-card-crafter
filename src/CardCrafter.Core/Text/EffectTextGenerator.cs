@@ -124,7 +124,7 @@ public static partial class EffectTextGenerator
 
     /// <summary>Hard once-per-turn effects that are used, not activated as a Spell/Trap Card or a Summon procedure.</summary>
     private static bool UsesCombinedLimit(EffectEvent e) =>
-        e.Limit == OncePerTurn.Hard && e.When is { } w && BlockRegistry.Find(w.BlockId) is { } t
+        e.Limit == OncePerTurn.Hard && ScriptCompiler.Times(e) == 1 && e.When is { } w && BlockRegistry.Find(w.BlockId) is { } t
         && t is not (ActivateTrigger or SummonProcedureTrigger or WhileFaceUpTrigger) && !DetailedTriggers.IsCardActivation(t, w);
 
     /// <summary>
@@ -172,8 +172,8 @@ public static partial class EffectTextGenerator
             : trigger is not (ActivateTrigger or WhileFaceUpTrigger) && !activation && !string.Equals(optionalValue, "false", StringComparison.OrdinalIgnoreCase);
 
         var head = Head(trigger, effect, pack, passive);
-        if (effect.Limit == OncePerTurn.Soft && !passive)
-            head = head.Length == 0 ? "Once per turn" : head.StartsWith('(') ? "Once per turn " + head : "Once per turn, " + SentenceCase.Lower(head);
+        if (HeadLimit(effect) is { } once && !passive)
+            head = head.Length == 0 ? once : head.StartsWith('(') ? once + " " + head : once + ", " + SentenceCase.Lower(head);
 
         // Lasting effects with nothing before them read as separate sentences, like "Neither player can ... Negate all ...".
         var (targetClause, actions) = Actions(effect.Do, pack, effect, sentences: passive && head.Length == 0);
@@ -219,18 +219,23 @@ public static partial class EffectTextGenerator
         // "(This card is always treated as a "HERO" card.)" already ends its sentence.
         text = text.TrimEnd();
         text = DeclarePolish(effect, text.EndsWith(".)", StringComparison.Ordinal) ? text : text + ".");
-        foreach (var b in effect.Cost.Concat(effect.Do).Concat(effect.If))
+        // A list after the effect ("● Add a card from the Deck to the hand.") starts its own lines.
+        foreach (var b in new[] { effect.When! }.Concat(effect.Cost).Concat(effect.Do).Concat(effect.If))
             if (BlockRegistry.Find(b.BlockId) is { } bd && bd.Afterword(new BlockArgs(bd, b, pack) { Effect = effect, CardName = card.Name }) is { Length: > 0 } after)
-                text += " " + after;
+                text += (after.StartsWith('\n') ? "" : " ") + after;
 
         // "Tribute this card instead" is a lasting effect that still takes "once per turn".
         var limited = !passive || effect.Do.Any(b => b.BlockId == ReplaceDestroyPassive.BlockId);
         if (effect.Limit == OncePerTurn.Hard && limited && limitSentence)
-            text += activation ? " " + ActivationLimit(effect, card.Name) : $" You can only use this effect of \"{card.Name}\" once per turn.";
+            text += activation ? " " + ActivationLimit(effect, card.Name) : NameLimit(effect, card.Name, "turn");
+        // "Once per turn: ... You can only use this effect of "X" thrice per turn.", "Once while face-up on the field, ...
+        // You can only use this effect of "X" once per turn.": each copy's limit before, the name's after.
+        if (effect.Limit is OncePerTurn.SoftAndHard or OncePerTurn.FaceUpAndHard && limited)
+            text += NameLimit(effect, card.Name, "turn");
         if (effect.Limit == OncePerTurn.Chain && limited)
             text += $" You can only activate this effect of \"{card.Name}\" once per Chain.";
         if (effect.Limit == OncePerTurn.Duel && limited && (limitSentence || !activation))
-            text += activation ? " " + ActivationLimit(effect, card.Name) : $" You can only use this effect of \"{card.Name}\" once per Duel.";
+            text += activation ? " " + ActivationLimit(effect, card.Name) : NameLimit(effect, card.Name, "Duel");
         return text;
     }
 
@@ -305,12 +310,13 @@ public static partial class EffectTextGenerator
             if (BlockRegistry.Find(b.BlockId) is { } bd && bd.Afterword(new BlockArgs(bd, b, pack) { Effect = effect, CardName = card.Name }) is { Length: > 0 } after)
                 text += " " + after;
 
+        var times = TimesWord(ScriptCompiler.Times(effect));
         if (effect.Limit == OncePerTurn.Duel)
-            text += $" You can only Special Summon \"{card.Name}\" once per Duel this way.";
+            text += $" You can only Special Summon \"{card.Name}\" {times} per Duel this way.";
         else if (effect.Limit == OncePerTurn.Hard)
-            text += $" You can only Special Summon \"{card.Name}\" once per turn this way.";
+            text += $" You can only Special Summon \"{card.Name}\" {times} per turn this way.";
         else if (effect.Limit == OncePerTurn.Soft)
-            text += " You can only Special Summon this card once per turn this way.";
+            text += $" You can only Special Summon this card {times} per turn this way.";
         return text;
     }
 
@@ -354,7 +360,9 @@ public static partial class EffectTextGenerator
         var during = During(conditions);
         // "While you have no cards in your hand, if this card attacks": a clause that brings its own "if" comes last.
         var own = conditions.Where(t => t.StartsWith("if ", StringComparison.Ordinal)).ToList();
-        var cond = string.Join(" and ", conditions.Except(own).Except(during));
+        // "..., except during the Draw Phase", "..., except during the turn this card was Special Summoned": after the trigger.
+        var except = conditions.Where(t => t.StartsWith("except ", StringComparison.Ordinal)).ToList();
+        var cond = string.Join(" and ", conditions.Except(own).Except(during).Except(except));
         if (own.Count > 0) cond = cond.Length == 0 ? string.Join(", ", own) : $"{cond}, {string.Join(", ", own)}";
 
         // Where this card must be, when no cost or action on this card says it: "If this card is in your GY".
@@ -373,7 +381,10 @@ public static partial class EffectTextGenerator
         string head;
         if (cond.Length == 0) head = when;
         else if (when.Length == 0) head = Clause(cond, joiner);
+        // "During the End Phase, if ...", "At the end of the Battle Phase, if ...", as printed cards say it.
+        else if (trigger is PhaseTrigger) head = $"{when}, {Clause(cond, "if")}";
         else head = $"{when} {Clause(cond, joiner)}";
+        if (except.Count > 0) head = head.Length == 0 ? string.Join(", ", except) : $"{head}, {string.Join(", ", except)}";
 
         // "During your opponent's Main Phase", not "During the Main Phase during your opponent's turn".
         head = PhaseTurn().Replace(head, m => $"{m.Groups[1].Value} {(m.Groups[3].Value == "your opponent's" ? "your opponent's" : "your")} {m.Groups[2].Value} Phase");
@@ -531,6 +542,7 @@ public static class SentenceCase
     {
         "Add", "Activate", "Banish", "Destroy", "Discard", "Draw", "During", "Gain", "Gains", "If", "Inflict", "It",
         "Pay", "Return", "Send", "Shuffle", "There", "This", "While", "You", "Your", "When", "Once", "Place", "Reveal", "Take", "Target", "Change", "Look", "Excavate", "Detach", "Attach", "Equip", "Negate",
+        "At",
     };
 
     /// <summary>Lowercases the first letter only when the first word is an ordinary word.</summary>

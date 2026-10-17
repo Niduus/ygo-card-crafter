@@ -738,7 +738,11 @@ public static partial class ScriptTranslator
                     now = now switch { null => "faceup", "extra" => "extra_faceup", "banished" => "banished_faceup", _ => "" };
                     continue;
             }
-            if ((m = Regex.Match(t, @"^c:IsReason\((REASON_\w+(?:\+REASON_\w+)*)\)$")).Success) { reasons.Add(t); continue; }
+            if ((m = Regex.Match(t, @"^c:IsReason\((REASON_\w+(?:\+REASON_\w+)*)\)$")).Success || t is "not c:IsReason(REASON_BATTLE)" or "not c:IsReason(REASON_DRAW)")
+            {
+                reasons.Add(t);
+                continue;
+            }
             if ((m = Regex.Match(t, @"^c:IsSummonType\(SUMMON_TYPE_(\w+)\)$")).Success)
             {
                 var how = m.Groups[1].Value == "ADVANCE" ? "tribute" : m.Groups[1].Value.ToLowerInvariant();
@@ -806,6 +810,9 @@ public static partial class ScriptTranslator
             return null;
         }
         if (set.Count == 0) return "any";
+        // "except by battle", "except by drawing it".
+        if (set.SetEquals(["not c:IsReason(REASON_BATTLE)"])) return "not_battle";
+        if (set.SetEquals(["not c:IsReason(REASON_DRAW)"])) return "not_draw";
         if (Is("REASON_BATTLE")) return "battle";
         if (Is("REASON_EFFECT")) return "effect";
         if (Is("REASON_BATTLE+REASON_EFFECT")) return "battle_effect";
@@ -1158,7 +1165,11 @@ public static partial class ScriptTranslator
                     return true;
                 case "c:IsPreviousLocation(LOCATION_MZONE)" when From is null: From = "mzone"; return true;
             }
-            if ((m = Regex.Match(t, @"^c:IsReason\((REASON_\w+(?:\+REASON_\w+)*)\)$")).Success) { _reasons.Add(t); return true; }
+            if ((m = Regex.Match(t, @"^c:IsReason\((REASON_\w+(?:\+REASON_\w+)*)\)$")).Success || t is "not c:IsReason(REASON_BATTLE)" or "not c:IsReason(REASON_DRAW)")
+            {
+                _reasons.Add(t);
+                return true;
+            }
             // "destroyed by battle or an opponent's card effect".
             if (SplitTopLevelOr(StripParens(t)) is ["c:IsReason(REASON_BATTLE)", var other])
             {

@@ -11,6 +11,12 @@ public enum OncePerTurn
     Duel,
     /// <summary>"You can only activate this effect of X once per Chain" (Futsu no Mitama no Mitsurugi).</summary>
     Chain,
+    /// <summary>"Once while face-up on the field" (Firewall Dragon): used again only after the card leaves the field and comes back.</summary>
+    FaceUp,
+    /// <summary>Baronne de Fleur: "Once while face-up on the field, ..." and "You can only use this effect of X once per turn."</summary>
+    FaceUpAndHard,
+    /// <summary>Perfect Toon World: "Once per turn: ..." for each copy, and "You can only use this effect of X thrice per turn."</summary>
+    SoftAndHard,
 }
 
 /// <summary>How an action connects to the one before it, matching card-text wording.</summary>
@@ -91,6 +97,14 @@ public sealed class EffectEvent
     public List<BlockInstance> Cost { get; set; } = [];
     public List<BlockInstance> Do { get; set; } = [];
     public OncePerTurn Limit { get; set; }
-    /// <summary>Effects with the same group number share one hard once-per-turn. 0 means "its own".</summary>
+    /// <summary>
+    /// Effects with the same group number share one hard once-per-turn. 0 means "its own". "Once per turn" effects (each
+    /// copy) with a group share it too, like Voloferniges' Ignition and Quick Effect: a card has one such group.
+    /// </summary>
     public int SharedLimitGroup { get; set; }
+    /// <summary>
+    /// How many uses the limit allows: "Up to twice per turn", "You can only use this effect of X thrice per turn". 1 is
+    /// "once". For <see cref="OncePerTurn.SoftAndHard"/> it is the uses by card name; each copy still has one.
+    /// </summary>
+    public int Times { get; set; } = 1;
 }

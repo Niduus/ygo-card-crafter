@@ -11,6 +11,8 @@ public sealed class OperationStep
     public ActionLink Link { get; init; }
     /// <summary>"You can ...": the player is asked before it happens.</summary>
     public bool Optional { get; init; }
+    /// <summary>For an optional step: what must hold for the player to be asked at all (cards to add are there).</summary>
+    public List<string> AskIf { get; } = [];
     /// <summary>Which option of "Activate 1 of these effects" it belongs to; 0 when the effect has no options.</summary>
     public int Branch { get; init; }
     /// <summary>For an IF block among the DO blocks: the condition the following steps need ("then if you control ...").</summary>
@@ -176,6 +178,20 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
     public bool HasLimitedPassive => _passives.Any(p => p.Limited);
 
     public bool HasSteps => _steps.Count > 0 || _finally.Count > 0;
+
+    /// <summary>The number of steps so far, to find the ones a block just added.</summary>
+    public int StepCount => _steps.Count;
+
+    /// <summary>
+    /// "When this card is activated: You can add 1 ...": the checks an optional step made for the activation are asked
+    /// when it resolves instead, so a card with nothing to add can still be activated.
+    /// </summary>
+    public void AskOnResolution(int fromStep, int fromCheck)
+    {
+        var checks = TargetChecks.Skip(fromCheck).ToList();
+        TargetChecks.RemoveRange(fromCheck, checks.Count);
+        foreach (var step in _steps.Skip(fromStep).Where(s => s.Optional)) step.AskIf.AddRange(checks);
+    }
 
     /// <summary>The Lua variable with how many cards the last DO step affected, for "for each of those cards".</summary>
     public string? LastResult => _steps.LastOrDefault(s => s.Result is not null)?.Result;
@@ -518,7 +534,8 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
                 // "You can ...": ask, and count a declined step as not done.
                 result ??= $"ok{Index}_{n}";
                 body.Add($"{indent}local {result}=0");
-                body.Add($"{indent}if Duel.SelectYesNo(tp,aux.Stringid(id,{Math.Min(Index, 16) - 1})) then");
+                var available = step.AskIf.Count == 0 ? "" : string.Join(" and ", step.AskIf) + " and ";
+                body.Add($"{indent}if {available}Duel.SelectYesNo(tp,aux.Stringid(id,{Math.Min(Index, 16) - 1})) then");
                 var inner = step.Result is null
                     ? step.Lines.Append($"{result}=1")
                     : step.Lines.Select(l => l.StartsWith($"local {result}=", StringComparison.Ordinal) ? l["local ".Length..] : l);

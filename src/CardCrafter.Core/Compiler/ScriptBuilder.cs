@@ -27,6 +27,15 @@ public sealed class ScriptBuilder(CardProject project, CardPack? pack)
         if (!_initial.Contains(line)) _initial.Add(line);
     }
 
+    private readonly List<string> _slots = [];
+
+    /// <summary>A small number, the same for the same key, so each watcher of a script gets a flag of its own.</summary>
+    public int Slot(string key)
+    {
+        if (!_slots.Contains(key)) _slots.Add(key);
+        return _slots.IndexOf(key);
+    }
+
     /// <summary>
     /// Counts what each player did this turn (Special Summons, activations, attacks) for "the turn you activate this"
     /// locks. One counter per activity: two locks on the same activity must count the same cards.

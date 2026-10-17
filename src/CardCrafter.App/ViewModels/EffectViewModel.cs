@@ -98,11 +98,28 @@ public sealed partial class EffectViewModel : ObservableObject
             Model.Limit = value.Value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(ShowSharedGroup));
+            OnPropertyChanged(nameof(ShowTimes));
             _changed();
         }
     }
 
-    public bool ShowSharedGroup => Model.Limit is OncePerTurn.Hard or OncePerTurn.Duel;
+    /// <summary>"Once per turn" effects (each copy) can share their use too, like an Ignition Effect and its Quick Effect copy.</summary>
+    public bool ShowSharedGroup => Model.Limit is OncePerTurn.Hard or OncePerTurn.Duel or OncePerTurn.Soft or OncePerTurn.FaceUpAndHard or OncePerTurn.SoftAndHard;
+
+    /// <summary>"Up to twice per turn", "thrice per turn by name": limits that can allow more than one use.</summary>
+    public bool ShowTimes => Model.Limit is OncePerTurn.Hard or OncePerTurn.Duel or OncePerTurn.Soft or OncePerTurn.SoftAndHard;
+    public decimal? Times
+    {
+        get => Model.Times;
+        set
+        {
+            var n = Math.Clamp((int)(value ?? 1), 1, 9);
+            if (Model.Times == n) return;
+            Model.Times = n;
+            OnPropertyChanged();
+            _changed();
+        }
+    }
     public decimal? SharedGroup
     {
         get => Model.SharedLimitGroup;

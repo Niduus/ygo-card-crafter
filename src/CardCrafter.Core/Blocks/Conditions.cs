@@ -89,31 +89,41 @@ public sealed class SummonedThisTurnCondition : ConditionBlock
     public override string Id => "if.summoned_this_turn";
     public override string Group => "This card";
     public override string Name => "This card was Summoned this turn";
-    public override string Sentence => "This card was {how} Summoned this turn";
-    public override string Help => "Pair it with a Quick Effect for \"If this card was Summoned this turn (Quick Effect): ...\".";
+    public override string Sentence => "This card {was} {how} Summoned this turn";
+    public override string Help => "Pair it with a Quick Effect for \"If this card was Summoned this turn (Quick Effect): ...\". " +
+                                   "\"Was not\" reads \"except during the turn this card was Special Summoned\".";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Choice("how", "How",
             new("any", "Normal, Flip or Special", "Normal, Flip or Special"),
             new("normal", "Normal"),
             new("special", "Special"),
-            new("flip", "Flip")),
+            new("flip", "Flip"),
+            new("normal_special", "Normal or Special")),
+        ParamSpec.Choice("was", "Was it", new("was", "was"), new("not", "was not", "was not (\"except during the turn ...\")")),
     ];
 
-    public override string Describe(BlockArgs args) => args.Choice("how") == "any"
-        ? "this card was Summoned this turn"
-        : $"this card was {args.Describe("how")} Summoned this turn";
+    public override string Describe(BlockArgs args)
+    {
+        var summoned = args.Choice("how") == "any" ? "Summoned" : $"{args.Describe("how")} Summoned";
+        return args.Choice("was") == "not" ? $"except during the turn this card was {summoned}" : $"this card was {summoned} this turn";
+    }
+
+    /// <summary>The check that this card was Summoned this turn, the way the choice says.</summary>
+    public static string Check(string how) => how switch
+    {
+        "normal" => "e:GetHandler():IsStatus(STATUS_SUMMON_TURN)",
+        "special" => "e:GetHandler():IsStatus(STATUS_SPSUMMON_TURN)",
+        "flip" => "e:GetHandler():IsStatus(STATUS_FLIP_SUMMON_TURN)",
+        "normal_special" => "e:GetHandler():IsStatus(STATUS_SUMMON_TURN+STATUS_SPSUMMON_TURN)",
+        _ => "(e:GetHandler():IsStatus(STATUS_SUMMON_TURN) or e:GetHandler():IsStatus(STATUS_FLIP_SUMMON_TURN) or e:GetHandler():IsStatus(STATUS_SPSUMMON_TURN))",
+    };
 
     public override void Compile(BlockContext ctx)
     {
         Zones.RequireMonster(ctx, Name);
-        ctx.Effect.Conditions.Add(ctx.Args.Choice("how") switch
-        {
-            "normal" => "e:GetHandler():IsStatus(STATUS_SUMMON_TURN)",
-            "special" => "e:GetHandler():IsStatus(STATUS_SPSUMMON_TURN)",
-            "flip" => "e:GetHandler():IsStatus(STATUS_FLIP_SUMMON_TURN)",
-            _ => "(e:GetHandler():IsStatus(STATUS_SUMMON_TURN) or e:GetHandler():IsStatus(STATUS_FLIP_SUMMON_TURN) or e:GetHandler():IsStatus(STATUS_SPSUMMON_TURN))",
-        });
+        var check = Check(ctx.Args.Choice("how"));
+        ctx.Effect.Conditions.Add(ctx.Args.Choice("was") == "not" ? "not " + check : check);
     }
 }
 
@@ -235,7 +245,8 @@ public sealed class PhaseCondition : ConditionBlock
     public override string Id => "if.phase";
     public override string Group => "Turn";
     public override string Name => "It is a certain phase";
-    public override string Sentence => "It is the {phase}";
+    public override string Sentence => "It {is} the {phase}";
+    public override string Help => "\"Is not\" reads \"except during the Draw Phase\", as Droll & Lock Bird says it.";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Choice("phase", "Phase",
@@ -244,20 +255,29 @@ public sealed class PhaseCondition : ConditionBlock
             new("main2", "Main Phase 2"),
             new("battle", "Battle Phase"),
             new("standby", "Standby Phase"),
-            new("end", "End Phase")),
+            new("end", "End Phase"),
+            new("draw", "Draw Phase")),
+        ParamSpec.Choice("is", "Is it", new("is", "is"), new("not", "is not", "is not (\"except during the ...\")")),
     ];
 
-    public override string Describe(BlockArgs args) => $"during the {args.Describe("phase")}";
+    public override string Describe(BlockArgs args) => args.Choice("is") == "not" ? $"except during the {args.Describe("phase")}" : $"during the {args.Describe("phase")}";
 
-    public override void Compile(BlockContext ctx) => ctx.Effect.Conditions.Add(ctx.Args.Choice("phase") switch
+    public override void Compile(BlockContext ctx)
     {
-        "battle" => "(Duel.GetCurrentPhase()>=PHASE_BATTLE_START and Duel.GetCurrentPhase()<=PHASE_BATTLE)",
-        "standby" => "Duel.GetCurrentPhase()==PHASE_STANDBY",
-        "end" => "Duel.GetCurrentPhase()==PHASE_END",
-        "main1" => "Duel.GetCurrentPhase()==PHASE_MAIN1",
-        "main2" => "Duel.GetCurrentPhase()==PHASE_MAIN2",
-        _ => "(Duel.GetCurrentPhase()==PHASE_MAIN1 or Duel.GetCurrentPhase()==PHASE_MAIN2)",
-    });
+        var check = ctx.Args.Choice("phase") switch
+        {
+            "battle" => "(Duel.GetCurrentPhase()>=PHASE_BATTLE_START and Duel.GetCurrentPhase()<=PHASE_BATTLE)",
+            "standby" => "Duel.GetCurrentPhase()==PHASE_STANDBY",
+            "end" => "Duel.GetCurrentPhase()==PHASE_END",
+            "main1" => "Duel.GetCurrentPhase()==PHASE_MAIN1",
+            "main2" => "Duel.GetCurrentPhase()==PHASE_MAIN2",
+            "draw" => "Duel.GetCurrentPhase()==PHASE_DRAW",
+            _ => "(Duel.GetCurrentPhase()==PHASE_MAIN1 or Duel.GetCurrentPhase()==PHASE_MAIN2)",
+        };
+        if (ctx.Args.Choice("is") != "not") { ctx.Effect.Conditions.Add(check); return; }
+        // "Except during the Draw Phase": a "==" check turned around, the others wrapped.
+        ctx.Effect.Conditions.Add(check.StartsWith('(') ? "not " + check : check.Replace("==", "~=", StringComparison.Ordinal));
+    }
 }
 
 /// <summary>
@@ -375,13 +395,45 @@ public sealed class CardPresentCondition : ConditionBlock
     }
 }
 
-/// <summary>"If this card battled this turn" (at the end of the Battle Phase, during the End Phase...).</summary>
+/// <summary>
+/// "If this card battled this turn" (at the end of the Battle Phase, during the End Phase...), and "if this card destroyed
+/// a monster by battle" (Number 89: Diablosis, Armed Dragon LV5): a watcher on this card remembers the destruction.
+/// </summary>
 public sealed class BattledThisTurnCondition : ConditionBlock
 {
     public override string Id => "if.battled_this_turn";
     public override string Group => "This card";
-    public override string Name => "This card battled this turn";
-    public override string Sentence => "This card battled this turn";
-    public override string Describe(BlockArgs args) => "this card battled this turn";
-    public override void Compile(BlockContext ctx) => ctx.Effect.Conditions.Add("e:GetHandler():GetBattledGroupCount()>0");
+    public override string Name => "This card battled, or destroyed a monster by battle, this turn";
+    public override string Sentence => "This card {what}";
+    public override IReadOnlyList<ParamSpec> Params { get; } =
+    [
+        ParamSpec.Choice("what", "What it did",
+            new("battled", "battled this turn"),
+            new("destroyed", "destroyed a monster by battle this turn"),
+            new("destroyed_bp", "destroyed a monster by battle", "destroyed a monster by battle this Battle Phase")),
+    ];
+
+    public override string Describe(BlockArgs args) => $"this card {args.Describe("what")}";
+
+    public override void Compile(BlockContext ctx)
+    {
+        var what = ctx.Args.Choice("what");
+        if (what == "battled") { ctx.Effect.Conditions.Add("e:GetHandler():GetBattledGroupCount()>0"); return; }
+        Zones.RequireMonster(ctx, Name);
+        // Remembered until the end of the turn or of the Battle Phase, while this card stays on the field.
+        var (flag, phase) = what == "destroyed" ? ("id+8220", "PHASE_END") : ("id+8221", "PHASE_BATTLE");
+        var reg = ctx.Script.AddFunction("bdreg" + (what == "destroyed" ? "" : "bp"), "e,tp,eg,ep,ev,re,r,rp",
+            [$"e:GetHandler():RegisterFlagEffect({flag},RESET_EVENT+RESETS_STANDARD+RESET_PHASE+{phase},0,1)"]);
+        var v = what == "destroyed" ? "bd" : "bdp";
+        ctx.Script.AddInitialLine(string.Join("\n\t",
+        [
+            $"local {v}=Effect.CreateEffect(c)",
+            $"{v}:SetType(EFFECT_TYPE_SINGLE+EFFECT_TYPE_CONTINUOUS)",
+            $"{v}:SetProperty(EFFECT_FLAG_CANNOT_DISABLE)",
+            $"{v}:SetCode(EVENT_BATTLE_DESTROYING)",
+            $"{v}:SetOperation({reg})",
+            $"c:RegisterEffect({v})",
+        ]));
+        ctx.Effect.Conditions.Add($"e:GetHandler():GetFlagEffect({flag})~=0");
+    }
 }

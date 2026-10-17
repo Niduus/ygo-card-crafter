@@ -70,6 +70,10 @@ public static class BlockRegistry
         new CanBattleCondition(),
         new CompareLifePointsCondition(),
         new CardPresentCondition(),
+        // Duel history (DuelHistory.cs).
+        new CardHistoryCondition(),
+        new ActivatedThisTurnCondition(),
+        new AlreadyFaceUpCondition(),
         new ThisCardEventsTrigger(),
         new OpponentSpecialSummonsAction(),
         new FusionSummonAction(),
