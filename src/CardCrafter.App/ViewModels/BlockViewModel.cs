@@ -45,7 +45,7 @@ public sealed partial class BlockViewModel : ObservableObject
             {
                 ParamType.Integer when spec.Hex => new HexSegmentViewModel(spec, instance, Changed),
                 ParamType.Integer => new IntSegmentViewModel(spec, instance, Changed),
-                ParamType.Choice => new ChoiceSegmentViewModel(spec, instance, Changed),
+                ParamType.Choice => new ChoiceSegmentViewModel(spec, instance, Changed, () => owner.Owner.Project),
                 ParamType.Bool => new BoolSegmentViewModel(spec, instance, Changed),
                 _ => new CardsSegmentViewModel(spec, instance, pack, Changed),
             });
@@ -59,6 +59,12 @@ public sealed partial class BlockViewModel : ObservableObject
     public BlockInstance Instance { get; }
     public EffectViewModel Owner { get; }
     public List<SegmentViewModel> Segments { get; } = [];
+
+    /// <summary>Reads again the choices that depend on the rest of the card, like which Memories it fills.</summary>
+    public void RefreshChoices()
+    {
+        foreach (var c in Segments.OfType<ChoiceSegmentViewModel>()) c.RefreshChoices();
+    }
 
     public string Kind => Definition.Kind.ToString();
     public string KindLabel => Definition.Kind switch

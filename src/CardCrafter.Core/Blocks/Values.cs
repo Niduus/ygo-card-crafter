@@ -46,10 +46,20 @@ public static class ValueSources
         new("event", "that amount (the damage or LP that started this effect)"),
         new("roll", "the result", "the result of the die roll before it"),
         new("heads", "the number of heads", "the number of heads of the coin toss before it"),
+        // What this card remembers, and the LP paid for the cost (Memory.cs).
+        new("lp_paid", "the LP paid", "the LP paid for the cost (pay LP in multiples)"),
+        new("mem", "the remembered number", "the number this card remembers (Memory below)"),
+        new("mem_count", "the number of remembered cards", "the number of remembered cards (Memory below)"),
+        new("mem_atk", "the remembered monster's ATK", "the remembered monster's ATK (Memory below)"),
+        new("mem_orig_atk", "the remembered monster's original ATK", "the remembered monster's original ATK (Memory below)"),
+        new("mem_level", "the remembered monster's Level", "the remembered monster's Level (Memory below)"),
     ];
 
-    /// <summary>Values known only while the effect resolves: the amount that started it, a die roll's result, a toss's heads.</summary>
-    public static bool AtResolution(string source) => source is "event" or "roll" or "heads";
+    /// <summary>Values known only while the effect resolves: the amount that started it, a die roll's result, a toss's heads, the LP paid.</summary>
+    public static bool AtResolution(string source) => source is "event" or "roll" or "heads" or "lp_paid";
+
+    /// <summary>Values read from what this card remembers, which name their Memory in the "mem" blank.</summary>
+    public static bool Remembered(string source) => source.StartsWith("mem", StringComparison.Ordinal);
 
     public static readonly ChoiceOption[] Hows =
     [
@@ -72,7 +82,7 @@ public static class ValueSources
     /// ATK, damage) read "ATK equal to its Level x 300" instead.
     /// </summary>
     public static bool IsCountable(string source) => source is "count" or "different_attr" or "different_race" or "different_name"
-        or "its_materials" or "its_counters" or "its_equips" or "its_linked" or "its_used" or "sum_counters";
+        or "its_materials" or "its_counters" or "its_equips" or "its_linked" or "its_used" or "sum_counters" or "mem_count";
 
     /// <summary>"its" for "it", "this card's" for "this card".</summary>
     private static string Poss(string owner) => owner == "it" ? "its" : owner + "'s";
@@ -91,6 +101,7 @@ public static class ValueSources
         "its_equips" => $"Equip Card equipped to {owner}",
         "its_linked" => $"monster {owner} points to",
         "its_used" => $"material used for {Poss(owner)} Summon",
+        "mem_count" => "remembered card",
         _ => Of(source, cards, pack, owner, counter),
     };
 
@@ -193,8 +204,11 @@ public static class ValueSources
             "gained_turn" => LifeWatch.Total(ctx, p, "gained"),
             "event" when ev => "ev",
             "roll" or "heads" when ev => Chance.ValueLua(ctx, source),
+            "lp_paid" when ev => LpPaid(ctx),
+            "mem" or "mem_count" or "mem_atk" or "mem_orig_atk" or "mem_level" => RememberedLua(ctx, source, "mem" + counterSuffix),
             _ => "0",
         };
+        if (source == "lp_paid" && !ev) ctx.Effect.Error("\"The LP paid\" only exists while the effect that paid them resolves; this block can't use it.");
         if (source is "roll" or "heads" && !ev) ctx.Effect.Error("A die roll's result or a coin toss's heads only exist while the effect resolves; this block can't use them.");
         if (source == "event" && !ev) ctx.Effect.Error("\"That amount\" only exists while an effect resolves after damage or an LP change; a lasting effect can't use it.");
         else if (source == "event" && ctx.Effect.Code is not ("EVENT_DAMAGE" or "EVENT_BATTLE_DAMAGE" or "EVENT_RECOVER" or "EVENT_PAY_LPCOST"))
@@ -209,6 +223,33 @@ public static class ValueSources
         };
     }
 
+    /// <summary>"The LP paid": the amount a "pay LP in multiples" cost kept in the effect's label.</summary>
+    private static string LpPaid(BlockContext ctx)
+    {
+        if (!PayLifePointsCost.PaysMultiple(ctx.Effect.Source))
+            ctx.Effect.Error("\"The LP paid\" needs the COST block \"Pay LP in multiples of ...\" in this effect.");
+        return "e:GetLabel()";
+    }
+
+    /// <summary>What this card remembers in the Memory named by the <paramref name="slotKey"/> blank: its number, or its remembered cards' count or stats.</summary>
+    private static string RememberedLua(BlockContext ctx, string source, string slotKey)
+    {
+        var slot = ctx.Args.Definition.Param(slotKey) is not null ? ctx.Args.Choice(slotKey) : "A";
+        Memory.CheckRead(ctx, slot, source == "mem" ? "number" : "cards");
+        return source switch
+        {
+            "mem" => Memory.NumberLua(ctx.Script, slot),
+            "mem_count" => $"{Memory.GroupLua(ctx.Script, slot)}:GetCount()",
+            "mem_atk" => Memory.StatLua(ctx.Script, slot, "Card.GetAttack"),
+            "mem_orig_atk" => Memory.StatLua(ctx.Script, slot, "Card.GetBaseAttack"),
+            _ => Memory.StatLua(ctx.Script, slot, "Card.GetLevel"),
+        };
+    }
+
+    /// <summary>The Memory a remembered value reads ("mem", or "mem2" for a block's second value).</summary>
+    public static ParamSpec MemoryParam(string valueKey = "value", string suffix = "") =>
+        Memory.SlotParam("mem" + suffix).ShowIf(b => Remembered(b.Values.GetValueOrDefault(valueKey, "lp_diff")));
+
     /// <summary>The value's parameters, for blocks that use one.</summary>
     /// <param name="withEvent">Offer "that amount": only effects that resolve after damage or an LP change have one.</param>
     public static IEnumerable<ParamSpec> Params(int amountDefault = 300, bool withEvent = true) =>
@@ -216,6 +257,7 @@ public static class ValueSources
         ParamSpec.Choice("how", "How much", Hows),
         ParamSpec.Int("amount", "Amount (x, or for each)", amountDefault, 1, 99999).ShowIf(b => b.Values.GetValueOrDefault("how") == "per"),
         ParamSpec.Choice("value", "Of", withEvent ? Sources : Sources.Where(o => !AtResolution(o.Value)).ToArray()),
+        MemoryParam(),
         ParamSpec.Cards(CardsKey, "Which cards (for counts and totals)", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Hand })
             .ShowIf(b => UsesCards(b.Values.GetValueOrDefault("value", "lp_diff"))),
         // Saved before counters had a kind, "the number of counters on it" is every counter: "any" is the default.
@@ -274,6 +316,8 @@ public static class ValueSources
         // "the ATK of monsters you control becomes ...", but "its ATK/DEF become ...".
         if (dir == "becomes") return $"{Whose(unit.Trim())} {(stat == "both" ? "become" : "becomes")} {Phrase(args, "", forEach: false)}";
         var gain = dir == "lose" ? (plural ? "lose" : "loses") : (plural ? "gain" : "gains");
+        // "this card gains that much ATK", as cards that pay LP in multiples say it (Cosmic Tree Irmistil, Psychic Blade).
+        if (args.Choice("value") == "lp_paid" && args.Choice("how") == "equal") return $"{subject} {gain} that much{unit}";
         // "gains ATK equal to ...", "gains 300 ATK for each ...".
         return $"{subject} {gain} {Phrase(args, unit)}";
     }
@@ -290,7 +334,7 @@ public sealed class StatsFromValuePassive : PassiveBlock
     public override string Id => BlockId;
     public override string Group => "Monsters";
     public override string Name => "Gains ATK/DEF/Level equal to a live value (LP difference, cards, materials...)";
-    public override string Sentence => "{cards} {dir} {stat} {how} {amount} {value} {counter} {counter_id} {of}";
+    public override string Sentence => "{cards} {dir} {stat} {how} {amount} {value} {mem} {counter} {counter_id} {of}";
     public override string Help => "The amount changes as the game does: LP, cards counted by the picker, the monster's own Level or materials, damage taken this turn...";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
@@ -348,7 +392,7 @@ public sealed class StatsFromValueAction : CardGroupAction
     public override string Id => BlockId;
     public override string Group => "Monsters";
     public override string Name => "Monsters gain ATK/DEF/Level equal to a value (LP difference, cards, its Level...)";
-    public override string Sentence => "{count} {cards} {target} {dir} {stat} {how} {amount} {value} {counter} {counter_id} {of} {duration}";
+    public override string Sentence => "{count} {cards} {target} {dir} {stat} {how} {amount} {value} {mem} {counter} {counter_id} {of} {duration}";
     protected override string Category => "CATEGORY_ATKCHANGE";
     protected override string Hint => "HINTMSG_FACEUP";
     protected override string TargetedWording => "{0}";
@@ -430,7 +474,7 @@ public sealed class LifeFromValueAction : ActionBlock
     public override string Id => BlockId;
     public override string Group => "Life Points";
     public override string Name => "Inflict damage / gain LP equal to a value (cards, LP, ATK...)";
-    public override string Sentence => "{what} {who} {how} {amount} {value} {counter} {counter_id} {of} {when}";
+    public override string Sentence => "{what} {who} {how} {amount} {value} {mem} {counter} {counter_id} {of} {when}";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Choice("what", "Do", new("damage", "Inflict damage to"), new("gain", "Gain LP:")),

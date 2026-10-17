@@ -41,6 +41,8 @@ public static partial class ScriptTranslator
         public HashSet<string> Handler { get; init; } = [];
         /// <summary>Whether "ev" is the amount of damage or LP that started the effect.</summary>
         public bool Event { get; init; }
+        /// <summary>Whether "e:GetLabel()" is the LP paid in multiples for the cost (ScriptTranslator.Memory.cs).</summary>
+        public bool LpPaid { get; init; }
 
         public bool IsIts(string card) =>
             Its is not null && (card == Its || Handler.Contains(Its) && Handler.Contains(card));
@@ -201,6 +203,7 @@ public static partial class ScriptTranslator
     {
         Match m;
         if (x == "ev") return s.Event ? ("event", null) : null;
+        if (LpPaidBase(x, s.LpPaid) is { } paid) return paid;
         // The monster's own numbers. (Counters are read by CounterBase.)
         if ((m = Regex.Match(x, @"^(.+):(GetLevel|GetRank|GetLink|GetOverlayCount|GetEquipCount|GetLinkedGroupCount|GetMaterialCount|GetBaseAttack|GetBaseDefense)\(\)$")).Success
             && s.IsIts(StripParens(m.Groups[1].Value)))
@@ -410,6 +413,7 @@ public static partial class ScriptTranslator
             Its = its,
             Handler = ["c", "e:GetHandler()"],
             Event = AmountEvent,
+            LpPaid = _lpPaid,
         };
         try { return ValueOf(expr, scope, ov.Fns); }
         catch (Untranslatable) { return null; }

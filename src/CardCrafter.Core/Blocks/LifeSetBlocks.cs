@@ -71,7 +71,7 @@ public sealed class EquipValuePassive : PassiveBlock
     public override string Id => BlockId;
     public override string Group => "Equip";
     public override string Name => "The equipped monster gains ATK/DEF/Level equal to a live value";
-    public override string Sentence => "The equipped monster {dir} {stat} {how} {amount} {value} {counter} {counter_id} {of}";
+    public override string Sentence => "The equipped monster {dir} {stat} {how} {amount} {value} {mem} {counter} {counter_id} {of}";
     public override string Help => "For Equip Cards. \"Its\" values (its Level, its original ATK...) are the equipped monster's.";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [

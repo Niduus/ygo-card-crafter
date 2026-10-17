@@ -164,6 +164,7 @@ public sealed partial class CardViewModel : ObservableObject
                 vm.Number = i + 1;
                 vm.PreviewText = EffectTextGenerator.Describe(vm.Model, C, pack);
                 vm.Problems = string.Join("\n", result.Diagnostics.Where(d => d.EffectIndex == i + 1).Select(d => (d.Severity == Severity.Error ? "✖ " : "⚠ ") + d.Message));
+                vm.RefreshChoices();
             }
             SuggestedText = EffectTextGenerator.Generate(Project, pack);
             SuggestedPendulumText = EffectTextGenerator.GeneratePendulum(Project, pack);

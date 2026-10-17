@@ -53,15 +53,29 @@ public sealed class PayLifePointsCost : CostBlock
     public override string Id => "cost.pay_lp";
     public override string Group => "Life Points";
     public override string Name => "Pay Life Points";
-    public override string Sentence => "Pay {how} {amount} LP";
+    public override string Sentence => "Pay {how} {amount} {step} {max} LP";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
-        ParamSpec.Choice("how", "How much", new("amount", "", "a number"), new("half", "half your", "half your LP")),
+        ParamSpec.Choice("how", "How much", new("amount", "", "a number"), new("half", "half your", "half your LP"),
+            new("multiple", "LP in multiples of", "any multiple of (the LP paid can be used as an amount)")),
         ParamSpec.Int("amount", "Amount", 1000, 1, 99999).ShowIf(b => b.Values.GetValueOrDefault("how", "amount") == "amount"),
+        ParamSpec.Choice("step", "Multiples of", new("100", "100"), new("500", "500"), new("1000", "1000")).ShowIf(Multiple),
+        ParamSpec.Int("max", "At most (0: as much as you have)", 0, 0, 99999).ShowIf(Multiple),
     ];
 
-    public override string Describe(BlockArgs args) =>
-        args.Choice("how") == "half" ? "pay half your LP" : $"pay {args.Int("amount")} LP";
+    private static bool Multiple(BlockInstance b) => b.Values.GetValueOrDefault("how", "amount") == "multiple";
+
+    public override string Describe(BlockArgs args) => args.Choice("how") switch
+    {
+        "half" => "pay half your LP",
+        // Psychic Blade: "Pay LP in multiples of 100 (max. 2000)".
+        "multiple" => $"pay LP in multiples of {args.Choice("step")}" + (args.Int("max") > 0 ? $" (max. {args.Int("max")})" : ""),
+        _ => $"pay {args.Int("amount")} LP",
+    };
+
+    /// <summary>Whether the effect pays LP in multiples, which its blocks can use as "the LP paid" (kept in the effect's label).</summary>
+    public static bool PaysMultiple(EffectEvent effect) =>
+        effect.Cost.Any(b => b.BlockId == "cost.pay_lp" && b.Values.GetValueOrDefault("how") == "multiple");
 
     public override void Compile(BlockContext ctx)
     {
@@ -69,6 +83,31 @@ public sealed class PayLifePointsCost : CostBlock
         if (ctx.Args.Choice("how") == "half")
         {
             ctx.Effect.CostLines.Add("Duel.PayLPCost(tp,math.floor(Duel.GetLP(tp)/2))");
+            return;
+        }
+        // "Pay LP in multiples of 100 (max. 2000)": the player declares the amount; it is kept in the effect's label, as
+        // official cards keep it ("Duel.PayLPCost(tp,ac,true) e:SetLabel(ac)").
+        if (ctx.Args.Choice("how") == "multiple")
+        {
+            if (ctx.Effect.Source.Cost.Any(b => b.BlockId == "cost.move_cards") || ctx.Effect.Source.Cost.Count(b => b.BlockId == Id && b.Values.GetValueOrDefault("how") == "multiple") > 1)
+            {
+                ctx.Effect.Error("Only one COST block of an effect can keep its amount: paying LP in multiples can't go with another cost that counts its cards, or a second one.");
+                return;
+            }
+            var step = ctx.Args.Choice("step");
+            var max = ctx.Args.Int("max");
+            if (max > 0 && max < int.Parse(step, System.Globalization.CultureInfo.InvariantCulture))
+                ctx.Effect.Error($"\"Pay LP in multiples of {step}\": the most that can be paid ({max}) is less than {step}.");
+            ctx.Effect.CostChecks.Add($"Duel.CheckLPCost(tp,{step},true)");
+            ctx.Effect.CostLines.AddRange(
+            [
+                $"local lpm=math.floor({(max > 0 ? $"math.min(Duel.GetLP(tp),{max})" : "Duel.GetLP(tp)")}/{step})",
+                "local lpt={}",
+                $"for i=1,lpm do lpt[i]=i*{step} end",
+                "local lpc=Duel.AnnounceNumber(tp,table.unpack(lpt))",
+                "Duel.PayLPCost(tp,lpc,true)",
+                "e:SetLabel(lpc)",
+            ]);
             return;
         }
         var n = ctx.Args.Int("amount");

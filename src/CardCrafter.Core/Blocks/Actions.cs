@@ -428,18 +428,27 @@ public sealed class BanishAction : CardGroupAction
 
     /// <summary>S:P Little Knight's "banish them until the End Phase": cards banished from the field come back then.</summary>
     protected override IReadOnlyList<ParamSpec> BuildParams() =>
-        [.. base.BuildParams(), ParamSpec.Choice("until", "For how long", new("always", "", "for good"), new("end_phase", "until the End Phase")),
+        [.. base.BuildParams(), ParamSpec.Choice("until", "For how long", new("always", "", "for good"), new("end_phase", "until the End Phase"),
+             // Memory.cs: banished for now, back during a Standby Phase, as official scripts write it.
+             new("standby_next", "until the next Standby Phase"), new("standby_your", "until your next Standby Phase"),
+             new("standby_opp", "until your opponent's next Standby Phase")),
          ParamSpec.Flag("facedown", "face-down", false)];
 
     protected override string TargetedAction(BlockArgs args, string pronoun, bool single) =>
-        base.TargetedAction(args, pronoun, single) + (args.Bool("facedown") ? " face-down" : "") + (args.Choice("until") == "end_phase" ? " until the End Phase" : "");
+        base.TargetedAction(args, pronoun, single) + (args.Bool("facedown") ? " face-down" : "") + (args.Choice("until") != "always" ? " " + args.Describe("until") : "");
 
     protected override string Apply(string g, BlockContext ctx)
     {
-        if (ctx.Args.Choice("until") != "end_phase") return $"Duel.Remove({g},{(ctx.Args.Bool("facedown") ? "POS_FACEDOWN" : "POS_FACEUP")},REASON_EFFECT)";
-        if (ctx.Args.Bool("facedown")) ctx.Effect.Error("\"Banish cards\": cards banished face-down don't come back in the End Phase. Untick \"face-down\" or banish them for good.");
+        if (ctx.Args.Choice("until") == "always") return $"Duel.Remove({g},{(ctx.Args.Bool("facedown") ? "POS_FACEDOWN" : "POS_FACEUP")},REASON_EFFECT)";
+        var back = ctx.Args.Choice("until") switch
+        {
+            "standby_next" => "during the next Standby Phase", "standby_your" => "during your next Standby Phase",
+            "standby_opp" => "during your opponent's next Standby Phase", _ => "in the End Phase",
+        };
+        if (ctx.Args.Bool("facedown")) ctx.Effect.Error($"\"Banish cards\": cards banished face-down don't come back {back}. Untick \"face-down\" or banish them for good.");
         if (!ctx.Args.Cards("cards").ThisCard && (ctx.Args.Cards("cards").Zones & ~Zone.Field) != Zone.None)
-            ctx.Effect.Warn("Only cards banished from the field come back in the End Phase.");
+            ctx.Effect.Warn($"Only cards banished from the field come back {back}.");
+        if (ctx.Args.Choice("until") != "end_phase") return LaterAction.BanishUntil(ctx.Script, g, ctx.Args.Choice("until"));
         var retFilter = ctx.Script.AddFunction("tmpretfilter", "c,fid", ["return c:GetFlagEffectLabel(id)==fid"]);
         var retCon = ctx.Script.AddFunction("tmpretcon", "e,tp,eg,ep,ev,re,r,rp",
         [
@@ -469,7 +478,8 @@ public sealed class BanishAction : CardGroupAction
         ]);
         var banish = ctx.Script.AddFunction("tmpbanish", "g,e,tp",
         [
-            "local n=Duel.Remove(g,POS_FACEUP,REASON_EFFECT+REASON_TEMPORARY)",
+            // Banished in the position it is in (0), as S:P Little Knight and the official temporary banishes do: a face-down card stays face-down.
+            "local n=Duel.Remove(g,0,REASON_EFFECT+REASON_TEMPORARY)",
             "local og=Duel.GetOperatedGroup():Filter(Card.IsLocation,nil,LOCATION_REMOVED)",
             "if og:GetCount()==0 then return n end",
             "local fid=e:GetHandler():GetFieldID()",
