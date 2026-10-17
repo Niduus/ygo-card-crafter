@@ -20,7 +20,9 @@ public static class FilterText
     /// <param name="withExcept">False when the caller puts ", except ..." at the end of its own sentence, as cards print it.</param>
     private static string Lv(CardFilter f) => f.MonsterKind == MonsterKind.Xyz ? "Rank" : "Level";
 
-    public static string Describe(CardFilter f, CardPack? pack, bool plural = false, string preposition = "from", bool withLocation = true, string? ownName = null, bool withExcept = true)
+    /// <param name="beforeLocation">Words about the cards as a group that go right before where they are: "with different names".</param>
+    public static string Describe(CardFilter f, CardPack? pack, bool plural = false, string preposition = "from", bool withLocation = true, string? ownName = null, bool withExcept = true,
+        string? beforeLocation = null)
     {
         if (f.ThisCard) return "this card";
         var words = new List<string>();
@@ -144,6 +146,7 @@ public static class FilterText
             words.Add(f.MentionsOrIs ? $"that is {mentioned} or mentions it" : $"that mentions {mentioned}");
         }
 
+        if (beforeLocation is { Length: > 0 }) words.Add(beforeLocation);
         if (withLocation)
         {
             var where = Location(f, preposition, plural);
@@ -255,6 +258,9 @@ public static class FilterText
 
     /// <summary>"in your other Pendulum Zone": the Pendulum Zone this card isn't in.</summary>
     private static bool OtherPendulumZone(CardFilter f) => f.ExcludeThisCard && f.Zones == Zone.PendulumZone && f.Owner == CardOwner.You;
+
+    /// <summary>Where the cards are: "from your hand or GY", "your opponent controls".</summary>
+    public static string LocationText(CardFilter f, string preposition = "from", bool plural = false) => Location(f, preposition, plural);
 
     private static string Location(CardFilter f, string preposition, bool plural = false)
     {

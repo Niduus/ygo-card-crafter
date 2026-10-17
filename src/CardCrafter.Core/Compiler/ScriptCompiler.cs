@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using CardCrafter.Core.Blocks;
 using CardCrafter.Core.Model;
 
@@ -115,6 +116,11 @@ public static class ScriptCompiler
             "\tend",
             "end",
         ]),
+        ("aux.dncheck", ["if not aux.dncheck then function aux.dncheck(g) return g:GetClassCount(Card.GetCode)==#g end end"]),
+        ("aux.dabcheck", ["if not aux.dabcheck then function aux.dabcheck(g) return g:GetClassCount(Card.GetAttribute)==#g end end"]),
+        ("aux.drccheck", ["if not aux.drccheck then function aux.drccheck(g) return g:GetClassCount(Card.GetRace)==#g end end"]),
+        ("aux.dlvcheck", ["if not aux.dlvcheck then function aux.dlvcheck(g) return g:GetClassCount(Card.GetLevel)==#g end end"]),
+        ("aux.SameValueCheck", ["if not aux.SameValueCheck then function aux.SameValueCheck(g,f) local v=nil for tc in aux.Next(g) do v=v and v&f(tc) or f(tc) if v==0 then return false end end return true end end"]),
         ("aux.IsCodeOrListed", ["if not aux.IsCodeOrListed then function aux.IsCodeOrListed(c,code) return c:IsCode(code) or aux.IsCodeListed(c,code) end end"]),
         ("aux.DimensionalFissureTarget", [
             "if not aux.DimensionalFissureTarget then",
@@ -161,13 +167,18 @@ public static class ScriptCompiler
         {
             // "Activate 1 of these effects": each "●" link starts another option. A "●" on a coin toss or die roll's result
             // ("● Heads: ...") is that result's steps instead, not an option the player picks.
-            Chance.CheckOptions(effect, src.Do);
+            // A "Choose 1 of these effects" block first says how the option is chosen (Selections.cs); the options follow it.
+            var header = ChooseEffectsAction.Header(src.Do);
+            if (header is not null) Run(effect, header, doKind, pack);
+            var dos = ChooseEffectsAction.Options(src.Do);
+            Chance.CheckOptions(effect, dos);
             var cases = new Chance.CaseChecks(effect);
-            var branch = src.Do.Skip(1).Any(b => b.Link == ActionLink.Option && !Chance.IsGate(b)) ? 1 : 0;
-            for (int i = 0; i < src.Do.Count; i++)
+            var branch = header is not null || dos.Skip(1).Any(b => b.Link == ActionLink.Option && !Chance.IsGate(b)) ? 1 : 0;
+            var acted = false;
+            for (int i = 0; i < dos.Count; i++)
             {
-                var b = src.Do[i];
-                if (i > 0 && b.Link == ActionLink.Option && !Chance.IsGate(b)) branch++;
+                var b = dos[i];
+                if (i > 0 && b.Link == ActionLink.Option && !Chance.IsGate(b)) { branch++; acted = false; }
                 cases.Before(b);
                 effect.CurrentBranch = branch;
                 effect.CurrentOptional = b.Optional;
@@ -181,10 +192,19 @@ public static class ScriptCompiler
                     {
                         var gate = effect.Conditions.Skip(before).ToList();
                         effect.Conditions.RemoveRange(before, gate.Count);
-                        effect.AddGate(gate.Count == 0 ? "true" : string.Join(" and ", gate), b.Link, Chance.IsGate(b));
+                        // "● If you control no monsters: ...": what the option needs to be chosen.
+                        if (ChooseEffectsAction.IsOptionCondition(src.Do, b)) effect.BranchOf(branch).Checks.AddRange(gate);
+                        else effect.AddGate(gate.Count == 0 ? "true" : string.Join(" and ", gate), b.Link, Chance.IsGate(b));
                     }
                 }
-                else Run(effect, b, doKind, pack);
+                // "● Discard 1 card; draw 1 card": a COST block that starts an option is that option's own cost.
+                else if (BlockRegistry.Find(b.BlockId) is { Kind: BlockKind.Cost })
+                {
+                    if (header is null || branch == 0 || acted)
+                        effect.Error("A COST block among the DO blocks is an option's own cost: put a \"Choose 1 of these effects\" block first, and the COST block at the start of its option.");
+                    else OptionCost(effect, b, branch, pack);
+                }
+                else { Run(effect, b, doKind, pack); acted = true; }
                 if (branch > 0)
                 {
                     // What this block checks and sets up at activation belongs to its option.
@@ -197,6 +217,7 @@ public static class ScriptCompiler
                 }
             }
             cases.End();
+            if (header is not null) ChooseEffectsAction.CheckOptions(effect);
             effect.CurrentBranch = 0;
             effect.CurrentOptional = false;
         }
@@ -273,6 +294,25 @@ public static class ScriptCompiler
                 : "(" + string.Join(" or ", byCode.Select(Group)) + ")");
         }
         effect.TriggerConditionCount = effect.Conditions.Count;
+    }
+
+    /// <summary>
+    /// An option's own cost: compiled as a COST block, then kept with its option, which pays it when it is chosen. The
+    /// count a cost keeps in the label ("for each card discarded") is kept beside the chosen option.
+    /// </summary>
+    private static void OptionCost(EffectBuilder effect, BlockInstance b, int branch, CardPack? pack)
+    {
+        var (checks, lines, props, range) = (effect.CostChecks.Count, effect.CostLines.Count, effect.Properties.Count, effect.Range);
+        if (b.Optional) effect.Warn("A cost can't be optional; \"you can\" was ignored.");
+        if (!Run(effect, b, BlockKind.Cost, pack)) return;
+        var target = effect.BranchOf(branch);
+        target.CostChecks.AddRange(effect.CostChecks.Skip(checks));
+        effect.CostChecks.RemoveRange(checks, effect.CostChecks.Count - checks);
+        target.CostLines.AddRange(effect.CostLines.Skip(lines).Select(l =>
+            Regex.IsMatch(l, @"^e:SetLabel\((.*)\)$") ? l[..^1] + ",op)" : l));
+        effect.CostLines.RemoveRange(lines, effect.CostLines.Count - lines);
+        if (effect.Properties.Count != props || effect.Range != range)
+            effect.Error($"\"{BlockRegistry.Find(b.BlockId)!.Name}\" changes the whole effect, so it can't be one option's own cost.");
     }
 
     private static bool Run(EffectBuilder effect, BlockInstance inst, BlockKind expected, CardPack? pack)

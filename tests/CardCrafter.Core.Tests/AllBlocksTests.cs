@@ -178,6 +178,13 @@ public class AllBlocksTests
             case DeclaredLockAction.BlockId:
                 project.Effects[0].Do.Insert(0, BlockRegistry.Find(DeclareAction.BlockId)!.CreateInstance());
                 break;
+            // Only Spells and Traps are Set; "Choose 1 of these effects" comes before two "●" options.
+            case RevealPickAction.BlockId when inst.Values.GetValueOrDefault("then") == "set":
+                inst.Filters["cards"].CardType = FilterCardType.SpellTrap;
+                break;
+            case ChooseEffectsAction.BlockId:
+                project.Effects[0].Do.AddRange([new BlockInstance("do.draw").Linked(ActionLink.Option), new BlockInstance("do.gain_lp").Linked(ActionLink.Option)]);
+                break;
         }
         // "The result" of a die roll and "the number of heads" need the roll or toss before them.
         if (inst.Values.GetValueOrDefault("value") is "roll" or "heads" && def.Kind == BlockKind.Action)

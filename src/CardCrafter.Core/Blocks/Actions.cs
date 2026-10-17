@@ -92,7 +92,7 @@ public abstract class ActionBlock : BlockDefinition
 /// The shared shape of "do something to N cards": pick them (targeting or not), check they exist
 /// on activation, then move or destroy them on resolution.
 /// </summary>
-public abstract class CardGroupAction : ActionBlock
+public abstract partial class CardGroupAction : ActionBlock
 {
     public override string Group => "Cards";
     protected abstract string Category { get; }
@@ -114,7 +114,7 @@ public abstract class CardGroupAction : ActionBlock
     {
         if (Param("target") is null || !args.Bool("target")) return null;
         var single = !args.IsPlural && !(args.CountMode == "up_to" && args.Int("count") > 1);
-        var target = $"target {args.Describe("count")} {args.Describe("cards")}{args.ExceptText()}";
+        var target = $"target {args.Describe("count")} {args.Describe("cards")}{args.ExceptText()}{Selection.EachText(args)}";
         return (target, TargetedAction(args, single ? "it" : "them", single));
     }
 
@@ -144,10 +144,12 @@ public abstract class CardGroupAction : ActionBlock
 
     protected virtual IReadOnlyList<ParamSpec> BuildParams() =>
     [
-        ParamSpec.Int("count", "How many", 1, 1, MaxCount),
-        ModeParam,
+        // "any number of" says how many itself (Selections.cs).
+        ParamSpec.Int("count", "How many", 1, 1, MaxCount).ShowIf(b => b.Values.GetValueOrDefault("amount") is not ("any" or "number_of")),
+        ModeParam.ShowIf(b => b.Values.GetValueOrDefault("amount") is not ("any" or "number_of")),
         new ParamSpec { Key = "cards", Label = "Which cards", Type = ParamType.Cards, DefaultFilter = DefaultCards, AllowThisCard = AllowsThisCard },
         ParamSpec.Flag("target", "(targeting)", false),
+        .. SelectionParams,
     ];
 
     private static string Mode(BlockContext ctx) => ctx.Args.CountMode;
@@ -222,6 +224,12 @@ public abstract class CardGroupAction : ActionBlock
         var mode = Mode(ctx);
         var min = mode == "up_to" ? 1 : n;
         var targeting = Param("target") is not null && ctx.Args.Bool("target");
+        // "with different names", "any number of", "1 random card", "your opponent chooses" (Selections.cs).
+        if (Selection.Applies(ctx.Args))
+        {
+            CompileSelection(ctx, filter, f, targeting);
+            return;
+        }
         if (mode == "all")
         {
             if (!AllowsAll) { ctx.Effect.Error($"\"{Name}\" can't take \"all\" cards: pick exactly or up to a number."); return; }
@@ -245,8 +253,9 @@ public abstract class CardGroupAction : ActionBlock
                 e.Error($"\"{Name}\": cards in the Deck, hand or Extra Deck are hidden and can't be targeted. Turn off targeting or pick the field, GY or banished cards.");
                 return;
             }
-            // With more than one target the engine never re-checks a single card, so chkc is false.
-            e.SetChkc(n == 1 ? f.ChkcCheck : "false");
+            // A single target can be checked again (an effect that changes the target to another card), as can "up to 3",
+            // which may be 1 card; an exact number of several targets never is, so chkc is false.
+            e.SetChkc(min == 1 ? f.ChkcCheck : "false");
             e.TargetChecks.Add($"Duel.IsExistingTarget({f.Function},tp,{f.Self},{f.Opp},{min},{f.Exclude},e,tp)");
             var tg = e.NewLocal("tg");
             e.TargetLines.Add($"Duel.Hint(HINT_SELECTMSG,tp,{Hint})");
@@ -283,11 +292,12 @@ public abstract class CardGroupAction : ActionBlock
 
 public sealed class AddToHandAction : CardGroupAction
 {
+    protected override bool OffersSelections => true;
     protected override bool AllowsThisCard => true;
     protected override string TargetedWording => "add {0} to your hand";
     public override string Id => "do.add_to_hand";
     public override string Name => "Add cards to your hand (search)";
-    public override string Sentence => "Add {count} {cards} to your hand {target}";
+    public override string Sentence => "Add {amount} {count_cards} {count} {cards} {pick} {sum} to your hand {target} {chooser}";
     protected override string Category => "CATEGORY_TOHAND";
     protected override string Hint => "HINTMSG_ATOHAND";
     protected override Func<CardFilter> DefaultCards => () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Deck, CardType = FilterCardType.Monster };
@@ -300,15 +310,16 @@ public sealed class AddToHandAction : CardGroupAction
 
 public sealed class SpecialSummonAction : CardGroupAction
 {
+    protected override bool OffersSelections => true;
     protected override bool AllowsThisCard => true;
     protected override bool AllowsAll => false;
     protected override string TargetedWording => "Special Summon {0}";
     public override string Id => "do.special_summon";
     public override string Name => "Special Summon monsters";
-    public override string Sentence => "Special Summon {count} {cards} {target} {position} {zone} {as}";
+    public override string Sentence => "Special Summon {count} {cards} {pick} {sum} {target} {position} {zone} {as} {chooser}";
 
     public override string Describe(BlockArgs args) =>
-        base.Describe(args) + (args.Bool("ignore") ? ", ignoring its Summoning conditions" : "");
+        base.Describe(args) + (args.Bool("ignore") && !Selection.OpponentPicks(args) ? ", ignoring its Summoning conditions" : "");
 
     /// <summary>"(This is treated as a Fusion Summon.)"</summary>
     public override string Afterword(BlockArgs args) => TreatedAsSummon.Afterword(args.Choice("as"));
@@ -403,11 +414,12 @@ public sealed class SpecialSummonAction : CardGroupAction
 
 public sealed class DestroyAction : CardGroupAction
 {
+    protected override bool OffersSelections => true;
     protected override bool AllowsThisCard => true;
     protected override string TargetedWording => "destroy {0}";
     public override string Id => "do.destroy";
     public override string Name => "Destroy cards";
-    public override string Sentence => "Destroy {count} {cards} {target}";
+    public override string Sentence => "Destroy {amount} {count_cards} {count} {cards} {pick} {sum} {target} {chooser}";
     protected override string Category => "CATEGORY_DESTROY";
     protected override string Hint => "HINTMSG_DESTROY";
     protected override Func<CardFilter> DefaultCards => () => CardFilter.OpponentField();
@@ -416,11 +428,12 @@ public sealed class DestroyAction : CardGroupAction
 
 public sealed class BanishAction : CardGroupAction
 {
+    protected override bool OffersSelections => true;
     protected override bool AllowsThisCard => true;
     protected override string TargetedWording => "banish {0}";
     public override string Id => "do.banish";
     public override string Name => "Banish cards";
-    public override string Sentence => "Banish {count} {cards} {target} {facedown} {until}";
+    public override string Sentence => "Banish {amount} {count_cards} {count} {cards} {pick} {sum} {target} {facedown} {until} {chooser}";
     protected override string Category => "CATEGORY_REMOVE";
     protected override string Hint => "HINTMSG_REMOVE";
     protected override Func<CardFilter> DefaultCards => () => CardFilter.OpponentField();
@@ -494,11 +507,12 @@ public sealed class BanishAction : CardGroupAction
 
 public sealed class SendToGraveAction : CardGroupAction
 {
+    protected override bool OffersSelections => true;
     protected override bool AllowsThisCard => true;
     protected override string TargetedWording => "send {0} to the GY";
     public override string Id => "do.send_to_gy";
     public override string Name => "Send cards to the GY";
-    public override string Sentence => "Send {count} {cards} to the GY {target}";
+    public override string Sentence => "Send {amount} {count_cards} {count} {cards} {pick} {sum} to the GY {target} {chooser}";
     protected override string Category => "CATEGORY_TOGRAVE";
     protected override string Hint => "HINTMSG_TOGRAVE";
     protected override Func<CardFilter> DefaultCards => () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Deck };
@@ -508,11 +522,12 @@ public sealed class SendToGraveAction : CardGroupAction
 
 public sealed class ReturnToHandAction : CardGroupAction
 {
+    protected override bool OffersSelections => true;
     protected override bool AllowsThisCard => true;
     protected override string TargetedWording => "return {0} to the hand";
     public override string Id => "do.return_to_hand";
     public override string Name => "Return cards to the hand (bounce)";
-    public override string Sentence => "Return {count} {cards} to the hand {target}";
+    public override string Sentence => "Return {amount} {count_cards} {count} {cards} {pick} {sum} to the hand {target} {chooser}";
     protected override string Category => "CATEGORY_TOHAND";
     protected override string Hint => "HINTMSG_RTOHAND";
     protected override Func<CardFilter> DefaultCards => () => CardFilter.OpponentField();
@@ -522,11 +537,12 @@ public sealed class ReturnToHandAction : CardGroupAction
 
 public sealed class ShuffleIntoDeckAction : CardGroupAction
 {
+    protected override bool OffersSelections => true;
     protected override bool AllowsThisCard => true;
     protected override string TargetedWording => "shuffle {0} into the Deck";
     public override string Id => "do.shuffle_into_deck";
     public override string Name => "Shuffle cards into the Deck";
-    public override string Sentence => "Shuffle {count} {cards} into the Deck {target}";
+    public override string Sentence => "Shuffle {amount} {count_cards} {count} {cards} {pick} {sum} into the Deck {target} {chooser}";
     protected override string Category => "CATEGORY_TODECK";
     protected override string Hint => "HINTMSG_TODECK";
     protected override Func<CardFilter> DefaultCards => () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Graveyard };

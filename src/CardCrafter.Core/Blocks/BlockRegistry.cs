@@ -195,6 +195,8 @@ public static class BlockRegistry
         // Coin tosses, die rolls, declarations and Toon monsters (ChanceAndDeclarations.cs)
         new TossCoinAction(), new RollDieAction(), new CoinResultCondition(), new DieResultCondition(),
         new DeclareAction(), new DeclaredLockAction(), new ToonRulesPassive(),
+        // How "●" options are chosen, revealing cards for the opponent to pick, and targets of two kinds (Selections.cs)
+        new ChooseEffectsAction(), new RevealPickAction(), new PairTargetAction(),
     ];
 
     private static readonly Dictionary<string, BlockDefinition> ById = All.ToDictionary(b => b.Id);

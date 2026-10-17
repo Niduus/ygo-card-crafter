@@ -57,6 +57,24 @@ public sealed class ParamSpec
         return this;
     }
 
+    /// <summary>True when the blank prints nothing in card text because other wording says it ("whose total Levels equal 8").</summary>
+    public bool SaidElsewhere { get; private set; }
+
+    public ParamSpec Unprinted()
+    {
+        SaidElsewhere = true;
+        return this;
+    }
+
+    /// <summary>For card filters: a new block has none until the blank is used (its default is read when it's missing).</summary>
+    public bool OnlyWhenUsed { get; private set; }
+
+    public ParamSpec WhenUsed()
+    {
+        OnlyWhenUsed = true;
+        return this;
+    }
+
     public static ParamSpec Int(string key, string label, int def, int min = 0, int max = 999999) =>
         new() { Key = key, Label = label, Type = ParamType.Integer, Default = def.ToString(CultureInfo.InvariantCulture), Min = min, Max = max };
 
@@ -130,7 +148,9 @@ public abstract class BlockDefinition
         foreach (var p in Params)
         {
             if (p.Type == ParamType.Cards)
-                inst.Filters[p.Key] = p.DefaultFilter?.Invoke() ?? new CardFilter();
+            {
+                if (!p.OnlyWhenUsed) inst.Filters[p.Key] = p.DefaultFilter?.Invoke() ?? new CardFilter();
+            }
             else
                 inst.Values[p.Key] = p.Default;
         }
@@ -196,7 +216,7 @@ public sealed class BlockArgs(BlockDefinition def, BlockInstance inst, CardPack?
     public string? CardName { get; init; }
 
     /// <summary>Whether the block's cards read as plural: a count other than 1, or "all".</summary>
-    public bool IsPlural => (Definition.Param("count") is { Type: ParamType.Integer } && Int("count") != 1) || CountMode == "all";
+    public bool IsPlural => (Definition.Param("count") is { Type: ParamType.Integer } && Int("count") != 1) || CountMode == "all" || Selection.Uncounted(this);
 
     /// <summary>
     /// "exact", "up_to" or "all": how many cards a card action takes. It is "mode", or "count_mode" on blocks whose
@@ -249,10 +269,13 @@ public sealed class BlockArgs(BlockDefinition def, BlockInstance inst, CardPack?
     {
         var spec = Definition.Param(key);
         if (spec is null) return "{" + key + "}";
+        if (spec.SaidElsewhere) return "";
         return spec.Type switch
         {
             // "Special Summon this card", not "Special Summon 1 this card".
             ParamType.Integer when key == "count" && IsThisCard => "",
+            // "any number of", "1 random": how the cards are picked (Selections.cs).
+            ParamType.Integer when key == "count" && Selection.CountWords(this) is { } picked => picked,
             // "up to 3", "all": card actions say how many with their count.
             ParamType.Integer when key == "count" && CountMode == "all" => "all",
             ParamType.Integer when key == "count" && CountMode == "up_to" => $"up to {Int(key).ToString(CultureInfo.InvariantCulture)}",
@@ -261,6 +284,7 @@ public sealed class BlockArgs(BlockDefinition def, BlockInstance inst, CardPack?
             ParamType.Bool => Bool(key) ? spec.Label : "",
             // "Discard 2 cards": a block's "count" blank decides whether its cards are plural.
             ParamType.Cards when Cards(key).ThisCard => TriggerZone is { } z && Zones.From(z) is { } from ? $"this card {from}" : "this card",
+            ParamType.Cards when key == "cards" && Selection.Offers(Definition) => Selection.CardsText(this),
             ParamType.Cards => Text.FilterText.Describe(Cards(key), Pack, plural: IsPlural, ownName: CardName, withExcept: false),
             _ => "",
         };

@@ -181,9 +181,11 @@ public static partial class EffectTextGenerator
             var costs = string.Join(" and ", effect.Cost.Select(b => Text(b, pack, effect)).Where(t => t.Length > 0));
             var body = costs.Length == 0 ? "activate 1 of these effects" : $"{costs}, then activate 1 of these effects";
             body = optional ? "You can " + body : SentenceCase.Upper(body);
+            // "Apply 1 of these effects.", "your opponent chooses 1 of these effects for you to apply." (Selections.cs).
+            body = ChooseEffectsAction.Lead(effect, costs, optional, card.Name) ?? body + ";";
             text = head.Length == 0 ? body : $"{SentenceCase.Upper(head)}: {body}";
             // Each option on its own line, as printed cards list them.
-            text += ";" + string.Concat(options.Select(o => OptionLine + OptionText(o, pack, effect))).TrimEnd('.');
+            text += string.Concat(options.Select(o => OptionLine + OptionText(o, pack, effect))).TrimEnd('.');
         }
         else
         {
@@ -227,7 +229,7 @@ public static partial class EffectTextGenerator
     private static List<List<BlockInstance>> SplitOptions(List<BlockInstance> blocks)
     {
         var options = new List<List<BlockInstance>> { new() };
-        foreach (var (b, i) in blocks.Select((b, i) => (b, i)))
+        foreach (var (b, i) in ChooseEffectsAction.Options(blocks).Select((b, i) => (b, i)))
         {
             if (i > 0 && b.Link == ActionLink.Option) options.Add([]);
             options[^1].Add(b);
@@ -238,8 +240,15 @@ public static partial class EffectTextGenerator
     /// <summary>One option's text: "Target 1 monster your opponent controls; destroy it."</summary>
     private static string OptionText(List<BlockInstance> blocks, CardPack? pack, EffectEvent effect)
     {
-        var (target, actions) = Actions(blocks, pack, effect);
-        return SentenceCase.Upper(target is null ? actions : $"{target}; {actions}") + ".";
+        // "● If you control no monsters: Special Summon ...": an option's own condition under a "Choose 1 of these effects" block.
+        if (blocks.Count > 1 && ChooseEffectsAction.IsOptionCondition(effect.Do, blocks[0]))
+            return $"If {Text(blocks[0], pack, effect)}: {OptionText(blocks.Skip(1).ToList(), pack, effect)}";
+        // "● Discard 1 card, then target 1 monster your opponent controls; destroy it.": the option's own cost first.
+        var paid = blocks.TakeWhile(b => BlockRegistry.Find(b.BlockId) is { Kind: BlockKind.Cost }).ToList();
+        var costs = string.Join(" and ", paid.Select(b => Text(b, pack, effect)).Where(t => t.Length > 0));
+        var (target, actions) = Actions(blocks.Skip(paid.Count).ToList(), pack, effect);
+        var before = target is null ? costs : costs.Length == 0 ? target : $"{costs}, then {target}";
+        return SentenceCase.Upper(before.Length == 0 ? actions : $"{before}; {actions}") + ".";
     }
 
     /// <summary>The text of each option of "Activate 1 of these effects", for the choice the player is shown; empty when there are none.</summary>
@@ -248,7 +257,11 @@ public static partial class EffectTextGenerator
         _cardName = card.Name;
         if (effect.When?.BlockId == "when.while_face_up" || Chance.HasResultOptions(effect.Do)) return [];
         var options = SplitOptions(effect.Do);
-        return options.Count > 1 ? options.Select(o => OptionText(o, pack, effect)).ToList() : [];
+        if (options.Count <= 1) return [];
+        var texts = options.Select(o => OptionText(o, pack, effect)).ToList();
+        // "Activate 1 or both of these effects": the game also lists both.
+        if (ChooseEffectsAction.ChoosesBoth(effect) && texts.Count == 2) texts.Add(ChooseEffectsAction.BothText);
+        return texts;
     }
 
     /// <summary>
