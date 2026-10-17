@@ -46,9 +46,11 @@ internal static class Locks
         // Yummy★Snatchy: "you cannot Link Summon Link-3 or higher Link Monsters".
         new("link_of", "Link Summon these monsters:"),
         // Mimighoul Dungeon: "cannot Normal Summon monsters" (Setting is still allowed).
-        new("normal_only", "Normal Summon monsters (Setting them is still allowed)"),
+        new("normal_only", "Normal Summon monsters", "Normal Summon monsters (Setting them is still allowed)"),
         // Droll & Lock Bird: "cards cannot be added from either player's Main Deck to the hand", drawing included.
         new("search_all", "add cards from the Main Deck to the hand (drawing them too)"),
+        // Mimighoul Dungeon: "nor declare an attack with monsters that were Special Summoned this turn".
+        new("attack_of", "declare an attack with these monsters:"),
     ];
 
     /// <summary>The engine effects a lock is made of: one per kind of Summon it stops ("Normal or Special Summon" is two).</summary>
@@ -67,7 +69,7 @@ internal static class Locks
         or "activate_monster_hand_gy" or "link_of").ToArray();
 
     /// <summary>Locks whose card picker names what is locked ("the effects of LIGHT monsters"), not an exception.</summary>
-    public static bool Names(string what) => what is "activate_monster_of" or "special_of" or "link_of";
+    public static bool Names(string what) => what is "activate_monster_of" or "special_of" or "link_of" or "attack_of";
 
     public static readonly ChoiceOption[] Who =
     [
@@ -153,7 +155,13 @@ internal static class Locks
     {
         // "the effects of EARTH, WATER, FIRE, and WIND monsters": all of them are locked.
         var cards = FilterText.Describe(f, args.Pack, plural: true, withLocation: false, ownName: args.CardName).Replace(", or ", ", and ", StringComparison.Ordinal);
-        return what switch { "special_of" => $"Special Summon {cards}", "link_of" => $"Link Summon {cards}", _ => $"activate the effects of {cards}" };
+        return what switch
+        {
+            "special_of" => $"Special Summon {cards}",
+            "link_of" => $"Link Summon {cards}",
+            "attack_of" => $"declare an attack with {cards}",
+            _ => $"activate the effects of {cards}",
+        };
     }
 
     /// <summary>"you cannot Special Summon from the Extra Deck" and ", except Xyz Monsters" apart, for wording that puts the turn between them.</summary>
@@ -255,13 +263,13 @@ internal static class Locks
                 lines.Add($"{v}:SetTarget({ctx.Script.AddFunction("linklimit", "e,c,sump,sumtype,sumpos,targetp,se", [$"return {test}"])})");
                 break;
             }
-            case "attack":
+            case "attack" or "attack_of":
             {
                 if (property is not null) lines.Add($"{v}:SetProperty({property})");
                 lines.Add($"{v}:SetCode(EFFECT_CANNOT_ATTACK_ANNOUNCE)");
                 if (range is not null) lines.Add($"{v}:SetRange({range})");
                 lines.Add($"{v}:SetTargetRange({(self == "1" ? "LOCATION_MZONE" : "0")},{(opp == "1" ? "LOCATION_MZONE" : "0")})");
-                if (f != "nil") lines.Add($"{v}:SetTarget({ctx.Script.AddFunction("atklimit", "e,c", [$"return not {f}(c)"])})");
+                if (f != "nil") lines.Add($"{v}:SetTarget({ctx.Script.AddFunction("atklimit", "e,c", [$"return {(what == "attack_of" ? "" : "not ")}{f}(c)"])})");
                 break;
             }
             default:
@@ -359,19 +367,34 @@ public sealed class LockPassive : PassiveBlock
     public override string Id => "passive.lock";
     public override string Group => "Players";
     public override string Name => "Floodgate: players cannot Summon, activate, attack or search";
-    public override string Sentence => "{who} cannot {what}, except {cards}";
+    public override string Sentence => "{who} {holder} cannot {what}, except {cards}";
     public override string Help => "Floodgates and lock-outs, like Vanity's Emptiness, Majesty's Fiend, Mistake, Barrier Statue or " +
                                    "Palm Ryzeal (\"You cannot Special Summon from the Extra Deck, except Rank 4 Xyz Monsters\"). " +
                                    "Leave \"except\" as plain monsters for no exception.";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
-        ParamSpec.Choice("who", "Who", Locks.Who),
+        // Mimighoul Dungeon: "Any player who controls a face-down monster cannot Normal Summon monsters".
+        ParamSpec.Choice("who", "Who", [.. Locks.Who, new("holder", "Any player who controls", "Any player who controls these cards:")]),
         ParamSpec.Choice("what", "Cannot", Locks.What),
         ParamSpec.Cards("cards", "Except (plain monsters for none)", () => new CardFilter { CardType = FilterCardType.Monster }, Zone.MonsterZone),
+        ParamSpec.Cards("holder", "Who controls", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster, FaceDownOnly = true }, Zone.Field)
+            .Unprinted().WhenUsed().ShowIf(b => b.Values.GetValueOrDefault("who") == "holder"),
     ];
+
+    /// <summary>The words a lock "on any player who controls ..." starts with: "any player who controls a face-down monster cannot ".</summary>
+    public static string HolderSubject(BlockArgs args)
+    {
+        var f = args.Cards("holder").Clone();
+        f.Owner = CardOwner.You;
+        var noun = FilterText.Describe(f, args.Pack, withLocation: false, ownName: args.CardName);
+        return $"any player who controls {SummonWording.Article(noun)} {noun} cannot ";
+    }
 
     public override string Describe(BlockArgs args)
     {
+        // "any player who controls a face-down monster cannot ...", worded as "your opponent cannot ..." is.
+        if (args.Choice("who") == "holder")
+            return HolderSubject(args) + Locks.Sentence("opponent", Locks.WhatOf(args), args.Cards("cards"), args)["your opponent cannot ".Length..];
         var text = Locks.Sentence(args.Choice("who"), Locks.WhatOf(args), args.Cards("cards"), args);
         // The Pendulum Scales' lock is written so it can't be negated, and the card says so.
         return Locks.WhatOf(args) == "pendulum" ? text + ". This effect cannot be negated" : text;
@@ -380,9 +403,45 @@ public sealed class LockPassive : PassiveBlock
     public override void Compile(BlockContext ctx)
     {
         var what = Locks.WhatOf(ctx.Args);
+        var who = ctx.Args.Choice("who");
         for (var part = 0; part < Locks.Parts(what); part++)
         {
-            var lines = Locks.Lines(ctx, "{v}", ctx.Args.Choice("who"), what, ctx.Args.Cards("cards"), RangeOf(ctx), part: part);
+            if (who == "holder")
+            {
+                Holder(ctx, what, part);
+                continue;
+            }
+            var lines = Locks.Lines(ctx, "{v}", who, what, ctx.Args.Cards("cards"), RangeOf(ctx), part: part);
+            ctx.Effect.AddPassive(v => lines.Select(l => l.Replace("{v}", v)));
+        }
+    }
+
+    /// <summary>
+    /// "Any player who controls a face-down monster cannot ...": a lock on players is one effect per player, each while
+    /// that player controls such a card; a lock on attacks checks the attacking monster's controller.
+    /// </summary>
+    private static void Holder(BlockContext ctx, string what, int part)
+    {
+        var holder = ctx.Args.Cards("holder").Clone();
+        holder.Owner = CardOwner.You;
+        var hf = ctx.Script.Filter(holder, null, "holdfilter");
+        string Has(string player) => $"Duel.IsExistingMatchingCard({hf.Function},{player},{hf.Self},{hf.Opp},1,{hf.Exclude},e,{player})";
+        var range = RangeOf(ctx);
+        var both = Locks.Lines(ctx, "{v}", "both", what, ctx.Args.Cards("cards"), range, part: part);
+        if (!both.Any(l => l.Contains("EFFECT_FLAG_PLAYER_TARGET", StringComparison.Ordinal)))
+        {
+            // Attacks: the lock is on the monsters of a player who controls such a card.
+            var target = both.FirstOrDefault(l => l.StartsWith("{v}:SetTarget(", StringComparison.Ordinal));
+            var inner = target is null ? null : target["{v}:SetTarget(".Length..^1];
+            var fn = ctx.Script.AddFunction("holdtg", "e,c", ["local p=c:GetControler()", $"return {Has("p")}" + (inner is null ? "" : $" and {inner}(e,c)")]);
+            var lines = both.Where(l => l != target).Append($"{{v}}:SetTarget({fn})").ToList();
+            ctx.Effect.AddPassive(v => lines.Select(l => l.Replace("{v}", v)));
+            return;
+        }
+        foreach (var (who, player) in new[] { ("you", "e:GetHandlerPlayer()"), ("opponent", "1-e:GetHandlerPlayer()") })
+        {
+            var con = ctx.Script.AddFunction("holdcon", "e", [$"return {Has(player)}"]);
+            var lines = Locks.Lines(ctx, "{v}", who, what, ctx.Args.Cards("cards"), range, part: part).Append($"{{v}}:SetCondition({con})").ToList();
             ctx.Effect.AddPassive(v => lines.Select(l => l.Replace("{v}", v)));
         }
     }

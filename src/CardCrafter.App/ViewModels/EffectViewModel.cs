@@ -225,6 +225,7 @@ public sealed partial class EffectViewModel : ObservableObject
         Fill(Trigger, Model.When is null ? [] : [Model.When, .. Model.AlsoWhen]);
         for (int i = 0; i < Trigger.Count; i++) Trigger[i].IsAlsoWhen = i > 0;
         Fill(Conditions, Model.If);
+        for (int i = 0; i < Conditions.Count; i++) Conditions[i].ShowOr = i > 0;
         Fill(Costs, Model.Cost);
         Fill(Actions, Model.Do);
         for (int i = 0; i < Actions.Count; i++) Actions[i].ShowLink = i > 0 && !IsPassive;

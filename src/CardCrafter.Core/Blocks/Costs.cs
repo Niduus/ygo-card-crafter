@@ -22,9 +22,17 @@ public sealed class DiscardCost : CostBlock
             Key = "cards", Label = "Which cards", Type = ParamType.Cards, AllowThisCard = true, AllowedZones = Zone.Hand,
             DefaultFilter = () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Hand },
         },
+        // The Winged Dragon of Ra, Sun God of Darkness: "discard any number of "Sun God" cards, then choose that many ...".
+        ParamSpec.Choice("mode", "Exactly / up to / any number", new("exact", "", "exactly"), new("up_to", "up to"), new("any", "any number of")),
     ];
 
-    public override string Describe(BlockArgs args) => args.Cards("cards").ThisCard ? "discard this card" : base.Describe(args);
+    public override string Describe(BlockArgs args)
+    {
+        if (args.Cards("cards").ThisCard) return "discard this card";
+        if (args.Choice("mode") == "any")
+            return "discard any number of " + Text.FilterText.Describe(args.Cards("cards"), args.Pack, plural: true, withLocation: false, ownName: args.CardName, withExcept: false) + args.ExceptText();
+        return base.Describe(args);
+    }
 
     public override void Compile(BlockContext ctx)
     {
@@ -43,8 +51,18 @@ public sealed class DiscardCost : CostBlock
         // "discard 1 "Sundering - Inferno"" on Sundering - Inferno can discard this very card.
         var namesItself = filter.CardCode == ctx.Card.Id || filter.AltCodes.Contains(ctx.Card.Id);
         var exclude = namesItself && !filter.ExcludeThisCard ? "nil" : "e:GetHandler()";
-        ctx.Effect.CostChecks.Add($"Duel.IsExistingMatchingCard({f.Function},tp,LOCATION_HAND,0,{n},{exclude},e,tp)");
-        ctx.Effect.CostLines.Add($"Duel.DiscardHand(tp,{f.Function},{n},{n},REASON_COST+REASON_DISCARD,{exclude},e,tp)");
+        var mode = ctx.Args.Choice("mode");
+        if (mode == "exact")
+        {
+            ctx.Effect.CostChecks.Add($"Duel.IsExistingMatchingCard({f.Function},tp,LOCATION_HAND,0,{n},{exclude},e,tp)");
+            ctx.Effect.CostLines.Add($"Duel.DiscardHand(tp,{f.Function},{n},{n},REASON_COST+REASON_DISCARD,{exclude},e,tp)");
+            return;
+        }
+        // "Up to" or "any number": how many were discarded is kept, for "that many" and "for each card discarded".
+        var max = mode == "any" ? "99" : n.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        ctx.Effect.CostChecks.Add($"Duel.IsExistingMatchingCard({f.Function},tp,LOCATION_HAND,0,1,{exclude},e,tp)");
+        ctx.Effect.CostLines.Add($"e:SetLabel(Duel.DiscardHand(tp,{f.Function},1,{max},REASON_COST+REASON_DISCARD,{exclude},e,tp))");
+        ctx.Effect.CostCounts = true;
     }
 }
 
@@ -142,7 +160,9 @@ public sealed class SelfCost : CostBlock
             new("discard", "Discard"),
             new("deck", "Shuffle into the Deck:"),
             new("extra", "Return to the Extra Deck:"),
-            new("hand", "Return to the hand:")),
+            new("hand", "Return to the hand:"),
+            // W:P Fancy Ball: "You can banish this card that was Special Summoned this turn until the End Phase".
+            new("banish_until_end", "Banish until the End Phase:", "Banish until the End Phase (it comes back)")),
     ];
 
     /// <summary>"banish this card from your GY", "send this card from your hand to the GY", from the WHEN block's zone.</summary>
@@ -156,6 +176,7 @@ public sealed class SelfCost : CostBlock
             "deck" => "shuffle this card into the Deck",
             "extra" => "return this card to the Extra Deck",
             "hand" => "return this card to the hand",
+            "banish_until_end" => "banish this card until the End Phase",
             // "Tribute" is a card term: it stays capitalised ("You can Tribute this card;").
             "tribute" => "Tribute this card",
             _ => $"{args.Describe("how").ToLowerInvariant()} this card",
@@ -164,6 +185,11 @@ public sealed class SelfCost : CostBlock
 
     public override void Compile(BlockContext ctx)
     {
+        if (ctx.Args.Choice("how") == "banish_until_end")
+        {
+            UntilEndPhase(ctx);
+            return;
+        }
         var (check, line) = ctx.Args.Choice("how") switch
         {
             "banish" => ("e:GetHandler():IsAbleToRemoveAsCost()", "Duel.Remove(e:GetHandler(),POS_FACEUP,REASON_COST)"),
@@ -178,6 +204,34 @@ public sealed class SelfCost : CostBlock
             ctx.Effect.Warn("Only Fusion, Synchro, Xyz and Link Monsters can return to the Extra Deck, so this cost can never be paid.");
         ctx.Effect.CostChecks.Add(check);
         ctx.Effect.CostLines.Add(line);
+    }
+
+    /// <summary>
+    /// "Banish this card until the End Phase": banished for now (REASON_TEMPORARY), and back on the field during this
+    /// turn's End Phase, if it is still the card that was banished, as W:P Fancy Ball's cost does it.
+    /// </summary>
+    private static void UntilEndPhase(BlockContext ctx)
+    {
+        if (!ctx.Card.IsMonster) ctx.Effect.Error("\"Banish this card until the End Phase\" brings a monster back to the field; it is for monsters.");
+        var flag = $"id+{8520 + ctx.Script.Slot("banishuntilend")}";
+        var con = ctx.Script.AddFunction("endretcon", "e,tp,eg,ep,ev,re,r,rp", [$"return e:GetLabelObject():GetFlagEffect({flag})~=0"]);
+        var op = ctx.Script.AddFunction("endretop", "e,tp,eg,ep,ev,re,r,rp", ["Duel.ReturnToField(e:GetLabelObject())"]);
+        ctx.Effect.CostChecks.Add("e:GetHandler():IsAbleToRemoveAsCost()");
+        ctx.Effect.CostLines.AddRange(
+        [
+            "if Duel.Remove(e:GetHandler(),0,REASON_COST+REASON_TEMPORARY)~=0 and e:GetHandler():IsLocation(LOCATION_REMOVED) then",
+            $"\te:GetHandler():RegisterFlagEffect({flag},RESET_EVENT+RESETS_STANDARD+RESET_PHASE+PHASE_END,0,1)",
+            "\tlocal re1=Effect.CreateEffect(e:GetHandler())",
+            "\tre1:SetType(EFFECT_TYPE_FIELD+EFFECT_TYPE_CONTINUOUS)",
+            "\tre1:SetCode(EVENT_PHASE+PHASE_END)",
+            "\tre1:SetReset(RESET_PHASE+PHASE_END)",
+            "\tre1:SetLabelObject(e:GetHandler())",
+            "\tre1:SetCountLimit(1)",
+            $"\tre1:SetCondition({con})",
+            $"\tre1:SetOperation({op})",
+            "\tDuel.RegisterEffect(re1,tp)",
+            "end",
+        ]);
     }
 }
 

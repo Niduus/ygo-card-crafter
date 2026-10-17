@@ -56,6 +56,8 @@
           </ItemsControl.DataTemplates>
         </ItemsControl>
         <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+          <CheckBox Content="or the one above" IsChecked="{Binding Or}" IsVisible="{Binding ShowOr}" Margin="6,0"
+                    ToolTip.Tip="This IF block or the one above it is enough (&quot;while you control a Dragon monster or your opponent controls a Spell&quot;)" />
           <CheckBox Content="you can" IsChecked="{Binding Optional}" IsVisible="{Binding ShowOptional}" Margin="6,0"
                     ToolTip.Tip="Optional: the player chooses whether this happens when the effect resolves (&quot;..., and if you do, you can Special Summon this card&quot;)" />
           <Button Classes="icon" Opacity="0.6" Content="↑" Command="{Binding MoveUpCommand}" IsVisible="{Binding !IsTrigger}" ToolTip.Tip="Move up" />

@@ -76,6 +76,16 @@ public sealed class SummonProcedure
     public Zone ContactZones { get; set; } = Zone.MonsterZone;
     /// <summary>Contact Fusion materials can also be the opponent's cards on the field.</summary>
     public bool ContactOpponent { get; set; }
+    /// <summary>
+    /// The Contact Fusion Special Summons this card to the opponent's Main Monster Zone (Lava Golem, Steelcage of the Sun
+    /// God: "Special Summoned (from your Extra Deck) to your opponent's Main Monster Zone by ...").
+    /// </summary>
+    public bool ContactToOpponent { get; set; }
+    /// <summary>
+    /// "..., but if you Special Summon this card with the second method, you can only Special Summon once for the rest
+    /// of this turn": after a Contact Fusion, its player can Special Summon only once more that turn.
+    /// </summary>
+    public bool ContactOneMoreSummon { get; set; }
 }
 
 /// <summary>One Fusion Material: a card, or any card that passes the filter, <see cref="Min"/> to <see cref="Max"/> of them.</summary>

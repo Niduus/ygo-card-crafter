@@ -229,7 +229,7 @@ public sealed class AssistantTools(IAssistantWorkspace workspace)
                 fields = Fields(typeof(BlockInstance)),
                 notes = "blockId names the block; values hold its integer/choice/bool options as strings by key; filters hold its card pickers by key. "
                     + "link says how a DO block follows the one before: and, ifYouDo, then, alsoAfterThat, ifYouDont, option (a new \"● \" option of \"activate 1 of these effects\"). "
-                    + "optional makes it \"you can ...\". Options left out keep their defaults.",
+                    + "optional makes it \"you can ...\". or (IF blocks after the first) makes it an alternative to the IF block before it (\"... or ...\"). Options left out keep their defaults.",
             },
             "procedure" => new { fields = Fields(typeof(SummonProcedure)), materialSlot = Fields(typeof(MaterialSlot)) },
             _ => null,
@@ -506,6 +506,7 @@ public sealed class AssistantTools(IAssistantWorkspace workspace)
             else errors.Add($"{where}: link \"{link}\" must be one of {string.Join(", ", Enum.GetNames<ActionLink>().Select(Camel))}.");
         }
         if (el.TryGetProperty("optional", out var optional) && optional.ValueKind is JsonValueKind.True or JsonValueKind.False) inst.Optional = optional.GetBoolean();
+        if (el.TryGetProperty("or", out var or) && or.ValueKind is JsonValueKind.True or JsonValueKind.False) inst.Or = or.GetBoolean();
         return inst;
     }
 

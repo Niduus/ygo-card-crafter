@@ -153,7 +153,7 @@ public static class CardOrganizer
     private static readonly HashSet<string> Payments =
     [
         "cost.this_card", "cost.reveal_self", "cost.discard", "cost.tribute", "cost.move_cards", "cost.detach", "cost.pay_lp", "cost.remove_counter", "cost.reveal",
-        "cost.summon_restriction", "cost.chain_limit", "cost.cannot_be_negated", "cost.this_card_turn",
+        "cost.summon_restriction", "cost.chain_limit", "cost.cannot_be_negated", "cost.this_card_turn", "cost.destroy_later",
     ];
 
     /// <summary>

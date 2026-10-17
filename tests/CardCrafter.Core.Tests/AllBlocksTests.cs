@@ -62,6 +62,8 @@ public class AllBlocksTests
             if (p is { Type: ParamType.Cards, AllowThatCard: true })
                 foreach (var that in Enum.GetValues<CardRef>().Where(r => r != CardRef.None))
                 {
+                    // A Continuous Spell ties the monster it Summoned or targeted, never a battling one.
+                    if (def.Id == BindAction.BlockId && that is CardRef.BattleTarget or CardRef.Battling) continue;
                     var inst = def.CreateInstance();
                     inst.Filters[p.Key] = new CardFilter { That = that };
                     if (def.Param("target") is not null) inst.Values["target"] = "false";
@@ -200,6 +202,27 @@ public class AllBlocksTests
             // Only Spells and Traps are Set; "Choose 1 of these effects" comes before two "●" options.
             case RevealPickAction.BlockId when inst.Values.GetValueOrDefault("then") == "set":
                 inst.Filters["cards"].CardType = FilterCardType.SpellTrap;
+                break;
+            // Materials of this effect's target or of this card: an Xyz Monster.
+            case FromMaterialsAction.BlockId:
+                project.Card.Frame = MonsterFrame.Xyz;
+                project.Procedure.Kind = SummonProcedureKind.Xyz;
+                if (inst.Values.GetValueOrDefault("from", "target") == "target")
+                    project.Effects[0].Do.Insert(0, BlockRegistry.Find(TargetCardsAction.BlockId)!.CreateInstance());
+                break;
+            // "That many": a cost that discards any number of cards.
+            case SendZonesAction.BlockId when inst.Values.GetValueOrDefault("many") == "cost":
+                project.Effects[0].Cost.Add(new BlockInstance("cost.discard").With("mode", "any"));
+                break;
+            // The Spell sent for the cost lends its effect; a Continuous Spell ties the monster it Summoned.
+            case CopyEffectAction.BlockId:
+                project.Effects[0].Cost.Add(new BlockInstance("cost.move_cards").With("how", "grave").With("cards", new CardFilter { Owner = CardOwner.You, Zones = Zone.Deck, CardType = FilterCardType.Spell }));
+                break;
+            case BindAction.BlockId:
+                project.Card.Kind = CardKind.Spell;
+                project.Card.SpellKind = SpellKind.Continuous;
+                project.Effects[0].When = new BlockInstance("when.activate");
+                if (inst.Filters["cards"].That == CardRef.Affected) project.Effects[0].Do.Insert(0, BlockRegistry.Find("do.special_summon")!.CreateInstance());
                 break;
             case ChooseEffectsAction.BlockId:
                 project.Effects[0].Do.AddRange([new BlockInstance("do.draw").Linked(ActionLink.Option), new BlockInstance("do.gain_lp").Linked(ActionLink.Option)]);

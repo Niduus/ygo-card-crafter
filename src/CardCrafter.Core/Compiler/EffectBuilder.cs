@@ -453,7 +453,15 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
             lines.Add($"local {v}=Effect.CreateEffect(c)");
             lines.AddRange(body);
             if (limited && countLimit is not null) lines.Add($"{v}:SetCountLimit({countLimit})");
-            if (con is not null) lines.Add($"{v}:SetCondition({con})");
+            // A lasting effect with a condition of its own ("while that player controls a face-down monster") needs it
+            // as well as the IF blocks.
+            var own = lines.FindIndex(l => l.StartsWith($"{v}:SetCondition(", StringComparison.Ordinal));
+            if (con is not null && own >= 0)
+            {
+                var inner = lines[own][$"{v}:SetCondition(".Length..^1];
+                lines[own] = $"{v}:SetCondition({Script.AddFunction($"e{Index}con", "e,...", [$"return {con}(e) and {inner}(e,...)"])})";
+            }
+            else if (con is not null) lines.Add($"{v}:SetCondition({con})");
             lines.Add($"c:RegisterEffect({v})");
         }
         return lines;

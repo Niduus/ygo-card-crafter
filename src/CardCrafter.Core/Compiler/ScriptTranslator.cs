@@ -2892,6 +2892,10 @@ public static partial class ScriptTranslator
                     effect.Do.Add(Block(PlaceInsteadPassive.BlockId));
                     return effect;
                 case "EFFECT_ATTACK_ALL" when value == "1": effect.Do.Add(Block("passive.self_rule").With("rule", "attack_all")); return effect;
+                // "Monsters destroyed by battle with this card are placed on the bottom of the Deck instead of going to the GY."
+                case "EFFECT_BATTLE_DESTROY_REDIRECT" when RedirectWhere(value) is { } where:
+                    effect.Do.Add(Block(BattleRedirectPassive.BlockId).With("where", where).With("cards", new CardFilter { ThisCard = true }));
+                    return effect;
                 case "EFFECT_MUST_ATTACK": effect.Do.Add(Block("passive.self_rule").With("rule", "must_attack")); return effect;
                 case "EFFECT_INDESTRUCTABLE_EFFECT" when value == "aux.indoval": effect.Do.Add(Block("passive.indestructible").With("by", "opponent_effect")); return effect;
                 case "EFFECT_INDESTRUCTABLE_EFFECT" when value is not null && IndestructibleEffectBy(value, fns) is { } indBy2: effect.Do.Add(Block("passive.indestructible").With("by", indBy2)); return effect;
@@ -3049,9 +3053,21 @@ public static partial class ScriptTranslator
             case "EFFECT_DISABLE" when !set.ContainsKey("Value"): return Block("passive.cards_rule").With("rule", "negated");
             case "EFFECT_IMMUNE_EFFECT" when value is not null && ImmuneValue(value, fns) == "opponent": return Block("passive.cards_rule").With("rule", "unaffected");
             case "EFFECT_CANNOT_BE_BATTLE_TARGET" when value == "aux.imval1": return Block("passive.cards_rule").With("rule", "not_attack_target");
+            // "Any monster destroyed by battle with your "Nekroz" monster is banished."
+            case "EFFECT_BATTLE_DESTROY_REDIRECT" when RedirectWhere(value) is { } where: return Block(BattleRedirectPassive.BlockId).With("where", where);
         }
         return null;
     }
+
+    /// <summary>Where monsters destroyed by battle go instead of the GY, as the battle redirect block says it; null for elsewhere.</summary>
+    private static string? RedirectWhere(string? value) => value switch
+    {
+        "LOCATION_REMOVED" => "banish",
+        "LOCATION_DECKBOT" => "deck_bottom",
+        "LOCATION_DECKSHF" => "deck",
+        "LOCATION_HAND" => "hand",
+        _ => null,
+    };
 
     /// <summary>
     /// The monsters a field effect applies to: its target range ("LOCATION_MZONE,0" is "you control") and its target

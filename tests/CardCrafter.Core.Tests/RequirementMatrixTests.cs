@@ -497,6 +497,8 @@ public class RequirementMatrixChoiceTests
         Row("link_summoned", false, Is("main_zone")), Row("link_summoned", true, IsNot("main_zone")), Row("link", true, Is("main_zone")), Row("link", false, IsNot("main_zone")),
         Row("stat", true, Is("targetable")), Row("stat", false, IsNot("targetable")), Row("untargetable", false, Is("targetable")), Row("untargetable", true, IsNot("targetable")),
         Row("counters", true, Is("counters")), Row("counters", false, IsNot("counters")), Row("stat", false, Is("counters")), Row("stat", true, IsNot("counters")),
+        // Heretic Eradicator: an Xyz Monster cannot be Normal Summoned/Set; a Main Deck monster can.
+        Row("stat", true, Is("summonable_card")), Row("stat", false, IsNot("summonable_card")), Row("xyz", false, Is("summonable_card")), Row("xyz", true, IsNot("summonable_card")),
     ];
 
     [EngineTheory]
@@ -591,6 +593,7 @@ public class RequirementMatrixTextTests
         [Is("negated"), "whose effects are negated"],
         [IsNot("summoned_turn"), "that was not Summoned this turn"],
         [Is("spsummoned_turn"), "that was Special Summoned this turn"],
+        [IsNot("summonable_card"), "that cannot be Normal Summoned/Set"],
         [IsNot("normal_special_turn"), "that was not Normal or Special Summoned this turn"],
         [Is("attacked_turn"), "that declared an attack this turn"],
         [IsNot("battled_turn"), "that has not battled this turn"],

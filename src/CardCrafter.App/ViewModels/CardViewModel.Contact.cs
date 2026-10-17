@@ -48,6 +48,20 @@ public sealed partial class CardViewModel
         set { if (Proc.ContactOpponent == value) return; Proc.ContactOpponent = value; ContactChanged(nameof(ContactOpponent)); }
     }
 
+    /// <summary>Lava Golem, Steelcage of the Sun God: Summoned to the opponent's Main Monster Zone.</summary>
+    public bool ContactToOpponent
+    {
+        get => Proc.ContactToOpponent;
+        set { if (Proc.ContactToOpponent == value) return; Proc.ContactToOpponent = value; ContactChanged(nameof(ContactToOpponent)); }
+    }
+
+    /// <summary>"..., but if you Special Summon this card with the second method, you can only Special Summon once for the rest of this turn."</summary>
+    public bool ContactOneMoreSummon
+    {
+        get => Proc.ContactOneMoreSummon;
+        set { if (Proc.ContactOneMoreSummon == value) return; Proc.ContactOneMoreSummon = value; ContactChanged(nameof(ContactOneMoreSummon)); }
+    }
+
     /// <summary>The four rules official Contact Fusion Monsters have; each is a summoning rule of the card.</summary>
     public IReadOnlyList<Option<string>> ContactRuleOptions { get; } = Options.Of(
         ("first_or_fusion", "Must first be either Fusion Summoned, or Special Summoned this way"),

@@ -42,7 +42,7 @@ public sealed class ExtraDeckSummonAction : ActionBlock
     public override string Id => BlockId;
     public override string Group => "Summon";
     public override string Name => "Synchro/Xyz/Link Summon using monsters you control";
-    public override string Sentence => "{kind} Summon 1 {cards} using {using} {mats}";
+    public override string Sentence => "{kind} Summon 1 {cards} using {using} {mats} {opp_mats}";
     public override string Help => "Like Wonder Xyz or Urgent Tuning. Use \"Link/Synchro/Xyz Summon using this card\" when this card must be one of the materials. " +
                                    "Combine it with a Quick Effect and \"during your opponent's turn\" to Summon on the opponent's turn.";
     public override IReadOnlyList<ParamSpec> Params { get; } =
@@ -55,7 +55,32 @@ public sealed class ExtraDeckSummonAction : ActionBlock
             Key = "mats", Label = "Only these materials", Type = ParamType.Cards, WhereFromBlock = true, AllowedZones = Zone.MonsterZone,
             DefaultFilter = () => new CardFilter { Owner = CardOwner.You, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster },
         }.ShowIf(b => b.Values.GetValueOrDefault("using") == "only"),
+        // W:P Fancy Ball: "Link Summon 1 Link Monster, and if this card you control would be used as material for that Link
+        // Summon, you can also use 1 Link-2 or lower monster your opponent controls".
+        ParamSpec.Flag("also_opp", "and if this card would be used as material, you can also use 1 monster your opponent controls (picked below)", false)
+            .ShowIf(b => b.Values.GetValueOrDefault("kind") == "link" && b.Values.GetValueOrDefault("using", "control") == "control"),
+        new ParamSpec
+        {
+            Key = "opp_mats", Label = "Your opponent's monster", Type = ParamType.Cards, WhereFromBlock = true,
+            DefaultFilter = () => new CardFilter
+            {
+                CardType = FilterCardType.Monster, MonsterKind = MonsterKind.Link,
+                Requirements = [new CardRequirement { Property = "link", Op = RequirementOp.LessOrEqual, Value = 2 }],
+            },
+        }.Unprinted().WhenUsed().ShowIf(b => b.Values.GetValueOrDefault("also_opp") == "true"),
     ];
+
+    private static bool AlsoOpponents(BlockArgs args) => args.Choice("kind") == "link" && args.Choice("using") == "control" && args.Bool("also_opp");
+
+    /// <summary>"1 Link-2 or lower monster": the opponent's monster this card lets the Link Summon use.</summary>
+    private static CardFilter OpponentMaterial(BlockArgs args)
+    {
+        var f = args.Cards("opp_mats").Clone();
+        f.Owner = CardOwner.Opponent;
+        f.Zones = Zone.MonsterZone;
+        f.CardType = FilterCardType.Monster;
+        return f;
+    }
 
     private static CardFilter Target(BlockArgs args)
     {
@@ -83,7 +108,13 @@ public sealed class ExtraDeckSummonAction : ActionBlock
         var mats = args.Choice("using") == "only"
             ? $"using only {FilterText.Describe(Materials(args), args.Pack, plural: true, withLocation: false)} you control"
             : args.Choice("kind") == "link" ? "using monster(s) you control as material" : "using monsters you control as material";
-        var text = $"{kind} Summon 1 {FilterText.Describe(Target(args), args.Pack, withLocation: false)} {mats}";
+        if (AlsoOpponents(args))
+        {
+            var opp = OpponentMaterial(args).Clone();
+            opp.Owner = CardOwner.You;
+            mats = $", and if this card you control would be used as material for that Link Summon, you can also use 1 {FilterText.Describe(opp, args.Pack, withLocation: false)} your opponent controls";
+        }
+        var text = $"{kind} Summon 1 {FilterText.Describe(Target(args), args.Pack, withLocation: false)}{(mats.StartsWith(',') ? "" : " ")}{mats}";
         // "You can Xyz Summon ...", but "..., then immediately after this effect resolves, Xyz Summon ...".
         return SummonWording.AfterYouCan(args) ? text : "immediately after this effect resolves, " + text;
     }
@@ -110,6 +141,11 @@ public sealed class ExtraDeckSummonAction : ActionBlock
         var filter = ctx.Script.AddFunction("edsfilter", "c,e,tp" + mgArg, [$"return {string.Join(" and ", conds)}"]);
         string Group(string v) => mg is null ? "" : $"local {v}=Duel.GetMatchingGroup({mg},tp,LOCATION_MZONE,0,nil,e,tp)";
         ctx.Effect.AddCategory("CATEGORY_SPECIAL_SUMMON");
+        if (AlsoOpponents(ctx.Args))
+        {
+            OpponentMaterialSummon(ctx, filter);
+            return;
+        }
         // Only checked when the materials are there at activation: after an action that Summons them, it may fail.
         if (!ctx.Effect.HasSteps)
         {
@@ -141,6 +177,69 @@ public sealed class ExtraDeckSummonAction : ActionBlock
             "end",
         ]);
         ctx.Effect.AddStep(body, r, ctx.Link);
+    }
+
+    /// <summary>
+    /// "..., and if this card you control would be used as material for that Link Summon, you can also use 1 Link-2 or
+    /// lower monster your opponent controls": while the Link Summon is checked and done, an extra Link Material rule lets
+    /// one such monster of the opponent's be a material alongside this card (as W:P Fancy Ball writes it).
+    /// </summary>
+    private static void OpponentMaterialSummon(BlockContext ctx, string filter)
+    {
+        var e = ctx.Effect;
+        var opp = OpponentMaterial(ctx.Args).Clone();
+        opp.Owner = CardOwner.Either;
+        opp.Zones = Zone.None;
+        var tests = FilterCompiler.Conditions(opp, "c", SummonProcedureKind.None, hasEffect: false);
+        tests.Insert(0, "c:IsControler(1-tp) and c:IsFaceup()");
+        var eligible = ctx.Script.AddFunction("oppmatfilter", "c,tp", [$"return {string.Join(" and ", tests)}"]);
+        var mattg = ctx.Script.AddFunction("oppmattg", "e,c", [$"return {eligible}(c,e:GetHandlerPlayer())"]);
+        var matval = ctx.Script.AddFunction("oppmatval", "e,lc,mg,c,tp",
+        [
+            "local h=e:GetLabelObject()",
+            // This very card, still controlled by the Summoning player, must be among the materials; then one such monster is allowed.
+            "if h:GetFieldID()~=e:GetLabel() or h:GetControler()~=tp then return false,nil end",
+            $"if not {eligible}(c,tp) then return false,nil end",
+            "if not mg or not mg:IsContains(h) then return true,false end",
+            $"if mg:IsExists({eligible},1,c,tp) then return true,false end",
+            "return true,true",
+        ]);
+        var reg = ctx.Script.AddFunction("oppmatreg", "c,tp,reset",
+        [
+            "local le=Effect.CreateEffect(c)",
+            "le:SetType(EFFECT_TYPE_FIELD)",
+            "le:SetCode(EFFECT_EXTRA_LINK_MATERIAL)",
+            "le:SetTargetRange(0,LOCATION_MZONE)",
+            "le:SetLabel(c:GetFieldID())",
+            "le:SetLabelObject(c)",
+            $"le:SetTarget({mattg})",
+            $"le:SetValue({matval})",
+            "if reset then le:SetReset(reset) end",
+            "Duel.RegisterEffect(le,tp)",
+            "return le",
+        ]);
+        var check = ctx.Script.AddFunction("oppmatcheck", "e,tp",
+        [
+            $"local le={reg}(e:GetHandler(),tp,nil)",
+            $"local res=Duel.IsExistingMatchingCard({filter},tp,LOCATION_EXTRA,0,1,nil,e,tp)",
+            "le:Reset()",
+            "return res",
+        ]);
+        if (!e.HasSteps) e.TargetChecks.Add($"{check}(e,tp)");
+        e.TargetLines.Add("Duel.SetOperationInfo(0,CATEGORY_SPECIAL_SUMMON,nil,1,tp,LOCATION_EXTRA)");
+        var r = e.NewLocal("r");
+        var g = e.NewLocal("g");
+        e.AddStep(
+        [
+            $"local {r}=0",
+            $"if c:IsRelateToEffect(e) and c:IsControler(tp) and c:IsFaceup() then {reg}(c,tp,RESET_PHASE+PHASE_MAIN1+PHASE_MAIN2) end",
+            $"local {g}=Duel.GetMatchingGroup({filter},tp,LOCATION_EXTRA,0,nil,e,tp)",
+            $"if {g}:GetCount()>0 then",
+            "\tDuel.Hint(HINT_SELECTMSG,tp,HINTMSG_SPSUMMON)",
+            $"\tDuel.LinkSummon(tp,{g}:Select(tp,1,1,nil):GetFirst(),nil)",
+            $"\t{r}=1",
+            "end",
+        ], r, ctx.Link);
     }
 }
 

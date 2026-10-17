@@ -12,7 +12,7 @@ sb.AppendLine();
 foreach (var (kind, title, intro) in new[]
 {
     (BlockKind.Trigger, "WHEN: what starts the effect", "Each effect has exactly one."),
-    (BlockKind.Condition, "IF: what must be true", "All of them must be true for the effect to be used."),
+    (BlockKind.Condition, "IF: what must be true", "All of them must be true for the effect to be used, except that one ticked \"or the one above\" is enough in place of the one above it."),
     (BlockKind.Cost, "COST: paid when activating", "Paid before the effect resolves. Lasting effects have no cost."),
     (BlockKind.Action, "DO: what happens", "Run in order. Each action after the first says how it links to the one before: *and*, *and if you do*, *then*, or *also, after that*."),
     (BlockKind.Passive, "ALWAYS: lasting effects", "Used with the \"While this card is face-up\" trigger. They apply all the time instead of activating."),

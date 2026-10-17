@@ -769,7 +769,9 @@ public sealed class ChainLimitCost : CostBlock
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Choice("who", "Who", new("both", "Neither player"), new("opponent", "Your opponent")),
-        ParamSpec.Choice("what", "What", new("monster", "monster effects"), new("spelltrap", "Spell/Trap Cards"), new("any", "cards or effects")),
+        ParamSpec.Choice("what", "What", new("monster", "monster effects"), new("spelltrap", "Spell/Trap Cards"), new("any", "cards or effects"),
+            // W:P Fancy Ball: "Neither player can activate the effects of Link Monsters in response to this effect's activation."
+            new("link", "the effects of Link Monsters")),
     ];
 
     public override string Describe(BlockArgs args) => "";
@@ -787,6 +789,7 @@ public sealed class ChainLimitCost : CostBlock
         {
             "monster" => "not e:IsActiveType(TYPE_MONSTER)",
             "spelltrap" => "not e:IsHasType(EFFECT_TYPE_ACTIVATE)",
+            "link" => "not e:GetHandler():IsAllTypes(TYPE_LINK+TYPE_MONSTER)",
             _ => "false",
         };
         if (ctx.Args.Choice("who") == "opponent") test = $"tp==rp or {test}";

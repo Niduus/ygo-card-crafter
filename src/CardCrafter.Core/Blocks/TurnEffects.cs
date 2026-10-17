@@ -245,7 +245,7 @@ public sealed class EachTimePassive : PassiveBlock
     public override string Id => BlockId;
     public override string Group => "Players";
     public override string Name => "Each time something happens, do something (no chain)";
-    public override string Sentence => "Each time {event}, {then} {amount}";
+    public override string Sentence => "Each time {event}, {then} {amount} {timing}";
     public override string Help => "A Continuous effect: it applies at once and can't be chained to. The effect's IF blocks and once per turn apply to it.";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
@@ -256,7 +256,14 @@ public sealed class EachTimePassive : PassiveBlock
             new("gain", "gain LP:"),
             new("opp_gain", "your opponent gains LP:")),
         ParamSpec.Int("amount", "Amount", 200, 1, 99999),
+        // Red-Eyes Flare Metal Dragon: "each time your opponent activates a card or effect, inflict 500 damage to your
+        // opponent immediately after it resolves".
+        ParamSpec.Choice("timing", "When", new("now", "", "at once"), new("resolved", "immediately after it resolves", "immediately after that card or effect resolves"))
+            .ShowIf(b => EventTrigger.Find(b.Values.GetValueOrDefault("event") ?? "").Code == "EVENT_CHAINING"),
     ];
+
+    /// <summary>"immediately after it resolves": the event is an activation and the block waits for it to resolve.</summary>
+    private static bool AfterResolving(BlockArgs args) => args.Choice("timing") == "resolved" && EventTrigger.Find(args.Choice("event")).Code == "EVENT_CHAINING";
 
     public override string Describe(BlockArgs args)
     {
@@ -268,7 +275,7 @@ public sealed class EachTimePassive : PassiveBlock
             "opp_gain" => $"your opponent gains {n} LP",
             _ => $"inflict {n} damage to your opponent",
         };
-        return $"each time {EventTrigger.Find(args.Choice("event")).Text}, {then}";
+        return $"each time {EventTrigger.Find(args.Choice("event")).Text}, {then}{(AfterResolving(args) ? " immediately after it resolves" : "")}";
     }
 
     public override void Compile(BlockContext ctx)
@@ -293,8 +300,21 @@ public sealed class EachTimePassive : PassiveBlock
         var body = new List<string>();
         if (check is not null) body.Add($"if not ({check}) then return end");
         body.AddRange(["Duel.Hint(HINT_CARD,0,id)", act]);
-        var op = ctx.Script.AddFunction("eachop", "e,tp,eg,ep,ev,re,r,rp", body);
         var range = RangeOf(ctx);
+        if (AfterResolving(ctx.Args))
+        {
+            // Activations made while this card is face-up are marked as they are activated, and answered as each resolves.
+            var flag = $"id+{8480 + ctx.Script.Slot("eachresolved")}";
+            var mark = ctx.Script.AddFunction("eachreg", "e,tp,eg,ep,ev,re,r,rp", [$"e:GetHandler():RegisterFlagEffect({flag},RESET_EVENT+RESETS_STANDARD-RESET_TURN_SET+RESET_CHAIN,0,1)"]);
+            ctx.Effect.AddPassive(v => [$"{v}:SetType(EFFECT_TYPE_FIELD+EFFECT_TYPE_CONTINUOUS)", $"{v}:SetCode(EVENT_CHAINING)", $"{v}:SetRange({range})",
+                $"{v}:SetProperty(EFFECT_FLAG_CANNOT_DISABLE)", $"{v}:SetOperation({mark})"]);
+            body.Insert(0, $"if e:GetHandler():GetFlagEffect({flag})==0 then return end");
+            var solved = ctx.Script.AddFunction("eachop", "e,tp,eg,ep,ev,re,r,rp", body);
+            ctx.Effect.AddPassive(v => [$"{v}:SetType(EFFECT_TYPE_FIELD+EFFECT_TYPE_CONTINUOUS)", $"{v}:SetCode(EVENT_CHAIN_SOLVED)", $"{v}:SetRange({range})",
+                $"{v}:SetOperation({solved})"], limited: true);
+            return;
+        }
+        var op = ctx.Script.AddFunction("eachop", "e,tp,eg,ep,ev,re,r,rp", body);
         ctx.Effect.AddPassive(v =>
         [
             $"{v}:SetType(EFFECT_TYPE_FIELD+EFFECT_TYPE_CONTINUOUS)",

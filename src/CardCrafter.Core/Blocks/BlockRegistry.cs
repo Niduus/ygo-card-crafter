@@ -212,6 +212,12 @@ public static class BlockRegistry
         new ChooseEffectsAction(), new RevealPickAction(), new PairTargetAction(),
         // Targeting for the steps after, which act on "that card" (CardRefs.cs)
         new TargetCardsAction(),
+        // Lasting rules: cannot be negated, battle destruction that banishes, monsters Summoned while face-up (LastingRules.cs)
+        new CannotNegatePassive(), new BattleRedirectPassive(), new SummonedChangePassive(),
+        // Zones that cannot be used, players who must get rid of cards, materials taken from an Xyz Monster (ZoneBlocks.cs)
+        new DisableZoneAction(), new MustReduceAction(), new FromMaterialsAction(), new SendZonesAction(),
+        // Winning the Duel, named cards in your hand, dodging a resolving effect, tied monsters, copied effects (RareMechanics.cs)
+        new WinAction(), new WinPassive(), new HaveNamesCondition(), new DodgePassive(), new BindAction(), new CopyEffectAction(), new DestroyLaterCost(),
     ];
 
     private static readonly Dictionary<string, BlockDefinition> ById = All.ToDictionary(b => b.Id);

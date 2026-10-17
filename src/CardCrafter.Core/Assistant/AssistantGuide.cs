@@ -60,7 +60,8 @@ public static class AssistantGuide
         - WHEN: exactly one trigger block, the thing that starts the effect ("If this card is Normal Summoned", "You can"
           for an ignition effect, "When your opponent activates a card or effect" for a Quick Effect). More triggers go in
           alsoWhen ("If this card is Normal or Special Summoned").
-        - IF: conditions that must all be true ("If you control no monsters").
+        - IF: conditions that must all be true ("If you control no monsters"). or:true on an IF block makes it an
+          alternative to the one before it ("while you control a Dragon monster or your opponent controls a Spell").
         - COST: what is paid to activate ("discard 1 card", "pay 1000 LP"). Lasting effects have no cost.
         - DO: the actions, in order. Each action after the first has a link to the one before: and, ifYouDo ("and if you
           do"), then ("then"), alsoAfterThat ("Also, after that"), ifYouDont, or option (starts another "● " option of

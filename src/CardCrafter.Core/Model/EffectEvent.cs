@@ -50,6 +50,13 @@ public sealed class BlockInstance
     public ActionLink Link { get; set; } = ActionLink.And;
     /// <summary>A DO block the player may skip: "you can Special Summon this card". They are asked as it resolves.</summary>
     public bool Optional { get; set; }
+    /// <summary>
+    /// For IF blocks after the first: this one or the one before it is enough, as in "While you control a "Reindsurm"
+    /// monster whose original Level is 8 or higher or your opponent has a Dragon monster in their field or GY". IF blocks
+    /// joined by "or" hold together; each group of them is still needed with the other IF blocks.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Or { get; set; }
 
     public BlockInstance() { }
     public BlockInstance(string blockId) => BlockId = blockId;
@@ -69,6 +76,13 @@ public sealed class BlockInstance
     public BlockInstance Linked(ActionLink link)
     {
         Link = link;
+        return this;
+    }
+
+    /// <summary>Makes this IF block an alternative to the one before it ("... or ...").</summary>
+    public BlockInstance OrElse(bool or = true)
+    {
+        Or = or;
         return this;
     }
 
