@@ -9,7 +9,10 @@
   <StackPanel Spacing="2">
     <TextBlock Text="Which cards?" FontWeight="SemiBold" />
     <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" Foreground="#C7D7FE" Margin="0,0,0,6" />
-    <CheckBox Name="ThisCardBox" Content="This card itself" IsChecked="{Binding ThisCard}" IsVisible="{Binding AllowThisCard}" FontWeight="SemiBold" Margin="0,0,0,6"
+    <TextBlock Classes="label" Text="Which cards" IsVisible="{Binding AllowThatCard}" />
+    <ComboBox Name="ThatBox" ItemsSource="{Binding ThatOptions}" SelectedItem="{Binding That}" IsVisible="{Binding AllowThatCard}" HorizontalAlignment="Stretch" Margin="0,0,0,6"
+              ToolTip.Tip="&quot;That card&quot;: cards the effect already has, as card text says &quot;destroy it&quot; or &quot;the sent monster&quot;. What you pick below is then only a check they must pass (&quot;if it is a Fusion Monster&quot;)." />
+    <CheckBox Name="ThisCardBox" Content="This card itself" IsChecked="{Binding ThisCard}" IsVisible="{Binding ShowThisCard}" FontWeight="SemiBold" Margin="0,0,0,6"
               ToolTip.Tip="This exact card, wherever its effect is used from (&quot;Special Summon this card from your hand&quot;). A card name or passcode below means any copy." />
     <StackPanel IsEnabled="{Binding NotThisCard}">
 

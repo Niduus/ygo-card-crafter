@@ -471,7 +471,7 @@ public sealed class SetAttackAction : CardGroupAction
     public override string Describe(BlockArgs args)
     {
         if (args.IsThisCard) return $"this card's {Stat(args)} {Verb(args, true)}{Tail(args)}";
-        return $"the {Stat(args)} of {Some(args)} {Verb(args, One(args))}{Tail(args)}" + args.ExceptText();
+        return $"{StatOf(args, Stat(args))} {Verb(args, One(args))}{Tail(args)}" + args.ExceptText();
     }
 
     protected override string TargetedAction(BlockArgs args, string pronoun, bool single) =>
@@ -620,7 +620,7 @@ public sealed class ChangeLevelAction : CardGroupAction
         // "the Level of 1 monster becomes 4", "the Levels of all face-up monsters you control increase by 1".
         var change = Change(args, One(args));
         var noun = change.IndexOf(' ');
-        return $"the {change[..noun]} of {Some(args)} {change[(noun + 1)..]}{Duration(args)}" + args.ExceptText();
+        return $"{StatOf(args, change[..noun])} {change[(noun + 1)..]}{Duration(args)}" + args.ExceptText();
     }
 
     protected override string TargetedAction(BlockArgs args, string pronoun, bool single) => args.Choice("mode") switch
@@ -858,7 +858,7 @@ public sealed class BattleRuleAction : CardGroupAction
     {
         var rule = args.Describe("rule");
         if (!One(args)) rule = rule.Replace("inflicts", "inflict", StringComparison.Ordinal);
-        return $"{Some(args)} {rule} this turn{args.ExceptText()}";
+        return $"{Subject(args)} {rule} this turn{args.ExceptText()}";
     }
 
     protected override string TargetedAction(BlockArgs args, string pronoun, bool single)

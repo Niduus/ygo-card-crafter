@@ -206,6 +206,8 @@ public static class BlockRegistry
         new RememberAction(), new MemoryCondition(), new LaterAction(),
         // How "●" options are chosen, revealing cards for the opponent to pick, and targets of two kinds (Selections.cs)
         new ChooseEffectsAction(), new RevealPickAction(), new PairTargetAction(),
+        // Targeting for the steps after, which act on "that card" (CardRefs.cs)
+        new TargetCardsAction(),
     ];
 
     private static readonly Dictionary<string, BlockDefinition> ById = All.ToDictionary(b => b.Id);

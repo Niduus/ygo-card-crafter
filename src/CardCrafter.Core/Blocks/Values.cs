@@ -47,6 +47,19 @@ public static class ValueSources
         new("that_orig_def", "that monster's original DEF", "that monster's original DEF (the card the step before affected)"),
         new("that_orig_higher", "that monster's original ATK or DEF (whichever is higher)", "that monster's original ATK or DEF, whichever is higher (the card the step before affected)"),
         new("that_level", "that monster's Level", "that monster's Level (the card the step before affected)"),
+        new("that_rank", "that monster's Rank", "that monster's Rank (the card the step before affected)"),
+        new("that_orig_lvrk", "that monster's original Level/Rank", "that monster's original Level, or Rank for an Xyz Monster (the card the step before affected)"),
+        new("that_max_atk", "the highest ATK among those monsters", "the highest ATK among the cards the step before affected (as they were on the field)"),
+        new("that_max_orig_atk", "the highest original ATK among those monsters", "the highest original ATK among the cards the step before affected"),
+        new("damage_dealt", "the damage inflicted", "the damage the step before inflicted"),
+        // This effect's target(s) and the card(s) used for its cost (CardRefs.cs).
+        new("target_atk", "the targeted monster's ATK", "this effect's target's ATK"),
+        new("target_def", "the targeted monster's DEF", "this effect's target's DEF"),
+        new("target_level", "the targeted monster's Level", "this effect's target's Level"),
+        new("target_rank", "the targeted monster's Rank", "this effect's target's Rank"),
+        new("cost_atk", "the cost monster's ATK", "the ATK of the card used for the cost"),
+        new("cost_def", "the cost monster's DEF", "the DEF of the card used for the cost"),
+        new("cost_level", "the cost monster's Level", "the Level of the card used for the cost"),
         new("damage_turn", "the damage you took this turn"),
         new("opp_damage_turn", "the damage your opponent took this turn"),
         new("gained_turn", "the LP you gained this turn"),
@@ -65,7 +78,11 @@ public static class ValueSources
     ];
 
     /// <summary>Values known only while the effect resolves: the amount that started it, a die roll's result, a toss's heads, the LP paid.</summary>
-    public static bool AtResolution(string source) => source is "event" or "roll" or "heads" or "lp_paid" or "cost_count" || Affected(source);
+    public static bool AtResolution(string source) => source is "event" or "roll" or "heads" or "lp_paid" or "cost_count" or "damage_dealt" || Affected(source) || OfThatCard(source);
+
+    /// <summary>Values about this effect's target(s) or the card(s) used for its cost ("the targeted monster's ATK").</summary>
+    public static bool OfThatCard(string source) => source != "cost_count"
+        && (source.StartsWith("target_", StringComparison.Ordinal) || source.StartsWith("cost_", StringComparison.Ordinal));
 
     /// <summary>Values about the card(s) the DO step before affected ("that monster's original ATK").</summary>
     public static bool Affected(string source) => source.StartsWith("that_", StringComparison.Ordinal);
@@ -121,8 +138,12 @@ public static class ValueSources
     /// The value itself: "the number of cards in your hand", "the total ATK of monsters you control", "its Level".
     /// <paramref name="owner"/> is the monster "its" means: "it", or "this card" where nothing else is affected.
     /// </summary>
-    public static string Of(string source, CardFilter cards, CardPack? pack, string owner = "it", string counter = "counter") => source switch
+    public static string Of(string source, CardFilter cards, CardPack? pack, string owner = "it", string counter = "counter", EffectEvent? effect = null) => source switch
     {
+        // "the sent monster's ATK", "the Tributed monster's Level": the cost's own words.
+        "cost_atk" => $"{CardRefs.Whose(CardRef.Cost, effect)} ATK",
+        "cost_def" => $"{CardRefs.Whose(CardRef.Cost, effect)} DEF",
+        "cost_level" => $"{CardRefs.Whose(CardRef.Cost, effect)} Level",
         "count" => $"the number of {CardCounts.Group(cards, pack)}",
         "different_attr" => $"the number of different Attributes among the {CardCounts.Group(cards, pack)}",
         "different_race" => $"the number of different Types among the {CardCounts.Group(cards, pack)}",
@@ -174,7 +195,7 @@ public static class ValueSources
     public static string Phrase(BlockArgs args, string unit, string owner = "it", bool forEach = true)
     {
         var of = args.Choice("value") == "cost_count" ? "the number of " + CostNoun(args.Effect, plural: true)
-            : Of(args.Choice("value"), args.Cards(CardsKey), args.Pack, owner, Counters.Name(args));
+            : Of(args.Choice("value"), args.Cards(CardsKey), args.Pack, owner, Counters.Name(args), args.Effect);
         var n = args.Int("amount").ToString(CultureInfo.InvariantCulture);
         return args.Choice("how") switch
         {
@@ -229,7 +250,10 @@ public static class ValueSources
             "its_orig_atk" => $"math.max(0,{card}:GetBaseAttack())",
             "its_orig_def" => $"math.max(0,{card}:GetBaseDefense())",
             "its_orig_higher" => $"math.max(0,{card}:GetBaseAttack(),{card}:GetBaseDefense())",
-            "that_atk" or "that_orig_atk" or "that_orig_def" or "that_orig_higher" or "that_level" when ev => AffectedLua(ctx, source),
+            "that_atk" or "that_orig_atk" or "that_orig_def" or "that_orig_higher" or "that_level" or "that_rank" or "that_orig_lvrk"
+                or "that_max_atk" or "that_max_orig_atk" when ev => AffectedLua(ctx, source),
+            "damage_dealt" when ev => DamageDealt(ctx),
+            _ when ev && OfThatCard(source) => CardRefs.StatLua(ctx, source) ?? "0",
             "damage_turn" => LifeWatch.Total(ctx, p, "damage"),
             "opp_damage_turn" => LifeWatch.Total(ctx, $"1-{p}", "damage"),
             "gained_turn" => LifeWatch.Total(ctx, p, "gained"),
@@ -241,6 +265,7 @@ public static class ValueSources
             _ => "0",
         };
         if (Affected(source) && !ev) ctx.Effect.Error("\"That monster\" means the card a DO step before affected; a lasting effect has none.");
+        if ((OfThatCard(source) || source == "damage_dealt") && !ev) ctx.Effect.Error("A target, the card used for a cost or the damage inflicted only exist while the effect resolves; a lasting effect has none.");
         if (source == "lp_paid" && !ev) ctx.Effect.Error("\"The LP paid\" only exists while the effect that paid them resolves; this block can't use it.");
         if (source == "cost_count" && !ev) ctx.Effect.Error("\"The number of cards used for the cost\" only exists while the effect that paid it resolves; this block can't use it.");
         if (source is "roll" or "heads" && !ev) ctx.Effect.Error("A die roll's result or a coin toss's heads only exist while the effect resolves; this block can't use them.");
@@ -270,14 +295,43 @@ public static class ValueSources
         }
         var stat = source switch
         {
-            "that_atk" => "tc:GetPreviousAttackOnField()",
+            "that_atk" or "that_max_atk" => "tc:GetPreviousAttackOnField()",
             "that_orig_atk" => "tc:GetBaseAttack()",
+            // Gandora-X the Dragon of Demolition: the highest original ATK, as printed (GetTextAttack).
+            "that_max_orig_atk" => "tc:GetTextAttack()",
             "that_orig_def" => "tc:GetBaseDefense()",
             "that_orig_higher" => "math.max(tc:GetBaseAttack(),tc:GetBaseDefense())",
+            "that_rank" => "tc:GetRank()",
+            // Voloferniges: "the destroyed monster's original Level/Rank": an Xyz Monster's Rank, as it has no Level.
+            "that_orig_lvrk" => "(tc:IsType(TYPE_XYZ) and tc:GetOriginalRank() or tc:GetOriginalLevel())",
             _ => "tc:GetLevel()",
         };
+        if (source is "that_max_atk" or "that_max_orig_atk")
+        {
+            var max = ctx.Script.AddFunction("thatmax", "g", ["local n=0", "for tc in aux.Next(g) do", $"\tn=math.max(n,{stat})", "end", "return n"]);
+            return $"{max}(Duel.GetOperatedGroup())";
+        }
         var fn = ctx.Script.AddFunction("thatstat", "g", ["local n=0", "for tc in aux.Next(g) do", $"\tn=n+math.max(0,{stat})", "end", "return n"]);
         return $"{fn}(Duel.GetOperatedGroup())";
+    }
+
+    /// <summary>Where "the damage inflicted" is kept, so the functions a block writes can read it.</summary>
+    public const string DamageField = "s.ccdamage";
+
+    /// <summary>
+    /// "The damage inflicted": what the step before (a damage block) returned, the damage it inflicted. The step keeps it
+    /// in the script's table, as a die roll's result is kept.
+    /// </summary>
+    private static string DamageDealt(BlockContext ctx)
+    {
+        if (ctx.Effect.LastResultStep is not { Result: { } r } step)
+        {
+            ctx.Effect.Error("\"The damage inflicted\" needs a DO block before it that inflicts damage.");
+            return "0";
+        }
+        var keep = $"{DamageField}={r}";
+        if (!step.Lines.Contains(keep)) step.Lines.Add(keep);
+        return DamageField;
     }
 
     /// <summary>"The LP paid": the amount a "pay LP in multiples" cost kept in the effect's label.</summary>
@@ -504,7 +558,7 @@ public sealed class StatsFromValueAction : CardGroupAction
     {
         if (args.IsThisCard) return ValueSources.Sentence(args, "this card", false) + Tail(args);
         var all = args.CountMode == "all";
-        var subject = all ? $"all {args.Describe("cards")}" : Some(args);
+        var subject = all ? $"all {args.Describe("cards")}" : Subject(args);
         // "each face-up monster you control gains ATK equal to its Level", "each of 2 face-up monsters you control ...".
         var each = all
             ? "each " + FilterText.Describe(args.Cards("cards"), args.Pack, plural: false, ownName: args.CardName, withExcept: false)

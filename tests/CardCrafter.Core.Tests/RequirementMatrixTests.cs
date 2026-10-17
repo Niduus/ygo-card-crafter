@@ -514,8 +514,9 @@ public class RequirementMatrixChoiceTests
         var tested = RequirementMatrixNumberTests.Numbers.Select(n => n.Property)
             .Concat(new[] { Flags(), Options(), States() }.SelectMany(rows => rows).SelectMany(r => ((CardRequirement[])r[2]).Select(q => q.Property)))
             .ToHashSet();
-        // What an effect declared, and coin tossing and die rolling effects: ChanceAndDeclarationTests plays them; remembered cards, MemoryTests.
-        foreach (var p in CardProperties.All.Where(p => !CardProperties.IsDeclared(p.Key) && p.Key is not ("coin_effect" or "dice_effect" or "remembered")))
+        // What an effect declared, and coin tossing and die rolling effects: ChanceAndDeclarationTests plays them; remembered cards, MemoryTests;
+        // comparisons with "that card" (the target, the cost's card), CardRefTests.
+        foreach (var p in CardProperties.All.Where(p => !CardProperties.IsDeclared(p.Key) && !CardRefs.IsRequirement(p.Key) && p.Key is not ("coin_effect" or "dice_effect" or "remembered")))
         {
             Assert.Contains(p.Key, tested);
             if (p.Kind == PropertyKind.Number) continue;
@@ -615,6 +616,15 @@ public class RequirementMatrixTextTests
         [IsNot("location", 0x2, 0x10), "not in the hand or the GY"],
         [Is("remembered", 0), "that was remembered"],
         [IsNot("remembered", 1), "that was not remembered"],
+        [Is("ref_attribute", (long)CardRef.Target), "with the same Attribute as that monster"],
+        [IsNot("ref_attribute", (long)CardRef.Target), "with a different Attribute"],
+        [IsNot("ref_race", (long)CardRef.Cost), "with a different Type"],
+        [Is("ref_level", (long)CardRef.Cost), "with the same Level as that monster"],
+        [IsNot("ref_name", (long)CardRef.Target), "with a different name"],
+        [IsNot("ref_orig_attribute", (long)CardRef.Cost), "with a different original Attribute from that monster's"],
+        [Is("ref_orig_level", (long)CardRef.Cost), "with the same original Level as that monster"],
+        [IsNot("ref_orig_name", (long)CardRef.Cost), "with a different original name"],
+        [Is("ref_atk_le", (long)CardRef.Target), "with ATK less than or equal to that monster's ATK"],
     ];
 
     private static CardPack Pack() => new()
@@ -734,6 +744,8 @@ public class RequirementMatrixTextTests
             {
                 var values = p.Kind switch
                 {
+                    // Comparisons with "that card": the monster this card battles needs no other block.
+                    PropertyKind.Options when CardRefs.IsRequirement(p.Key) => [(long)CardRef.BattleTarget],
                     PropertyKind.Flags or PropertyKind.Options => p.Choices!.Take(2).Select(c => c.Value).ToArray(),
                     PropertyKind.Archetype => [0x7a1L, 0x7a2L],
                     PropertyKind.CardName => [RequirementMatrix.S, RequirementMatrix.Other],

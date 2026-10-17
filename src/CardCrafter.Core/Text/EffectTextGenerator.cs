@@ -410,7 +410,9 @@ public static partial class EffectTextGenerator
 
     /// <summary>Costs and actions on this card that already say where it is ("discard this card", "Special Summon this card from your hand").</summary>
     private static bool SaysWhereThisCardIs(EffectEvent effect) =>
-        effect.Cost.Concat(effect.Do).Any(b => b.BlockId is "cost.this_card" or "cost.reveal_self" or "do.special_summon_self" or "do.this_card"
+        effect.Cost.Concat(effect.Do).Any(b => b.BlockId is "cost.this_card" or "cost.reveal_self" or "do.this_card"
+                                               // "Special Summon both it and this card" doesn't say where this card is.
+                                               || b.BlockId == "do.special_summon_self" && b.Values.GetValueOrDefault("with", "none") != "target"
                                                || b.Filters.Values.Any(f => f.ThisCard));
 
     /// <summary>"during your turn" stays as is; anything else gets a joining word such as "if" or "while".</summary>

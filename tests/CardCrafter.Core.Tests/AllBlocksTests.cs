@@ -58,6 +58,15 @@ public class AllBlocksTests
                     yield return ($"{p.Key}=this card", self);
                     break;
             }
+            // "That card": the target, the cards the step before affected, the cost's cards, a battling monster.
+            if (p is { Type: ParamType.Cards, AllowThatCard: true })
+                foreach (var that in Enum.GetValues<CardRef>().Where(r => r != CardRef.None))
+                {
+                    var inst = def.CreateInstance();
+                    inst.Filters[p.Key] = new CardFilter { That = that };
+                    if (def.Param("target") is not null) inst.Values["target"] = "false";
+                    yield return ($"{p.Key}=that {that}", inst);
+                }
         }
     }
 
@@ -196,6 +205,23 @@ public class AllBlocksTests
                 project.Effects[0].Do.AddRange([new BlockInstance("do.draw").Linked(ActionLink.Option), new BlockInstance("do.gain_lp").Linked(ActionLink.Option)]);
                 break;
         }
+        // "That card", "the targeted monster's ATK", "and the target": a block before that targets, affects cards, a cost, a battle.
+        var refs = inst.Filters.Values.Select(f => f.That).ToHashSet();
+        var value = inst.Values.GetValueOrDefault("value", "");
+        if (def.Kind == BlockKind.Action && (refs.Contains(CardRef.Target) || value.StartsWith("target_", StringComparison.Ordinal)
+                                             || inst.Values.GetValueOrDefault("plus") == "target" || inst.Values.GetValueOrDefault("with") == "target"))
+        {
+            // One block of an effect targets.
+            if (inst.Values.ContainsKey("target")) inst.Values["target"] = "false";
+            if (!project.Effects[0].Do.Any(b => b.Values.GetValueOrDefault("target") == "true"))
+                project.Effects[0].Do.Insert(0, BlockRegistry.Find(TargetCardsAction.BlockId)!.CreateInstance());
+        }
+        if (def.Kind == BlockKind.Action && (refs.Contains(CardRef.Affected) || inst.Values.GetValueOrDefault("is") is "it_is" or "any_was"))
+            project.Effects[0].Do.Insert(0, BlockRegistry.Find("do.destroy")!.CreateInstance());
+        if (def.Kind == BlockKind.Action && value == "damage_dealt") project.Effects[0].Do.Insert(0, BlockRegistry.Find("do.damage")!.CreateInstance());
+        if (refs.Contains(CardRef.Cost) || value.StartsWith("cost_", StringComparison.Ordinal))
+            project.Effects[0].Cost.Add(new BlockInstance("cost.move_cards").With("how", "banish"));
+        if (refs.Contains(CardRef.BattleTarget) || refs.Contains(CardRef.Battling)) project.Effects[0].When = new BlockInstance("when.destroys_by_battle");
         // "The LP paid" needs the cost that pays LP in multiples.
         if (inst.Values.GetValueOrDefault("value") == "lp_paid") project.Effects[0].Cost.Add(new BlockInstance("cost.pay_lp").With("how", "multiple"));
         // "The number of cards used for the cost" and "that many" need a cost that counts: detaching any number.
@@ -275,7 +301,8 @@ public class AllBlocksTests
             var keys = SentenceParser.Parse(def.Sentence).Where(s => s.Key is not null).Select(s => s.Key!).ToList();
             foreach (var k in keys) Assert.True(def.Param(k) is not null, $"{def.Id}: sentence blank {{{k}}} has no parameter");
             // "exactly / up to / all" sits before the count and "for each" at the end, without a blank of their own.
-            foreach (var p in def.Params) Assert.True(keys.Contains(p.Key) || p.Type == ParamType.Bool || p.Key is "mode" or "count_mode" or "per", $"{def.Id}: parameter {p.Key} is not in the sentence");
+            // So does "and this card / the target", said with the count ("Special Summon this card and 1 ...").
+            foreach (var p in def.Params) Assert.True(keys.Contains(p.Key) || p.Type == ParamType.Bool || p.Key is "mode" or "count_mode" or "per" or "plus", $"{def.Id}: parameter {p.Key} is not in the sentence");
         }
     }
 }

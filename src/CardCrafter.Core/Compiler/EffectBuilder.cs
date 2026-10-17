@@ -189,6 +189,9 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
     /// <summary>The Lua variable with how many cards the last DO step affected, for "for each of those cards".</summary>
     public string? LastResult => _steps.LastOrDefault(s => s.Result is not null)?.Result;
 
+    /// <summary>The DO step <see cref="LastResult"/> belongs to, for a later step that needs it kept ("the damage inflicted").</summary>
+    public OperationStep? LastResultStep => _steps.LastOrDefault(s => s.Result is not null);
+
     /// <summary>True once a COST block has stored how many cards it used (in the effect's label).</summary>
     public bool CostCounts { get; set; }
 

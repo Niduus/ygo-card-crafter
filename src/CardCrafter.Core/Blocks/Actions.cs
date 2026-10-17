@@ -1,5 +1,6 @@
 using CardCrafter.Core.Compiler;
 using CardCrafter.Core.Model;
+using CardCrafter.Core.Text;
 
 namespace CardCrafter.Core.Blocks;
 
@@ -126,7 +127,9 @@ public abstract partial class CardGroupAction : ActionBlock
         return action;
     }
 
-    public override IReadOnlyList<ParamSpec> Params => _params ??= BuildParams();
+    /// <summary>The block's blanks: its picker also offers "that card", and "together with this card / the target" follows.</summary>
+    public override IReadOnlyList<ParamSpec> Params => _params ??=
+        [.. BuildParams().Select(p => p is { Key: "cards", Type: ParamType.Cards } ? p.ThatCards() : p), CardRefs.PlusParam];
     private IReadOnlyList<ParamSpec>? _params;
 
     /// <summary>Whether the card picker offers "This card itself" (move, destroy or Summon this exact card).</summary>
@@ -134,7 +137,19 @@ public abstract partial class CardGroupAction : ActionBlock
 
     /// <summary>"this card", "2 Dragon monsters", "up to 2 ...", "all ...": the cards the action is about, for its sentence.</summary>
     protected static string Some(BlockArgs args) =>
-        args.IsThisCard ? "this card" : $"{args.Describe("count")} {args.Describe("cards")}";
+        args.IsThisCard ? "this card" : $"{args.Describe("count")} {args.Describe("cards")}".Trim();
+
+    /// <summary>The same as the subject of a sentence: "they" for "them" ("they gain 500 ATK").</summary>
+    protected static string Subject(BlockArgs args) => Some(args) is var some && some.StartsWith("them", StringComparison.Ordinal) ? "they" + some[4..] : Some(args);
+
+    /// <summary>"this card's ATK", "its ATK", "the ATK of 1 monster you control": a stat of the block's cards.</summary>
+    protected static string StatOf(BlockArgs args, string noun) => Some(args) switch
+    {
+        "this card" => $"this card's {noun}",
+        "it" => $"its {noun}",
+        "them" => $"their {noun}",
+        var some => $"the {noun} of {some}",
+    };
 
     /// <summary>One card: this card, or a count of 1 (not "all").</summary>
     protected static bool One(BlockArgs args) => args.IsThisCard || args.Int("count") == 1 && !args.IsPlural;
@@ -162,7 +177,7 @@ public abstract partial class CardGroupAction : ActionBlock
             e.Error($"\"{Name}\": this card itself isn't targeted. Turn off targeting.");
         if (Category.Length > 0) e.AddCategory(Category);
         var able = AbleCheck(ctx)?.Replace("c:", "e:GetHandler():", StringComparison.Ordinal);
-        var space = SpaceCheck(1, new CardFilter { Zones = Zone.Hand }, ctx);
+        var space = Space(1, new CardFilter { Zones = Zone.Hand }, ctx);
         if (able is not null) e.TargetChecks.Add(able);
         if (space is not null) e.TargetChecks.Add(space);
         if (Category.Length > 0) e.TargetLines.Add($"Duel.SetOperationInfo(0,{Category},e:GetHandler(),1,0,0)");
@@ -187,6 +202,7 @@ public abstract partial class CardGroupAction : ActionBlock
         if (Category.Length > 0) e.AddCategory(Category);
         foreach (var c in ExtraCategories(filter)) e.AddCategory(c);
         e.TargetChecks.Add($"Duel.IsExistingMatchingCard({f.Function},tp,{f.Self},{f.Opp},1,{f.Exclude},e,tp)");
+        PlusChecks(ctx);
         var ig = e.NewLocal("ig");
         e.TargetLines.Add($"local {ig}=Duel.GetMatchingGroup({f.Function},tp,{f.Self},{f.Opp},{f.Exclude},e,tp)");
         if (Category.Length > 0) e.TargetLines.Add($"Duel.SetOperationInfo(0,{Category},{ig},{ig}:GetCount(),0,0)");
@@ -197,8 +213,8 @@ public abstract partial class CardGroupAction : ActionBlock
             $"local {r}=0",
             $"local {g}=Duel.GetMatchingGroup({f.ForSelection},tp,{f.Self},{f.Opp},{f.Exclude},e,tp)",
             $"if {g}:GetCount()>0 then",
-            $"\t{r}={Apply(g, ctx)}",
         };
+        body.AddRange(ApplyLines(g, r, ctx).Select(l => "\t" + l));
         body.AddRange(After(g, f).Select(l => "\t" + l));
         body.Add("end");
         e.AddStep(body, r, ctx.Link);
@@ -209,7 +225,13 @@ public abstract partial class CardGroupAction : ActionBlock
         var filter = ctx.Args.Cards("cards");
         if (filter.ThisCard && Param("cards")?.AllowThisCard == true)
         {
+            if (CardRefs.Plus(ctx.Args) == "this") ctx.Effect.Error($"\"{Name}\": the cards are this card already, so \"and this card\" adds nothing.");
             CompileThisCard(ctx);
+            return;
+        }
+        if (filter.That != CardRef.None)
+        {
+            CompileThat(ctx, filter);
             return;
         }
         if (filter.CardCode != 0 && filter.CardCode == ctx.Card.Id)
@@ -240,8 +262,9 @@ public abstract partial class CardGroupAction : ActionBlock
         var e = ctx.Effect;
         if (Category.Length > 0) e.AddCategory(Category);
         foreach (var c in ExtraCategories(filter)) e.AddCategory(c);
-        var space = SpaceCheck(n, filter, ctx);
+        var space = Space(n, filter, ctx);
         if (space is not null) e.TargetChecks.Add(space);
+        PlusChecks(ctx);
 
         var g = e.NewLocal("g");
         var r = e.NewLocal("r");
@@ -276,14 +299,115 @@ public abstract partial class CardGroupAction : ActionBlock
             body.Add($"{ind}local {g}=Duel.SelectMatchingCard(tp,{f.ForSelection},tp,{f.Self},{f.Opp},{min},{n},{f.Exclude},e,tp)");
             body.Add($"{ind}if {g}:GetCount()>0 then");
             if ((filter.Zones & Zone.Field) != Zone.None) body.Add($"{ind}\tDuel.HintSelection({g})");
-            body.Add($"{ind}\t{r}={Apply(g, ctx)}");
+            body.AddRange(ApplyLines(g, r, ctx).Select(l => $"{ind}\t{l}"));
             body.AddRange(After(g, f).Select(l => $"{ind}\t{l}"));
             body.Add($"{ind}end");
             if (space is not null) body.Add("end");
             e.AddStep(body, r, ctx.Link);
             return;
         }
-        body.Add($"\t{r}={Apply(g, ctx)}");
+        body.AddRange(ApplyLines(g, r, ctx).Select(l => "\t" + l));
+        body.AddRange(After(g, f).Select(l => "\t" + l));
+        body.Add("end");
+        e.AddStep(body, r, ctx.Link);
+    }
+
+    /// <summary>
+    /// A Special Summon of the block's cards together with this card: both or neither, with a zone for each, and never
+    /// while only 1 monster can be Special Summoned at a time (Blue-Eyes Spirit Dragon), as official scripts check it.
+    /// </summary>
+    protected virtual bool Together => false;
+
+    /// <summary>The space check for <paramref name="count"/> cards, and this card when it is Summoned with them.</summary>
+    protected string? Space(int count, CardFilter f, BlockContext ctx) =>
+        SpaceCheck(count + (Together && CardRefs.Plus(ctx.Args) == "this" ? 1 : 0), f, ctx);
+
+    /// <summary>The activation checks of "and this card" / "and the target": this card can be used, or the effect targets.</summary>
+    protected void PlusChecks(BlockContext ctx)
+    {
+        switch (CardRefs.Plus(ctx.Args))
+        {
+            case "this":
+                if (AbleCheck(ctx) is { } able) ctx.Effect.TargetChecks.Add(able.Replace("c:", "e:GetHandler():", StringComparison.Ordinal));
+                if (Together) ctx.Effect.TargetChecks.Add("not Duel.IsPlayerAffectedByEffect(tp,59822133)");
+                break;
+            case "target":
+                if (!Memory.Targets(ctx.Effect)) ctx.Effect.Error($"\"{Name}\": \"and this effect's target\" needs a DO block before it that targets (or \"Target cards\").");
+                break;
+        }
+    }
+
+    /// <summary>
+    /// The lines that apply the action to group <paramref name="g"/> and keep how many it affected in <paramref name="r"/>:
+    /// with this card ("both it and this card") or this effect's target(s) ("destroy it and all ...") added to it.
+    /// </summary>
+    protected List<string> ApplyLines(string g, string r, BlockContext ctx)
+    {
+        var able = AbleCheck(ctx) is { } a ? " and " + a : "";
+        switch (CardRefs.Plus(ctx.Args))
+        {
+            case "this" when Together:
+                return
+                [
+                    $"if c:IsRelateToEffect(e){able} and not Duel.IsPlayerAffectedByEffect(tp,59822133) then",
+                    $"\t{g}:AddCard(c)",
+                    $"\t{r}={Apply(g, ctx)}",
+                    "end",
+                ];
+            case "this":
+                return [$"if c:IsRelateToEffect(e){able} then {g}:AddCard(c) end", $"{r}={Apply(g, ctx)}"];
+            case "target":
+                var targets = "Duel.GetChainInfo(0,CHAININFO_TARGET_CARDS):Filter(Card.IsRelateToEffect,nil,e)";
+                if (AbleCheck(ctx) is { } check) targets += $":Filter({ctx.Script.Filter(new CardFilter { Owner = CardOwner.Either, Zones = Zone.None }, check).Function},nil,e,tp)";
+                return [$"{g}:Merge({targets})", $"{r}={Apply(g, ctx)}"];
+            default:
+                return [$"{r}={Apply(g, ctx)}"];
+        }
+    }
+
+    /// <summary>
+    /// "Destroy it", "Special Summon that monster to your field", "it loses ATK equal to the sent monster's ATK": the action
+    /// on cards the effect already has (<see cref="CardRefs"/>). What the picker says about them is a check they must pass.
+    /// They aren't known as the effect is activated (except a battling monster), so nothing is checked then.
+    /// </summary>
+    private void CompileThat(BlockContext ctx, CardFilter filter)
+    {
+        var e = ctx.Effect;
+        if (Param("target") is not null && ctx.Args.Bool("target"))
+        {
+            e.Error($"\"{Name}\": the cards are \"that card\" already, so they aren't targeted by this block. Turn off targeting.");
+            return;
+        }
+        if (filter.That == CardRef.Target && CardRefs.Plus(ctx.Args) == "target")
+        {
+            e.Error($"\"{Name}\": the cards are this effect's target already, so \"and this effect's target\" adds nothing.");
+            return;
+        }
+        // Where the cards are doesn't matter: only what they are.
+        var cards = filter.Clone();
+        cards.Zones = Zone.None;
+        cards.Owner = CardOwner.Either;
+        if (Category.Length > 0) e.AddCategory(Category);
+        foreach (var c in ExtraCategories(cards)) e.AddCategory(c);
+        var f = ctx.Script.Filter(cards, AbleCheck(ctx));
+        if (CardRefs.GroupLua(ctx, filter.That) is not { } group) return;
+        var space = Space(1, cards, ctx);
+        if (space is not null) e.TargetChecks.Add(space);
+        if (CardRefs.ActivationCheck(filter.That, f.Function) is { } known) e.TargetChecks.Add(known);
+        PlusChecks(ctx);
+        if (Category.Length > 0)
+            e.TargetLines.Add(filter.That is CardRef.BattleTarget or CardRef.Battling
+                ? $"Duel.SetOperationInfo(0,{Category},{CardRefs.Card(filter.That)},1,0,0)"
+                : $"Duel.SetOperationInfo(0,{Category},nil,1,0,0)");
+        var g = e.NewLocal("g");
+        var r = e.NewLocal("r");
+        var body = new List<string>
+        {
+            $"local {r}=0",
+            $"local {g}={group}:Filter({f.Function},nil,e,tp)",
+            space is null ? $"if {g}:GetCount()>0 then" : $"if {g}:GetCount()>0 and {space} then",
+        };
+        body.AddRange(ApplyLines(g, r, ctx).Select(l => "\t" + l));
         body.AddRange(After(g, f).Select(l => "\t" + l));
         body.Add("end");
         e.AddStep(body, r, ctx.Link);
@@ -318,8 +442,19 @@ public sealed class SpecialSummonAction : CardGroupAction
     public override string Name => "Special Summon monsters";
     public override string Sentence => "Special Summon {count} {cards} {pick} {sum} {target} {position} {zone} {as} {chooser}";
 
-    public override string Describe(BlockArgs args) =>
-        base.Describe(args) + (args.Bool("ignore") && !Selection.OpponentPicks(args) ? ", ignoring its Summoning conditions" : "");
+    public override string Describe(BlockArgs args)
+    {
+        var text = base.Describe(args);
+        // Buster Blader: "Special Summon that monster to your field": the opponent's monster it destroyed by battle.
+        if (args.Cards("cards").That == CardRef.BattleTarget) text = text.Replace("that monster", "that monster to your field", StringComparison.Ordinal);
+        return text + (args.Bool("ignore") && !Selection.OpponentPicks(args) ? ", ignoring its Summoning conditions" : "") + Negated(args);
+    }
+
+    /// <summary>", but negate its effects", ", but negate their effects".</summary>
+    private static string Negated(BlockArgs args) =>
+        !args.Bool("negate") ? "" : args.IsPlural || CardRefs.Plus(args) == "this" ? ", but negate their effects" : ", but negate its effects";
+
+    protected override bool Together => true;
 
     /// <summary>"(This is treated as a Fusion Summon.)"</summary>
     public override string Afterword(BlockArgs args) => TreatedAsSummon.Afterword(args.Choice("as"));
@@ -339,14 +474,48 @@ public sealed class SpecialSummonAction : CardGroupAction
         ParamSpec.Choice("zone", "Zone", new("any", "", "to any zone"), new("pointed", "to a zone this card points to")),
         ParamSpec.Flag("ignore", "ignoring its Summoning conditions", false),
         TreatedAsSummon.Param,
+        // Saved before this was offered: the Summoned monsters keep their effects.
+        ParamSpec.Flag("negate", "but negate its effects", false),
     ];
 
     protected override string TargetedAction(BlockArgs args, string pronoun, bool single)
     {
+        // "Special Summon both it and this card".
+        if (CardRefs.Plus(args) == "this") pronoun = $"both {pronoun} and this card";
         var text = base.TargetedAction(args, pronoun, single);
         if (args.Describe("zone") is { Length: > 0 } z) text = $"{text} {z}";
-        return args.Bool("ignore") ? $"{text}, ignoring its Summoning conditions" : text;
+        return (args.Bool("ignore") ? $"{text}, ignoring its Summoning conditions" : text) + Negated(args);
     }
+
+    /// <summary>
+    /// "Special Summon it, but negate its effects": each monster is Special Summoned as a step and its effects are negated
+    /// (EFFECT_DISABLE and EFFECT_DISABLE_EFFECT), then the Summon is completed, as official scripts do. The call on
+    /// <paramref name="g"/>, returning how many were Special Summoned.
+    /// </summary>
+    public static string NegatedSummon(ScriptBuilder script, string g, string value, string ignore, string limit, string pos, string? zone = null) =>
+        script.AddFunction("spnegate", "g,e,tp,v,nocheck,nolimit,pos" + (zone is null ? "" : ",zone"),
+        [
+            "local c=e:GetHandler()",
+            "local n=0",
+            "for tc in aux.Next(g) do",
+            $"\tif Duel.SpecialSummonStep(tc,v,tp,tp,nocheck,nolimit,pos{(zone is null ? "" : ",zone")}) then",
+            "\t\tlocal e1=Effect.CreateEffect(c)",
+            "\t\te1:SetType(EFFECT_TYPE_SINGLE)",
+            "\t\te1:SetCode(EFFECT_DISABLE)",
+            "\t\te1:SetReset(RESET_EVENT+RESETS_STANDARD)",
+            "\t\ttc:RegisterEffect(e1)",
+            "\t\tlocal e2=Effect.CreateEffect(c)",
+            "\t\te2:SetType(EFFECT_TYPE_SINGLE)",
+            "\t\te2:SetCode(EFFECT_DISABLE_EFFECT)",
+            "\t\te2:SetValue(RESET_TURN_SET)",
+            "\t\te2:SetReset(RESET_EVENT+RESETS_STANDARD)",
+            "\t\ttc:RegisterEffect(e2)",
+            "\t\tn=n+1",
+            "\tend",
+            "end",
+            "Duel.SpecialSummonComplete()",
+            "return n",
+        ]) + $"({g},e,tp,{value},{ignore},{limit},{pos}{(zone is null ? "" : "," + zone)})";
 
     private static string Ignore(BlockContext ctx) => ctx.Args.Bool("ignore") ? "true" : "false";
 
@@ -385,6 +554,7 @@ public sealed class SpecialSummonAction : CardGroupAction
         };
         // "This card itself" is Special Summoned by its own effect: SUMMON_VALUE_SELF, as official cards do.
         var value = ctx.Args.Cards("cards").ThisCard ? "SUMMON_VALUE_SELF" : "0";
+        if (ctx.Args.Bool("negate")) return NegatedSummon(ctx.Script, g, value, Ignore(ctx), "false", pos, PointsTo(ctx) ? "e:GetHandler():GetLinkedZone(tp)" : null);
         return PointsTo(ctx)
             ? $"Duel.SpecialSummon({g},{value},tp,tp,{Ignore(ctx)},false,{pos},e:GetHandler():GetLinkedZone(tp))"
             : $"Duel.SpecialSummon({g},{value},tp,tp,{Ignore(ctx)},false,{pos})";
@@ -408,6 +578,11 @@ public sealed class SpecialSummonAction : CardGroupAction
         if (PointsTo(ctx) && !ctx.Card.IsLink)
             ctx.Effect.Error("\"To a zone this card points to\" needs this card to be a Link monster.");
         if (As(ctx) != "none" && !TreatedAsSummon.Check(ctx, Name, ctx.Args.Cards("cards").ThisCard ? 1 : ctx.Args.Int("count"), FaceDown(ctx))) return;
+        if (ctx.Args.Bool("negate") && (As(ctx) != "none" || FaceDown(ctx)))
+        {
+            ctx.Effect.Error($"\"{Name}\": \"but negate its effects\" is for monsters Special Summoned face-up, not {(FaceDown(ctx) ? "face-down" : "treated as another Summon")}.");
+            return;
+        }
         base.Compile(ctx);
     }
 }
@@ -708,7 +883,7 @@ public sealed class SpecialSummonSelfAction : ActionBlock
     public override string Id => "do.special_summon_self";
     public override string Group => "This card";
     public override string Name => "Special Summon this card";
-    public override string Sentence => "Special Summon this card {from} {side} {position} {as} {halved}";
+    public override string Sentence => "Special Summon this card {with} {with_cards} {from} {side} {position} {as} {halved}";
     public override string Help => "Summons this card from wherever the effect is used: the WHEN block's \"in the hand\" or \"in the GY\". " +
                                    "\"From where its cost put it\" Summons it after the effect's own cost banished it or sent it to the GY or hand.";
     public override IReadOnlyList<ParamSpec> Params { get; } =
@@ -726,7 +901,25 @@ public sealed class SpecialSummonSelfAction : ActionBlock
         TreatedAsSummon.Param,
         // Heavy Freight Train Derricrane: "Special Summon this card from your hand, but its original ATK/DEF become halved".
         ParamSpec.Flag("halved", "but its original ATK/DEF become halved", false),
+        // Saved before these were offered: this card alone, keeping its effects.
+        ParamSpec.Flag("negate", "but negate its effects", false),
+        ParamSpec.Choice("with", "Together with",
+            new("none", "", "(this card alone)"), new("target", "", "and this effect's target (\"both it and this card\")"), new("pick", "", "and 1 monster picked below (from your Deck...)")),
+        ParamSpec.Cards("with_cards", "The other monster", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Deck, CardType = FilterCardType.Monster })
+            .ShowIf(b => b.Values.GetValueOrDefault("with") == "pick"),
     ];
+
+    /// <summary>"both it and this card", "this card from your hand and 1 "Rikka" monster from your Deck": the monsters Summoned together.</summary>
+    private static string With(BlockArgs args)
+    {
+        var from = args.TriggerZone is { } z && Zones.From(z) is { } f ? " " + f : "";
+        if (args.Choice("with") == "target") return CardRefs.Plural(args, CardRef.Target) ? "both them and this card" : "both it and this card";
+        var cards = args.Cards("with_cards");
+        // ", except "Primrose the Twin Rikka Fairy", in Defense Position".
+        var except = FilterText.ExceptText(cards, args.Pack, args.CardName);
+        var comma = except.Length > 0 && args.Describe("position").Length > 0 ? "," : "";
+        return $"this card{from} and 1 {FilterText.Describe(cards, args.Pack, ownName: args.CardName, withExcept: false)}{except}{comma}";
+    }
 
     /// <summary>"(This is treated as a Synchro Summon.)"</summary>
     public override string Afterword(BlockArgs args) => TreatedAsSummon.Afterword(args.Choice("as"));
@@ -735,6 +928,13 @@ public sealed class SpecialSummonSelfAction : ActionBlock
     public override string Describe(BlockArgs args)
     {
         var zone = args.TriggerZone;
+        // Night Train Blue Traveler: "Special Summon both it and this card".
+        if (args.Choice("with") != "none")
+        {
+            var both = $"Special Summon {With(args)} {args.Describe("position")}".TrimEnd();
+            if (args.Bool("ignore")) both += ", ignoring their Summoning conditions";
+            return args.Bool("negate") ? both + ", but negate their effects" : both;
+        }
         var what = zone == "banished" ? "Special Summon this banished card" : "Special Summon this card";
         if (args.Choice("from") == "cost") what = SummonFromCost.Text(args);
         else if (zone is not null && Zones.From(zone) is { } from) what += " " + from;
@@ -744,6 +944,7 @@ public sealed class SpecialSummonSelfAction : ActionBlock
         what = $"{what} {args.Describe("position")}".TrimEnd();
         if (args.Bool("ignore")) what += ", ignoring its Summoning conditions";
         if (args.Bool("halved")) what += ", but its original ATK/DEF become halved";
+        if (args.Bool("negate")) what += ", but negate its effects";
         return args.Bool("banish") ? what + ", but banish it when it leaves the field" : what;
     }
 
@@ -785,6 +986,17 @@ public sealed class SpecialSummonSelfAction : ActionBlock
         var opp = ctx.Args.Choice("side") == "opponent";
         var p = opp ? "1-tp" : "tp";
         if (opp && treated != "none") { ctx.Effect.Error($"\"{Name}\": a Summon treated as a Fusion, Synchro... Summon goes to your own field."); return; }
+        if (ctx.Args.Bool("negate") && (treated != "none" || pos == "POS_FACEDOWN_DEFENSE" || opp || ctx.Args.Bool("halved")))
+        {
+            ctx.Effect.Error($"\"{Name}\": \"but negate its effects\" is for a plain face-up Special Summon to your field.");
+            return;
+        }
+        if (ctx.Args.Choice("with") != "none")
+        {
+            if (opp || ctx.Args.Bool("halved")) { ctx.Effect.Error($"\"{Name}\": Summoning another monster together with this card is for a plain Summon to your field."); return; }
+            CompileTogether(ctx);
+            return;
+        }
         if (treated != "none" && !TreatedAsSummon.Check(ctx, Name, 1, pos == "POS_FACEDOWN_DEFENSE")) return;
         // Ritual and Extra Deck Monsters (and "must be Special Summoned" ones) must be properly Summoned before they can
         // come back from the GY or banishment, unless the effect ignores their Summoning conditions (or, treated as a
@@ -818,6 +1030,8 @@ public sealed class SpecialSummonSelfAction : ActionBlock
                 "\tDuel.SpecialSummonComplete()",
             ]);
         }
+        else if (treated == "none" && ctx.Args.Bool("negate"))
+            lines.Add($"\t{r}={SpecialSummonAction.NegatedSummon(ctx.Script, "Group.FromCards(c)", "SUMMON_VALUE_SELF", ignore, ignore, pos)}");
         else if (treated == "none") lines.Add($"\t{r}=Duel.SpecialSummon(c,SUMMON_VALUE_SELF,tp,{p},{ignore},{ignore},{pos})");
         else
         {
@@ -836,6 +1050,26 @@ public sealed class SpecialSummonSelfAction : ActionBlock
         if (opp && pos == "POS_FACEDOWN_DEFENSE") lines.Add($"\tif {r}>0 then Duel.ConfirmCards(tp,c) end");
         lines.Add("end");
         ctx.Effect.AddStep(lines, r, ctx.Link);
+    }
+
+    /// <summary>
+    /// "Special Summon both it and this card", "Special Summon this card from your hand and 1 "Rikka" monster from your
+    /// Deck": one Summon of both, or neither, as "Special Summon monsters" with "and this card" does it.
+    /// </summary>
+    private void CompileTogether(BlockContext ctx)
+    {
+        if (ctx.Args.Choice("as") != "none" || ctx.Args.Bool("banish"))
+        {
+            ctx.Effect.Error($"\"{Name}\": this card Summoned together with another monster can't be treated as another Summon or banished when it leaves the field.");
+            return;
+        }
+        var def = BlockRegistry.Find("do.special_summon")!;
+        var inst = def.CreateInstance()
+            .With("plus", "this").With("ignore", ctx.Args.Bool("ignore")).With("negate", ctx.Args.Bool("negate"))
+            .With("position", ctx.Args.Choice("position") switch { "attack" => "attack", "defense" => "defense", "defense_facedown" => "facedown", _ => "faceup" })
+            .With("cards", ctx.Args.Choice("with") == "target" ? new CardFilter { That = CardRef.Target, CardType = FilterCardType.Monster } : ctx.Args.Cards("with_cards").Clone())
+            .Linked(ctx.Link);
+        def.Compile(new BlockContext(new BlockArgs(def, inst, ctx.Args.Pack) { Effect = ctx.Args.Effect, CardName = ctx.Args.CardName }, ctx.Effect));
     }
 }
 

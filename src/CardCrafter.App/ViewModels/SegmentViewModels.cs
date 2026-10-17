@@ -148,7 +148,7 @@ public sealed class CardsSegmentViewModel : SegmentViewModel
             _inst.Filters.TryAdd(_spec.Key, _filter);
             OnPropertyChanged(nameof(Summary));
             changed();
-        }, allowThisCard: spec.AllowThisCard, whereFromBlock: spec.WhereFromBlock);
+        }, allowThisCard: spec.AllowThisCard, whereFromBlock: spec.WhereFromBlock, allowThatCard: spec.AllowThatCard);
     }
 
     public string Label { get; }
@@ -165,6 +165,7 @@ public sealed class CardsSegmentViewModel : SegmentViewModel
         {
             var filter = _inst.Filters.TryGetValue(_spec.Key, out var kept) ? kept : _filter;
             if (filter.ThisCard) return "this card";
+            if (filter.That != CardRef.None) return Core.Text.FilterText.Describe(filter, _pack());
             var count = int.TryParse(_inst.Values.GetValueOrDefault("count"), out var n) ? n : 1;
             // "any number of" and "up to the number of" cards are plural, as are the cards counted.
             var plural = count != 1 || _inst.Values.GetValueOrDefault("mode") == "all" || _inst.Values.GetValueOrDefault("amount") is "any" or "number_of";

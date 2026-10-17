@@ -17,10 +17,12 @@ public sealed partial class FilterEditorViewModel : ObservableObject
     private readonly Action _changed;
     private readonly Func<CardPack> _pack;
 
-    public FilterEditorViewModel(CardFilter filter, Zone allowedZones, bool materialMode, Func<CardPack> pack, Action changed, bool ownerChoice = false, bool allowThisCard = false, bool whereFromBlock = false)
+    public FilterEditorViewModel(CardFilter filter, Zone allowedZones, bool materialMode, Func<CardPack> pack, Action changed, bool ownerChoice = false, bool allowThisCard = false, bool whereFromBlock = false,
+        bool allowThatCard = false)
     {
         _whereFromBlock = whereFromBlock;
         AllowThisCard = allowThisCard;
+        AllowThatCard = allowThatCard;
         _f = filter;
         _pack = pack;
         _changed = changed;
@@ -66,8 +68,34 @@ public sealed partial class FilterEditorViewModel : ObservableObject
     public Zone AllowedZones { get; }
     /// <summary>Summon materials: only "what the card is" matters, not where it is.</summary>
     public bool MaterialMode { get; }
-    public bool ShowWhere => !MaterialMode && !_whereFromBlock && (AllowedZones == Zone.None || System.Numerics.BitOperations.PopCount((uint)AllowedZones) > 1);
-    public bool ShowOwner => !_whereFromBlock && (_ownerChoice || (!MaterialMode && AllowedZones == Zone.None));
+    public bool ShowWhere => !MaterialMode && !_whereFromBlock && !IsThat && (AllowedZones == Zone.None || System.Numerics.BitOperations.PopCount((uint)AllowedZones) > 1);
+    public bool ShowOwner => !_whereFromBlock && !IsThat && (_ownerChoice || (!MaterialMode && AllowedZones == Zone.None));
+
+    /// <summary>The picker offers "that card": this effect's target, the card the step before affected, the cost's cards...</summary>
+    public bool AllowThatCard { get; }
+
+    private static readonly IReadOnlyList<Option<CardRef>> ThatChoices = Core.Blocks.CardRefs.Choices.Select(c => new Option<CardRef>(c.Ref, c.Ui)).ToList();
+    public IReadOnlyList<Option<CardRef>> ThatOptions => ThatChoices;
+
+    /// <summary>"Which cards": picked as below, or cards the effect already has (what is picked below is then a check they must pass).</summary>
+    public Option<CardRef> That
+    {
+        get => Options.Find(ThatOptions, _f.That);
+        set
+        {
+            if (value is null || _f.That == value.Value) return;
+            _f.That = value.Value;
+            if (_f.That != CardRef.None) ThisCard = false;
+            OnPropertyChanged(nameof(IsThat));
+            OnPropertyChanged(nameof(ShowThisCard));
+            OnPropertyChanged(nameof(ShowWhere));
+            OnPropertyChanged(nameof(ShowOwner));
+            Changed(nameof(That));
+        }
+    }
+
+    public bool IsThat => _f.That != CardRef.None;
+    public bool ShowThisCard => AllowThisCard && !IsThat;
 
     /// <summary>The picker offers "This card itself" (for actions that can move, destroy or Summon this exact card).</summary>
     public bool AllowThisCard { get; }
@@ -93,7 +121,10 @@ public sealed partial class FilterEditorViewModel : ObservableObject
         }
     }
 
-    public string Summary => _f.ThisCard ? "this card" : MaterialMode
+    public string Summary => _f.ThisCard ? "this card" : IsThat
+        ? FilterText.Describe(_f, _pack()) + (FilterText.Describe(new CardFilter { CardType = _f.CardType, MonsterKind = _f.MonsterKind, Race = _f.Race, Attribute = _f.Attribute, Archetype = _f.Archetype,
+            Requirements = _f.Requirements, Zones = Zone.None }, _pack(), withLocation: false) is var what && what is not ("card" or "") ? $", if it is a {what}" : "")
+        : MaterialMode
         ? FilterText.Describe(_f, _pack(), plural: true, withLocation: false)
         : FilterText.Describe(_f, _pack(), plural: false);
 
