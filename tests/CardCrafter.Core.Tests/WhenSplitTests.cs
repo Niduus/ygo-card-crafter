@@ -33,7 +33,7 @@ public class WhenSplitTests
     [InlineData("when.summoned", "how", "normal_or_special", "when.summoned:any,normal | when.summoned:any,special")]
     [InlineData("when.summoned", "how", "any", "when.summoned:any,normal | when.summoned:any,flip | when.summoned:any,special")]
     [InlineData("when.summoned", "how", "normal_special_tributed", "when.summoned:any,normal | when.summoned:any,special | when.this_card:tributed")]
-    [InlineData("when.event", "event", "opp_summon", "when.event:opp_normal,auto | when.event:opp_special,auto")]
+    [InlineData("when.event", "event", "opp_summon", "when.event:no,opp_normal,if,auto | when.event:no,opp_special,if,auto")]
     [InlineData("when.quick", "timing", "summon", "when.quick:false,summon_normal,auto | when.quick:false,summon_special,auto")]
     [InlineData("when.activate", "timing", "would_summon", "when.activate:false,would_normal | when.activate:false,would_special")]
     [InlineData("when.sent_to_gy", "from", "hand_or_field", "when.sent_to_gy:any,hand | when.sent_to_gy:any,field")]

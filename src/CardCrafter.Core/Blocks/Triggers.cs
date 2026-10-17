@@ -332,6 +332,7 @@ public sealed class ThisCardEventTrigger : SelfTriggerBlock
         new("targeted", "targeted by a card effect", "EVENT_BECOME_TARGET"),
         new("targeted_opponent", "targeted by an opponent's card effect", "EVENT_BECOME_TARGET", "rp==1-tp"),
         new("battle_damage", "inflicts battle damage to your opponent", "EVENT_BATTLE_DAMAGE", "ep~=tp", true, "does"),
+        new("battle_damage_when", "inflicts battle damage to your opponent", "EVENT_BATTLE_DAMAGE", "ep~=tp", true, "when", false),
         new("direct_damage", "inflicts battle damage to your opponent by a direct attack", "EVENT_BATTLE_DAMAGE", "ep~=tp and Duel.GetAttackTarget()==nil", true, "does"),
         new("you_battle_damage", "you take battle damage from a battle involving this card", "EVENT_BATTLE_DAMAGE", "ep==tp", true, "if"),
         new("declares_attack", "declares an attack", "EVENT_ATTACK_ANNOUNCE", Monster: true, Kind: "when", Delay: false),
@@ -362,9 +363,14 @@ public sealed class ThisCardEventTrigger : SelfTriggerBlock
 
     public static ThisCardEvent Find(string key) => Events.FirstOrDefault(e => e.Key == key) ?? Events[0];
 
+    /// <summary>Battle damage combines on who inflicts it: "When this card or your monster this card points to inflicts battle damage to your opponent".</summary>
+    public const string BattleDamageTemplate = "{0} inflicts battle damage to your opponent";
+
     public override EventPhrase? Phrase(BlockArgs args)
     {
         var e = Find(args.Choice("event"));
+        if (e.Key is "battle_damage" or "battle_damage_when")
+            return new(e.Kind == "when" ? "When" : "If", BattleDamageTemplate, "this card", "this card " + e.Text);
         return e.Kind switch
         {
             "is" => new("If", "this card is {0}", e.Text),
@@ -834,7 +840,7 @@ public sealed class EventTrigger : BlockDefinition
     public override BlockKind Kind => BlockKind.Trigger;
     public override string Group => "Something happens";
     public override string Name => "Something happens in the duel (trigger)";
-    public override string Sentence => "If {event}, {zone}";
+    public override string Sentence => "{wording} {event} {damage_step}, {zone}";
     public override string Help => "A trigger effect: it activates after the event, like \"If your opponent Special Summons a monster(s)\". " +
                                    "For an effect used in response, during either player's turn, use \"Quick Effect\" instead.";
     /// <summary>One thing that can happen in the duel: its key, card text, event and check.</summary>
@@ -901,6 +907,12 @@ public sealed class EventTrigger : BlockDefinition
         new("opp_spell_card", "your opponent activates a Spell Card", "EVENT_CHAINING", "rp==1-tp and re:IsHasType(EFFECT_TYPE_ACTIVATE) and re:IsActiveType(TYPE_SPELL)"),
         new("opp_trap_card", "your opponent activates a Trap Card", "EVENT_CHAINING", "rp==1-tp and re:IsHasType(EFFECT_TYPE_ACTIVATE) and re:IsActiveType(TYPE_TRAP)"),
         new("you_activate", "you activate a card or effect", "EVENT_CHAINING", "rp==tp"),
+        new("you_monster_effect", "you activate a monster effect", "EVENT_CHAINING", "rp==tp and re:IsActiveType(TYPE_MONSTER)"),
+        // Counter Spell "Negate Attack": "When you draw for your normal draw in your Draw Phase".
+        new("you_normal_draw", "you draw for your normal draw in your Draw Phase", "EVENT_DRAW", "ep==tp and bit.band(r,REASON_RULE)~=0"),
+        new("opp_normal_draw", "your opponent draws for their normal draw in their Draw Phase", "EVENT_DRAW", "ep==1-tp and bit.band(r,REASON_RULE)~=0"),
+        // Tantrum Toddler: "if a card or effect activation is negated".
+        new("activation_negated", "a card or effect activation is negated", "EVENT_CHAIN_NEGATED"),
     ];
 
     public static DuelEvent Find(string key) => Events.FirstOrDefault(e => e.Key == key) ?? Events[0];
@@ -910,20 +922,38 @@ public sealed class EventTrigger : BlockDefinition
         ParamSpec.Choice("event", "What happens", Events.Select(e => new ChoiceOption(e.Key, e.Text)).ToArray()),
         ParamSpec.Choice("zone", "This card is", Zones.RangeChoices),
         ParamSpec.Flag("optional", "optional (\"You can\")", true),
+        ParamSpec.Choice("wording", "Wording", new("if", "If", "If ... (can't miss its timing)"), new("when", "When", "When ... (can miss its timing)")),
+        // Sorcerer of Sebek: "If a player gains LP, even during the Damage Step"; Tantrum Toddler's "(except during the Damage Step)".
+        ParamSpec.Choice("damage_step", "In the Damage Step",
+            new("no", "", "not in the Damage Step"), new("except", "(except during the Damage Step)", "not in the Damage Step, and the text says so"),
+            new("even", ", even during the Damage Step", "even during the Damage Step")),
     ];
 
-    public override string Describe(BlockArgs args) => "If " + args.Describe("event");
+    private static string Lead(BlockArgs args) => args.Choice("wording") == "when" ? "When" : "If";
+
+    /// <summary>", even during the Damage Step" or " (except during the Damage Step)" after the event.</summary>
+    private static string Step(BlockArgs args) => args.Choice("damage_step") switch
+    {
+        "even" => ", even during the Damage Step",
+        "except" => " (except during the Damage Step)",
+        _ => "",
+    };
+
+    public override string Describe(BlockArgs args) => $"{Lead(args)} {args.Describe("event")}{Step(args)}";
 
     /// <summary>"your opponent Normal or Special Summons a monster(s)".</summary>
     public override EventPhrase? Phrase(BlockArgs args)
     {
         var e = Find(args.Choice("event"));
+        var lead = Lead(args);
+        var step = Step(args);
+        if (step.Length > 0) return new(lead, e.Text + step);
         return e.Summon switch
         {
-            ("opp", var how) => new("If", "your opponent {0} Summons a monster(s)", how, e.Text),
-            ("you", var how) => new("If", "you {0} Summon a monster(s)", how, e.Text),
-            ({ } _, var how) => new("If", "a monster(s) is {0} Summoned", how, e.Text),
-            _ => new("If", e.Text),
+            ("opp", var how) => new(lead, "your opponent {0} Summons a monster(s)", how, e.Text),
+            ("you", var how) => new(lead, "you {0} Summon a monster(s)", how, e.Text),
+            ({ } _, var how) => new(lead, "a monster(s) is {0} Summoned", how, e.Text),
+            _ => new(lead, e.Text),
         };
     }
 
@@ -933,7 +963,13 @@ public sealed class EventTrigger : BlockDefinition
         var optional = ctx.Args.Bool("optional");
         e.Types.Add("EFFECT_TYPE_FIELD");
         e.Types.Add(optional ? "EFFECT_TYPE_TRIGGER_O" : "EFFECT_TYPE_TRIGGER_F");
-        e.AddProperty("EFFECT_FLAG_DELAY"); // "If" wording: it can't miss its timing.
+        // "If" wording: it can't miss its timing.
+        if (ctx.Args.Choice("wording") != "when") e.AddProperty("EFFECT_FLAG_DELAY");
+        if (ctx.Args.Choice("damage_step") == "even")
+        {
+            e.AddProperty("EFFECT_FLAG_DAMAGE_STEP");
+            e.AddProperty("EFFECT_FLAG_DAMAGE_CAL");
+        }
         e.IsMandatory = !optional;
         e.Range = Zones.Resolve(ctx.Args.Choice("zone"), ctx.Card);
         var ev = Find(ctx.Args.Choice("event"));
@@ -1105,23 +1141,34 @@ public sealed class PhaseTrigger : BlockDefinition
     public override BlockKind Kind => BlockKind.Trigger;
     public override string Group => "Turn";
     public override string Name => "During a phase";
-    public override string Sentence => "During {whose} {phase}, {zone}";
+    public override string Sentence => "During {whose} {after} {phase}, {zone}";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
-        ParamSpec.Choice("whose", "Whose", new("your", "your"), new("opponent", "your opponent's"), new("each", "each")),
+        ParamSpec.Choice("whose", "Whose", new("your", "your"), new("opponent", "your opponent's"), new("each", "the", "each player's")),
         ParamSpec.Choice("phase", "Phase", new("standby", "Standby Phase"), new("end", "End Phase"),
             new("battle_start", "Battle Phase", "start of the Battle Phase"), new("battle_end", "Battle Phase", "end of the Battle Phase"),
             new("draw", "Draw Phase")),
         ParamSpec.Choice("zone", "From", Zones.RangeChoices),
         ParamSpec.Flag("optional", "optional (\"You can\")", true),
+        // Jester Confit: "If Summoned this way, during your opponent's next End Phase".
+        ParamSpec.Choice("after", "Which one", new("any", "", "every one"), new("summoned_self", "", "only the next one after this card is Summoned by its own procedure (\"this way\")")),
     ];
 
-    public override string Describe(BlockArgs args) => args.Choice("phase") switch
+    public override string Describe(BlockArgs args)
     {
-        "battle_start" => $"At the start of {args.Describe("whose")} Battle Phase",
-        "battle_end" => $"At the end of {args.Describe("whose")} Battle Phase",
-        _ => $"During {args.Describe("whose")} {args.Describe("phase")}",
-    };
+        var next = args.Choice("after") == "summoned_self";
+        var whose = args.Describe("whose");
+        var text = args.Choice("phase") switch
+        {
+            "battle_start" => $"at the start of {whose} {(next ? "next " : "")}Battle Phase",
+            "battle_end" => $"at the end of {whose} {(next ? "next " : "")}Battle Phase",
+            _ => $"during {whose} {(next ? "next " : "")}{args.Describe("phase")}",
+        };
+        return next ? "If Summoned this way, " + text : SentenceCase.Upper(text);
+    }
+
+    /// <summary>The flag a card Summoned "this way" keeps until the phase it waits for has passed.</summary>
+    public const string SummonedFlag = "id+8270";
 
     public override void Compile(BlockContext ctx)
     {
@@ -1143,6 +1190,36 @@ public sealed class PhaseTrigger : BlockDefinition
             case "your": ctx.Effect.Conditions.Add("Duel.GetTurnPlayer()==tp"); break;
             case "opponent": ctx.Effect.Conditions.Add("Duel.GetTurnPlayer()==1-tp"); break;
         }
+        if (ctx.Args.Choice("after") == "summoned_self") WatchSummonedThisWay(ctx);
+    }
+
+    /// <summary>
+    /// "If Summoned this way, during your opponent's next End Phase": when its own procedure Summons it, this card keeps a
+    /// flag until the end of that phase (of that player's turn), while it stays on the field.
+    /// </summary>
+    private static void WatchSummonedThisWay(BlockContext ctx)
+    {
+        Zones.RequireMonster(ctx, "If Summoned this way");
+        var phase = ctx.Args.Choice("phase") switch
+        {
+            "end" => "PHASE_END", "battle_start" => "PHASE_BATTLE_START", "battle_end" => "PHASE_BATTLE", "draw" => "PHASE_DRAW", _ => "PHASE_STANDBY",
+        };
+        var turn = ctx.Args.Choice("whose") switch { "your" => "+RESET_SELF_TURN", "opponent" => "+RESET_OPPO_TURN", _ => "" };
+        var reg = ctx.Script.AddFunction("selfsumreg", "e,tp,eg,ep,ev,re,r,rp",
+        [
+            "local c=e:GetHandler()",
+            $"if c:GetSummonType()==SUMMON_TYPE_SPECIAL+SUMMON_VALUE_SELF then c:RegisterFlagEffect({SummonedFlag},RESET_EVENT+RESETS_STANDARD+RESET_PHASE+{phase}{turn},0,1) end",
+        ]);
+        ctx.Script.AddInitialLine(string.Join("\n\t",
+        [
+            "local ss=Effect.CreateEffect(c)",
+            "ss:SetType(EFFECT_TYPE_SINGLE+EFFECT_TYPE_CONTINUOUS)",
+            "ss:SetProperty(EFFECT_FLAG_CANNOT_DISABLE)",
+            "ss:SetCode(EVENT_SPSUMMON_SUCCESS)",
+            $"ss:SetOperation({reg})",
+            "c:RegisterEffect(ss)",
+        ]));
+        ctx.Effect.Conditions.Add($"e:GetHandler():GetFlagEffect({SummonedFlag})>0");
     }
 }
 

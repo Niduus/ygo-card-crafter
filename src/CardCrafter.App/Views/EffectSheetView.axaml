@@ -58,10 +58,17 @@
                     <TextBox Grid.Column="1" Text="{Binding Label}" Watermark="Name this effect (shown when it is activated)" />
                     <ComboBox Grid.Column="2" Margin="8,0,0,0" ItemsSource="{Binding LimitOptions}" SelectedItem="{Binding Limit}"
                               IsVisible="{Binding ShowLimit}" ToolTip.Tip="How often it can be used" />
-                    <StackPanel Grid.Column="3" Orientation="Horizontal" IsVisible="{Binding ShowSharedGroup}" Margin="8,0,0,0">
-                      <TextBlock Text="shared group" VerticalAlignment="Center" FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,0,4,0" />
-                      <NumericUpDown Value="{Binding SharedGroup}" Minimum="0" Maximum="16" FormatString="0" Width="56" ShowButtonSpinner="False"
-                                     ToolTip.Tip="Effects with the same number share one use per turn (&quot;you can only use 1 of these effects per turn&quot;). 0 = its own." />
+                    <StackPanel Grid.Column="3" Orientation="Horizontal" Margin="8,0,0,0">
+                      <StackPanel Orientation="Horizontal" IsVisible="{Binding ShowTimes}" Margin="0,0,8,0">
+                        <TextBlock Text="uses" VerticalAlignment="Center" FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,0,4,0" />
+                        <NumericUpDown Value="{Binding Times}" Minimum="1" Maximum="9" FormatString="0" Width="48" ShowButtonSpinner="False"
+                                       ToolTip.Tip="How many times the limit allows: 2 for &quot;up to twice per turn&quot;, 3 for &quot;thrice per turn&quot;." />
+                      </StackPanel>
+                      <StackPanel Orientation="Horizontal" IsVisible="{Binding ShowSharedGroup}">
+                        <TextBlock Text="shared group" VerticalAlignment="Center" FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,0,4,0" />
+                        <NumericUpDown Value="{Binding SharedGroup}" Minimum="0" Maximum="16" FormatString="0" Width="56" ShowButtonSpinner="False"
+                                       ToolTip.Tip="Effects with the same number share one use per turn (&quot;you can only use 1 of these effects per turn&quot;; for &quot;once per turn&quot; effects, each copy's one use). 0 = its own." />
+                      </StackPanel>
                     </StackPanel>
                     <StackPanel Grid.Column="4" Orientation="Horizontal" Margin="8,0,0,0">
                       <Button Classes="icon" Content="↑" Command="{Binding MoveUpCommand}" ToolTip.Tip="Move effect up" />

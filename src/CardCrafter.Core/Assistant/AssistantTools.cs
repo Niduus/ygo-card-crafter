@@ -222,7 +222,7 @@ public sealed class AssistantTools(IAssistantWorkspace workspace)
             {
                 fields = Fields(typeof(EffectEvent)),
                 example = JsonSerializer.Deserialize<JsonElement>(EffectJson(EffectTemplates.All[0].Create()), Json),
-                notes = "when holds one trigger block, alsoWhen more triggers that start it too, if conditions, cost costs, do actions (or passive blocks when the trigger is when.while_face_up). limit is none, soft (\"Once per turn\"), hard (\"You can only use this effect of X once per turn\"), duel or chain.",
+                notes = "when holds one trigger block, alsoWhen more triggers that start it too, if conditions, cost costs, do actions (or passive blocks when the trigger is when.while_face_up). limit is none, soft (\"Once per turn\"), hard (\"You can only use this effect of X once per turn\"), duel, chain, faceUp (\"Once while face-up on the field\"), faceUpAndHard or softAndHard; times is how many uses it allows (\"Up to twice per turn\").",
             },
             "block" => new
             {
@@ -419,6 +419,7 @@ public sealed class AssistantTools(IAssistantWorkspace workspace)
             else errors.Add($"limit \"{limit}\" must be one of {string.Join(", ", Enum.GetNames<OncePerTurn>().Select(Camel))}.");
         }
         effect.SharedLimitGroup = Int(el, "sharedLimitGroup") ?? 0;
+        effect.Times = Math.Clamp(Int(el, "times") ?? 1, 1, 9);
         if (el.TryGetProperty("when", out var when) && when.ValueKind == JsonValueKind.Object)
             effect.When = ReadBlock(when, [BlockKind.Trigger], "when", errors);
         else errors.Add("The effect needs a \"when\" block (a trigger). Lasting effects use when.while_face_up.");

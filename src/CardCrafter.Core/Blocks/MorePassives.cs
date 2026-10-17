@@ -524,7 +524,8 @@ public sealed class SummonedByCondition : ConditionBlock
             new("fusion", "Fusion Summoned"), new("ritual", "Ritual Summoned"), new("pendulum", "Pendulum Summoned"),
             new("normal", "Normal Summoned"), new("tribute", "Tribute Summoned"), new("from_hand", "Special Summoned from the hand"),
             new("from_gy", "Special Summoned from the GY"), new("from_extra", "Special Summoned from the Extra Deck"),
-            new("self", "Special Summoned by its own effect", "Special Summoned by its own effect or procedure (\"this way\")")),
+            new("self", "Special Summoned by its own effect", "Special Summoned by its own effect or procedure (\"this way\")"),
+            new("by_synchro_effect", "Special Summoned by the effect of a Synchro Monster")),
     ];
 
     public override string Describe(BlockArgs args) => $"this card was {args.Describe("how")}";
@@ -542,13 +543,49 @@ public sealed class SummonedByCondition : ConditionBlock
         "from_gy" => "e:GetHandler():IsSummonType(SUMMON_TYPE_SPECIAL) and e:GetHandler():IsSummonLocation(LOCATION_GRAVE)",
         "from_extra" => "e:GetHandler():IsSummonType(SUMMON_TYPE_SPECIAL) and e:GetHandler():IsSummonLocation(LOCATION_EXTRA)",
         "self" => "e:GetHandler():GetSummonType()==SUMMON_TYPE_SPECIAL+SUMMON_VALUE_SELF",
+        "by_synchro_effect" => "s.cc_bysynchro(e:GetHandler())",
         _ => "e:GetHandler():IsSummonType(SUMMON_TYPE_LINK)",
     };
+
+    /// <summary>The flag a watcher on this card sets when a Synchro Monster's effect Special Summons it (the Yummy monsters).</summary>
+    public const string SynchroFlag = "id+8200";
 
     public override void Compile(BlockContext ctx)
     {
         Zones.RequireMonster(ctx, Name);
+        if (ctx.Args.Choice("how") == "by_synchro_effect") WatchSynchroSummon(ctx.Script);
         ctx.Effect.Conditions.Add(Check(ctx.Args.Choice("how")));
+    }
+
+    /// <summary>
+    /// As the Yummy monsters do: when this card is Special Summoned by a monster effect of a Synchro Monster, it keeps a
+    /// flag while it stays on the field.
+    /// </summary>
+    private static void WatchSynchroSummon(ScriptBuilder script)
+    {
+        var reg = script.AddFunction("synreg", "e,tp,eg,ep,ev,re,r,rp",
+        [
+            "if not re then return end",
+            "if re:IsActiveType(TYPE_MONSTER) and re:GetHandler():IsType(TYPE_SYNCHRO) then",
+            $"\te:GetHandler():RegisterFlagEffect({SynchroFlag},RESET_EVENT+RESETS_STANDARD-RESET_TOFIELD-RESET_TEMP_REMOVE,0,1)",
+            "end",
+        ]);
+        // A trigger on the Summon itself is checked before the watcher has run: the effect that Summoned the card says it then.
+        script.AddFunction("cc_bysynchro", "c",
+        [
+            $"if c:GetFlagEffect({SynchroFlag})>0 then return true end",
+            "local se=c:GetReasonEffect()",
+            "return c:IsSummonType(SUMMON_TYPE_SPECIAL) and se~=nil and se:IsActiveType(TYPE_MONSTER) and se:GetHandler():IsType(TYPE_SYNCHRO)",
+        ]);
+        script.AddInitialLine(string.Join("\n\t",
+        [
+            "local sy=Effect.CreateEffect(c)",
+            "sy:SetType(EFFECT_TYPE_SINGLE+EFFECT_TYPE_CONTINUOUS)",
+            "sy:SetProperty(EFFECT_FLAG_CANNOT_DISABLE)",
+            "sy:SetCode(EVENT_SPSUMMON_SUCCESS)",
+            $"sy:SetOperation({reg})",
+            "c:RegisterEffect(sy)",
+        ]));
     }
 }
 

@@ -16,7 +16,7 @@ public sealed class ActivationTrigger : BlockDefinition
     public override BlockKind Kind => BlockKind.Trigger;
     public override string Group => "Chain";
     public override string Name => "A card or effect is activated (who, what, where, which card, targets)";
-    public override string Sentence => "{mode} {who} activates {what} {from} {card} {targets} {target_cards} {includes}, {zone} {damage_step}";
+    public override string Sentence => "{mode} {who} activates {what} {from} {card} {targets} {target_cards} {includes} {responds} {responds_card}, {zone} {damage_step}";
     public override string Help => "\"When ... (Quick Effect)\" responds in the chain and can negate it; \"If ...\" is a trigger that happens after. " +
                                    "For a Spell or Trap, \"Activate this card\" responds with the card itself, like Solemn Judgment.";
     public override IReadOnlyList<ParamSpec> Params { get; } =
@@ -54,7 +54,14 @@ public sealed class ActivationTrigger : BlockDefinition
             new("search", "that includes an effect that adds a card(s) from the Deck to the hand"),
             new("destroy", "that includes an effect that destroys a card(s)"),
             new("damage_you", "that would inflict damage to you"),
-            new("damage_opponent", "that would inflict damage to your opponent")),
+            new("damage_opponent", "that would inflict damage to your opponent"),
+            // Ash Blossom & Joyous Spring's three, any of them; Karin's "Special Summons a monster(s) from the Deck".
+            new("deck", "that includes any of these effects", "that adds from the Deck to the hand, Special Summons from the Deck, or sends from the Deck to the GY (Ash Blossom)"),
+            new("deck_special", "that includes an effect that Special Summons a monster(s) from the Deck")),
+        // Virakam: "When your opponent activates a card or effect in response to your Fusion Monster's effect activation".
+        ParamSpec.Choice("responds", "In response to", new("none", "", "(anything)"), new("yours", "in response to your card's effect activation", "your card's effect activation:")),
+        ParamSpec.Cards("responds_card", "Whose effect", () => new CardFilter { CardType = FilterCardType.Monster, Zones = Zone.None })
+            .ShowIf(b => b.Values.GetValueOrDefault("responds") == "yours"),
         ParamSpec.Choice("zone", "This card is", Zones.RangeChoices).ShowIf(b => b.Values.GetValueOrDefault("mode") != "activate"),
         ParamSpec.Choice("damage_step", "In the Damage Step",
             new("no", "", "can't be used in the Damage Step"), new("yes", "", "can also be used in the Damage Step"),
@@ -134,8 +141,13 @@ public sealed class ActivationTrigger : BlockDefinition
             "destroy" => " that includes an effect that destroys a card(s)",
             "damage_you" => " that would inflict damage to you",
             "damage_opponent" => " that would inflict damage to your opponent",
+            "deck" => " that includes any of these effects",
+            "deck_special" => " that includes an effect that Special Summons a monster(s) from the Deck",
             _ => "",
         };
+        // "in response to your Fusion Monster's effect activation".
+        if (args.Choice("responds") == "yours")
+            includes += $" in response to your {FilterText.Describe(args.Cards("responds_card"), args.Pack, false, "", withLocation: false, withExcept: false)}'s effect activation";
         // "When a Spell/Trap Card, or monster effect, is activated".
         if (who == "either") return kind == "card_or_monster" && AnyCard(f) ? $"a Spell/Trap Card, or monster effect, is activated{from}{targets}{includes}" : $"{what} is activated{from}{targets}{includes}";
         var subject = who == "you" ? "you activate" : "your opponent activates";
@@ -162,6 +174,11 @@ public sealed class ActivationTrigger : BlockDefinition
 
     /// <summary>Only the event; the text generator adds "(Quick Effect)" after any conditions, as card text does.</summary>
     public override string Describe(BlockArgs args) => args.Choice("mode") == "trigger" ? $"If {Event(args)}" : $"When {Event(args)}";
+
+    /// <summary>Ash Blossom's "any of these effects", listed after the effect as its card does.</summary>
+    public override string Afterword(BlockArgs args) => args.Choice("includes") == "deck"
+        ? string.Concat(new[] { "Add a card from the Deck to the hand.", "Special Summon from the Deck.", "Send a card from the Deck to the GY." }.Select(o => EffectTextGenerator.OptionLine + o))
+        : "";
 
     public override EventPhrase? Phrase(BlockArgs args) => args.Choice("mode") == "trigger" ? new("If", Event(args)) : null;
 
@@ -256,12 +273,48 @@ public sealed class ActivationTrigger : BlockDefinition
             "destroy" => "re:IsHasCategory(CATEGORY_DESTROY)",
             "damage_you" => "aux.damcon1(e,tp,eg,ep,ev,re,r,rp)",
             "damage_opponent" => "aux.damcon1(e,1-tp,eg,ep,ev,re,r,rp)",
+            "deck" => $"{FromDeckCheck(ctx.Script)}(ev,re)",
+            "deck_special" => $"{DeckSpecialCheck(ctx.Script)}(ev)",
             _ => "true",
         });
+        if (ctx.Args.Choice("responds") == "yours")
+        {
+            // The chain link before it: an effect of your card that is activated (the filter's card).
+            var card2 = ctx.Args.Cards("responds_card").Clone();
+            card2.Zones = Zone.None;
+            var kind = card2.CardType == FilterCardType.Monster ? " and te:IsActiveType(TYPE_MONSTER)" : "";
+            var test = FilterCompiler.Conditions(card2).Count > 0 || card2.CardCode != 0 ? $" and {ctx.Script.Filter(card2, null, "respfilter").Function}(te:GetHandler(),e,tp)" : "";
+            var resp = ctx.Script.AddFunction("respcheck", "e,tp,ev",
+            [
+                "if ev<2 then return false end",
+                "local te,p=Duel.GetChainInfo(ev-1,CHAININFO_TRIGGERING_EFFECT,CHAININFO_TRIGGERING_PLAYER)",
+                $"return te and p==tp{kind}{test}",
+            ]);
+            tests.Add($"{resp}(e,tp,ev)");
+        }
         // The checks need the chain link (ev), so they go into a function of their own.
         var con = ctx.Script.AddFunction("actcon", "e,tp,eg,ep,ev,re,r,rp", [$"return {string.Join(" and ", tests.Where(t => t != "true").DefaultIfEmpty("true"))}"]);
         e.Conditions.Add($"{con}(e,tp,eg,ep,ev,re,r,rp)");
     }
+
+    /// <summary>
+    /// Ash Blossom's check, as its script has it: an effect that Special Summons from the Deck or sends from the Deck to the
+    /// GY, or that searches, draws or mills.
+    /// </summary>
+    private static string FromDeckCheck(ScriptBuilder script) => script.AddFunction("deckcheck", "ev,re",
+    [
+        "local ex2,g2,gc2,dp2,dv2=Duel.GetOperationInfo(ev,CATEGORY_SPECIAL_SUMMON)",
+        "local ex3,g3,gc3,dp3,dv3=Duel.GetOperationInfo(ev,CATEGORY_TOGRAVE)",
+        "return (ex2 and bit.band(dv2,LOCATION_DECK)==LOCATION_DECK) or (ex3 and bit.band(dv3,LOCATION_DECK)==LOCATION_DECK)",
+        "\tor re:IsHasCategory(CATEGORY_DRAW) or re:IsHasCategory(CATEGORY_SEARCH) or re:IsHasCategory(CATEGORY_DECKDES)",
+    ]);
+
+    /// <summary>"That includes an effect that Special Summons a monster(s) from the Deck": the chain link says it Special Summons from there.</summary>
+    private static string DeckSpecialCheck(ScriptBuilder script) => script.AddFunction("deckspcheck", "ev",
+    [
+        "local ex,g,gc,dp,dv=Duel.GetOperationInfo(ev,CATEGORY_SPECIAL_SUMMON)",
+        "return ex and (bit.band(dv,LOCATION_DECK)~=0 or g and g:IsExists(Card.IsLocation,1,nil,LOCATION_DECK))",
+    ]);
 
     /// <summary>The picked target cards: where they are, who controls them and what they are.</summary>
     private static string TargetTest(BlockContext ctx)
@@ -686,7 +739,8 @@ public sealed class BattleWindowTrigger : BlockDefinition
 public static class DetailedTriggers
 {
     public static bool IsQuick(BlockDefinition def, BlockInstance when) =>
-        def is ActivationTrigger or AttackDeclaredTrigger or SummonAttemptTrigger or BattleWindowTrigger && when.Values.GetValueOrDefault("mode", "quick") == "quick";
+        def is ActivationTrigger or AttackDeclaredTrigger or SummonAttemptTrigger or BattleWindowTrigger && when.Values.GetValueOrDefault("mode", "quick") == "quick"
+        || def is CardsDetailTrigger && when.Values.GetValueOrDefault("speed") == "quick";
 
     /// <summary>True when the effect is this Spell/Trap Card's activation, by any WHEN block ("the turn you activate this card").</summary>
     public static bool ActivatesThisCard(EffectEvent? effect) =>
@@ -780,7 +834,13 @@ public sealed class ThisCardDetailTrigger : BlockDefinition
         ("battle_or_opponent_effect", "by battle or an opponent's card effect", "(c:IsReason(REASON_BATTLE) or c:GetReasonPlayer()==1-tp and c:IsReason(REASON_EFFECT))"),
         ("battle_or_opponent_effect_own", "by battle or an opponent's card effect while you controlled it",
             "(c:IsReason(REASON_BATTLE) or c:GetReasonPlayer()==1-tp and c:IsReason(REASON_EFFECT) and c:IsPreviousControler(tp))"),
+        // Reindsurm, Aiwass: "If this card is sent to the GY, except by battle"; Ancient Gear Box: "..., except by drawing it".
+        ("not_battle", "except by battle", "not c:IsReason(REASON_BATTLE)"),
+        ("not_draw", "except by drawing it", "not c:IsReason(REASON_DRAW)"),
     ];
+
+    /// <summary>A cause said after a comma: ", except by battle".</summary>
+    public static bool IsException(string cause) => cause.StartsWith("except ", StringComparison.Ordinal);
 
     /// <summary>Where this card is now.</summary>
     public static readonly (string Key, string Text, string? Lua)[] Destinations =
@@ -923,6 +983,11 @@ public sealed class ThisCardDetailTrigger : BlockDefinition
                 verb = $"is returned from {place} to the hand";
                 place = "";
                 break;
+            // Ancient Gear Box: "If this card is added from the Deck or Graveyard to your hand, except by drawing it".
+            case "to_hand" when from is "gy" or "deck_gy" or "hand_deck":
+                verb = $"is added from {place} to your hand";
+                place = "";
+                break;
             case "to_deck" when now == "extra_faceup":
                 verb = "is placed face-up in the Extra Deck";
                 break;
@@ -947,7 +1012,7 @@ public sealed class ThisCardDetailTrigger : BlockDefinition
                 break;
         }
         if (moves && place.Length > 0) verb += (from == "not_field" ? " " : " from ") + place;
-        if (cause.Length > 0 && !(ev == "battle_destroyed" && by == "battle")) verb += " " + cause;
+        if (cause.Length > 0 && !(ev == "battle_destroyed" && by == "battle")) verb += (IsException(cause) ? ", " : " ") + cause;
         if (now != "any" && !(ev == "material" && now == "gy") && !(ev == "to_deck" && now == "extra_faceup") && Of(Destinations, now) is { Length: > 0 } dest) verb += " " + dest;
         return string.Join(" ", words) + " " + verb;
     }
@@ -1010,7 +1075,7 @@ public sealed class CardsDetailTrigger : BlockDefinition
     public override BlockKind Kind => BlockKind.Trigger;
     public override string Group => "Something happens";
     public override string Name => "Cards are Summoned, destroyed, sent, banished... (which, whose, where from, by what)";
-    public override string Sentence => "{wording} {other} {count} {cards} {whose} {event} {summon_type} {summon_from} {from} {face} {by} {player} {now}, {zone} {damage_step}";
+    public override string Sentence => "{wording} {other} {count} {cards} {whose} {event} {summon_type} {summon_from} {from} {face} {by} {player} {now}, {zone} {damage_step} {speed} {already_gy}";
     public override string Help => "Every detail is optional. \"Whose\" is who controls them now, who controlled them before they moved, or who Summoned them.";
 
     /// <summary>One thing that can happen to cards: its event, card text, and whether \"whose\" is who controlled them before.</summary>
@@ -1032,6 +1097,8 @@ public sealed class CardsDetailTrigger : BlockDefinition
         new("discarded", "EVENT_DISCARD", "discarded", true),
         new("position", "EVENT_CHANGE_POS", "changed to another battle position", false),
         new("flipped", "EVENT_FLIP", "flipped face-up", false),
+        // Sorcerer of Sebek: "When this card or your monster this card points to inflicts battle damage to your opponent".
+        new("battle_damage", "EVENT_BATTLE_DAMAGE", "inflicts battle damage to your opponent", false),
     ];
 
     public static Happening Find(string key) => Happenings.FirstOrDefault(h => h.Key == key) ?? Happenings[0];
@@ -1062,7 +1129,7 @@ public sealed class CardsDetailTrigger : BlockDefinition
         ParamSpec.Choice("now", "Now they are", ThisCardDetailTrigger.Destinations.Select(d => new ChoiceOption(d.Key, d.Text, d.Key == "any" ? "anywhere" : d.Text)).ToArray()),
         ParamSpec.Choice("other", "This card", new("any", "", "may be one of them"), new("other", "another", "one of them is another card"),
             new("not_this", "another", "this card isn't one of them"), new("other_not_this", "another", "another card, and this card isn't one of them")),
-        ParamSpec.Choice("count", "How many", new("any", "", "any number"), new("one", "", "exactly 1 card")),
+        ParamSpec.Choice("count", "How many", new("any", "", "any number"), new("one", "", "exactly 1 card"), new("two", "", "exactly 2 cards (at the same time)")),
         // A card that left the field may not be what it was there (an effect changed its Type, or it was face-down).
         ParamSpec.Flag("previous", "check what they were on the field (name, archetype, Type, Attribute, Level, ATK, DEF)", false)
             .ShowIf(b => !IsSummon(b.Values.GetValueOrDefault("event") ?? "special")),
@@ -1073,6 +1140,10 @@ public sealed class CardsDetailTrigger : BlockDefinition
             new("no", "", "can't be used in the Damage Step"), new("step", "", "can also be used in the Damage Step"),
             new("yes", "", "can also be used in the Damage Step, damage calculation included")),
         ParamSpec.Flag("optional", "optional (\"You can\")", true),
+        // Droll & Lock Bird: "If a card(s) is added from the Main Deck to your opponent's hand, except during the Draw Phase (Quick Effect)".
+        ParamSpec.Choice("speed", "Activated as", new("trigger", "", "a trigger effect"), new("quick", "", "a Quick Effect, right as it happens")),
+        // Infinitrack Road Roller: "from the GY (if it was there when the monster was Tributed or banished)".
+        ParamSpec.Flag("already_gy", "this card was already in the GY when it happened (if it is in the GY)", false),
     ];
 
     /// <summary>
@@ -1126,13 +1197,29 @@ public sealed class CardsDetailTrigger : BlockDefinition
         // Card text says "another" both when one of them is another card and when this card isn't one of them.
         var other = args.Choice("other") is not "any";
         var one = args.Choice("count") == "one";
+        var two = args.Choice("count") == "two";
         var noun = FilterText.Describe(f, args.Pack, false, "", withLocation: false, withExcept: false);
         if (noun.StartsWith("other ", StringComparison.Ordinal)) noun = noun[6..];
+        // "your monster this card points to inflicts battle damage to your opponent".
+        if (ev.Key == "battle_damage") return $"{BattleSubject(f, noun)} inflicts battle damage to your opponent{Tail(args)}";
+        if (two)
+        {
+            var many = "2 " + FilterText.Describe(f, args.Pack, true, "", withLocation: false, withExcept: false);
+            if (many.StartsWith("2 other ", StringComparison.Ordinal)) many = "2 " + many[8..];
+            if (args.Choice("face") is var face2 && face2 != "any") many = "2 " + (face2 == "up" ? "face-up " : "Set ") + many[2..];
+            noun = many;
+        }
         // "a face-up "Raidraptor" card(s)", "a Set card(s)": how they were before they moved.
         if (args.Choice("face") is var face && face != "any" && !noun.StartsWith("face-", StringComparison.Ordinal))
             noun = (face == "up" ? "face-up " : "Set ") + noun;
-        noun = one ? "exactly 1 " + noun : (other ? "another " : (!noun.StartsWith('"') && "AEIOUaeiou".Contains(noun[0]) ? "an " : "a ")) + noun + "(s)";
-        if (one && other) noun = "exactly 1 other " + noun["exactly 1 ".Length..];
+        if (!two)
+        {
+            noun = one ? "exactly 1 " + noun : (other ? "another " : (!noun.StartsWith('"') && "AEIOUaeiou".Contains(noun[0]) ? "an " : "a ")) + noun + "(s)";
+            if (one && other) noun = "exactly 1 other " + noun["exactly 1 ".Length..];
+        }
+        // "2 monsters are Special Summoned at the same time": both in one event.
+        var be = two ? "are" : "is";
+        var together = two ? " at the same time" : "";
         var summonFrom = SummonFrom.First(s => s.Key == args.Choice("summon_from")).Text;
         var tail = Tail(args);
         if (IsSummon(ev.Key))
@@ -1142,10 +1229,12 @@ public sealed class CardsDetailTrigger : BlockDefinition
             if (whose == "summoner" && f.Owner != CardOwner.Either)
             {
                 var obj = noun;
-                return f.Owner == CardOwner.You ? $"you {kind} Summon {obj}{sf}{tail}" : $"your opponent {kind} Summons {obj}{sf}{tail}";
+                return f.Owner == CardOwner.You ? $"you {kind} Summon {obj}{together}{sf}{tail}" : $"your opponent {kind} Summons {obj}{together}{sf}{tail}";
             }
-            var to = f.Owner switch { CardOwner.You => " to your field", CardOwner.Opponent => " to your opponent's field", _ => "" };
-            return $"{noun} is {kind} Summoned{sf}{to}{tail}";
+            // Qliphort Genius: "Special Summoned at the same time to the zones this card points to".
+            var to = f.PointedToByThisCard ? " to the zones this card points to"
+                : f.Owner switch { CardOwner.You => " to your field", CardOwner.Opponent => " to your opponent's field", _ => "" };
+            return $"{noun} {be} {kind} Summoned{together}{sf}{to}{tail}";
         }
         string owner = !SaysControl(args) ? "" : f.Owner == CardOwner.You ? " you control" : " your opponent controls";
         var gy = whose != "before" && f.Owner != CardOwner.Either ? (f.Owner == CardOwner.You ? "your GY" : "your opponent's GY") : "the GY";
@@ -1153,12 +1242,31 @@ public sealed class CardsDetailTrigger : BlockDefinition
         {
             "sent_gy" when DestroyedAndSent(args) is { } how => $"is destroyed{how} and sent to {gy}",
             "sent_gy" => $"is sent to {gy}",
+            // Droll & Lock Bird: "is added from the Main Deck to your opponent's hand".
+            "to_hand" when FromSaidInVerb(args) => $"is added from the Main Deck to {(f.Owner == CardOwner.You ? "your" : "your opponent's")} hand",
             "to_hand" when whose != "before" && f.Owner != CardOwner.Either => $"is added to {(f.Owner == CardOwner.You ? "your" : "your opponent's")} hand",
             "leaves" => "leaves the field",
             _ => "is " + ev.Text,
         };
+        if (two) verb = (verb.StartsWith("is ", StringComparison.Ordinal) ? "are " + verb[3..] : verb == "leaves the field" ? "leave the field" : verb) + together;
         return $"{noun}{owner} {verb}{tail}";
     }
+
+    /// <summary>"your monster this card points to", "a monster": who inflicts the battle damage.</summary>
+    private static string BattleSubject(CardFilter f, string noun)
+    {
+        var subject = f.Owner switch
+        {
+            CardOwner.You => "your " + noun,
+            CardOwner.Opponent => "your opponent's " + noun,
+            _ => (!noun.StartsWith('"') && "AEIOUaeiou".Contains(noun[0]) ? "an " : "a ") + noun,
+        };
+        return f.PointedToByThisCard ? subject + " this card points to" : subject;
+    }
+
+    /// <summary>Cards added from the Deck to a player's hand: the verb says where from.</summary>
+    private static bool FromSaidInVerb(BlockArgs args) => args.Choice("event") == "to_hand" && args.Choice("from") == "deck"
+        && args.Choice("whose") != "before" && args.Cards("cards").Owner != CardOwner.Either;
 
     /// <summary>Whether the card text says "you control" or "your opponent controls" after the cards.</summary>
     private static bool SaysControl(BlockArgs args)
@@ -1211,31 +1319,49 @@ public sealed class CardsDetailTrigger : BlockDefinition
         // "a monster you control is destroyed": the field goes without saying.
         var said = SaysControl(args) && from is "field" or "mzone";
         if (OwnedPlace(args) is { } owned) parts.Add("from " + owned);
-        else if (from != "any" && !said) parts.Add((from == "not_field" ? "" : "from ") + ThisCardDetailTrigger.Places.First(p => p.Key == from).Text);
+        else if (from != "any" && !said && !FromSaidInVerb(args)) parts.Add((from == "not_field" ? "" : "from ") + ThisCardDetailTrigger.Places.First(p => p.Key == from).Text);
         var by = args.Choice("by");
         if (by != "any" && DestroyedAndSent(args) is null) parts.Add(ThisCardDetailTrigger.Causes.First(c => c.Key == by).Text);
         if (args.Choice("player") != "any") parts.Add(args.Describe("player"));
         var now = args.Choice("now");
         if (now != "any" && ThisCardDetailTrigger.Destinations.First(d => d.Key == now).Text is { Length: > 0 } dest) parts.Add(dest);
-        return parts.Count == 0 ? "" : " " + string.Join(" ", parts);
+        // "is sent to the GY, except by battle": an exception goes after a comma.
+        return string.Concat(parts.Select(p => (ThisCardDetailTrigger.IsException(p) ? ", " : " ") + p));
     }
 
     public override string Describe(BlockArgs args) => $"{(args.Choice("wording") == "when" ? "When" : "If")} {Event(args)}";
 
-    // Summons combine on their kind: "If you Normal or Special Summon a monster(s)".
-    public override EventPhrase? Phrase(BlockArgs args) => IsSummon(args.Choice("event"))
-        ? new(args.Choice("wording") == "when" ? "When" : "If", Event(args, "{0}"), SummonKind(args), Event(args))
-        : new(args.Choice("wording") == "when" ? "When" : "If", Event(args));
+    // Summons combine on their kind: "If you Normal or Special Summon a monster(s)". Battle damage combines on who
+    // inflicts it: "When this card or your monster this card points to inflicts battle damage to your opponent".
+    public override EventPhrase? Phrase(BlockArgs args)
+    {
+        var lead = args.Choice("wording") == "when" ? "When" : "If";
+        if (args.Choice("event") == "battle_damage" && Tail(args).Length == 0)
+        {
+            var noun = FilterText.Describe(args.Cards("cards"), args.Pack, false, "", withLocation: false, withExcept: false);
+            return new(lead, ThisCardEventTrigger.BattleDamageTemplate, BattleSubject(args.Cards("cards"), noun), Event(args));
+        }
+        return IsSummon(args.Choice("event")) ? new(lead, Event(args, "{0}"), SummonKind(args), Event(args)) : new(lead, Event(args));
+    }
 
     public override void Compile(BlockContext ctx)
     {
         var e = ctx.Effect;
         var ev = Find(ctx.Args.Choice("event"));
         var optional = ctx.Args.Bool("optional");
-        e.Types.Add("EFFECT_TYPE_FIELD");
-        e.Types.Add(optional ? "EFFECT_TYPE_TRIGGER_O" : "EFFECT_TYPE_TRIGGER_F");
+        if (ctx.Args.Choice("speed") == "quick")
+        {
+            // A Quick Effect that responds to the event itself, like Droll & Lock Bird's.
+            e.Types.Add("EFFECT_TYPE_QUICK_O");
+            if (!optional) e.Warn("A Quick Effect is always optional (\"You can\"); \"optional\" was ignored.");
+        }
+        else
+        {
+            e.Types.Add("EFFECT_TYPE_FIELD");
+            e.Types.Add(optional ? "EFFECT_TYPE_TRIGGER_O" : "EFFECT_TYPE_TRIGGER_F");
+            e.IsMandatory = !optional;
+        }
         if (ctx.Args.Choice("wording") == "if") e.AddProperty("EFFECT_FLAG_DELAY");
-        e.IsMandatory = !optional;
         e.Range = Zones.Resolve(ctx.Args.Choice("zone"), ctx.Card);
         switch (ctx.Args.Choice("damage_step"))
         {
@@ -1272,11 +1398,19 @@ public sealed class CardsDetailTrigger : BlockDefinition
         }
         if (ThisCardDetailTrigger.Causes.First(c => c.Key == ctx.Args.Choice("by")).Lua is { } by) parts.Add(by);
         if (ThisCardDetailTrigger.Destinations.First(d => d.Key == ctx.Args.Choice("now")).Lua is { } now) parts.Add(now);
+        if (ctx.Args.Bool("already_gy"))
+        {
+            // Not by the effect that sent this card to the GY at the same time (aux.AddThisCardInGraveAlreadyCheck).
+            ctx.Script.AddInitialLine("s.cc_ingy=s.cc_ingy or {}\n\ts.cc_ingy[c]=aux.AddThisCardInGraveAlreadyCheck(c)");
+            parts.Add("(s.cc_ingy[e:GetHandler()]:GetLabelObject()==nil or c:GetReasonEffect()~=s.cc_ingy[e:GetHandler()]:GetLabelObject())");
+        }
         var other = ctx.Args.Choice("other");
         var fn = ctx.Script.AddFunction("evcards", "c,e,tp", [$"return {(parts.Count == 0 ? "true" : string.Join(" and ", parts))}"]);
-        var tests = new List<string> { $"eg:IsExists({fn},1,{(other is "other" or "other_not_this" ? "e:GetHandler()" : "nil")},e,tp)" };
+        var exclude = other is "other" or "other_not_this" ? "e:GetHandler()" : "nil";
+        var tests = new List<string> { ctx.Args.Choice("count") == "two" ? $"eg:FilterCount({fn},{exclude},e,tp)==2" : $"eg:IsExists({fn},1,{exclude},e,tp)" };
         if (other is "not_this" or "other_not_this") tests.Add("not eg:IsContains(e:GetHandler())");
         if (ctx.Args.Choice("count") == "one") tests.Add("eg:GetCount()==1");
+        if (ev.Key == "battle_damage") tests.Add("ep~=tp");
         switch (ctx.Args.Choice("player"))
         {
             case "opponent": tests.Add("rp==1-tp"); break;

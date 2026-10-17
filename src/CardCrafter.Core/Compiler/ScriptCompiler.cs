@@ -62,8 +62,12 @@ public static class ScriptCompiler
         // "If the activation of this card ... was negated": the activation notices its negation (Cyber Emergency).
         var watch = NegatedActivationTrigger.Watches(project);
         if (watch) NegatedActivationTrigger.Watch(script, built, plain);
+        // "If this card was activated this turn": the activation leaves a flag on the card.
+        var activated = ActivatedThisTurnCondition.Watches(project);
+        if (activated) ActivatedThisTurnCondition.Watch(script, built, plain || equip);
         if (equip)
         {
+            if (activated) script.Diagnostics.Add(new(Severity.Error, "\"This card was activated this turn\" isn't available for Equip Spells."));
             init.AddRange(EquipActivation(project, script));
         }
         else if (plain)
@@ -72,7 +76,10 @@ public static class ScriptCompiler
             init.Add("local e0=Effect.CreateEffect(c)");
             init.Add("e0:SetType(EFFECT_TYPE_ACTIVATE)");
             init.Add("e0:SetCode(EVENT_FREE_CHAIN)");
-            if (watch) init.Add($"e0:SetCost({script.AddFunction("e0cost", "e,tp,eg,ep,ev,re,r,rp,chk", ["if chk==0 then return true end", .. NegatedActivationTrigger.WatchLines(script)])})");
+            var e0Cost = new List<string>();
+            if (activated) e0Cost.Add(ActivatedThisTurnCondition.FlagLine);
+            if (watch) e0Cost.AddRange(NegatedActivationTrigger.WatchLines(script));
+            if (e0Cost.Count > 0) init.Add($"e0:SetCost({script.AddFunction("e0cost", "e,tp,eg,ep,ev,re,r,rp,chk", ["if chk==0 then return true end", .. e0Cost])})");
             init.Add("c:RegisterEffect(e0)");
         }
 
@@ -82,7 +89,7 @@ public static class ScriptCompiler
         foreach (var effect in built)
             foreach (var branch in effect.Branches.Values)
                 branch.StringIndex = nextString < 16 ? nextString++ : Math.Min(effect.Index, 16) - 1;
-        var limits = CountLimits(card, built);
+        var limits = CountLimits(card, built, script.Diagnostics);
         foreach (var effect in built)
             init.AddRange(effect.Build(limits[effect.Index]));
 
@@ -164,6 +171,8 @@ public static class ScriptCompiler
                 if (Run(effect, b, BlockKind.Cost, pack)) CardRefs.KeepCost(effect, b, from);
             }
 
+        if (!effect.IsPassive) LimitExtras(effect);
+
         if (effect.IsSummonProcedure)
         {
             if (src.Do.Count > 0)
@@ -224,8 +233,11 @@ public static class ScriptCompiler
                 else
                 {
                     CardRefs.Check(effect, b);
+                    var (steps, chkc) = (effect.StepCount, effect.Chkc);
                     Run(effect, b, doKind, pack);
                     acted = true;
+                    // "When this card is activated: You can ...": a step the player may skip never stops the card's activation.
+                    if (b.Optional && effect.IsActivation && branch == 0 && chkc == effect.Chkc) effect.AskOnResolution(steps, checks);
                 }
                 if (branch > 0)
                 {
@@ -248,6 +260,28 @@ public static class ScriptCompiler
             effect.Error("Add at least one DO block: what the effect does.");
         if (effect.IsPassive && src.Limit != OncePerTurn.None)
             effect.Warn("Once-per-turn limits do nothing on \"while face-up\" effects and were ignored.");
+    }
+
+    /// <summary>
+    /// What a limit needs beside its count: "once while face-up on the field" keeps its count used from turn to turn, and
+    /// "once per turn" for each copy beside uses by card name is a flag on the card, set as the effect is activated.
+    /// </summary>
+    private static void LimitExtras(EffectBuilder effect)
+    {
+        var src = effect.Source;
+        if (src.Limit is OncePerTurn.FaceUp or OncePerTurn.FaceUpAndHard)
+        {
+            if (effect.IsSummonProcedure || effect.IsActivation)
+                effect.Error("\"Once while face-up on the field\" is for effects of a card already on the field, not its activation or a Summon procedure.");
+            effect.AddProperty("EFFECT_FLAG_NO_TURN_RESET");
+        }
+        if (src.Limit == OncePerTurn.SoftAndHard)
+        {
+            if (effect.IsSummonProcedure) { effect.Error("A Summon procedure can't have \"once per turn\" for each copy beside its limit by name."); return; }
+            var flag = CopyFlag(effect.Index);
+            effect.CostChecks.Add($"e:GetHandler():GetFlagEffect({flag})==0");
+            effect.CostLines.Insert(0, $"e:GetHandler():RegisterFlagEffect({flag},RESET_EVENT+RESETS_STANDARD+RESET_PHASE+PHASE_END,0,1)");
+        }
     }
 
     /// <summary>
@@ -461,28 +495,50 @@ public static class ScriptCompiler
         return lingering && !effects.Any(e => e.IsActivation);
     }
 
-    /// <summary>Works out SetCountLimit arguments, giving each hard once-per-turn group its own code.</summary>
-    private static Dictionary<int, string?> CountLimits(CardData card, List<EffectBuilder> effects)
+    /// <summary>How many uses an effect's limit allows ("twice per turn"): 1 to 9.</summary>
+    public static int Times(EffectEvent e) => Math.Clamp(e.Times, 1, 9);
+
+    /// <summary>The flag that keeps "once per turn" for each copy beside a limit by card name (Perfect Toon World).</summary>
+    public static string CopyFlag(int index) => $"id+{(8250 + index).ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+
+    /// <summary>
+    /// Works out SetCountLimit arguments, giving each hard once-per-turn group its own code. "Once per turn" effects that
+    /// share a group share the card's own count (EFFECT_COUNT_CODE_SINGLE), which a card has only one of.
+    /// </summary>
+    private static Dictionary<int, string?> CountLimits(CardData card, List<EffectBuilder> effects, List<Diagnostic> diagnostics)
     {
         var result = new Dictionary<int, string?>();
         var groups = new List<int>();
-        var singleUsed = false;
+        // Only a group of two or more shares: a lone effect keeps the group number it may have had as a hard limit.
+        var softGroups = effects.Where(e => e.Source.Limit == OncePerTurn.Soft && e.Source.SharedLimitGroup > 0 && (!e.IsPassive || e.HasLimitedPassive))
+            .GroupBy(e => e.Source.SharedLimitGroup).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
+        if (softGroups.Count > 1)
+            diagnostics.Add(new(Severity.Error, "Only one group of \"Once per turn\" (each copy) effects can share their use: give the others group 0, or a limit by card name."));
+        var softShared = softGroups.FirstOrDefault();
+        var singleUsed = softShared > 0;
         foreach (var e in effects)
         {
             string? limit = null;
+            var n = Times(e.Source).ToString(System.Globalization.CultureInfo.InvariantCulture);
             if (!e.IsPassive || e.HasLimitedPassive)
             {
                 switch (e.Source.Limit)
                 {
                     case OncePerTurn.Soft:
+                        // Effects that share a "once per turn" count once for all of them, on this card only.
+                        if (softShared > 0 && e.Source.SharedLimitGroup == softShared) limit = $"{n},EFFECT_COUNT_CODE_SINGLE";
                         // An effect registered for several events counts once for all of them (one per card).
-                        if (e.HasClones && !singleUsed) { limit = "1,EFFECT_COUNT_CODE_SINGLE"; singleUsed = true; }
-                        else limit = "1";
+                        else if (e.HasClones && !singleUsed) { limit = $"{n},EFFECT_COUNT_CODE_SINGLE"; singleUsed = true; }
+                        else limit = n;
                         break;
                     case OncePerTurn.Chain:
                         limit = "1,EFFECT_COUNT_CODE_CHAIN";
                         break;
-                    case OncePerTurn.Hard or OncePerTurn.Duel:
+                    // "Once while face-up on the field": the effect's own count, which the turn doesn't give back.
+                    case OncePerTurn.FaceUp:
+                        limit = "1";
+                        break;
+                    case OncePerTurn.Hard or OncePerTurn.Duel or OncePerTurn.FaceUpAndHard or OncePerTurn.SoftAndHard:
                         var group = e.Source.SharedLimitGroup > 0 ? e.Source.SharedLimitGroup : -e.Index;
                         if (!groups.Contains(group)) groups.Add(group);
                         var slot = groups.IndexOf(group);
@@ -490,7 +546,9 @@ public static class ScriptCompiler
                         // For Spell/Trap activations, "you can only activate 1 per turn" ignores negated activations,
                         // and a Summon procedure only counts once it is used.
                         if (e.Source.Limit == OncePerTurn.Duel) code += "+EFFECT_COUNT_CODE_DUEL";
-                        limit = e.IsActivation || e.IsSummonProcedure ? $"1,{code}+EFFECT_COUNT_CODE_OATH" : $"1,{code}";
+                        // Once while face-up, the effect's own count of 1 stays used; the code counts uses by name.
+                        var uses = e.Source.Limit == OncePerTurn.FaceUpAndHard ? "1" : n;
+                        limit = e.IsActivation || e.IsSummonProcedure ? $"{uses},{code}+EFFECT_COUNT_CODE_OATH" : $"{uses},{code}";
                         break;
                 }
             }

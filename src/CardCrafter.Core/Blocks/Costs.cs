@@ -240,7 +240,7 @@ public sealed class MoveCardsCost : CostBlock
     public override string Id => "cost.move_cards";
     public override string Group => "Cards";
     public override string Name => "Banish, send or return cards (cost)";
-    public override string Sentence => "{how} {count} {cards}";
+    public override string Sentence => "{how} {count} {cards} {same_type}";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Choice("how", "How",
@@ -249,6 +249,8 @@ public sealed class MoveCardsCost : CostBlock
         ParamSpec.Int("count", "How many", 1, 1, 10),
         ParamSpec.Choice("mode", "Exactly / up to", new("exact", "", "exactly"), new("up_to", "up to")),
         ParamSpec.Cards("cards", "Which cards", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Graveyard }, thisCard: true),
+        // Invoked Mechaba: "send the same type of card (Monster, Spell, or Trap) from your hand to the GY".
+        ParamSpec.Flag("same_type", "of the same card type (Monster, Spell, or Trap) as the card or effect activated", false),
     ];
 
     private static (string Verb, string Tail, string Able, string Hint, string Call) Way(string how) => how switch
@@ -270,7 +272,15 @@ public sealed class MoveCardsCost : CostBlock
             var from = args.TriggerZone is { } z && !(z == "graveyard" && args.Choice("how") == "grave") ? Zones.From(z) : null;
             return $"{verb} this card{(from is null ? "" : " " + from)}{tail}";
         }
-        return $"{verb} {args.Describe("count")} {args.Describe("cards")}{tail}{args.ExceptText()}";
+        var cards = args.Describe("cards");
+        if (args.Bool("same_type"))
+        {
+            // "the same type of card (Monster, Spell, or Trap) from your hand", for 1 card of any kind.
+            if (args.Int("count") == 1 && args.Choice("mode") == "exact" && cards.StartsWith("card ", StringComparison.Ordinal))
+                return $"{verb} the same type of card (Monster, Spell, or Trap) {cards[5..]}{tail}{args.ExceptText()}";
+            cards += " of the same card type (Monster, Spell, or Trap) as the activated card";
+        }
+        return $"{verb} {args.Describe("count")} {cards}{tail}{args.ExceptText()}";
     }
 
     public override void Compile(BlockContext ctx)
@@ -295,14 +305,22 @@ public sealed class MoveCardsCost : CostBlock
         }
         filter.Owner = CardOwner.You;
         var (_, _, able, hint, call) = Way(how);
+        var sameType = ctx.Args.Bool("same_type");
+        if (sameType && ctx.Effect.Code != "EVENT_CHAINING")
+            ctx.Effect.Error($"\"{Name}\": \"the same card type as the card or effect activated\" needs a WHEN that responds to an activation.");
+        // The card type (Monster, Spell or Trap) of the chain link it responds to, passed to the filter.
         var f = ctx.Script.Filter(filter, able, how + "costfilter");
+        var function = sameType
+            ? ctx.Script.AddFunction(how + "typefilter", "c,e,tp,rtype", [$"return {string.Join(" and ", FilterCompiler.Conditions(filter).Append(able).Append("c:IsType(rtype)"))}"])
+            : f.Function;
+        var args = sameType ? "e,tp,bit.band(re:GetActiveType(),0x7)" : "e,tp";
         var n = ctx.Args.Int("count");
         var min = ctx.Args.Choice("mode") == "up_to" ? 1 : n;
         var g = ctx.Effect.NewLocal("g");
         // The activated card itself can never pay its own cost this way.
-        ctx.Effect.CostChecks.Add($"Duel.IsExistingMatchingCard({f.Function},tp,{f.Self},0,{min},e:GetHandler(),e,tp)");
+        ctx.Effect.CostChecks.Add($"Duel.IsExistingMatchingCard({function},tp,{f.Self},0,{min},e:GetHandler(),{args})");
         ctx.Effect.CostLines.Add($"Duel.Hint(HINT_SELECTMSG,tp,{hint})");
-        ctx.Effect.CostLines.Add($"local {g}=Duel.SelectMatchingCard(tp,{f.Function},tp,{f.Self},0,{min},{n},e:GetHandler(),e,tp)");
+        ctx.Effect.CostLines.Add($"local {g}=Duel.SelectMatchingCard(tp,{function},tp,{f.Self},0,{min},{n},e:GetHandler(),{args})");
         if ((filter.Zones & Zone.Field) != Zone.None) ctx.Effect.CostLines.Add($"Duel.HintSelection({g})");
         // Kept for "for each card used for the cost".
         ctx.Effect.CostLines.Add($"e:SetLabel({string.Format(System.Globalization.CultureInfo.InvariantCulture, call, g)})");

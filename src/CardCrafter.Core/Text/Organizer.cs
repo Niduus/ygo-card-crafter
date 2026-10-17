@@ -182,7 +182,7 @@ public static class CardOrganizer
     {
         if (a.When is null || b.When is null || !Starts(a.When) || !Starts(b.When)) return false;
         if (EffectTextGenerator.IsPendulumEffect(a) != EffectTextGenerator.IsPendulumEffect(b)) return false;
-        if (a.Limit != b.Limit) return false;
+        if (a.Limit != b.Limit || a.Times != b.Times) return false;
         // Separate effects each with its own once per turn would share one: only when they share it already, or have none.
         var shared = a.Limit is OncePerTurn.Hard or OncePerTurn.Duel && a.SharedLimitGroup > 0 && a.SharedLimitGroup == b.SharedLimitGroup;
         if (a.Limit != OncePerTurn.None && !shared) return false;

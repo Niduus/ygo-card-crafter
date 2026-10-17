@@ -475,6 +475,9 @@ public class RequirementMatrixChoiceTests
         // Special Summoned this turn: not a Normal Summon.
         Row("sp_from_grave", true, Is("spsummoned_turn")), Row("sp_from_grave", false, IsNot("spsummoned_turn")), Row("xyz_summoned", true, Is("spsummoned_turn")),
         Row("normal_summoned", false, Is("spsummoned_turn")), Row("normal_summoned", true, IsNot("spsummoned_turn")), Row("stat", false, Is("spsummoned_turn")),
+        // Normal or Special Summoned this turn (Mimighoul Dungeon): either kind, but not a card that was never Summoned.
+        Row("normal_summoned", true, Is("normal_special_turn")), Row("sp_from_grave", true, Is("normal_special_turn")), Row("xyz_summoned", true, Is("normal_special_turn")),
+        Row("normal_summoned", false, IsNot("normal_special_turn")), Row("stat", false, Is("normal_special_turn")), Row("stat", true, IsNot("normal_special_turn")),
         // Declared an attack / battled. To the engine (and the rulings: Gladiator Beasts tag out after attacking directly)
         // a direct attack is a battle too; the attacked monster battled without attacking.
         Row("direct_attack", true, Is("attacked_turn")), Row("no_attack", false, Is("attacked_turn")), Row("battle", true, Is("attacked_turn")),
@@ -588,6 +591,7 @@ public class RequirementMatrixTextTests
         [Is("negated"), "whose effects are negated"],
         [IsNot("summoned_turn"), "that was not Summoned this turn"],
         [Is("spsummoned_turn"), "that was Special Summoned this turn"],
+        [IsNot("normal_special_turn"), "that was not Normal or Special Summoned this turn"],
         [Is("attacked_turn"), "that declared an attack this turn"],
         [IsNot("battled_turn"), "that has not battled this turn"],
         [IsNot("changed_atk"), "whose ATK is the same as its original ATK"],

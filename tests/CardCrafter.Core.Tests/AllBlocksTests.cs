@@ -254,6 +254,15 @@ public class AllBlocksTests
         // "From where its cost put it": a cost that banishes this card.
         if (def.Id == "do.special_summon_self" && inst.Values.GetValueOrDefault("from") == "cost")
             project.Effects[0].Cost.Add(new BlockInstance("cost.this_card").With("how", "banish"));
+        // "If this card was activated this turn": a Continuous Trap, whose activation leaves the flag.
+        if (def.Id == ActivatedThisTurnCondition.BlockId)
+        {
+            project.Card.Kind = CardKind.Trap;
+            project.Card.TrapKind = TrapKind.Continuous;
+        }
+        // "The same card type as the activated card": a cost of a response to an activation.
+        if (def.Id == "cost.move_cards" && inst.Values.GetValueOrDefault("same_type") == "true")
+            project.Effects[0].When = new BlockInstance("when.quick").With("timing", "chain_any");
         // "If the activation of this card ... was negated": a Trap whose activation watches for it.
         if (def.Id == NegatedActivationTrigger.BlockId)
         {

@@ -65,7 +65,11 @@ public static class AssistantGuide
         - DO: the actions, in order. Each action after the first has a link to the one before: and, ifYouDo ("and if you
           do"), then ("then"), alsoAfterThat ("Also, after that"), ifYouDont, or option (starts another "● " option of
           "activate 1 of these effects"). optional:true makes it "you can ...".
-        - limit: none, soft ("Once per turn"), hard ("You can only use this effect of X once per turn"), duel, chain.
+        - limit: none, soft ("Once per turn"), hard ("You can only use this effect of X once per turn"), duel, chain,
+          faceUp ("Once while face-up on the field"), faceUpAndHard (that and once per turn by name), softAndHard ("Once per
+          turn: ... You can only use this effect of X thrice per turn"). times: how many uses ("Up to twice per turn"; the
+          uses by name for softAndHard). sharedLimitGroup: effects with the same number share one use (two soft effects
+          share each copy's use).
         A lasting effect ("Monsters you control gain 500 ATK") uses the trigger when.while_face_up and passive blocks in DO.
 
         Blocks that pick cards have card pickers (filters): whose cards (owner: you, opponent, either), which zones, card
