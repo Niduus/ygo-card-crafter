@@ -71,6 +71,15 @@ public sealed class ParamSpec
         return this;
     }
 
+    /// <summary>For card filters: the picker also offers "that card" (this effect's target, the card the step before affected...).</summary>
+    public bool AllowThatCard { get; private set; }
+
+    public ParamSpec ThatCards()
+    {
+        AllowThatCard = true;
+        return this;
+    }
+
     /// <summary>For card filters: a new block has none until the blank is used (its default is read when it's missing).</summary>
     public bool OnlyWhenUsed { get; private set; }
 
@@ -221,7 +230,11 @@ public sealed class BlockArgs(BlockDefinition def, BlockInstance inst, CardPack?
     public string? CardName { get; init; }
 
     /// <summary>Whether the block's cards read as plural: a count other than 1, or "all".</summary>
-    public bool IsPlural => (Definition.Param("count") is { Type: ParamType.Integer } && Int("count") != 1) || CountMode == "all" || Selection.Uncounted(this);
+    public bool IsPlural => IsThatCard ? CardRefs.Plural(this, Cards("cards").That)
+        : (Definition.Param("count") is { Type: ParamType.Integer } && Int("count") != 1) || CountMode == "all" || Selection.Uncounted(this);
+
+    /// <summary>True when the block's cards are "that card": its target, the card the step before affected... (<see cref="CardRefs"/>).</summary>
+    public bool IsThatCard => CardRefs.Is(this);
 
     /// <summary>
     /// "exact", "up_to" or "all": how many cards a card action takes. It is "mode", or "count_mode" on blocks whose
@@ -277,21 +290,31 @@ public sealed class BlockArgs(BlockDefinition def, BlockInstance inst, CardPack?
         if (spec.SaidElsewhere) return "";
         return spec.Type switch
         {
-            // "Special Summon this card", not "Special Summon 1 this card".
-            ParamType.Integer when key == "count" && IsThisCard => "",
-            // "any number of", "1 random": how the cards are picked (Selections.cs).
-            ParamType.Integer when key == "count" && Selection.CountWords(this) is { } picked => picked,
-            // "up to 3", "all": card actions say how many with their count.
-            ParamType.Integer when key == "count" && CountMode == "all" => "all",
-            ParamType.Integer when key == "count" && CountMode == "up_to" => $"up to {Int(key).ToString(CultureInfo.InvariantCulture)}",
+            // "Destroy it and all monsters ...", "Special Summon this card and 1 ...": the cards that go with the block's own.
+            ParamType.Integer when key == "count" => CardRefs.WithPlus(this, CountText()),
             ParamType.Integer => Int(key).ToString(CultureInfo.InvariantCulture),
             ParamType.Choice => spec.Choices.First(c => c.Value == Choice(key)).Label,
             ParamType.Bool => Bool(key) ? spec.Label : "",
             // "Discard 2 cards": a block's "count" blank decides whether its cards are plural.
             ParamType.Cards when Cards(key).ThisCard => TriggerZone is { } z && Zones.From(z) is { } from ? $"this card {from}" : "this card",
+            // "destroy it", "Special Summon that monster", "both it and this card".
+            ParamType.Cards when key == "cards" && IsThatCard => CardRefs.Words(this, Cards(key)),
             ParamType.Cards when key == "cards" && Selection.Offers(Definition) => Selection.CardsText(this),
             ParamType.Cards => Text.FilterText.Describe(Cards(key), Pack, plural: IsPlural, ownName: CardName, withExcept: false),
             _ => "",
         };
+    }
+
+    /// <summary>How many cards the block takes, in words: "", "any number of", "all", "up to 3", "2".</summary>
+    private string CountText()
+    {
+        // "Special Summon this card", not "Special Summon 1 this card".
+        if (IsThisCard) return "";
+        // "any number of", "1 random": how the cards are picked (Selections.cs).
+        if (Selection.CountWords(this) is { } picked) return picked;
+        // "up to 3", "all": card actions say how many with their count.
+        if (CountMode == "all") return "all";
+        if (CountMode == "up_to") return $"up to {Int("count").ToString(CultureInfo.InvariantCulture)}";
+        return Int("count").ToString(CultureInfo.InvariantCulture);
     }
 }

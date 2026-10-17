@@ -229,6 +229,10 @@ public sealed class NegateCardEffectsAction : CardGroupAction
         ParamSpec.Choice("duration", "Until", new("turn", "until the end of this turn"), new("always", "", "while face-up")),
     ];
 
+    /// <summary>"negate its effects" for "that card", as for a target.</summary>
+    public override string Describe(BlockArgs args) =>
+        args.IsThatCard && CardRefs.Plus(args) == "none" ? TargetedAction(args, "", !args.IsPlural) : base.Describe(args);
+
     protected override string TargetedAction(BlockArgs args, string pronoun, bool single)
     {
         var text = single ? "negate its effects" : "negate their effects";
@@ -304,7 +308,7 @@ public sealed class ChangeStatsAction : CardGroupAction
         var verb = args.Choice("dir") == "gain" ? (one ? "gains" : "gain") : (one ? "loses" : "lose");
         var tail = $"{verb} {args.Int("amount")} {args.Describe("stat")} {args.Describe("duration")}".TrimEnd();
         // "all face-up monsters you control gain 500 ATK".
-        return $"{Some(args)} {tail}{args.ExceptText()}";
+        return $"{Subject(args)} {tail}{args.ExceptText()}";
     }
 
     protected override string TargetedAction(BlockArgs args, string pronoun, bool single)

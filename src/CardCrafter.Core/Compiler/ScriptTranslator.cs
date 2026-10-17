@@ -73,6 +73,7 @@ public static partial class ScriptTranslator
         lua = EqualToStat(lua);
         lua = MechanicsRewrite(lua);
         lua = TreatedAsRewrite(lua);
+        lua = NegatedSummonRewrite(lua);
         lua = BanishReturnRewrite(lua);
         lua = BanishUntilRewrite(lua);
         var pieces = LuaPieces.Split(lua, id, strings);
@@ -2542,6 +2543,7 @@ public static partial class ScriptTranslator
         if (MemoryAction(line, groups, target, targetCard) is { } memoryAction) return memoryAction;
         if (SelfToHandAction(line, target) is { } selfToHand) return selfToHand;
         if (TreatedAsSummonAction(line, groups, target, targetCard) is { } treatedSummon) return treatedSummon;
+        if (NegatedSummonAction(line, groups, target, targetCard, card, ref self) is { } negatedSummon) return negatedSummon;
 
         // "inflict 300 damage for each card in your opponent's hand": an amount worked out when it resolves.
         if ((m = Regex.Match(line, @"^Duel\.(Damage|Recover)\((\w+|1-tp),(.+),REASON_EFFECT\)$")).Success && !Regex.IsMatch(m.Groups[3].Value, @"^(?:\d+|CCEQ_\w+)$")

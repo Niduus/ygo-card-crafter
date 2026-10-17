@@ -160,6 +160,24 @@ public static class CardProperties
         new("declared_level", "Has the declared Level", PropertyKind.State, "c:IsLevel(v)", "", IsText: "with the declared Level", IsNotText: "without the declared Level", NeedsEffect: true),
         new("declared_type", "Is the declared card type", PropertyKind.State, "c:IsType(v)", "",
             IsText: "of the declared card type", IsNotText: "that is not of the declared card type", NeedsEffect: true),
+        // Compared with "that card": this effect's target, the card used for the cost... (Blocks/CardRefs.cs). They hold
+        // until that card is known, so the effect's activation checks don't depend on them.
+        new("ref_attribute", "Same Attribute as that card (target, cost...)", PropertyKind.Options, "", "Attribute", Choices: Blocks.CardRefs.RequirementChoices(),
+            IsText: "with the same Attribute as that monster", IsNotText: "with a different Attribute", NeedsEffect: true),
+        new("ref_race", "Same Type as that card (target, cost...)", PropertyKind.Options, "", "Type", Choices: Blocks.CardRefs.RequirementChoices(),
+            IsText: "with the same Type as that monster", IsNotText: "with a different Type", NeedsEffect: true),
+        new("ref_level", "Same Level as that card (target, cost...)", PropertyKind.Options, "", "Level", Choices: Blocks.CardRefs.RequirementChoices(),
+            IsText: "with the same Level as that monster", IsNotText: "with a different Level", NeedsEffect: true),
+        new("ref_name", "Same name as that card (target, cost...)", PropertyKind.Options, "", "name", Choices: Blocks.CardRefs.RequirementChoices(),
+            IsText: "with the same name as that card", IsNotText: "with a different name", NeedsEffect: true),
+        new("ref_orig_attribute", "Same original Attribute as that card (target, cost...)", PropertyKind.Options, "", "original Attribute", Choices: Blocks.CardRefs.RequirementChoices(),
+            IsText: "with the same original Attribute as that monster's", IsNotText: "with a different original Attribute from that monster's", NeedsEffect: true),
+        new("ref_orig_level", "Same original Level as that card (target, cost...)", PropertyKind.Options, "", "original Level", Choices: Blocks.CardRefs.RequirementChoices(),
+            IsText: "with the same original Level as that monster", IsNotText: "with a different original Level", NeedsEffect: true),
+        new("ref_orig_name", "Same original name as that card (target, cost...)", PropertyKind.Options, "", "original name", Choices: Blocks.CardRefs.RequirementChoices(),
+            IsText: "with the same original name as that card", IsNotText: "with a different original name", NeedsEffect: true),
+        new("ref_atk_le", "ATK at most that card's ATK (target, cost...)", PropertyKind.Options, "", "ATK", Guard: "c:IsType(TYPE_MONSTER)", Choices: Blocks.CardRefs.RequirementChoices(),
+            IsText: "with ATK less than or equal to that monster's ATK", IsNotText: "with more ATK than that monster", NeedsEffect: true),
         // A card a "Remember" block of this card remembers (it carries the Memory's flag: Blocks/Memory.cs).
         new("remembered", "Remembered by this card (Memory A-E)", PropertyKind.Options, "", "memory",
             Choices: Blocks.Memory.Slots.Select((s, i) => ((long)i, "Memory " + s.Value, Blocks.Memory.RequirementLua(i))).ToArray(),
@@ -202,6 +220,13 @@ public static class CardProperties
     {
         if (Find(r.Property) is not { } p) return null;
         if (p.NeedsEffect && !hasEffect) return null;
+        if (Blocks.CardRefs.IsRequirement(p.Key))
+        {
+            var that = (CardRef)r.Values.FirstOrDefault();
+            if (that == CardRef.None) return null;
+            var refTest = Blocks.CardRefs.RequirementLua(p.Key, that, r.Op == RequirementOp.IsNot);
+            return p.Guard is null ? refTest : $"({p.Guard} and {refTest})";
+        }
         if (IsDeclared(p.Key))
             return "(function(te,v) if te~=e or not v or v==0 then return true end return " + (r.Op == RequirementOp.IsNot ? "not " : "") + p.Lua
                    + " end)(Duel.GetChainInfo(0,CHAININFO_TRIGGERING_EFFECT,CHAININFO_TARGET_PARAM))";

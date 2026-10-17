@@ -30,6 +30,25 @@ public enum SpellTrapKind { Any, Normal, Continuous, QuickPlay, Field, Equip, Ri
 public enum FilterSummoned { Any, Special, FromExtra, Tribute, ThisTurn }
 
 /// <summary>What kind of monster: Effect, Tuner, Fusion and so on. "Non-" kinds are the ones without it.</summary>
+/// <summary>
+/// "That card": the picker means cards the effect already has instead of cards it picks, as card text says "it",
+/// "the targeted monster", "the sent monster" or "that monster".
+/// </summary>
+public enum CardRef
+{
+    None,
+    /// <summary>This effect's target(s), still related to it.</summary>
+    Target,
+    /// <summary>The card(s) the DO step before affected (Duel.GetOperatedGroup()).</summary>
+    Affected,
+    /// <summary>The card(s) used for the effect's cost.</summary>
+    Cost,
+    /// <summary>The monster this card is battling, or destroyed by battle (GetBattleTarget).</summary>
+    BattleTarget,
+    /// <summary>Your monster that is battling (Duel.GetBattleMonster).</summary>
+    Battling,
+}
+
 public enum MonsterKind
 {
     Any, Effect, NonEffect, Normal, Tuner, NonTuner, Fusion, Synchro, Xyz, Link, Ritual, Pendulum,
@@ -80,6 +99,8 @@ public sealed class CardFilter
     public bool ExcludeThisCard { get; set; }
     /// <summary>This exact card, not any card with its name: "Special Summon this card from your hand".</summary>
     public bool ThisCard { get; set; }
+    /// <summary>"That card": cards the effect already has (its target, the card the step before affected...), or None for picked cards.</summary>
+    public CardRef That { get; set; }
     /// <summary>"except "Card Name"": not a card with this card's name.</summary>
     public bool ExceptOwnName { get; set; }
     /// <summary>Not this card (passcode), 0 for none: "except "Dark Magician"".</summary>
@@ -92,6 +113,9 @@ public sealed class CardFilter
     public List<CardRequirement> Requirements { get; set; } = [];
     /// <summary>Any one of <see cref="Requirements"/> is enough ("a DARK monster or a Dragon monster"); otherwise all must hold.</summary>
     public bool AnyRequirement { get; set; }
+
+    /// <summary>The cards are given, not picked: this card itself, or "that card" (<see cref="That"/>).</summary>
+    public bool IsSpecific() => ThisCard || That != CardRef.None;
 
     public CardFilter Clone()
     {

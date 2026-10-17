@@ -13,10 +13,13 @@ internal static class Resets
     public const string EndOfTurn = "RESET_EVENT+RESETS_STANDARD+RESET_PHASE+PHASE_END";
     public const string WhileFaceUp = "RESET_EVENT+RESETS_STANDARD";
 
-    public static ChoiceOption[] Duration =>
-        [new("turn", "until the end of this turn"), new("always", "", "while face-up")];
+    /// <summary>Invoked Augoeides: until the End Phase of your opponent's turn (RESET_OPPO_TURN).</summary>
+    public const string EndOfOpponentsTurn = "RESET_EVENT+RESETS_STANDARD+RESET_PHASE+PHASE_END+RESET_OPPO_TURN";
 
-    public static string Of(BlockContext ctx) => ctx.Args.Choice("duration") == "turn" ? EndOfTurn : WhileFaceUp;
+    public static ChoiceOption[] Duration =>
+        [new("turn", "until the end of this turn"), new("always", "", "while face-up"), new("opp_turn", "until the end of your opponent's turn")];
+
+    public static string Of(BlockContext ctx) => ctx.Args.Choice("duration") switch { "turn" => EndOfTurn, "opp_turn" => EndOfOpponentsTurn, _ => WhileFaceUp };
 }
 
 // ---------------------------------------------------------------- negating Summons and attacks
@@ -387,7 +390,7 @@ public sealed class SetAttackAction : CardGroupAction
     {
         var verb = args.Choice("mode") == "half" ? "is halved" : $"becomes {Becomes(args)}";
         if (args.IsThisCard) return $"this card's ATK {verb} {args.Describe("duration")}".TrimEnd();
-        return $"the ATK of {Some(args)} {(One(args) ? verb : verb.Replace("is halved", "are halved"))} {args.Describe("duration")}".TrimEnd() + args.ExceptText();
+        return $"{StatOf(args, "ATK")} {(One(args) ? verb : verb.Replace("is halved", "are halved"))} {args.Describe("duration")}".TrimEnd() + args.ExceptText();
     }
 
     protected override string TargetedAction(BlockArgs args, string pronoun, bool single) =>
@@ -453,7 +456,7 @@ public sealed class ChangeLevelAction : CardGroupAction
         // "the Level of 1 monster becomes 4", "the Levels of all face-up monsters you control increase by 1".
         var change = Change(args, One(args));
         var noun = change.IndexOf(' ');
-        return ($"the {change[..noun]} of {Some(args)} {change[(noun + 1)..]} {args.Describe("duration")}".TrimEnd() + args.ExceptText())
+        return ($"{StatOf(args, change[..noun])} {change[(noun + 1)..]} {args.Describe("duration")}".TrimEnd() + args.ExceptText())
             .Replace("the Level becomes", "the Level becomes", StringComparison.Ordinal);
     }
 
@@ -578,7 +581,7 @@ public sealed class BattleRuleAction : CardGroupAction
     {
         var rule = args.Describe("rule");
         if (!One(args)) rule = rule.Replace("inflicts", "inflict", StringComparison.Ordinal);
-        return $"{Some(args)} {rule} this turn{args.ExceptText()}";
+        return $"{Subject(args)} {rule} this turn{args.ExceptText()}";
     }
 
     protected override string TargetedAction(BlockArgs args, string pronoun, bool single)

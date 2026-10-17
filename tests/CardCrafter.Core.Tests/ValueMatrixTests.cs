@@ -546,6 +546,9 @@ public class ValueMatrixTests
         "heads" => [B(TossCoinAction.BlockId, ("count", "3"))],
         // "That monster's ..." reads the cards the step before affected.
         _ when ValueSources.Affected(source) => [B("do.destroy")],
+        // "The damage inflicted" by the step before; "the targeted monster's ATK" of a target (CardRefs.cs).
+        "damage_dealt" => [B("do.damage")],
+        _ when source.StartsWith("target_", StringComparison.Ordinal) => [B(TargetCardsAction.BlockId)],
         _ => [],
     };
 
@@ -572,7 +575,8 @@ public class ValueMatrixTests
                 projects.Add(Mon(Id, null, Lasting(field)));
             }
             var when = source == "event" ? new BlockInstance("when.event").With("event", "you_damage") : new BlockInstance("when.ignition");
-            foreach (var target in new[] { "false", "true" })
+            // An effect targets with one block: "the targeted monster's ATK" comes with "Target cards".
+            foreach (var target in source.StartsWith("target_", StringComparison.Ordinal) ? ["false"] : new[] { "false", "true" })
                 projects.Add(Mon(Id, null, new EffectEvent { When = when, Do = [.. Before(source), B(StatsFromValueAction.BlockId, ("value", source), ("how", how), ("dir", dir), ("stat", stat), ("target", target))] }));
             projects.Add(Mon(Id, null, new EffectEvent { When = when, Do = [.. Before(source), B(StatsFromValueAction.BlockId, ("value", source), ("how", how), ("dir", dir), ("stat", stat), ("mode", "all"))] }));
         }
@@ -584,6 +588,8 @@ public class ValueMatrixTests
         }
         // "The LP paid" is paid by the effect's cost.
         if (source == "lp_paid") foreach (var p in projects) p.Effects[0].Cost.Add(B("cost.pay_lp", ("how", "multiple")));
+        // "The sent monster's ATK": a cost that sends one.
+        if (source.StartsWith("cost_", StringComparison.Ordinal)) foreach (var p in projects) p.Effects[0].Cost.Add(B("cost.move_cards", ("how", "banish")));
         foreach (var p in projects)
         {
             var r = ScriptCompiler.Compile(p);

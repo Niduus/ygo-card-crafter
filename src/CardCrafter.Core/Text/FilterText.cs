@@ -14,7 +14,7 @@ public static class FilterText
         if (f.ExceptOwnName) except.Add(ownName is { Length: > 0 } n ? $"\"{n}\"" : "cards with this card's name");
         if (f.ExceptCode != 0)
             except.Add(CardNames.Find(f.ExceptCode, pack) is { } en ? $"\"{en}\"" : $"passcode {f.ExceptCode}");
-        return except.Count == 0 || f.ThisCard ? "" : ", except " + string.Join(" or ", except);
+        return except.Count == 0 || f.IsSpecific() ? "" : ", except " + string.Join(" or ", except);
     }
 
     /// <param name="withExcept">False when the caller puts ", except ..." at the end of its own sentence, as cards print it.</param>
@@ -25,6 +25,15 @@ public static class FilterText
         string? beforeLocation = null)
     {
         if (f.ThisCard) return "this card";
+        // "That card": blocks say it in their own words (Blocks/CardRefs.cs); this is how a picker alone reads.
+        if (f.That != CardRef.None) return f.That switch
+        {
+            CardRef.Target => plural ? "the targets" : "the target",
+            CardRef.Affected => plural ? "those cards" : "that card",
+            CardRef.Cost => plural ? "the cards used for the cost" : "the card used for the cost",
+            CardRef.BattleTarget => "the monster this card is battling",
+            _ => "your battling monster",
+        };
         var words = new List<string>();
         // "a card in your other Pendulum Zone": "other" goes with the zone there.
         if (f.ExcludeThisCard && !OtherPendulumZone(f)) words.Add("other");

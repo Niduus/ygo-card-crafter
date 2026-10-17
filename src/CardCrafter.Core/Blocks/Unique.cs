@@ -344,18 +344,51 @@ public sealed class OnlyIfAction : ActionBlock
     public override string Name => "Only continue if there are (no) cards...";
     public override string Sentence => "if there {is} {count} {cards}";
     public override string Help => "Stops the effect here unless the cards are there, so the DO blocks after it only happen if they are: " +
-                                   "\"then if you have a Trap in your GY, destroy that card\".";
+                                   "\"then if you have a Trap in your GY, destroy that card\". \"It is\" and \"any of them was\" check the cards the step " +
+                                   "before affected (\"then if it is a Fusion Monster, ...\"): only what the picker says they are counts, not where.";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
-        ParamSpec.Choice("is", "There are", new("some", "are"), new("none", "are no")),
-        ParamSpec.Int("count", "How many (or more)", 1, 1, 60),
-        ParamSpec.Cards("cards", "Which cards", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Graveyard, CardType = FilterCardType.Trap }),
+        ParamSpec.Choice("is", "There are", new("some", "are"), new("none", "are no"),
+            new("it_is", "", "the card the step before affected is (\"if it is ...\")"), new("any_was", "", "any of the cards the step before affected was")),
+        ParamSpec.Int("count", "How many (or more)", 1, 1, 60).ShowIf(b => b.Values.GetValueOrDefault("is", "some") is "some" or "none"),
+        ParamSpec.Cards("cards", "Which cards", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Graveyard, CardType = FilterCardType.Trap }).ThatCards(),
     ];
+
+    /// <summary>"a Fusion Monster", "a Dragon monster": what the cards must be, without where.</summary>
+    private static string What(BlockArgs args)
+    {
+        var noun = FilterText.Describe(args.Cards("cards"), args.Pack, plural: false, withLocation: false);
+        return $"{SummonWording.Article(noun)} {noun}";
+    }
+
+    /// <summary>"either of them" when the step before takes 2 cards ("1 each from both ..."), otherwise "any of them".</summary>
+    private static string AnyOf(BlockArgs args)
+    {
+        var dos = args.Effect?.Do;
+        var at = dos?.FindIndex(b => ReferenceEquals(b, args.Instance)) ?? -1;
+        if (at > 0 && BlockRegistry.Find(dos![at - 1].BlockId) is { } def)
+        {
+            var prev = new BlockArgs(def, dos[at - 1], args.Pack);
+            var each = def.Param("each_zone") is not null && prev.Bool("each_zone") && Selection.PlacesOf(prev.Cards("cards").Zones).Count == 2;
+            if (each || def.Param("count") is { Type: ParamType.Integer } && prev.CountMode == "exact" && prev.Int("count") == 2) return "either of them";
+        }
+        return "any of them";
+    }
 
     public override string Describe(BlockArgs args)
     {
         var f = args.Cards("cards");
         var n = args.Int("count");
+        switch (args.Choice("is"))
+        {
+            // Sword of Mutual Destruction: "then if it is a Fusion Monster, you can ...".
+            case "it_is": return $"if it is {What(args)}";
+            // Reindsurm Giriakarma: "also if either of them was a Dragon monster, ...".
+            case "any_was": return $"if {AnyOf(args)} was {What(args)}";
+        }
+        // "if the target is a Dragon monster": a check of "that card".
+        if (f.That != CardRef.None)
+            return $"if {FilterText.Describe(f, args.Pack, CardRefs.Plural(args, f.That))} {(args.Choice("is") == "none" ? "is not" : "is")} {What(args)}";
         if (args.Choice("is") == "none") return $"if there are no {FilterText.Describe(f, args.Pack, true, "in")}";
         return FilterText.IsFieldOnly(f) && f.Owner != CardOwner.Either
             ? $"if {(f.Owner == CardOwner.You ? "you control" : "your opponent controls")} {(n == 1 ? "a" : n + " or more")} {FilterText.Describe(f, args.Pack, n != 1, "", withLocation: false)}"
@@ -366,9 +399,31 @@ public sealed class OnlyIfAction : ActionBlock
 
     public override void Compile(BlockContext ctx)
     {
-        var f = ctx.Script.Filter(ctx.Args.Cards("cards"));
+        var filter = ctx.Args.Cards("cards");
+        var test = ctx.Args.Choice("is");
+        if (test is "it_is" or "any_was" || filter.That != CardRef.None)
+        {
+            // The cards themselves, wherever they are now.
+            var cards = filter.Clone();
+            cards.That = CardRef.None;
+            cards.Zones = Zone.None;
+            cards.Owner = CardOwner.Either;
+            var fn = ctx.Script.Filter(cards).Function;
+            if (CardRefs.GroupLua(ctx, test is "it_is" or "any_was" ? CardRef.Affected : filter.That) is not { } group) return;
+            var og = ctx.Effect.NewLocal("og");
+            // "If it is ...": every card of them is; "if any of them was ...": one is.
+            var holds = test switch
+            {
+                "it_is" => $"{og}:GetCount()>0 and not {og}:IsExists(function(tc) return not {fn}(tc,e,tp) end,1,nil)",
+                "none" => $"not {og}:IsExists({fn},1,nil,e,tp)",
+                _ => $"{og}:IsExists({fn},1,nil,e,tp)",
+            };
+            ctx.Effect.AddStep([$"local {og}={group}", $"if not ({holds}) then return end"], null, ctx.Link);
+            return;
+        }
+        var f = ctx.Script.Filter(filter);
         var exists = $"Duel.IsExistingMatchingCard({f.Function},tp,{f.Self},{f.Opp},{ctx.Args.Int("count")},{f.Exclude},e,tp)";
-        ctx.Effect.AddStep([ctx.Args.Choice("is") == "none" ? $"if {exists} then return end" : $"if not {exists} then return end"], null, ctx.Link);
+        ctx.Effect.AddStep([test == "none" ? $"if {exists} then return end" : $"if not {exists} then return end"], null, ctx.Link);
     }
 }
 

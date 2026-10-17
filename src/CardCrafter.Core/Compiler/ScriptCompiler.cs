@@ -148,12 +148,21 @@ public static class ScriptCompiler
         if (!Run(effect, src.When, BlockKind.Trigger, pack)) return;
         if (src.AlsoWhen.Count > 0) AddAlsoWhens(effect, src.AlsoWhen, pack);
 
-        foreach (var b in src.If) Run(effect, b, BlockKind.Condition, pack);
+        foreach (var b in src.If)
+        {
+            CardRefs.Check(effect, b);
+            Run(effect, b, BlockKind.Condition, pack);
+        }
 
         if (effect.IsPassive && src.Cost.Count > 0)
             effect.Error("\"While face-up\" effects are never activated, so they cannot have a COST.");
         else
-            foreach (var b in src.Cost) Run(effect, b, BlockKind.Cost, pack);
+            foreach (var b in src.Cost)
+            {
+                var from = effect.CostLines.Count;
+                // The cards it moves are kept when a DO block uses "the cards used for the cost" (CardRefs.cs).
+                if (Run(effect, b, BlockKind.Cost, pack)) CardRefs.KeepCost(effect, b, from);
+            }
 
         if (effect.IsSummonProcedure)
         {
@@ -212,7 +221,12 @@ public static class ScriptCompiler
                         effect.Error("A COST block among the DO blocks is an option's own cost: put a \"Choose 1 of these effects\" block first, and the COST block at the start of its option.");
                     else OptionCost(effect, b, branch, pack);
                 }
-                else { Run(effect, b, doKind, pack); acted = true; }
+                else
+                {
+                    CardRefs.Check(effect, b);
+                    Run(effect, b, doKind, pack);
+                    acted = true;
+                }
                 if (branch > 0)
                 {
                     // What this block checks and sets up at activation belongs to its option.

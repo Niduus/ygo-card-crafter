@@ -45,14 +45,14 @@ public sealed class CompareValuesCondition : ConditionBlock
 
     public override string Describe(BlockArgs args)
     {
-        var left = ValueSources.Of(args.Choice("value"), args.Cards(ValueSources.CardsKey), args.Pack, "this card", Counters.Name(args));
+        var left = ValueSources.Of(args.Choice("value"), args.Cards(ValueSources.CardsKey), args.Pack, "this card", Counters.Name(args), args.Effect);
         var (n, m) = (args.Int("amount"), args.Int("amount2"));
         string N(int x) => x.ToString(CultureInfo.InvariantCulture);
         var op = args.Choice("op");
         if (op is "between") return $"{left} is between {N(Math.Min(n, m))} and {N(Math.Max(n, m))}";
         if (op is "outside") return $"{left} is less than {N(Math.Min(n, m))} or more than {N(Math.Max(n, m))}";
         var right = args.Choice("right") == "value"
-            ? (args.Choice("scale") switch { "half" => "half ", "double" => "double ", _ => "" }) + ValueSources.Of(args.Choice("value2"), args.Cards("of2"), args.Pack, "this card", Counters.Name(args, "2"))
+            ? (args.Choice("scale") switch { "half" => "half ", "double" => "double ", _ => "" }) + ValueSources.Of(args.Choice("value2"), args.Cards("of2"), args.Pack, "this card", Counters.Name(args, "2"), args.Effect)
             : N(n);
         return op switch
         {

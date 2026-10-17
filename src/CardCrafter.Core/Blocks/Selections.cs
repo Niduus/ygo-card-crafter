@@ -59,7 +59,7 @@ public static class Selection
 
     public static ParamSpec ChooserParam => ParamSpec.Choice("chooser", "Who picks",
         new("you", "", "you pick them"), new("random", "", "picked at random"), new("opponent", "", "your opponent picks them"))
-        .ShowIf(b => !(b.Filters.TryGetValue("cards", out var f) && f.ThisCard));
+        .ShowIf(b => !(b.Filters.TryGetValue("cards", out var f) && f.IsSpecific()));
 
     /// <summary>The block may take more than 1 card, so the group blanks mean something.</summary>
     private static bool Several(BlockInstance b) =>
@@ -80,19 +80,19 @@ public static class Selection
     private static bool Several(BlockArgs a) => Uncounted(a) || a.CountMode != "all" && a.Int("count") > 1;
 
     /// <summary>The group rule that applies: "any" when the block takes 1 card or the cards are this card.</summary>
-    private static string Pick(BlockArgs a) => Offers(a.Definition) && Several(a) && !a.Cards("cards").ThisCard ? a.Choice("pick") : "any";
+    private static string Pick(BlockArgs a) => Offers(a.Definition) && Several(a) && !a.Cards("cards").IsSpecific() ? a.Choice("pick") : "any";
 
     private static bool Each(BlockArgs a) => Offers(a.Definition) && Several(a) && a.Bool("each_zone") && Parts(a.Cards("cards")).Count > 1;
 
-    private static string Chooser(BlockArgs a) => Offers(a.Definition) && !a.Cards("cards").ThisCard ? a.Choice("chooser") : "you";
+    private static string Chooser(BlockArgs a) => Offers(a.Definition) && !a.Cards("cards").IsSpecific() ? a.Choice("chooser") : "you";
 
     /// <summary>True when the block picks its cards in a way of its own here, compiled by <see cref="CardGroupAction"/>'s selection step.</summary>
-    public static bool Applies(BlockArgs a) => Offers(a.Definition) && !a.Cards("cards").ThisCard && (Uncounted(a) || Pick(a) != "any" || Each(a) || Chooser(a) != "you");
+    public static bool Applies(BlockArgs a) => Offers(a.Definition) && !a.Cards("cards").IsSpecific() && (Uncounted(a) || Pick(a) != "any" || Each(a) || Chooser(a) != "you");
 
     /// <summary>"any number of", "1 random": the count's words, or null for the usual ones.</summary>
     public static string? CountWords(BlockArgs a)
     {
-        if (!Offers(a.Definition) || a.Cards("cards").ThisCard) return null;
+        if (!Offers(a.Definition) || a.Cards("cards").IsSpecific()) return null;
         if (AnyNumber(a)) return "any number of";
         if (NumberOf(a)) return "";
         if (Chooser(a) == "random" && a.CountMode == "exact") return $"{a.Int("count").ToString(CultureInfo.InvariantCulture)} random";
@@ -172,7 +172,7 @@ public static class Selection
     public static string EachText(BlockArgs a)
     {
         // ", up to the number of "Ritual Beast" monsters you control".
-        var text = Offers(a.Definition) && NumberOf(a) && !a.Cards("cards").ThisCard
+        var text = Offers(a.Definition) && NumberOf(a) && !a.Cards("cards").IsSpecific()
             ? ", up to the number of " + FilterText.Describe(a.Cards("count_cards"), a.Pack, plural: true, ownName: a.CardName)
             : "";
         if (!Each(a)) return text;
@@ -317,8 +317,9 @@ public abstract partial class CardGroupAction
         var rule = Selection.Rule(ctx, min, max, who, counted);
         if (Category.Length > 0) e.AddCategory(Category);
         foreach (var c in ExtraCategories(filter)) e.AddCategory(c);
-        var space = SpaceCheck(any ? 1 : n, filter, ctx);
+        var space = Space(any ? 1 : n, filter, ctx);
         if (space is not null) e.TargetChecks.Add(space);
+        PlusChecks(ctx);
         var g = e.NewLocal("g");
         var r = e.NewLocal("r");
         var body = new List<string>();
@@ -354,7 +355,7 @@ public abstract partial class CardGroupAction
             body.Add($"local {g}=Duel.GetChainInfo(0,CHAININFO_TARGET_CARDS):Filter(Card.IsRelateToEffect,nil,e)");
             body.Add($"local {r}=0");
             body.Add(space is null ? $"if {g}:GetCount()>0 then" : $"if {g}:GetCount()>0 and {space} then");
-            body.Add($"\t{r}={Apply(g, ctx)}");
+            body.AddRange(ApplyLines(g, r, ctx).Select(l => "\t" + l));
             body.AddRange(After(g, f).Select(l => "\t" + l));
             body.Add("end");
             e.AddStep(body, r, ctx.Link);
@@ -381,7 +382,7 @@ public abstract partial class CardGroupAction
         // A group the cards don't fit is no pick at all.
         body.Add($"{ind}if {g} and {g}:GetCount()>0 then");
         if ((filter.Zones & Zone.Field) != Zone.None) body.Add($"{ind}\tDuel.HintSelection({g})");
-        body.Add($"{ind}\t{r}={Apply(g, ctx)}");
+        body.AddRange(ApplyLines(g, r, ctx).Select(l => $"{ind}\t{l}"));
         body.AddRange(After(g, f).Select(l => $"{ind}\t{l}"));
         body.Add($"{ind}end");
         if (guard.Count > 0) body.Add("end");
