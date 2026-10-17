@@ -190,6 +190,9 @@ public class AllBlocksTests
         // "The result" of a die roll and "the number of heads" need the roll or toss before them.
         if (inst.Values.GetValueOrDefault("value") is "roll" or "heads" && def.Kind == BlockKind.Action)
             project.Effects[0].Do.Insert(0, BlockRegistry.Find(inst.Values["value"] == "roll" ? RollDieAction.BlockId : TossCoinAction.BlockId)!.CreateInstance());
+        // "That monster's original ATK" reads the cards a step before affected.
+        if (ValueSources.Affected(inst.Values.GetValueOrDefault("value", "")) && def.Kind == BlockKind.Action)
+            project.Effects[0].Do.Insert(0, BlockRegistry.Find("do.destroy")!.CreateInstance());
         // "For each card used for the cost" needs a cost that counts; "for each of those cards" needs an action before.
         if (inst.Values.GetValueOrDefault("per") == "per_cost")
             project.Effects[0].Cost.Add(new BlockInstance("cost.move_cards").With("how", "banish"));

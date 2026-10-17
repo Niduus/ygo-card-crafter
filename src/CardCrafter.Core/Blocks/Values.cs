@@ -40,6 +40,13 @@ public static class ValueSources
         new("its_used", "the number of materials used for its Summon"),
         new("its_orig_atk", "its original ATK"),
         new("its_orig_def", "its original DEF"),
+        new("its_orig_higher", "its original ATK or DEF (whichever is higher)"),
+        // The monster(s) the DO step before affected: "destroy it, and if you do, ... half of that monster's original ATK".
+        new("that_atk", "that monster's ATK", "that monster's ATK (as it was on the field; the card the step before affected)"),
+        new("that_orig_atk", "that monster's original ATK", "that monster's original ATK (the card the step before affected)"),
+        new("that_orig_def", "that monster's original DEF", "that monster's original DEF (the card the step before affected)"),
+        new("that_orig_higher", "that monster's original ATK or DEF (whichever is higher)", "that monster's original ATK or DEF, whichever is higher (the card the step before affected)"),
+        new("that_level", "that monster's Level", "that monster's Level (the card the step before affected)"),
         new("damage_turn", "the damage you took this turn"),
         new("opp_damage_turn", "the damage your opponent took this turn"),
         new("gained_turn", "the LP you gained this turn"),
@@ -56,7 +63,10 @@ public static class ValueSources
     ];
 
     /// <summary>Values known only while the effect resolves: the amount that started it, a die roll's result, a toss's heads, the LP paid.</summary>
-    public static bool AtResolution(string source) => source is "event" or "roll" or "heads" or "lp_paid";
+    public static bool AtResolution(string source) => source is "event" or "roll" or "heads" or "lp_paid" || Affected(source);
+
+    /// <summary>Values about the card(s) the DO step before affected ("that monster's original ATK").</summary>
+    public static bool Affected(string source) => source.StartsWith("that_", StringComparison.Ordinal);
 
     /// <summary>Values read from what this card remembers, which name their Memory in the "mem" blank.</summary>
     public static bool Remembered(string source) => source.StartsWith("mem", StringComparison.Ordinal);
@@ -129,6 +139,7 @@ public static class ValueSources
         "its_used" => $"the number of materials used for {Poss(owner)} Summon",
         "its_orig_atk" => $"{Poss(owner)} original ATK",
         "its_orig_def" => $"{Poss(owner)} original DEF",
+        "its_orig_higher" => $"{Poss(owner)} original ATK or DEF (whichever is higher)",
         "event" => "that amount",
         var s => Sources.First(o => o.Value == s).Label,
     };
@@ -152,7 +163,8 @@ public static class ValueSources
         {
             "per" when forEach && ForEach(args) => $"{n}{unit} for each {EachText(args, owner)}",
             "per" => $"{unit} equal to {of} x {n}".Trim(),
-            "half" => $"{unit} equal to half {of}".Trim(),
+            // "half of that monster's original ATK", as cards word it; "half its original ATK" otherwise.
+            "half" => $"{unit} equal to half {(Affected(args.Choice("value")) ? "of " : "")}{of}".Trim(),
             "double" => $"{unit} equal to double {of}".Trim(),
             _ => $"{unit} equal to {of}".Trim(),
         };
@@ -199,6 +211,8 @@ public static class ValueSources
             "its_used" => $"{card}:GetMaterialCount()",
             "its_orig_atk" => $"math.max(0,{card}:GetBaseAttack())",
             "its_orig_def" => $"math.max(0,{card}:GetBaseDefense())",
+            "its_orig_higher" => $"math.max(0,{card}:GetBaseAttack(),{card}:GetBaseDefense())",
+            "that_atk" or "that_orig_atk" or "that_orig_def" or "that_orig_higher" or "that_level" when ev => AffectedLua(ctx, source),
             "damage_turn" => LifeWatch.Total(ctx, p, "damage"),
             "opp_damage_turn" => LifeWatch.Total(ctx, $"1-{p}", "damage"),
             "gained_turn" => LifeWatch.Total(ctx, p, "gained"),
@@ -208,6 +222,7 @@ public static class ValueSources
             "mem" or "mem_count" or "mem_atk" or "mem_orig_atk" or "mem_level" => RememberedLua(ctx, source, "mem" + counterSuffix),
             _ => "0",
         };
+        if (Affected(source) && !ev) ctx.Effect.Error("\"That monster\" means the card a DO step before affected; a lasting effect has none.");
         if (source == "lp_paid" && !ev) ctx.Effect.Error("\"The LP paid\" only exists while the effect that paid them resolves; this block can't use it.");
         if (source is "roll" or "heads" && !ev) ctx.Effect.Error("A die roll's result or a coin toss's heads only exist while the effect resolves; this block can't use them.");
         if (source == "event" && !ev) ctx.Effect.Error("\"That amount\" only exists while an effect resolves after damage or an LP change; a lasting effect can't use it.");
@@ -221,6 +236,29 @@ public static class ValueSources
             "per" => $"({raw})*{ctx.Args.Int(amountKey).ToString(CultureInfo.InvariantCulture)}",
             _ => raw,
         };
+    }
+
+    /// <summary>
+    /// A stat of the card(s) the DO step before affected (their total, never below 0): the destroyed monster's original ATK,
+    /// read from where it is now, as official scripts read it.
+    /// </summary>
+    private static string AffectedLua(BlockContext ctx, string source)
+    {
+        if (ctx.Effect.LastResult is null)
+        {
+            ctx.Effect.Error("\"That monster's ...\" needs a DO block before it that affects cards (destroys, banishes, sends...), linked with \"and if you do\".");
+            return "0";
+        }
+        var stat = source switch
+        {
+            "that_atk" => "tc:GetPreviousAttackOnField()",
+            "that_orig_atk" => "tc:GetBaseAttack()",
+            "that_orig_def" => "tc:GetBaseDefense()",
+            "that_orig_higher" => "math.max(tc:GetBaseAttack(),tc:GetBaseDefense())",
+            _ => "tc:GetLevel()",
+        };
+        var fn = ctx.Script.AddFunction("thatstat", "g", ["local n=0", "for tc in aux.Next(g) do", $"\tn=n+math.max(0,{stat})", "end", "return n"]);
+        return $"{fn}(Duel.GetOperatedGroup())";
     }
 
     /// <summary>"The LP paid": the amount a "pay LP in multiples" cost kept in the effect's label.</summary>

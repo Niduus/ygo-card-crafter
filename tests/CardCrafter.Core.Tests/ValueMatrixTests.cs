@@ -112,6 +112,8 @@ public class ValueMatrixTests
         new("its_linked", 2, 1000, LinkData(LinkMarker.Left | LinkMarker.Right), [], null, s => s.Card(Warrior, 0, "mzone").Card(Id, 0, "mzone").Card(Warrior, 0, "mzone"), Nothing),
         new("its_orig_atk", 1000, 1000, null, [], null, Alone, Nothing),
         new("its_orig_def", 1200, 1000, null, [], null, Alone, Nothing),
+        // Original ATK 1000, DEF 1200: the higher is the DEF.
+        new("its_orig_higher", 1200, 1000, null, [], null, Alone, Nothing),
         new("damage_turn", 800, 1000, null, [PreCard(B("do.damage", ("who", "you"), ("amount", "800")))], null, PreFirst, PlayPre, ThisTurn: true),
         new("opp_damage_turn", 600, 1000, null, [PreCard(B("do.damage", ("amount", "600")))], null, PreFirst, PlayPre, ThisTurn: true),
         new("gained_turn", 900, 1000, null, [PreCard(B("do.gain_lp", ("amount", "900")))], null, PreFirst, PlayPre, ThisTurn: true),
@@ -542,6 +544,8 @@ public class ValueMatrixTests
     {
         "roll" => [B(RollDieAction.BlockId)],
         "heads" => [B(TossCoinAction.BlockId, ("count", "3"))],
+        // "That monster's ..." reads the cards the step before affected.
+        _ when ValueSources.Affected(source) => [B("do.destroy")],
         _ => [],
     };
 
