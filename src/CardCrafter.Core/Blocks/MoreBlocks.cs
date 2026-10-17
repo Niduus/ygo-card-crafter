@@ -238,7 +238,7 @@ public sealed class NegateCardEffectsAction : CardGroupAction
     public override string Id => "do.negate_effects";
     public override string Group => "Negate";
     public override string Name => "Negate the effects of face-up cards";
-    public override string Sentence => "Negate the effects of {amount} {count_cards} {count} {cards} {pick} {sum} {target} {duration} {chooser}";
+    public override string Sentence => "Negate the effects of {amount} {count_cards} {count} {cards} {pick} {pick2} {pick3} {sum} {inc_cards} {target} {duration} {chooser}";
     public override string Help => "Like Effect Veiler or Infinite Impermanence: the chosen face-up cards lose their effects.";
     protected override string Category => "CATEGORY_DISABLE";
     protected override string Hint => "HINTMSG_FACEUP";
