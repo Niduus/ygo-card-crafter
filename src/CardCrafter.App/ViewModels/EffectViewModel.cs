@@ -163,6 +163,13 @@ public sealed partial class EffectViewModel : ObservableObject
     public IEnumerable<BlockDefinition> AvailableOptionCosts =>
         IsPassive || ChooseEffectsAction.Header(Model.Do) is null ? [] : BlockRegistry.Offered(BlockKind.Cost);
 
+    /// <summary>
+    /// WHEN blocks offered among the DO blocks once a "Choose 1 of these effects" block leads them: an option's own timing
+    /// ("● When your opponent activates a monster effect: Negate that effect").
+    /// </summary>
+    public IEnumerable<BlockDefinition> AvailableOptionTimings =>
+        IsPassive || ChooseEffectsAction.Header(Model.Do) is null ? [] : AlsoWhenChoices;
+
     public void AddGate(BlockDefinition def)
     {
         Model.Do.Add(def.CreateInstance());

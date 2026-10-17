@@ -77,7 +77,8 @@ public sealed partial class BlockViewModel : ObservableObject
         _ => "DO",
     };
     public string Help => Definition.Help.Length > 0 ? Definition.Help : Definition.Name;
-    public bool IsTrigger => Definition.Kind == BlockKind.Trigger;
+    /// <summary>The effect's WHEN (or an "or when"); a WHEN among the DO blocks is an option's own timing, moved like them.</summary>
+    public bool IsTrigger => Definition.Kind == BlockKind.Trigger && !Owner.Model.Do.Contains(Instance);
     /// <summary>An "or when" trigger after the first one.</summary>
     [ObservableProperty] private bool _isAlsoWhen;
 

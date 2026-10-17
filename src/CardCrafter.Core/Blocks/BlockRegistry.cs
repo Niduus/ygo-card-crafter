@@ -215,6 +215,10 @@ public static class BlockRegistry
         // The top of the Deck, draw rules, the hand and LP (DeckTop.cs, Draws.cs, ControllerDamage.cs)
         new BanishTopAction(), new BanishTopCost(), new DrawCountPassive(), new EndPhaseHandAction(), new ArchetypeActivationsCondition(),
         new ControllerDamageAction(),
+        // Doing one thing or another to the picked cards, and where this card was sent from (Choices.cs)
+        new EitherAction(), new SentFromCondition(),
+        // Equipping a card to a monster, and giving the equipped monster one of this card's effects (Equips.cs)
+        new EquipAction(), new GrantEffectPassive(),
     ];
 
     private static readonly Dictionary<string, BlockDefinition> ById = All.ToDictionary(b => b.Id);

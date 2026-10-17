@@ -412,7 +412,7 @@ public abstract partial class CardGroupAction : ActionBlock
         if (CardRefs.ActivationCheck(filter.That, f.Function) is { } known) e.TargetChecks.Add(known);
         PlusChecks(ctx);
         if (Category.Length > 0)
-            e.TargetLines.Add(filter.That is CardRef.BattleTarget or CardRef.Battling
+            e.TargetLines.Add(filter.That is CardRef.BattleTarget or CardRef.Battling or CardRef.Equipped
                 ? $"Duel.SetOperationInfo(0,{Category},{CardRefs.Card(filter.That)},1,0,0)"
                 : $"Duel.SetOperationInfo(0,{Category},nil,1,0,0)");
         var g = e.NewLocal("g");
@@ -785,7 +785,8 @@ public sealed class DrawAction : ActionBlock
     public override string Sentence => "{who} draw(s) {count} card(s)";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
-        ParamSpec.Choice("who", "Who", new("you", "You"), new("opponent", "Your opponent")),
+        // Mimighoul Fork: "Send it to the GY, then its owner draws 2 cards": the owner of the card the step before affected.
+        ParamSpec.Choice("who", "Who", new("you", "You"), new("opponent", "Your opponent"), new("owner", "Its owner", "Its owner (of the card the step before affected)")),
         ParamSpec.Int("count", "How many", 1, 1, 10),
         PerParam,
     ];
@@ -794,17 +795,30 @@ public sealed class DrawAction : ActionBlock
     {
         var n = args.Int("count");
         var cards = n == 1 ? "1 card" : $"{n} cards";
-        var text = args.Choice("who") == "you" ? $"draw {cards}" : $"your opponent draws {cards}";
+        var text = args.Choice("who") switch { "you" => $"draw {cards}", "owner" => $"its owner draws {cards}", _ => $"your opponent draws {cards}" };
         return args.Describe("per") is { Length: > 0 } per ? $"{text} {per}" : text;
     }
 
     public override void Compile(BlockContext ctx)
     {
-        var p = PlayerOf(ctx.Args.Choice("who"));
         var n = ctx.Args.Int("count");
         var per = Multiplier(ctx);
         var r = ctx.Effect.NewLocal("r");
         ctx.Effect.AddCategory("CATEGORY_DRAW");
+        if (ctx.Args.Choice("who") == "owner")
+        {
+            // Known once the step before has moved the card, as official scripts read it (GetOwner).
+            if (ctx.Effect.LastResult is null) { ctx.Effect.Error("\"Its owner draws\" needs a DO block before it that moves a card, like \"Send it to the GY\"."); return; }
+            var oc = ctx.Effect.NewLocal("oc");
+            ctx.Effect.AddStep(
+            [
+                $"local {r}=0",
+                $"local {oc}=Duel.GetOperatedGroup():GetFirst()",
+                $"if {oc} then {r}=Duel.Draw({oc}:GetOwner(),{n}{per},REASON_EFFECT) end",
+            ], r, ctx.Link);
+            return;
+        }
+        var p = PlayerOf(ctx.Args.Choice("who"));
         ctx.Effect.TargetChecks.Add($"Duel.IsPlayerCanDraw({p},{n})");
         ctx.Effect.TargetLines.Add($"Duel.SetOperationInfo(0,CATEGORY_DRAW,nil,0,{p},{n})");
         ctx.Effect.AddStep([$"local {r}=Duel.Draw({p},{n}{per},REASON_EFFECT)"], r, ctx.Link);
@@ -957,6 +971,9 @@ public sealed class SpecialSummonSelfAction : ActionBlock
         // A Pendulum Effect's "Special Summon this card from your Pendulum Zone".
         else if (zone == "pendulum_zone") what += " from your Pendulum Zone";
         if (args.Describe("side") is { Length: > 0 } side) what += " " + side;
+        // Mimighoul: "..., or, if ..., you can Special Summon it face-up on your field instead", beside its Summon to the opponent's field.
+        else if (args.Effect?.Do.Any(b => !ReferenceEquals(b, args.Instance) && b.BlockId == Id && b.Values.GetValueOrDefault("side") == "opponent") == true)
+            what += args.Choice("position") == "faceup" ? " face-up on your field" : " to your field";
         what = $"{what} {args.Describe("position")}".TrimEnd();
         if (args.Bool("ignore")) what += ", ignoring its Summoning conditions";
         if (args.Bool("halved")) what += ", but its original ATK/DEF become halved";

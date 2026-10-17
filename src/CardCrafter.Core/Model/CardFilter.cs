@@ -47,6 +47,10 @@ public enum CardRef
     BattleTarget,
     /// <summary>Your monster that is battling (Duel.GetBattleMonster).</summary>
     Battling,
+    /// <summary>The monster this card is equipped to (GetEquipTarget): "the equipped monster".</summary>
+    Equipped,
+    /// <summary>The cards whose event started this effect (eg): "1 of those Link Monsters".</summary>
+    Event,
 }
 
 public enum MonsterKind

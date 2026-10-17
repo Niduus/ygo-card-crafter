@@ -69,7 +69,7 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
 {
     private int _localCounter;
     private readonly List<OperationStep> _steps = [];
-    private readonly List<(Func<string, IEnumerable<string>> Write, bool Limited)> _passives = [];
+    private readonly List<(Func<string, IEnumerable<string>> Write, bool Limited, string? Condition)> _passives = [];
 
     public ScriptBuilder Script { get; } = script;
     public EffectEvent Source { get; } = source;
@@ -135,6 +135,10 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
     public Func<int, string>? OptionFlag { get; set; }
     /// <summary>"Activate 1 or both of these effects": a third choice does both options.</summary>
     public bool OptionBoth { get; set; }
+    /// <summary>"Apply these effects in sequence": every option that can be applied is, in order, as the effect resolves.</summary>
+    public bool OptionsInSequence { get; set; }
+    /// <summary>"Activate this effect based on where it was sent from": the one option that can be used is taken, without asking.</summary>
+    public bool OptionsAutomatic { get; set; }
 
     public void AddCategory(string c) { if (!Categories.Contains(c)) Categories.Add(c); }
     public void AddProperty(string p) { if (!Properties.Contains(p)) Properties.Add(p); }
@@ -188,8 +192,11 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
     public void AddGate(string condition, ActionLink link, bool isCase = false) =>
         _steps.Add(new OperationStep { Lines = [], Link = link, Branch = CurrentBranch, Gate = condition, Case = isCase });
 
-    /// <summary>Adds a lasting effect. The callback writes the effect given its variable name.</summary>
-    public void AddPassive(Func<string, IEnumerable<string>> write, bool limited = false) => _passives.Add((write, limited));
+    /// <summary>
+    /// Adds a lasting effect. The callback writes the effect given its variable name. <paramref name="condition"/> is what this
+    /// lasting effect alone needs besides the IF blocks ("a "Therion" monster equipped with this card"), checked with them.
+    /// </summary>
+    public void AddPassive(Func<string, IEnumerable<string>> write, bool limited = false, string? condition = null) => _passives.Add((write, limited, condition));
 
     /// <summary>True when a lasting effect takes the effect's "once per turn", like "Tribute this card instead".</summary>
     public bool HasLimitedPassive => _passives.Any(p => p.Limited);
@@ -315,12 +322,12 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
         }
         if (Branches.Count > 0 && OptionsOnResolution)
         {
-            var fn = Script.AddFunction(p + "tg", "e,tp,eg,ep,ev,re,r,rp,chk", BuildResolvingTarget());
+            var fn = Script.AddFunction(p + "tg", "e,tp,eg,ep,ev,re,r,rp,chk" + (Chkc is not null ? ",chkc" : ""), BuildResolvingTarget());
             lines.Add($"{Var}:SetTarget({fn})");
         }
         else if (Branches.Count > 0)
         {
-            var fn = Script.AddFunction(p + "tg", "e,tp,eg,ep,ev,re,r,rp,chk" + (Branches.Values.Any(b => b.Chkc is not null) ? ",chkc" : ""), BuildBranchedTarget());
+            var fn = Script.AddFunction(p + "tg", "e,tp,eg,ep,ev,re,r,rp,chk" + (Chkc is not null || Branches.Values.Any(b => b.Chkc is not null) ? ",chkc" : ""), BuildBranchedTarget());
             lines.Add($"{Var}:SetTarget({fn})");
         }
         else if (TargetChecks.Count > 0 || TargetLines.Count > 0 || Chkc is not null)
@@ -381,7 +388,9 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
     private List<string> BuildBranchedTarget()
     {
         var body = new List<string>();
-        if (Branches.Values.Any(b => b.Chkc is not null))
+        // The target the options share ("Target cards" before them).
+        if (Chkc is not null) body.Add($"if chkc then return {Chkc} end");
+        else if (Branches.Values.Any(b => b.Chkc is not null))
         {
             body.Add("if chkc then");
             body.Add("\tlocal _,op=e:GetLabel()");
@@ -397,7 +406,10 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
         body.Add($"if chk==0 then return {(IsMandatory ? "true" : AllOrTrue(checks))} end");
         body.AddRange(TargetLines);
         var options = string.Join(",", Branches.Select(x => $"{{b{x.Key},aux.Stringid(id,{x.Value.StringIndex}),{x.Key}}}"));
-        body.Add($"local op=aux.SelectFromOptions({OptionChooser},{options})");
+        // "Based on where it was sent from": the option that can be used, without asking.
+        body.Add(OptionsAutomatic
+            ? "local op=" + string.Join(" or ", Branches.Keys.Select(n => $"b{n} and {n}")) + " or nil"
+            : $"local op=aux.SelectFromOptions({OptionChooser},{options})");
         body.Add("e:SetLabel(e:GetLabel(),op)");
         var shared = Categories.Where(c => !Branches.Values.Any(b => b.Categories.Contains(c))).ToList();
         var untargeted = Properties.Where(x => x != "EFFECT_FLAG_CARD_TARGET").ToList();
@@ -432,7 +444,10 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
     private List<string> BuildResolvingTarget()
     {
         var checks = new List<string>(TargetChecks) { "(" + string.Join(" or ", Branches.Keys.Select(OptionCheck)) + ")" };
-        var body = new List<string> { $"if chk==0 then return {(IsMandatory ? "true" : AllOrTrue(checks))} end" };
+        var body = new List<string>();
+        // The target the options share ("Target 1 face-down monster your opponent controls; your opponent chooses ...").
+        if (Chkc is not null) body.Add($"if chkc then return {Chkc} end");
+        body.Add($"if chk==0 then return {(IsMandatory ? "true" : AllOrTrue(checks))} end");
         body.AddRange(TargetLines);
         foreach (var b in Branches.Values.Where(b => b.Combines is null)) body.AddRange(b.Lines);
         return body;
@@ -458,7 +473,7 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
             con = Script.AddFunction($"e{Index}con", "e", body);
         }
         char suffix = 'a';
-        foreach (var (write, limited) in _passives)
+        foreach (var (write, limited, own) in _passives)
         {
             var v = _passives.Count == 1 ? Var : $"{Var}{suffix++}";
             var body = write(v).ToList();
@@ -470,7 +485,9 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
             lines.Add($"local {v}=Effect.CreateEffect(c)");
             lines.AddRange(body);
             if (limited && countLimit is not null) lines.Add($"{v}:SetCountLimit({countLimit})");
-            if (con is not null) lines.Add($"{v}:SetCondition({con})");
+            if (own is not null)
+                lines.Add($"{v}:SetCondition({Script.AddFunction($"e{Index}con", "e", ["local tp=e:GetHandlerPlayer()", .. ReturnAll([.. conditions, own])])})");
+            else if (con is not null) lines.Add($"{v}:SetCondition({con})");
             lines.Add($"c:RegisterEffect({v})");
         }
         return lines;
@@ -485,6 +502,21 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
         if (branches.Count == 0 || branches.Count == 1 && branches[0] == 0)
         {
             body.AddRange(Chain(_steps, ""));
+            body.AddRange(_finally);
+            return body;
+        }
+        if (OptionsInSequence)
+        {
+            // "Apply these effects in sequence": each one that can be applied now, one after the other.
+            body.Add("local applied=false");
+            foreach (var b in branches.Where(b => b > 0))
+            {
+                body.Add($"if {OptionCheck(b)} then");
+                body.Add("	if applied then Duel.BreakEffect() end");
+                body.AddRange(Chain(_steps.Where(s => s.Branch == b).ToList(), "	"));
+                body.Add("	applied=true");
+                body.Add("end");
+            }
             body.AddRange(_finally);
             return body;
         }

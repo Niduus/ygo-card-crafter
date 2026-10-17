@@ -404,6 +404,9 @@ public class RequirementMatrixChoiceTests
         // Monster, Spell or Trap.
         Row("spell_any", true, Is("card_type", 0x2)), Row("spell_any", false, Is("card_type", 0x1, 0x4)), Row("spell_any", true, Is("card_type", 0x2, 0x4)),
         Row("spell_any", false, IsNot("card_type", 0x2)), Row("spell_any", false, IsNot("card_type", 0x1, 0x2)), Row("spell_any", true, IsNot("card_type", 0x1, 0x4)),
+        // What kind of Spell or Trap: the filler Spell and Trap are Normal ones.
+        Row("spell_any", true, Is("st_kind", 0)), Row("spell_any", false, Is("st_kind", 3, 4)), Row("spell_any", false, IsNot("st_kind", 0)),
+        Row("spell_any", true, IsNot("st_kind", 3)), Row("trap_any", true, Is("st_kind", 6)), Row("trap_any", false, Is("st_kind", 0, 7)),
         Row("trap_any", true, Is("card_type", 0x4)), Row("stat_any", true, Is("card_type", 0x1)), Row("stat_any", false, Is("card_type", 0x2, 0x4)),
         // Position (cards on the field start face-up in Attack Position; Spells and Traps face-down).
         Row("stat", true, Is("position", 0x3)), Row("stat", false, Is("position", 0xc)), Row("stat", false, Is("position", 0xc, 0xa)), Row("stat", true, Is("position", 0xc, 0x5)),
@@ -576,6 +579,9 @@ public class RequirementMatrixTextTests
         [Is("monster_type", 0x400), "that is a Union monster"],
         [Is("monster_type", 0x40, 0x2000), "that is a Fusion Monster or Synchro Monster"],
         [Is("card_type", 0x2, 0x4), "that is a Spell or Trap"],
+        [Is("st_kind", 3, 4), "that is an Equip Spell or Field Spell"],
+        // "Is not" is said with the card's ", except Equip Spells" (FilterText.ExceptText), not with the other requirements.
+        [IsNot("st_kind", 3), "that is not an Equip Spell"],
         [IsNot("card_type", 0x1), "that is not a monster"],
         [Is("position", 0x3), "that is in Attack Position"],
         [Is("position", 0x5), "that is face-up"],
@@ -651,6 +657,13 @@ public class RequirementMatrixTextTests
         // So does a Monster Card's Level: see CardLevel_ReadsBeforeTheNoun.
         if (r.Property == "card_level") return;
         var filter = RequirementMatrix.Monsters();
+        // A Spell/Trap kind the cards are not: ", except Equip Spells", at the end.
+        if (r is { Property: CardProperties.SpellTrapKind, Op: RequirementOp.IsNot })
+        {
+            filter.Requirements = [r];
+            Assert.Equal("monster, except Equip Spells", FilterText.Describe(filter, Pack(), withLocation: false));
+            return;
+        }
         filter.Requirements = [r];
         Assert.Equal("monster " + phrase, FilterText.Describe(filter, Pack(), withLocation: false));
     }

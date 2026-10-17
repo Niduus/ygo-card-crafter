@@ -190,6 +190,8 @@ public static class ScriptCompiler
         }
         if (!Run(effect, src.When, BlockKind.Trigger, pack)) return;
         if (src.AlsoWhen.Count > 0) AddAlsoWhens(effect, src.AlsoWhen, pack);
+        // What the WHEN itself checks, which the clones for an option's own WHEN don't share.
+        else effect.TriggerConditionCount = effect.Conditions.Count;
 
         foreach (var b in src.If)
         {
@@ -231,16 +233,33 @@ public static class ScriptCompiler
             // ("● Heads: ...") is that result's steps instead, not an option the player picks.
             // A "Choose 1 of these effects" block first says how the option is chosen (Selections.cs); the options follow it.
             var header = ChooseEffectsAction.Header(src.Do);
+            // "Target 1 monster; your opponent chooses 1 of these effects": the targets every option shares, before the header.
+            foreach (var b in ChooseEffectsAction.Shared(src.Do))
+            {
+                CardRefs.Check(effect, b);
+                Run(effect, b, doKind, pack);
+            }
             if (header is not null) Run(effect, header, doKind, pack);
             var dos = ChooseEffectsAction.Options(src.Do);
             Chance.CheckOptions(effect, dos);
             var cases = new Chance.CaseChecks(effect);
             var branch = header is not null || dos.Skip(1).Any(b => b.Link == ActionLink.Option && !Chance.IsGate(b)) ? 1 : 0;
             var acted = false;
+            // An option's own WHEN: the effect's event while its blocks compile, and what they need of it, checked for that option.
+            var (mainCode, timed, timedFrom) = (effect.Code, false, 0);
+            void EndTimed()
+            {
+                if (!timed) return;
+                var needs = effect.Conditions.Skip(timedFrom).ToList();
+                effect.Conditions.RemoveRange(timedFrom, needs.Count);
+                effect.BranchOf(branch).Checks.AddRange(needs);
+                effect.Code = mainCode;
+                timed = false;
+            }
             for (int i = 0; i < dos.Count; i++)
             {
                 var b = dos[i];
-                if (i > 0 && b.Link == ActionLink.Option && !Chance.IsGate(b)) { branch++; acted = false; }
+                if (i > 0 && b.Link == ActionLink.Option && !Chance.IsGate(b)) { EndTimed(); branch++; acted = false; }
                 cases.Before(b);
                 effect.CurrentBranch = branch;
                 effect.CurrentOptional = b.Optional;
@@ -257,6 +276,18 @@ public static class ScriptCompiler
                         // "● If you control no monsters: ...": what the option needs to be chosen.
                         if (ChooseEffectsAction.IsOptionCondition(src.Do, b)) effect.BranchOf(branch).Checks.AddRange(gate);
                         else effect.AddGate(gate.Count == 0 ? "true" : string.Join(" and ", gate), b.Link, Chance.IsGate(b));
+                    }
+                }
+                // "● When your opponent activates a monster effect: Negate that effect": a WHEN that starts an option is its own timing.
+                else if (BlockRegistry.Find(b.BlockId) is { Kind: BlockKind.Trigger })
+                {
+                    if (branch == 0 || !ChooseEffectsAction.IsOptionTrigger(src.Do, b))
+                        effect.Error("A WHEN block among the DO blocks is an option's own timing: put it at the start of a \"●\" option.");
+                    else
+                    {
+                        var timing = new EffectBuilder(effect.Script, effect.Source, effect.Index);
+                        if (Run(timing, b, BlockKind.Trigger, pack) && ChooseEffectsAction.OptionTrigger(effect, timing, branch))
+                            (effect.Code, timed, timedFrom) = (timing.Code, true, effect.Conditions.Count);
                     }
                 }
                 // "● Discard 1 card; draw 1 card": a COST block that starts an option is that option's own cost.
@@ -286,6 +317,7 @@ public static class ScriptCompiler
                     foreach (var c in effect.Categories.Skip(cats)) if (!target.Categories.Contains(c)) target.Categories.Add(c);
                 }
             }
+            EndTimed();
             cases.End();
             if (header is not null) ChooseEffectsAction.CheckOptions(effect);
             effect.CurrentBranch = 0;

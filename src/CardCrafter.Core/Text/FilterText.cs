@@ -14,8 +14,15 @@ public static class FilterText
         if (f.ExceptOwnName) except.Add(ownName is { Length: > 0 } n ? $"\"{n}\"" : "cards with this card's name");
         if (f.ExceptCode != 0)
             except.Add(CardNames.Find(f.ExceptCode, pack) is { } en ? $"\"{en}\"" : $"passcode {f.ExceptCode}");
+        // ", except Equip Spells": the Spell/Trap kinds a requirement leaves out.
+        foreach (var r in f.Requirements.Where(r => SaidAsExcept(f, r)))
+            except.Add(string.Join(" or ", Compiler.CardProperties.Find(r.Property)!.Choices!.Where(c => r.Values.Contains(c.Value)).Select(c => c.Label + "s")));
         return except.Count == 0 || f.IsSpecific() ? "" : ", except " + string.Join(" or ", except);
     }
+
+    /// <summary>A requirement the card text says with "except": a Spell/Trap kind the cards are not (", except Equip Spells").</summary>
+    private static bool SaidAsExcept(CardFilter f, CardRequirement r) =>
+        !f.AnyRequirement && r.Property == Compiler.CardProperties.SpellTrapKind && r.Op == RequirementOp.IsNot && r.Values.Count > 0;
 
     /// <param name="withExcept">False when the caller puts ", except ..." at the end of its own sentence, as cards print it.</param>
     private static string Lv(CardFilter f) => f.MonsterKind == MonsterKind.Xyz ? "Rank" : "Level";
@@ -32,6 +39,8 @@ public static class FilterText
             CardRef.Affected => plural ? "those cards" : "that card",
             CardRef.Cost => plural ? "the cards used for the cost" : "the card used for the cost",
             CardRef.BattleTarget => "the monster this card is battling",
+            CardRef.Equipped => "the equipped monster",
+            CardRef.Event => Blocks.CardRefs.EventNoun(f, plural),
             _ => "your battling monster",
         };
         // Snake-Eyes Doomed Dragon: "2 face-up Monster Cards from your Spell & Trap Zone": monsters placed there as Spells.
@@ -141,7 +150,8 @@ public static class FilterText
         // declared Type", but "1 card with the declared name from your Deck". So does "that was remembered".
         var declared = f.AnyRequirement || !withLocation || Location(f, preposition, plural).StartsWith("from ", StringComparison.Ordinal) ? []
             : f.Requirements.Where(r => Compiler.CardProperties.IsDeclared(r.Property) || r.Property == "remembered").ToList();
-        var extra = f.Requirements.Except(prefixed).Except(described).Except(declared).Except(cardLevels).Select(r => Compiler.CardProperties.Text(r, pack)).Where(t => t.Length > 0)
+        var extra = f.Requirements.Except(prefixed).Except(described).Except(declared).Except(cardLevels).Where(r => !SaidAsExcept(f, r))
+            .Select(r => Compiler.CardProperties.Text(r, pack)).Where(t => t.Length > 0)
             .Select(t => plural ? Plural(t) : t).ToList();
         static bool IsWith(string t) => t.StartsWith("with ", StringComparison.Ordinal) || t.StartsWith("equipped with ", StringComparison.Ordinal);
         static string Join(List<string> parts, string word) => parts.Count switch

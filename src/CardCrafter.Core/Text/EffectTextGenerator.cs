@@ -203,13 +203,20 @@ public static partial class EffectTextGenerator
         {
             // "You can discard this card, then activate 1 of these effects; ● Draw 2 cards. ● Destroy 1 card."
             var costs = string.Join(" and ", effect.Cost.Select(b => Text(b, pack, effect)).Where(t => t.Length > 0));
-            var body = costs.Length == 0 ? "activate 1 of these effects" : $"{costs}, then activate 1 of these effects";
-            body = optional ? "You can " + body : SentenceCase.Upper(body);
-            // "Apply 1 of these effects.", "your opponent chooses 1 of these effects for you to apply." (Selections.cs).
-            body = ChooseEffectsAction.Lead(effect, costs, optional, card.Name) ?? body + ";";
-            text = head.Length == 0 ? body : $"{SentenceCase.Upper(head)}: {body}";
-            // Each option on its own line, as printed cards list them.
-            text += string.Concat(options.Select(o => OptionLine + OptionText(o, pack, effect))).TrimEnd('.');
+            // "Target 1 face-down monster your opponent controls; your opponent chooses ...": the targets the options share.
+            var shared = ChooseEffectsAction.Shared(effect.Do).Select(b => Text(b, pack, effect)).Where(t => t.Length > 0).ToList();
+            var target = shared.Count == 0 ? null : string.Join(" and ", shared);
+            if (ChooseEffectsAction.Style(effect.Do) == "instead") text = InsteadText(effect, pack, head, optional, costs, target, options);
+            else
+            {
+                var body = costs.Length == 0 ? "activate 1 of these effects" : $"{costs}, then activate 1 of these effects";
+                body = optional ? "You can " + body : SentenceCase.Upper(body);
+                // "Apply 1 of these effects.", "your opponent chooses 1 of these effects for you to apply." (Selections.cs).
+                body = ChooseEffectsAction.Lead(effect, costs, target, optional, card.Name) ?? body + ";";
+                text = head.Length == 0 ? body : $"{SentenceCase.Upper(head)}: {body}";
+                // Each option on its own line, as printed cards list them.
+                text += string.Concat(options.Select(o => OptionLine + OptionText(o, pack, effect))).TrimEnd('.');
+            }
         }
         // "Activate this card by sending 1 ... to the GY.": a Continuous Spell/Trap whose activation only has a cost.
         else if (activation && effect.Do.Count == 0 && effect.Cost.Count > 0)
@@ -271,9 +278,30 @@ public static partial class EffectTextGenerator
     /// <summary>One option's text: "Target 1 monster your opponent controls; destroy it."</summary>
     private static string OptionText(List<BlockInstance> blocks, CardPack? pack, EffectEvent effect)
     {
+        // "● When an opponent's monster declares an attack while they control more monsters than you do: Negate the attack.":
+        // the option's own timing, and what it needs.
+        if (blocks.Count > 1 && ChooseEffectsAction.IsOptionTrigger(effect.Do, blocks[0]))
+        {
+            var when = Text(blocks[0], pack, effect);
+            var needs = blocks.Skip(1).TakeWhile(b => ChooseEffectsAction.IsOptionCondition(effect.Do, b)).ToList();
+            var also = string.Join(" and ", needs.Select(b => Text(b, pack, effect)).Where(t => t.Length > 0));
+            if (when.Contains("opponent", StringComparison.Ordinal))
+                also = also.Replace("your opponent controls", "they control", StringComparison.Ordinal).Replace("your opponent has", "they have", StringComparison.Ordinal);
+            if (also.Length > 0) when += also.StartsWith("if ", StringComparison.Ordinal) ? ", " + also : " while " + also;
+            return $"{SentenceCase.Upper(when)}: {OptionText(blocks.Skip(1 + needs.Count).ToList(), pack, effect)}";
+        }
+        // "● Field: Target 1 card on the field; ...": the option for where this card was sent from.
+        if (blocks.Count > 1 && blocks[0].BlockId == SentFromCondition.BlockId && ChooseEffectsAction.Style(effect.Do) == "sent_from")
+            return $"{SentFromCondition.Label(blocks[0])}: {OptionText(blocks.Skip(1).ToList(), pack, effect)}";
         // "● If you control no monsters: Special Summon ...": an option's own condition under a "Choose 1 of these effects" block.
         if (blocks.Count > 1 && ChooseEffectsAction.IsOptionCondition(effect.Do, blocks[0]))
-            return $"If {Text(blocks[0], pack, effect)}: {OptionText(blocks.Skip(1).ToList(), pack, effect)}";
+        {
+            var rest = OptionText(blocks.Skip(1).ToList(), pack, effect);
+            // "● If "The Winged Dragon of Ra" is on the field, take control of ...": in sequence, a part applied only if it holds.
+            return ChooseEffectsAction.Style(effect.Do) == "sequence"
+                ? $"If {Text(blocks[0], pack, effect)}, {SentenceCase.Lower(rest)}"
+                : $"If {Text(blocks[0], pack, effect)}: {rest}";
+        }
         // "● Discard 1 card, then target 1 monster your opponent controls; destroy it.": the option's own cost first.
         var paid = blocks.TakeWhile(b => BlockRegistry.Find(b.BlockId) is { Kind: BlockKind.Cost }).ToList();
         var (target, actions) = Actions(blocks.Skip(paid.Count).ToList(), pack, effect);
@@ -292,6 +320,54 @@ public static partial class EffectTextGenerator
         var perTarget = target is null ? "" : string.Join(" and ", blocks.Where(PayLifePointsCost.PerTarget).Select(b => Text(b, pack, effect)));
         if (target is not null && perTarget.Length > 0) target = $"{target} and {perTarget}";
         return target is null ? costs : costs.Length == 0 ? target : $"{costs}, then {target}";
+    }
+
+    /// <summary>
+    /// "It loses 1000 ATK, or, if this card was Special Summoned by the effect of a Synchro Monster, you can destroy that
+    /// monster instead": the options in one sentence, each after the first with what it needs. Options that each target
+    /// for the same action say the action once: "target 1 Level 2 monster in your GY, or, if your opponent controls a
+    /// monster, you can target 1 Rank/Link 2 monster instead; Special Summon it".
+    /// </summary>
+    private static string InsteadText(EffectEvent effect, CardPack? pack, string head, bool optional, string costs, string? shared, List<List<BlockInstance>> options)
+    {
+        var parts = options.Select(o =>
+        {
+            var conditional = o.Count > 1 && ChooseEffectsAction.IsOptionCondition(effect.Do, o[0]);
+            var (target, actions) = Actions(conditional ? o.Skip(1).ToList() : o, pack, effect);
+            return (Condition: conditional ? Text(o[0], pack, effect) : null, Target: target, Actions: actions);
+        }).ToList();
+        var sameAction = parts.All(p => p.Target is not null) && parts.Select(p => p.Actions).Distinct().Count() == 1;
+        var said = parts.Select(p => sameAction ? p.Target! : p.Target is null ? p.Actions : $"{p.Target}; {p.Actions}").ToList();
+        // The later options name again what the first one already did: "that monster", "it".
+        for (var i = 1; i < said.Count; i++) said[i] = Again(said[i], said[0], effect);
+        var body = said[0];
+        for (var i = 1; i < said.Count; i++)
+        {
+            var later = said[i].StartsWith("you can ", StringComparison.Ordinal) ? said[i]["you can ".Length..] : said[i];
+            body += parts[i].Condition is { } cond ? $", or, if {cond}, you can {later} instead" : $", or {later}";
+        }
+        if (sameAction) body += "; " + parts[0].Actions;
+        var before = shared is null ? costs : costs.Length == 0 ? shared : $"{costs}, then {shared}";
+        if (before.Length > 0) body = $"{before}; {body}";
+        if (optional && body.StartsWith("you can ", StringComparison.Ordinal)) body = body["you can ".Length..];
+        else if (optional && before.Length == 0 && StartsWithSubject(body)) body = "activate this effect; " + body;
+        body = optional ? "You can " + body : SentenceCase.Upper(body);
+        return head.Length == 0 ? body : $"{SentenceCase.Upper(head)}: {body}";
+    }
+
+    /// <summary>
+    /// A later option of "..., or, if ..., you can ... instead" says the cards the first one is about as card text does:
+    /// "that monster" for the shared target, "it" for this card when the first option already said "this card".
+    /// </summary>
+    private static string Again(string later, string first, EffectEvent effect)
+    {
+        if (ChooseEffectsAction.Shared(effect.Do).FirstOrDefault() is { } t && t.Filters.TryGetValue("cards", out var f) && Regex.IsMatch(later, @"\bit\b"))
+        {
+            var monster = f.CardType == FilterCardType.Monster || f.Zones == Zone.MonsterZone;
+            later = Regex.Replace(later, @"\bit\b", monster ? "that monster" : "that card");
+        }
+        if (first.Contains("this card", StringComparison.Ordinal)) later = Regex.Replace(later, @"\bthis card( from your (hand|GY))?", "it");
+        return later;
     }
 
     /// <summary>The text of each option of "Activate 1 of these effects", for the choice the player is shown; empty when there are none.</summary>
@@ -444,7 +520,8 @@ public static partial class EffectTextGenerator
         effect.Cost.Concat(effect.Do).Any(b => b.BlockId is "cost.this_card" or "cost.reveal_self" or "do.this_card"
                                                // "Special Summon both it and this card" doesn't say where this card is.
                                                || b.BlockId == "do.special_summon_self" && b.Values.GetValueOrDefault("with", "none") != "target"
-                                               || b.Filters.Values.Any(f => f.ThisCard));
+                                               // "Equip this card to it" doesn't say where this card is either.
+                                               || b.BlockId != EquipAction.BlockId && b.Filters.Values.Any(f => f.ThisCard));
 
     /// <summary>"during your turn" stays as is; anything else gets a joining word such as "if" or "while".</summary>
     private static string Clause(string cond, string joiner) =>
@@ -523,6 +600,8 @@ public static partial class EffectTextGenerator
                     ActionLink.IfYouDont => ", and if you don't, ",
                     // "..., also you cannot Special Summon ... for the rest of this turn": a lock is added with "also".
                     _ when def is SummonRestrictionAction => ", also ",
+                    // Therion "King" Regulus: "... gains 700 ATK, also it can activate the 2nd effect listed above ...".
+                    _ when def is GrantEffectPassive && t.StartsWith("it ", StringComparison.Ordinal) => ", also ",
                     _ => ", and ",
                 });
             }
