@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:CardCrafter.App.ViewModels"
         xmlns:omega="using:CardCrafter.Core.Omega"
+        xmlns:views="using:CardCrafter.App.Views"
         x:Class="CardCrafter.App.Views.CardBrowserWindow"
         x:DataType="vm:CardBrowserViewModel"
         Title="Card browser — YGO Card Crafter"
@@ -28,19 +29,25 @@
         <ListBox ItemsSource="{Binding Results}" SelectedItem="{Binding Selected}" Background="Transparent">
           <ListBox.Styles>
             <!-- compact rows: two lines of text, no tall empty padding -->
-            <Style Selector="ListBoxItem">
-              <Setter Property="Padding" Value="10,5" />
+            <!-- tinted with the card's frame colour, with a solid stripe on the left edge -->
+            <Style Selector="ListBoxItem" x:DataType="omega:LibraryCard">
+              <Setter Property="Padding" Value="0" />
               <Setter Property="MinHeight" Value="0" />
+              <Setter Property="Margin" Value="0,0,0,2" />
+              <Setter Property="Background" Value="{Binding Data, Converter={x:Static views:CardTypeBrushConverter.Instance}}" />
             </Style>
           </ListBox.Styles>
           <ListBox.ItemTemplate>
             <DataTemplate DataType="omega:LibraryCard">
-              <StackPanel Spacing="1">
-                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis">
-                  <Run Text="{Binding TypeLine}" /><Run Text="  " /><Run Text="{Binding Stats}" />
-                </TextBlock>
-              </StackPanel>
+              <Grid ColumnDefinitions="4,*">
+                <Border Grid.Column="0" Background="{Binding Data, Converter={x:Static views:CardTypeBrushConverter.Instance}, ConverterParameter=stripe}" />
+                <StackPanel Grid.Column="1" Spacing="1" Margin="10,5">
+                  <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                  <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis">
+                    <Run Text="{Binding TypeLine}" /><Run Text="  " /><Run Text="{Binding Stats}" />
+                  </TextBlock>
+                </StackPanel>
+              </Grid>
             </DataTemplate>
           </ListBox.ItemTemplate>
         </ListBox>

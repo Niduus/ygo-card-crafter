@@ -75,6 +75,9 @@ public sealed partial class CardViewModel : ObservableObject
     public string StatusIcon => ErrorCount > 0 ? "✖" : WarningCount > 0 ? "⚠" : "✔";
     public string ListLabel => string.IsNullOrWhiteSpace(C.Name) ? "(unnamed)" : C.Name;
     public string ListDetail => $"{C.Id}  ·  {KindText}";
+    /// <summary>The card list's row colours: the card's frame colour (Views/CardTypeColors.cs).</summary>
+    public Avalonia.Media.IBrush TypeWash => Views.CardTypeColors.Wash(C);
+    public Avalonia.Media.IBrush TypeStripe => Views.CardTypeColors.Stripe(C);
     private string KindText => C.Kind switch
     {
         CardKind.Monster => $"{C.Frame} Monster",
@@ -176,6 +179,8 @@ public sealed partial class CardViewModel : ObservableObject
             OnPropertyChanged(nameof(StatusIcon));
             OnPropertyChanged(nameof(ListLabel));
             OnPropertyChanged(nameof(ListDetail));
+            OnPropertyChanged(nameof(TypeWash));
+            OnPropertyChanged(nameof(TypeStripe));
             OnPropertyChanged(nameof(HasNoEffects));
             OnPropertyChanged(nameof(TypeLine));
             OnPropertyChanged(nameof(FaceText));
