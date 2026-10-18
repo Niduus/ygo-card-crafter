@@ -256,8 +256,20 @@ public sealed class TakeControlAction : CardGroupAction
 {
     public override string Id => "do.take_control";
     public override string Group => "Monsters";
-    public override string Name => "Take control of monsters";
-    public override string Sentence => "Take control of {count} {cards} {target} {duration}";
+    public override string Name => "Take control of monsters (or give control of yours to your opponent)";
+    public override string Sentence => "{to} control of {count} {cards} {target} {duration}";
+    public override string Help => "\"Give control to your opponent\" moves monsters you control to your opponent's field: Angelechy Disturbance's \"Give control " +
+                                   "of 1 \"Angelechy\" monster you control to your opponent (until the End Phase)\".";
+
+    /// <summary>"Give control of ... to your opponent" rather than take it.</summary>
+    private static bool Gives(BlockArgs args) => args.Choice("to") == "opponent";
+
+    public override string Describe(BlockArgs args)
+    {
+        if (!Gives(args)) return base.Describe(args);
+        var duration = args.Choice("duration") switch { "always" => "", var d => $" ({args.Describe("duration")})" };
+        return $"give control of {Some(args)} to your opponent{duration}{args.ExceptText()}";
+    }
     protected override string Category => "CATEGORY_CONTROL";
     protected override string Hint => "HINTMSG_CONTROL";
     protected override string TargetedWording => "take control of {0}";
@@ -272,19 +284,24 @@ public sealed class TakeControlAction : CardGroupAction
         ParamSpec.Flag("target", "(targeting)", true),
         ParamSpec.Choice("duration", "Until", new("turn", "until the End Phase"), new("always", "", "permanently"),
             new("battle", "until the end of the Battle Phase")),
+        // Saved before this was offered: you take control.
+        ParamSpec.Choice("to", "Who gets them", new("you", "Take", "you take control (of your opponent's monsters)"), new("opponent", "Give", "give control to your opponent (of your monsters)")),
     ];
 
-    protected override string TargetedAction(BlockArgs args, string pronoun, bool single) =>
-        $"take control of {pronoun} {args.Describe("duration")}".TrimEnd();
+    protected override string TargetedAction(BlockArgs args, string pronoun, bool single) => Gives(args)
+        ? $"give control of {pronoun} to your opponent" + (args.Choice("duration") == "always" ? "" : $" ({args.Describe("duration")})")
+        : $"take control of {pronoun} {args.Describe("duration")}".TrimEnd();
+
+    private static string Player(BlockContext ctx) => ctx.Args.Choice("to") == "opponent" ? "1-tp" : "tp";
 
     protected override string? AbleCheck(BlockContext ctx) => "c:IsControlerCanBeChanged()";
-    protected override string? SpaceCheck(int count, CardFilter f, BlockContext ctx) => $"Duel.GetLocationCount(tp,LOCATION_MZONE,tp,LOCATION_REASON_CONTROL)>={count}";
+    protected override string? SpaceCheck(int count, CardFilter f, BlockContext ctx) => $"Duel.GetLocationCount({Player(ctx)},LOCATION_MZONE,{Player(ctx)},LOCATION_REASON_CONTROL)>={count}";
     protected override string Apply(string g, BlockContext ctx) => ctx.Args.Choice("duration") switch
     {
-        "turn" => $"Duel.GetControl({g},tp,PHASE_END,1)",
+        "turn" => $"Duel.GetControl({g},{Player(ctx)},PHASE_END,1)",
         // Number F0: Utopic Future: back to its controller as the Battle Phase ends.
-        "battle" => $"Duel.GetControl({g},tp,PHASE_BATTLE,1)",
-        _ => $"Duel.GetControl({g},tp)",
+        "battle" => $"Duel.GetControl({g},{Player(ctx)},PHASE_BATTLE,1)",
+        _ => $"Duel.GetControl({g},{Player(ctx)})",
     };
 }
 
@@ -1016,7 +1033,9 @@ public sealed class SummonRestrictionAction : ActionBlock
                                    "or \"your opponent cannot activate cards or effects\". It starts when the effect resolves. Leave \"except\" as plain monsters for no exception.";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
-        ParamSpec.Choice("duration", "For", new("turn", "For the rest of this turn"), new("next", "Until the end of the next turn"), new("duel", "For the rest of this Duel")),
+        ParamSpec.Choice("duration", "For", new("turn", "For the rest of this turn"), new("next", "Until the end of the next turn"), new("duel", "For the rest of this Duel"),
+            // Angelechy Opening to e4: until the End Phase of your next turn (this one, then yours after it, when used in your opponent's turn: theirs ends first).
+            new("your_next", "Until the end of your next turn")),
         ParamSpec.Choice("who", "Who", new("you", "you"), new("opponent", "your opponent"), new("both", "neither player")),
         ParamSpec.Choice("what", "Cannot", Locks.What),
         ParamSpec.Cards("cards", "Except / which (plain monsters for none)", () => new CardFilter { CardType = FilterCardType.Monster, Attribute = CardAttribute.Dark }, Zone.MonsterZone),
@@ -1027,6 +1046,7 @@ public sealed class SummonRestrictionAction : ActionBlock
     {
         "next" => "until the end of the next turn",
         "duel" => "for the rest of this Duel",
+        "your_next" => "until the end of your next turn",
         _ => "for the rest of this turn",
     };
 
@@ -1043,12 +1063,15 @@ public sealed class SummonRestrictionAction : ActionBlock
             {
                 // Illusion of the Winter Raven Witch: "..., also you cannot ... for the rest of this turn after this card resolves, except ...".
                 var (head, except) = Locks.Split(what, args.Cards("cards"), args);
-                var after = args.Choice("duration") == "turn" && DetailedTriggers.ActivatesThisCard(args.Effect) ? "for the rest of this turn after this card resolves" : Duration(args);
+                var after = args.Choice("duration") is "turn" or "your_next" && DetailedTriggers.ActivatesThisCard(args.Effect) ? $"{Duration(args)} after this card resolves" : Duration(args);
                 return $"{head} {after}{except}";
             }
         }
         // A Spell/Trap Card's activation: the lock starts when the card resolves, and printed cards say so. Your own lock
         // with an exception reads as Over Tuning's: "you cannot ... for the rest of this turn after this card resolves, except ...".
+        // Angelechy Opening to e4: "Until the end of your next turn after this card resolves, you cannot ...".
+        if (args.Choice("duration") == "your_next" && DetailedTriggers.ActivatesThisCard(args.Effect))
+            return $"until the end of your next turn after this card resolves, {Locks.Sentence(args.Choice("who"), what, args.Cards("cards"), args)}";
         if (args.Choice("duration") == "turn" && DetailedTriggers.ActivatesThisCard(args.Effect))
         {
             const string after = "for the rest of this turn after this card resolves";
@@ -1080,6 +1103,8 @@ public sealed class SummonRestrictionAction : ActionBlock
             switch (ctx.Args.Choice("duration"))
             {
                 case "next": lines.Add($"{v}:SetReset(RESET_PHASE+PHASE_END,2)"); break;
+                // The End Phase of your turn: this one's and the next one's when used in your turn, the next one's otherwise.
+                case "your_next": lines.Add($"{v}:SetReset(RESET_PHASE+PHASE_END+RESET_SELF_TURN,Duel.GetTurnPlayer()==tp and 2 or 1)"); break;
                 case "duel": break;
                 default: lines.Add($"{v}:SetReset(RESET_PHASE+PHASE_END)"); break;
             }

@@ -173,6 +173,42 @@ public static class ScriptCompiler
             "\tend",
             "end",
         ]),
+        // Columns and adjacent zones, as utility.lua counts them (an Extra Monster Zone is in column 1 or 3; NULL_VALUE off the columns).
+        ("aux.GetColumn", [
+            "if not aux.GetColumn then",
+            "\tfunction aux.GetColumn(c,p)",
+            "\t\tlocal seq=c:GetSequence()",
+            "\t\tif c:IsLocation(LOCATION_MZONE) then",
+            "\t\t\tif seq==5 then seq=1 elseif seq==6 then seq=3 elseif seq>6 then return -10 end",
+            "\t\telseif not c:IsLocation(LOCATION_SZONE) or seq>4 then return -10 end",
+            "\t\tif c:GetControler()==1 then seq=4-seq end",
+            "\t\tif p==1 then seq=4-seq end",
+            "\t\treturn seq",
+            "\tend",
+            "end",
+        ]),
+        ("aux.GetFieldIndex", [
+            "if not aux.GetFieldIndex then",
+            "\tfunction aux.GetFieldIndex(c)",
+            "\t\tlocal seq,row,col=c:GetSequence()",
+            "\t\tif c:IsLocation(LOCATION_SZONE) and seq<=4 then row,col=0,seq",
+            "\t\telseif c:IsLocation(LOCATION_MZONE) and seq<=4 then row,col=1,seq",
+            "\t\telseif c:IsLocation(LOCATION_MZONE) and seq<=6 then row,col=2,seq==5 and 1 or 3",
+            "\t\telse return -10,-10 end",
+            "\t\tif c:GetControler()==1 then row,col=4-row,4-col end",
+            "\t\treturn row,col",
+            "\tend",
+            "end",
+        ]),
+        ("aux.AdjacentFilter", [
+            "if not aux.AdjacentFilter then",
+            "\tfunction aux.AdjacentFilter(c,i,j)",
+            "\t\tlocal row,col=aux.GetFieldIndex(c)",
+            "\t\tif row<0 or col<0 then return false end",
+            "\t\treturn (row==i and math.abs(col-j)==1) or (math.abs(row-i)==1 and col==j)",
+            "\tend",
+            "end",
+        ]),
         ("aux.DimensionalFissureTarget", [
             "if not aux.DimensionalFissureTarget then",
             "\tfunction aux.DimensionalFissureTarget(e,c) return bit.band(c:GetOriginalType(),TYPE_MONSTER)>0 and not c:IsLocation(LOCATION_OVERLAY) and not c:IsType(TYPE_SPELL+TYPE_TRAP) end",
@@ -334,7 +370,8 @@ public static class ScriptCompiler
         // "Activate this card by sending 1 ... to the GY": a Continuous or Field card's activation can be only its cost.
         if (src.Do.Count == 0 && !(effect.IsActivation && src.Cost.Count > 0 && Lingers(effect.Card) && effect.Card is not { Kind: CardKind.Spell, SpellKind: SpellKind.Equip }))
             effect.Error("Add at least one DO block: what the effect does.");
-        if (effect.IsPassive && src.Limit != OncePerTurn.None)
+        // Lasting effects that are counted ("once per turn, you can activate 1 ... Trap Card the turn it was Set") use it.
+        if (effect.IsPassive && src.Limit != OncePerTurn.None && !effect.HasLimitedPassive)
             effect.Warn("Once-per-turn limits do nothing on \"while face-up\" effects and were ignored.");
     }
 

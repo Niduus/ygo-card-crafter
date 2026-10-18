@@ -51,6 +51,9 @@ public sealed partial class RequirementViewModel : ObservableObject
             // A new property starts with its first comparison and no values.
             _r.Op = Prop.Ops[0];
             _r.Values = [];
+            // "In the same column as": the cards it is compared with have a picker of their own.
+            _r.Cards = IsCards ? new CardFilter { Owner = CardOwner.You, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster } : null;
+            _cardsEditor = null;
             if (Prop.Kind == PropertyKind.Number && _r.Value == 0) _r.Value = Prop.Key is "atk" or "def" or "base_atk" or "base_def" ? 2000 : 1;
             BuildChoices();
             OnPropertyChanged(string.Empty);
@@ -71,6 +74,16 @@ public sealed partial class RequirementViewModel : ObservableObject
             _changed();
         }
     }
+
+    /// <summary>Junora the Power Patron of Tuning: "in the same column as the "Elfnote" monster(s) you control", the cards picked in its own picker.</summary>
+    public bool IsCards => Prop.Key == CardProperties.SameColumn;
+
+    private FilterEditorViewModel? _cardsEditor;
+
+    /// <summary>The picker of the cards a "same column" requirement is compared with (on the field).</summary>
+    public FilterEditorViewModel? CardsEditor => !IsCards ? null
+        : _cardsEditor ??= new FilterEditorViewModel(_r.Cards ??= new CardFilter { Owner = CardOwner.You, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster },
+            Zone.Field, false, () => _owner.Pack, _changed, ownerChoice: true) { Nested = true };
 
     public bool IsNumber => Prop.Kind == PropertyKind.Number;
     public bool IsRange => IsNumber && _r.Op is RequirementOp.Between or RequirementOp.Outside;

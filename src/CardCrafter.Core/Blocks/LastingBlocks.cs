@@ -107,14 +107,48 @@ public sealed class ActivateSetTurnPassive : PassiveBlock
     public const string BlockId = "passive.activate_set_turn";
     public override string Id => BlockId;
     public override string Group => "This card";
-    public override string Name => "You can activate this Trap the turn it was Set";
-    public override string Sentence => "You can activate this card the turn it was Set";
-    public override string Help => "For Trap Cards. Add IF blocks for when it's allowed, like \"you control an \"Artmage\" monster\".";
+    public override string Name => "You can activate this Trap (or picked Traps) the turn it was Set";
+    public override string Sentence => "You can activate {which} {cards} the turn it was Set";
+    public override string Help => "For Trap Cards. Add IF blocks for when it's allowed, like \"you control an \"Artmage\" monster\". \"Traps picked below\" lets your " +
+                                   "Set Traps be activated the turn they were Set, from where this card is; with the effect's \"once per turn\" it is 1 of them " +
+                                   "each turn (Angelechy Endgame Problem: \"Once per turn, you can activate 1 \"Angelechy\" Trap Card the turn it was Set\").";
+    public override IReadOnlyList<ParamSpec> Params { get; } =
+    [
+        // Saved before this was offered: this card itself.
+        ParamSpec.Choice("which", "Which Traps", new("this", "this card"), new("cards", "", "Traps picked below (in your Spell & Trap Zone)")),
+        ParamSpec.Cards("cards", "The Traps", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.SpellTrapZone, CardType = FilterCardType.Trap }, Zone.SpellTrapZone)
+            .WhenUsed().ShowIf(b => b.Values.GetValueOrDefault("which") == "cards"),
+    ];
 
-    public override string Describe(BlockArgs args) => "you can activate this card the turn it was Set";
+    public override string Describe(BlockArgs args)
+    {
+        if (args.Choice("which") != "cards") return "you can activate this card the turn it was Set";
+        // "1 "Angelechy" Trap Card": the effect's once per turn makes it 1 of them each turn.
+        var f = args.Cards("cards").Clone();
+        f.CardType = FilterCardType.Trap;
+        var noun = FilterText.Describe(f, args.Pack, withLocation: false);
+        var once = args.Effect?.Limit is OncePerTurn.Soft or OncePerTurn.Hard;
+        return once ? $"once per turn, you can activate 1 {noun} Card the turn it was Set" : $"you can activate {FilterText.Describe(f, args.Pack, plural: true, withLocation: false)} the turn they were Set";
+    }
 
     public override void Compile(BlockContext ctx)
     {
+        if (ctx.Args.Choice("which") == "cards")
+        {
+            // Angelechy Endgame Problem: a field effect on the Set Traps, its count the effect's once per turn.
+            var filter = ctx.Args.Cards("cards").Clone();
+            filter.CardType = FilterCardType.Trap;
+            filter.Zones = Zone.SpellTrapZone;
+            var f = ctx.Script.Filter(filter);
+            var target = ctx.Script.AddFunction("settrapstg", "e,c", [$"return {f.Function}(c,e,e:GetHandlerPlayer())"]);
+            var range = RangeOf(ctx);
+            ctx.Effect.AddPassive(v =>
+            [
+                $"{v}:SetType(EFFECT_TYPE_FIELD)", $"{v}:SetProperty(EFFECT_FLAG_SET_AVAILABLE)", $"{v}:SetCode(EFFECT_TRAP_ACT_IN_SET_TURN)",
+                $"{v}:SetRange({range})", $"{v}:SetTargetRange({f.Self},{f.Opp})", $"{v}:SetTarget({target})",
+            ], limited: true);
+            return;
+        }
         if (ctx.Card.Kind != CardKind.Trap) ctx.Effect.Error("Only Trap Cards can be activated the turn they were Set this way.");
         // It works while the card is Set, where its other effects don't apply yet.
         ctx.Effect.AddPassive(v => [$"{v}:SetType(EFFECT_TYPE_SINGLE)", $"{v}:SetProperty(EFFECT_FLAG_SET_AVAILABLE)", $"{v}:SetCode(EFFECT_TRAP_ACT_IN_SET_TURN)"]);

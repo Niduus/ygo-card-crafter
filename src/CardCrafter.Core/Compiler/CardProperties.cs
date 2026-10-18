@@ -184,6 +184,26 @@ public static class CardProperties
             IsText: "not in the Extra Monster Zone or the Field Zone", IsNotText: "in the Extra Monster Zone or the Field Zone"),
         new("targetable", "Can be targeted by this effect", PropertyKind.State, "c:IsCanBeEffectTarget(e)", "",
             IsText: "that can be targeted", IsNotText: "that cannot be targeted", NeedsEffect: true),
+        // ---- columns, as the official scripts count them (aux.GetColumn): an Extra Monster Zone is in the column of the
+        // Main Monster Zone below it, and the Field Zone is in none.
+        // Angelechy Castellan: "1 opponent's monster in this card's adjacent column, or 1 card ... that is 2 columns away from
+        // this card's"; Angelechy Destrier: "1 monster in another column" (any distance but 0).
+        new(ColumnsAway, "Columns away from this card (0: this card's column)", PropertyKind.Number, "(math.abs(aux.GetColumn(c)-aux.GetColumn(e:GetHandler())))", "columns away",
+            Guard: "aux.GetColumn(c)>=0 and aux.GetColumn(e:GetHandler())>=0", NeedsEffect: true),
+        // Junora the Power Patron of Tuning: "monsters your opponent controls in the same column as the "Elfnote" monster(s) you
+        // control": the cards it is compared with are the requirement's own picker (Cards).
+        new(SameColumn, "In the same column as a card picked below", PropertyKind.State, "", "",
+            IsText: "in the same column as {0}", IsNotText: "not in the same column as {0}", NeedsEffect: true),
+        // Angelechy Verdict: "1 "Angelechy" monster with a different name from the cards in your Spell & Trap Zone" (face-up
+        // ones, as the official scripts read their names); Cyberdark Chimera: "... from the cards in your GY".
+        new("unlike_names", "A different name from the cards somewhere", PropertyKind.Options, "", "name",
+            Choices:
+            [
+                (0, "the cards in your Spell & Trap Zone", "not Duel.IsExistingMatchingCard(function(x) return x~=c and x:IsFaceup() and x:GetSequence()<5 and x:IsCode(c:GetCode()) end,tp,LOCATION_SZONE,0,1,nil)"),
+                (1, "the cards in your GY", "not Duel.IsExistingMatchingCard(function(x) return x~=c and x:IsCode(c:GetCode()) end,tp,LOCATION_GRAVE,0,1,nil)"),
+                (2, "the cards you control", "not Duel.IsExistingMatchingCard(function(x) return x~=c and x:IsFaceup() and x:IsCode(c:GetCode()) end,tp,LOCATION_ONFIELD,0,1,nil)"),
+            ],
+            IsText: "with a different name from {0}", IsNotText: "with the same name as one of {0}", NeedsEffect: true),
         // The engine marks every effect with CATEGORY_COIN or CATEGORY_DICE (the toss and roll blocks give them).
         new("coin_effect", "Has a coin tossing effect", PropertyKind.State, "c:IsEffectProperty(aux.EffectPropertyFilter(EFFECT_FLAG_COIN))", "",
             IsText: "that has a coin tossing effect", IsNotText: "that does not have a coin tossing effect"),
@@ -220,6 +240,12 @@ public static class CardProperties
         // Necromancer of Dragon Magic: "a non-Fusion Monster in your GY whose name is mentioned on the revealed monster".
         new("ref_mentioned", "Its name is mentioned on that card (target, cost...)", PropertyKind.Options, "", "name", Choices: Blocks.CardRefs.RequirementChoices(),
             IsText: "whose name is mentioned on that monster", IsNotText: "whose name is not mentioned on that monster", NeedsEffect: true),
+        // Angelechy Disturbance: "a face-up card(s) in its adjacent Monster Zones and/or Spell & Trap Zones" (aux.AdjacentFilter:
+        // the zones beside it, behind or in front of it).
+        new("ref_adjacent", "In a zone adjacent to that card (target, step before...)", PropertyKind.Options, "", "zone", Choices: Blocks.CardRefs.RequirementChoices(),
+            IsText: "in its adjacent Monster Zones and/or Spell & Trap Zones", IsNotText: "not in its adjacent Monster Zones or Spell & Trap Zones", NeedsEffect: true),
+        new("ref_column", "In the same column as that card (target, step before...)", PropertyKind.Options, "", "column", Choices: Blocks.CardRefs.RequirementChoices(),
+            IsText: "in the same column as that card", IsNotText: "not in the same column as that card", NeedsEffect: true),
         // A card a "Remember" block of this card remembers (it carries the Memory's flag: Blocks/Memory.cs).
         new("remembered", "Remembered by this card (Memory A-E)", PropertyKind.Options, "", "memory",
             Choices: Blocks.Memory.Slots.Select((s, i) => ((long)i, "Memory " + s.Value, Blocks.Memory.RequirementLua(i))).ToArray(),
@@ -236,6 +262,37 @@ public static class CardProperties
 
     /// <summary>"Counters on it": a number whose <see cref="CardRequirement.Values"/> holds the counter's id.</summary>
     public const string CounterCount = "counter_count";
+
+    /// <summary>"N columns away from this card": 0 is this card's column, 1 an adjacent one.</summary>
+    public const string ColumnsAway = "columns_away";
+
+    /// <summary>"In the same column as" the cards the requirement's own picker (<see cref="CardRequirement.Cards"/>) finds.</summary>
+    public const string SameColumn = "same_column";
+
+    /// <summary>
+    /// "In the same column as the "Elfnote" monster(s) you control": one of the cards in card c's column is a card the
+    /// requirement's picker allows, there (its zones on the field) and of that player. Null without a picker.
+    /// </summary>
+    private static string? SameColumnLua(CardRequirement r, bool hasEffect)
+    {
+        if (r.Cards is not { } f) return null;
+        var zones = f.Zones & Zone.Field;
+        var parts = new List<string> { $"x:IsLocation({Compiler.Lua.Locations(zones == Zone.None ? Zone.Field : zones)})" };
+        if (f.Owner == CardOwner.You) parts.Add("x:IsControler(tp)");
+        if (f.Owner == CardOwner.Opponent) parts.Add("x:IsControler(1-tp)");
+        if (f.ExcludeThisCard) parts.Add("x~=e:GetHandler()");
+        parts.AddRange(FilterCompiler.Conditions(f, "x", SummonProcedureKind.None, hasEffect));
+        return $"c:GetColumnGroup():IsExists(function(x) return {string.Join(" and ", parts)} end,1,nil)";
+    }
+
+    /// <summary>"the "Elfnote" monster(s) you control": the cards a "same column" requirement is compared with.</summary>
+    private static string SameColumnText(CardRequirement r, CardPack? pack)
+    {
+        if (r.Cards is not { } f) return "";
+        var noun = FilterText.Describe(f, pack, withLocation: false);
+        var where = FilterText.LocationText(f, "");
+        return $"the {noun}(s){(where.Length > 0 ? " " + where : "")}";
+    }
 
     /// <summary>The counter a "counters on it" requirement counts, or null for every counter.</summary>
     public static int? CounterOf(CardRequirement r) => r.Values.FirstOrDefault() is var id and > 0 ? (int)id : null;
@@ -269,6 +326,8 @@ public static class CardProperties
             var refTest = Blocks.CardRefs.RequirementLua(p.Key, that, r.Op == RequirementOp.IsNot);
             return p.Guard is null ? refTest : $"({p.Guard} and {refTest})";
         }
+        if (p.Key == SameColumn)
+            return SameColumnLua(r, hasEffect) is { } column ? r.Op == RequirementOp.IsNot ? $"not ({column})" : $"({column})" : null;
         if (IsDeclared(p.Key))
             return "(function(te,v) if te~=e or not v or v==0 then return true end return " + (r.Op == RequirementOp.IsNot ? "not " : "") + p.Lua
                    + " end)(Duel.GetChainInfo(0,CHAININFO_TRIGGERING_EFFECT,CHAININFO_TARGET_PARAM))";
@@ -339,6 +398,8 @@ public static class CardProperties
         string N(int n) => n.ToString(CultureInfo.InvariantCulture);
         var (lo, hi) = (Math.Min(r.Value, r.Value2), Math.Max(r.Value, r.Value2));
         if (p.Kind == PropertyKind.Number) return NumberText(p, r, N(r.Value), N(lo), N(hi));
+        if (p.Key == SameColumn)
+            return SameColumnText(r, pack) is { Length: > 0 } cards ? (r.Op == RequirementOp.IsNot ? p.IsNotText : p.IsText)!.Replace("{0}", cards, StringComparison.Ordinal) : "";
         if (p.Kind == PropertyKind.State) return (r.Op == RequirementOp.IsNot ? p.IsNotText : p.IsText) ?? "";
         // Time Chain: "with the same original name as monsters that are currently banished by this card's effect".
         if (Blocks.CardRefs.IsRequirement(p.Key) && r.Values.Contains((long)CardRef.BanishedByThis))
@@ -431,6 +492,28 @@ public static class CardProperties
                 _ => $"{v} or higher",
             };
             return $"whose {p.Noun} is {amount}";
+        }
+        // Columns: "in this card's column", "in this card's adjacent column", "that is 2 columns away from this card's", "in another column".
+        if (p.Key == ColumnsAway)
+        {
+            string Away(string n) => n == "1" ? "1 column" : $"{n} columns";
+            return r.Op switch
+            {
+                RequirementOp.Equal when r.Value == 0 => "in this card's column",
+                RequirementOp.Equal when r.Value == 1 => "in this card's adjacent column",
+                RequirementOp.Equal => $"that is {Away(v)} away from this card's",
+                RequirementOp.NotEqual when r.Value == 0 => "in another column",
+                RequirementOp.GreaterOrEqual when r.Value == 1 => "in another column",
+                RequirementOp.Greater when r.Value == 0 => "in another column",
+                RequirementOp.LessOrEqual when r.Value == 1 => "in this card's column or its adjacent columns",
+                RequirementOp.LessOrEqual => $"that is {Away(v)} or less away from this card's",
+                RequirementOp.GreaterOrEqual => $"that is {Away(v)} or more away from this card's",
+                RequirementOp.Greater => $"that is more than {Away(v)} away from this card's",
+                RequirementOp.Less => $"that is less than {Away(v)} away from this card's",
+                RequirementOp.NotEqual => $"that is not {Away(v)} away from this card's",
+                RequirementOp.Between => $"that is {lo} to {hi} columns away from this card's",
+                _ => $"that is not {lo} to {hi} columns away from this card's",
+            };
         }
         // Counts of things: "with 2 or more materials attached", "that points to no monsters", "equipped with 1 Equip Card".
         var (with, without, one, many) = p.Key switch

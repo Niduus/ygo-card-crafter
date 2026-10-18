@@ -459,25 +459,65 @@ public sealed class SpecialSummonAction : CardGroupAction
     protected override string TargetedWording => "Special Summon {0}";
     public override string Id => "do.special_summon";
     public override string Name => "Special Summon monsters";
-    public override string Sentence => "Special Summon {count} {cards} {pick} {pick2} {pick3} {sum} {inc_cards} {target} {position} {zone} {as} {chooser}";
+    public override string Sentence => "{who} Special Summon {count} {cards} {pick} {pick2} {pick3} {sum} {inc_cards} {target} {position} {zone} {as} {chooser}";
 
     public override string Describe(BlockArgs args)
     {
-        var text = base.Describe(args);
+        var text = base.Describe(args).TrimStart();
         // Buster Blader: "Special Summon that monster to your field": the opponent's monster it destroyed by battle.
         if (args.Cards("cards").That == CardRef.BattleTarget) text = text.Replace("that monster", "that monster to your field", StringComparison.Ordinal);
-        return text + (args.Bool("ignore") && !Selection.OpponentPicks(args) ? ", ignoring its Summoning conditions" : "") + Negated(args);
+        return Who(args, text) + (args.Bool("ignore") && !Selection.OpponentPicks(args) ? ", ignoring its Summoning conditions" : "") + Negated(args);
     }
 
-    /// <summary>", but negate its effects", ", but negate their effects", ", but it cannot be used as Link Material".</summary>
+    /// <summary>
+    /// Angelechy Enlisted: "the owner of this card Special Summons 1 ... from their Extra Deck"; Angelechy Seneschal: "each
+    /// player can Special Summon 1 ... from their Extra Deck".
+    /// </summary>
+    private static string Who(BlockArgs args, string text)
+    {
+        static string Their(string t) => t.Replace(" from your ", " from their ", StringComparison.Ordinal).Replace(" in your ", " in their ", StringComparison.Ordinal);
+        return args.Choice("who") switch
+        {
+            "owner" when text.StartsWith("Special Summon ", StringComparison.Ordinal) => Their("the owner of this card Special Summons " + text["Special Summon ".Length..]),
+            "each" => Their("each player can " + text),
+            _ => text,
+        };
+    }
+
+    /// <summary>
+    /// ", but negate its effects", ", but negate their effects", ", but it cannot be used as Link Material", "(but negate
+    /// its effects)" when each player Summons, and what the Summoned monsters (and this card) get after it.
+    /// </summary>
     private static string Negated(BlockArgs args)
     {
         var plural = args.IsPlural || CardRefs.Plus(args) == "this";
-        var text = !args.Bool("negate") ? "" : plural ? ", but negate their effects" : ", but negate its effects";
+        var each = args.Choice("who") == "each";
+        var text = !args.Bool("negate") ? "" : each ? " (but negate its effects)" : plural ? ", but negate their effects" : ", but negate its effects";
         // Ars Magna Academic Arcane Apparition Acropolis: "Special Summon that monster ..., but it cannot be used as Link Material".
         if (args.Bool("no_link")) text += text.Length > 0 ? (plural ? ", also they cannot be used as Link Material" : ", also it cannot be used as Link Material")
             : plural ? ", but they cannot be used as Link Material" : ", but it cannot be used as Link Material";
-        return text;
+        return text + Rules(args, plural || each, text.Length > 0);
+    }
+
+    /// <summary>
+    /// "..., also this card, and monsters Special Summoned by this effect, cannot be used as material for an Xyz or Link
+    /// Summon, and return them to the Extra Deck when they leave the field" (Angelechy Seneschal), or the same for the
+    /// Summoned monsters alone: ", but it cannot be used as material for an Xyz or Link Summon".
+    /// </summary>
+    private static string Rules(BlockArgs args, bool plural, bool after)
+    {
+        var (ban, back) = (args.Bool("no_xyz_link"), args.Bool("return_extra"));
+        if (!ban && !back) return "";
+        var parts = new List<string>();
+        if (args.Bool("self_too"))
+        {
+            if (ban) parts.Add("cannot be used as material for an Xyz or Link Summon");
+            if (back) parts.Add(ban ? "return them to the Extra Deck when they leave the field" : "they return to the Extra Deck when they leave the field");
+            return ", also this card, and monsters Special Summoned by this effect, " + string.Join(", and ", parts);
+        }
+        if (ban) parts.Add($"{(plural ? "they" : "it")} cannot be used as material for an Xyz or Link Summon");
+        if (back) parts.Add(plural ? "return them to the Extra Deck when they leave the field" : "return it to the Extra Deck when it leaves the field");
+        return (after ? ", also " : ", but ") + string.Join(", and ", parts);
     }
 
     protected override bool Together => true;
@@ -497,12 +537,23 @@ public sealed class SpecialSummonAction : CardGroupAction
             new("attack", "in Attack Position"),
             new("defense", "in Defense Position"),
             new("facedown", "in face-down Defense Position")),
-        ParamSpec.Choice("zone", "Zone", new("any", "", "to any zone"), new("pointed", "to a zone this card points to")),
+        ParamSpec.Choice("zone", "Zone", new("any", "", "to any zone"), new("pointed", "to a zone this card points to"),
+            // Angelechy Opposition, Angelechy Opening to e4.
+            new("opp_main", "in your opponent's Main Monster Zone", "to your opponent's field, in a Main Monster Zone"),
+            new("extra_zone", "to the Extra Monster Zone")),
         ParamSpec.Flag("ignore", "ignoring its Summoning conditions", false),
         TreatedAsSummon.Param,
         // Saved before this was offered: the Summoned monsters keep their effects.
         ParamSpec.Flag("negate", "but negate its effects", false),
         ParamSpec.Flag("no_link", "but it cannot be used as Link Material", false),
+        // Saved before these were offered: you Special Summon, and the monsters get nothing more.
+        ParamSpec.Choice("who", "Who Special Summons", new("you", "", "you"),
+            new("owner", "the owner of this card", "the owner of this card (from their own cards)"),
+            new("each", "each player can", "each player can (from their own cards, if they choose to)")).Unprinted(),
+        ParamSpec.Flag("no_xyz_link", "it cannot be used as material for an Xyz or Link Summon", false),
+        ParamSpec.Flag("return_extra", "return it to the Extra Deck when it leaves the field", false),
+        ParamSpec.Flag("self_too", "also this card (cannot be used as material, returns to the Extra Deck)", false)
+            .ShowIf(b => b.Values.GetValueOrDefault("no_xyz_link") == "true" || b.Values.GetValueOrDefault("return_extra") == "true"),
     ];
 
     protected override string TargetedAction(BlockArgs args, string pronoun, bool single)
@@ -569,7 +620,92 @@ public sealed class SpecialSummonAction : CardGroupAction
     protected override string? AbleCheck(BlockContext ctx)
     {
         if (As(ctx) != "none") return TreatedAsSummon.AbleCheck(ctx, As(ctx), Ignore(ctx), ctx.Args.Cards("cards").Zones);
+        // "In your opponent's Main Monster Zone": Summoned to their field.
+        // From the Extra Deck, each monster needs a Main Monster Zone of theirs it may go to (as Angelechy Opposition checks it).
+        if (ToOpponent(ctx))
+            return $"c:IsCanBeSpecialSummoned(e,0,tp,{Ignore(ctx)},false,{(FaceDown(ctx) ? "POS_FACEDOWN_DEFENSE" : "POS_FACEUP")},1-tp)"
+                   + (ctx.Args.Cards("cards").Zones.HasFlag(Zone.ExtraDeck) ? " and (not c:IsLocation(LOCATION_EXTRA) or Duel.GetLocationCountFromEx(1-tp,tp,nil,c,0x1f)>0)" : "");
         return FaceDown(ctx) ? $"c:IsCanBeSpecialSummoned(e,0,tp,{Ignore(ctx)},false,POS_FACEDOWN_DEFENSE)" : $"c:IsCanBeSpecialSummoned(e,0,tp,{Ignore(ctx)},false)";
+    }
+
+    private static bool ToOpponent(BlockContext ctx) => ctx.Args.Choice("zone") == "opp_main";
+
+    /// <summary>The player whose field the monsters go to.</summary>
+    private static string TargetPlayer(BlockContext ctx) => ToOpponent(ctx) ? "1-tp" : "tp";
+
+    /// <summary>The zones the monsters may go to, or null for any: the Main Monster Zones, the Extra Monster Zones, or where this card points.</summary>
+    private static string? ZoneOf(BlockContext ctx) => ctx.Args.Choice("zone") switch
+    {
+        "pointed" => "e:GetHandler():GetLinkedZone(tp)",
+        "opp_main" => "0x1f",
+        "extra_zone" => "0x60",
+        _ => null,
+    };
+
+    /// <summary>What the Summoned monsters get that saved cards never had: a material ban, a return to the Extra Deck, another field.</summary>
+    private static bool NewRules(BlockContext ctx) => ctx.Args.Bool("no_xyz_link") || ctx.Args.Bool("return_extra") || ctx.Args.Choice("zone") is "opp_main" or "extra_zone";
+
+    /// <summary>
+    /// The lasting effects one Summoned monster (tc) gets from this card (c): negated, no Link Material, no Xyz or Link
+    /// Material, back to the Extra Deck when it leaves the field (as official scripts write each), as a function of (tc,c).
+    /// </summary>
+    public static string? RulesFunction(ScriptBuilder script, bool negate, bool noLink, bool noXyzLink, bool returnExtra)
+    {
+        var lines = new List<string>();
+        if (negate)
+            lines.AddRange(
+            [
+                "local e1=Effect.CreateEffect(c)", "e1:SetType(EFFECT_TYPE_SINGLE)", "e1:SetCode(EFFECT_DISABLE)", "e1:SetReset(RESET_EVENT+RESETS_STANDARD)", "tc:RegisterEffect(e1)",
+                "local e2=Effect.CreateEffect(c)", "e2:SetType(EFFECT_TYPE_SINGLE)", "e2:SetCode(EFFECT_DISABLE_EFFECT)", "e2:SetValue(RESET_TURN_SET)",
+                "e2:SetReset(RESET_EVENT+RESETS_STANDARD)", "tc:RegisterEffect(e2)",
+            ]);
+        if (noLink || noXyzLink)
+            lines.AddRange(
+            [
+                "local e3=Effect.CreateEffect(c)", "e3:SetDescription(3312)", "e3:SetType(EFFECT_TYPE_SINGLE)", "e3:SetProperty(EFFECT_FLAG_CANNOT_DISABLE+EFFECT_FLAG_CLIENT_HINT)",
+                "e3:SetCode(EFFECT_CANNOT_BE_LINK_MATERIAL)", "e3:SetValue(1)", "e3:SetReset(RESET_EVENT+RESETS_STANDARD)", "tc:RegisterEffect(e3,true)",
+            ]);
+        // Angelechy Seneschal: no Xyz Material either.
+        if (noXyzLink)
+            lines.AddRange(
+            [
+                "local e4=Effect.CreateEffect(c)", "e4:SetDescription(3311)", "e4:SetType(EFFECT_TYPE_SINGLE)", "e4:SetProperty(EFFECT_FLAG_CANNOT_DISABLE+EFFECT_FLAG_CLIENT_HINT)",
+                "e4:SetCode(EFFECT_CANNOT_BE_XYZ_MATERIAL)", "e4:SetValue(1)", "e4:SetReset(RESET_EVENT+RESETS_STANDARD)", "tc:RegisterEffect(e4,true)",
+            ]);
+        // Blaze, Supreme Ruler of all Dragons: "return it to the Extra Deck when it leaves the field" (the Deck, for a Main Deck monster).
+        if (returnExtra)
+            lines.AddRange(
+            [
+                "local e5=Effect.CreateEffect(c)", "e5:SetType(EFFECT_TYPE_SINGLE)", "e5:SetCode(EFFECT_LEAVE_FIELD_REDIRECT)", "e5:SetProperty(EFFECT_FLAG_CANNOT_DISABLE)",
+                "e5:SetReset(RESET_EVENT+RESETS_REDIRECT)", "e5:SetValue(LOCATION_DECK)", "tc:RegisterEffect(e5,true)",
+            ]);
+        return lines.Count == 0 ? null : script.AddFunction("sprules", "tc,c", lines);
+    }
+
+    private static string? Rules(BlockContext ctx) =>
+        RulesFunction(ctx.Script, ctx.Args.Bool("negate"), ctx.Args.Bool("no_link"), ctx.Args.Bool("no_xyz_link"), ctx.Args.Bool("return_extra"));
+
+    /// <summary>
+    /// Each monster is Special Summoned as a step and gets <see cref="Rules"/>, then the Summon is completed: to the player's
+    /// field or the opponent's, in the zones allowed. The call on <paramref name="g"/>, returning how many were Summoned.
+    /// </summary>
+    private static string SummonSteps(BlockContext ctx, string g, string value, string pos)
+    {
+        var rules = Rules(ctx);
+        var fn = ctx.Script.AddFunction("spsteps", "g,e,tp,v,nocheck,pos,tgp,zone",
+        [
+            "local c=e:GetHandler()",
+            "local n=0",
+            "for tc in aux.Next(g) do",
+            "\tif Duel.SpecialSummonStep(tc,v,tp,tgp,nocheck,false,pos,zone) then",
+            .. rules is null ? Array.Empty<string>() : [$"\t\t{rules}(tc,c)"],
+            "\t\tn=n+1",
+            "\tend",
+            "end",
+            "Duel.SpecialSummonComplete()",
+            "return n",
+        ]);
+        return $"{fn}({g},e,tp,{value},{Ignore(ctx)},{pos},{TargetPlayer(ctx)},{ZoneOf(ctx) ?? "0xff"})";
     }
 
     protected override string Apply(string g, BlockContext ctx)
@@ -583,7 +719,9 @@ public sealed class SpecialSummonAction : CardGroupAction
         if (FaceDown(ctx))
             return ctx.Script.AddFunction("spfacedown", "g,e,tp",
             [
-                $"local n=Duel.SpecialSummon(g,{(ctx.Args.Cards("cards").ThisCard ? "SUMMON_VALUE_SELF" : "0")},tp,tp,{Ignore(ctx)},false,POS_FACEDOWN_DEFENSE{(PointsTo(ctx) ? ",e:GetHandler():GetLinkedZone(tp)" : "")})",
+                NewRules(ctx)
+                    ? $"local n=Duel.SpecialSummon(g,{(ctx.Args.Cards("cards").ThisCard ? "SUMMON_VALUE_SELF" : "0")},tp,{TargetPlayer(ctx)},{Ignore(ctx)},false,POS_FACEDOWN_DEFENSE,{ZoneOf(ctx) ?? "0xff"})"
+                    : $"local n=Duel.SpecialSummon(g,{(ctx.Args.Cards("cards").ThisCard ? "SUMMON_VALUE_SELF" : "0")},tp,tp,{Ignore(ctx)},false,POS_FACEDOWN_DEFENSE{(PointsTo(ctx) ? ",e:GetHandler():GetLinkedZone(tp)" : "")})",
                 "if n>0 then Duel.ConfirmCards(1-tp,g) end",
                 "return n",
             ]) + $"({g},e,tp)";
@@ -596,6 +734,11 @@ public sealed class SpecialSummonAction : CardGroupAction
         };
         // "This card itself" is Special Summoned by its own effect: SUMMON_VALUE_SELF, as official cards do.
         var value = ctx.Args.Cards("cards").ThisCard ? "SUMMON_VALUE_SELF" : "0";
+        // Another field or zone, or what the monsters get that saved cards never had (Angelechy Opposition, Opening to e4, Seneschal).
+        if (NewRules(ctx))
+            return ctx.Args.Bool("negate") || ctx.Args.Bool("no_link") || ctx.Args.Bool("no_xyz_link") || ctx.Args.Bool("return_extra")
+                ? SummonSteps(ctx, g, value, pos)
+                : $"Duel.SpecialSummon({g},{value},tp,{TargetPlayer(ctx)},{Ignore(ctx)},false,{pos},{ZoneOf(ctx)})";
         if (ctx.Args.Bool("negate") || ctx.Args.Bool("no_link"))
             return NegatedSummon(ctx.Script, g, value, Ignore(ctx), "false", pos, PointsTo(ctx) ? "e:GetHandler():GetLinkedZone(tp)" : null, ctx.Args.Bool("negate"), ctx.Args.Bool("no_link"));
         return PointsTo(ctx)
@@ -606,6 +749,9 @@ public sealed class SpecialSummonAction : CardGroupAction
     protected override string? SpaceCheck(int count, CardFilter f, BlockContext ctx)
     {
         if (PointsTo(ctx)) return $"Duel.GetLocationCount(tp,LOCATION_MZONE,tp,LOCATION_REASON_TOFIELD,e:GetHandler():GetLinkedZone(tp))>={count}";
+        // A free Main Monster Zone of the opponent's, or an Extra Monster Zone.
+        if (ToOpponent(ctx)) return f.Zones == Zone.ExtraDeck ? null : $"Duel.GetLocationCount(1-tp,LOCATION_MZONE,tp)>={count}";
+        if (ctx.Args.Choice("zone") == "extra_zone") return $"Duel.GetLocationCountFromEx(tp,tp,nil,nil,0x60)>={count}";
         if (As(ctx) != "none") return TreatedAsSummon.SpaceCheck(ctx, As(ctx), f.Zones);
         // "Tribute this card; Special Summon ...": the zone this card leaves for the cost counts, as official scripts check.
         var leaving = TreatedAsSummon.CostFreesThisCard(ctx) ? "e:GetHandler()" : null;
@@ -616,8 +762,29 @@ public sealed class SpecialSummonAction : CardGroupAction
 
     private static bool PointsTo(BlockContext ctx) => ctx.Args.Choice("zone") == "pointed";
 
+    /// <summary>"And return them to the Extra Deck ...": this card gets the same as the monsters Summoned, if it is still face-up there.</summary>
+    protected override IEnumerable<string> After(string group, FilterRef f) => _selfRules is { } rules ? [$"if c:IsRelateToEffect(e) and c:IsFaceup() then {rules}(c,c) end"] : [];
+
+    [ThreadStatic] private static string? _selfRules;
+
     public override void Compile(BlockContext ctx)
     {
+        _selfRules = null;
+        if (ctx.Args.Bool("self_too"))
+            _selfRules = RulesFunction(ctx.Script, false, false, ctx.Args.Bool("no_xyz_link"), ctx.Args.Bool("return_extra"));
+        if (ctx.Args.Choice("zone") == "extra_zone" && ctx.Args.Cards("cards") is var ez && !ez.IsSpecific() && ez.Zones != Zone.ExtraDeck)
+            ctx.Effect.Warn("\"To the Extra Monster Zone\" is for monsters Special Summoned from the Extra Deck.");
+        if (ctx.Args.Choice("zone") is "opp_main" or "extra_zone" && As(ctx) != "none")
+        {
+            ctx.Effect.Error($"\"{Name}\": a Summon treated as another Summon goes to your own zones; pick \"to any zone\".");
+            return;
+        }
+        if (ctx.Args.Choice("who") != "you")
+        {
+            CompileWho(ctx);
+            _selfRules = null;
+            return;
+        }
         if (PointsTo(ctx) && !ctx.Card.IsLink)
             ctx.Effect.Error("\"To a zone this card points to\" needs this card to be a Link monster.");
         if (As(ctx) != "none" && !TreatedAsSummon.Check(ctx, Name, ctx.Args.Cards("cards").ThisCard ? 1 : ctx.Args.Int("count"), FaceDown(ctx))) return;
@@ -626,7 +793,98 @@ public sealed class SpecialSummonAction : CardGroupAction
             ctx.Effect.Error($"\"{Name}\": \"but negate its effects\" and \"cannot be used as Link Material\" are for monsters Special Summoned face-up, not {(FaceDown(ctx) ? "face-down" : "treated as another Summon")}.");
             return;
         }
+        if ((ctx.Args.Bool("no_xyz_link") || ctx.Args.Bool("return_extra")) && (As(ctx) != "none" || FaceDown(ctx)))
+        {
+            ctx.Effect.Error($"\"{Name}\": what the Summoned monsters get after it is for monsters Special Summoned face-up, not {(FaceDown(ctx) ? "face-down" : "treated as another Summon")}.");
+            return;
+        }
         base.Compile(ctx);
+        _selfRules = null;
+    }
+
+    /// <summary>
+    /// "The owner of this card Special Summons 1 ... from their Extra Deck" (Angelechy Enlisted), "each player can Special
+    /// Summon 1 ... from their Extra Deck (but negate its effects)" (Angelechy Seneschal): the player picks from their own
+    /// cards and Summons to their own field. Each player is asked in turn, the turn player first, and the Summons happen
+    /// together.
+    /// </summary>
+    private void CompileWho(BlockContext ctx)
+    {
+        var e = ctx.Effect;
+        var filter = ctx.Args.Cards("cards");
+        var each = ctx.Args.Choice("who") == "each";
+        if (filter.IsSpecific() || ctx.Args.Bool("target") || Selection.Applies(ctx.Args) || ctx.Args.CountMode == "all" || CardRefs.Plus(ctx.Args) != "none"
+            || ctx.Args.Choice("zone") != "any" || As(ctx) != "none" || FaceDown(ctx))
+        {
+            e.Error($"\"{Name}\": {(each ? "each player" : "the owner of this card")} Special Summons picked cards of their own, face-up, to any zone of theirs, without targeting.");
+            return;
+        }
+        if (filter.Zones == Zone.None || (filter.Zones & ~(Zone.Hand | Zone.Deck | Zone.Graveyard | Zone.Banished | Zone.ExtraDeck)) != Zone.None)
+        {
+            e.Error($"\"{Name}\": pick where their monsters come from: their hand, Deck, GY, banishment or Extra Deck.");
+            return;
+        }
+        var own = filter.Clone();
+        own.Owner = CardOwner.You;
+        var f = ctx.Script.Filter(own, AbleCheck(ctx));
+        var n = ctx.Args.Int("count");
+        var min = ctx.Args.CountMode == "up_to" ? 1 : n;
+        var space = own.Zones == Zone.ExtraDeck ? $"Duel.GetLocationCountFromEx(tp)>={min}" : $"Duel.GetLocationCount(tp,LOCATION_MZONE)>={min}";
+        var position = ctx.Args.Choice("position") switch { "attack" => "POS_FACEUP_ATTACK", "defense" => "POS_FACEUP_DEFENSE", _ => "POS_FACEUP" };
+        var rules = Rules(ctx);
+        List<string> select =
+        [
+            $"Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_SPSUMMON)",
+            $"local g=Duel.SelectMatchingCard(tp,{f.ForSelection},tp,{f.Self},{f.Opp},{min},{ctx.Args.Int("count")},nil,e,tp)",
+            "for tc in aux.Next(g) do",
+            $"\tif Duel.SpecialSummonStep(tc,0,tp,tp,{Ignore(ctx)},false,{position}) then",
+            .. rules is null ? Array.Empty<string>() : [$"\t\t{rules}(tc,c)"],
+            "\t\tn=n+1",
+            "\tend",
+            "end",
+        ];
+        e.AddCategory(Category);
+        string fn;
+        if (each)
+        {
+            // Asked "Special Summon?" with the effect's own text; who says no Summons nothing.
+            var ask = $"aux.Stringid(id,{Math.Min(e.Index, 16) - 1})";
+            fn = ctx.Script.AddFunction("speach", "e",
+            [
+                "local c=e:GetHandler()",
+                "local n=0",
+                "local tp=Duel.GetTurnPlayer()",
+                "for i=1,2 do",
+                $"\tif {space} and Duel.IsExistingMatchingCard({f.ForSelection},tp,{f.Self},{f.Opp},{min},nil,e,tp) and Duel.SelectYesNo(tp,{ask}) then",
+                .. select.Select(l => "\t\t" + l),
+                "\tend",
+                "\ttp=1-tp",
+                "end",
+                "Duel.SpecialSummonComplete()",
+                .. _selfRules is { } selfRules ? new[] { $"if c:IsRelateToEffect(e) and c:IsFaceup() then {selfRules}(c,c) end" } : [],
+                "return n",
+            ]);
+            e.TargetLines.Add($"Duel.SetOperationInfo(0,{Category},nil,1,PLAYER_ALL,{f.InfoLocation})");
+        }
+        else
+        {
+            fn = ctx.Script.AddFunction("spowner", "e,tp",
+            [
+                "local c=e:GetHandler()",
+                "local n=0",
+                $"if not ({space}) then return 0 end",
+                .. select,
+                "Duel.SpecialSummonComplete()",
+                .. _selfRules is { } selfRules ? new[] { $"if n>0 and c:IsRelateToEffect(e) and c:IsFaceup() then {selfRules}(c,c) end" } : [],
+                "return n",
+            ]);
+            // Its owner's cards: checked as the effect is activated, while this card is still where it is.
+            var owner = "e:GetHandler():GetOwner()";
+            e.TargetChecks.Add($"Duel.IsExistingMatchingCard({f.Function},{owner},{f.Self},{f.Opp},{min},nil,e,{owner})");
+            e.TargetLines.Add($"Duel.SetOperationInfo(0,{Category},nil,{min},{owner},{f.InfoLocation})");
+        }
+        var r = e.NewLocal("r");
+        e.AddStep([$"local {r}={fn}(e{(each ? "" : ",c:GetOwner()")})"], r, ctx.Link);
     }
 }
 
@@ -778,21 +1036,33 @@ public sealed class ShuffleIntoDeckAction : CardGroupAction
     protected override string Category => "CATEGORY_TODECK";
     protected override string Hint => "HINTMSG_TODECK";
     protected override Func<CardFilter> DefaultCards => () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Graveyard };
-    protected override string? AbleCheck(BlockContext ctx) => "c:IsAbleToDeck()";
+    /// <summary>
+    /// The Angelechy cards: "return 1 "Angelechy" Monster Card you own from your Spell &amp; Trap Zone to the Extra Deck": only
+    /// Extra Deck monsters, which go back there (Card.IsAbleToExtra).
+    /// </summary>
+    protected override IReadOnlyList<ParamSpec> BuildParams() =>
+        [.. base.BuildParams(), ParamSpec.Flag("extra", "only Extra Deck monsters: return them to the Extra Deck", false)];
+
+    protected override string? AbleCheck(BlockContext ctx) => ctx.Args.Bool("extra") ? "c:IsAbleToExtra()" : "c:IsAbleToDeck()";
     protected override string Apply(string g, BlockContext ctx) => $"Duel.SendtoDeck({g},nil,SEQ_DECKSHUFFLE,REASON_EFFECT)";
+
+    private const long ExtraKinds = 0x40 | 0x2000 | 0x800000 | 0x4000000;
 
     /// <summary>
     /// Fusion, Synchro, Xyz and Link Monsters go back to the Extra Deck, and cards say so: "return all Fusion, Synchro, Xyz,
-    /// and Link Monsters your opponent controls to the Extra Deck", "return this card to the Extra Deck".
+    /// and Link Monsters your opponent controls to the Extra Deck", "return this card to the Extra Deck", and Monster Cards
+    /// in the Spell &amp; Trap Zone that are printed as Extra Deck monsters.
     /// </summary>
     public static bool ToExtraDeck(BlockArgs args)
     {
         var f = args.Cards("cards");
         if (f.ThisCard) return args.Card?.IsExtraDeck == true;
+        if (args.Definition.Param("extra") is not null && args.Bool("extra")) return true;
         if (f.MonsterKind is MonsterKind.Fusion or MonsterKind.Synchro or MonsterKind.Xyz or MonsterKind.Link) return true;
-        const long extra = 0x40 | 0x2000 | 0x800000 | 0x4000000;
-        return f.MonsterKind == MonsterKind.Any && !f.AnyRequirement && f.Requirements.Any(r =>
-            r.Property == "monster_type" && r.Op == RequirementOp.Is && r.Values.Count > 0 && r.Values.All(v => v != 0 && (v & ~extra) == 0));
+        if (f.MonsterKind != MonsterKind.Any || f.AnyRequirement) return false;
+        return f.Requirements.Any(r => r.Property == "monster_type" && r.Op == RequirementOp.Is && r.Values.Count > 0 && r.Values.All(v => v != 0 && (v & ~ExtraKinds) == 0))
+               // "Angelechy" Synchro Monsters placed as Continuous Spells: what they are printed as.
+               || f.MonsterCards && f.Requirements.Any(r => r.Property == "orig_card_type" && r.Op == RequirementOp.Is && r.Values.Count > 0 && r.Values.All(v => v != 0 && (v & ~ExtraKinds) == 0));
     }
 
     private static string ExtraWording(string text) => text

@@ -266,7 +266,7 @@ public sealed class PlayerRulePassive : PassiveBlock
     public override string Id => "passive.player_rule";
     public override string Group => "Players";
     public override string Name => "You take no damage / your opponent can't Special Summon...";
-    public override string Sentence => "{rule}";
+    public override string Sentence => "{rule} {whose} {count}";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Choice("rule", "Rule",
@@ -283,10 +283,28 @@ public sealed class PlayerRulePassive : PassiveBlock
             new("opp_no_bp_activate", "Your opponent cannot activate cards or effects during the Battle Phase"),
             // Lethargisaurus.
             new("no_own_response", "Neither player can activate cards or effects in response to the activation of their own cards or effects"),
-            // Invoked Caliga.
-            new("one_monster_effect", "Each player can only attempt to activate 1 monster effect per turn"),
-            new("one_attacker", "Each player can only attack with 1 monster during each Battle Phase")),
+            // Invoked Caliga; Angelechy Shatranga: "your opponent can only attempt to activate up to 5 monster effects per turn".
+            new("one_monster_effect", "Each player can only attempt to activate 1 monster effect per turn", "Each player can only attempt to activate N monster effects per turn (whose and how many below)"),
+            new("one_attacker", "Each player can only attack with 1 monster during each Battle Phase"),
+            // Angelechy Castellan.
+            new("one_per_chain", "Each player can only activate 1 card or effect per Chain")),
+        // Saved before these were offered: each player, 1 monster effect.
+        ParamSpec.Choice("whose", "Whose (monster effects per turn)", new("each", "Each player"), new("opponent", "Your opponent"), new("you", "You"))
+            .ShowIf(b => b.Values.GetValueOrDefault("rule") == "one_monster_effect").Unprinted(),
+        ParamSpec.Int("count", "How many monster effects per turn", 1, 1, 10).ShowIf(b => b.Values.GetValueOrDefault("rule") == "one_monster_effect").Unprinted(),
     ];
+
+    /// <summary>"each player can only ...": lowercase, so it reads right after "While this card is treated as a Continuous Spell, ".</summary>
+    public override string Describe(BlockArgs args)
+    {
+        var text = args.Describe("rule");
+        if (args.Choice("rule") == "one_monster_effect")
+        {
+            var n = args.Int("count");
+            text = $"{Param("whose")!.Choices.First(c => c.Value == args.Choice("whose")).Label} can only attempt to activate {(n == 1 ? "1 monster effect" : $"up to {n} monster effects")} per turn";
+        }
+        return text.StartsWith("Each ", StringComparison.Ordinal) ? "each " + text[5..] : text;
+    }
 
     public override void Compile(BlockContext ctx)
     {
@@ -368,9 +386,12 @@ public sealed class PlayerRulePassive : PassiveBlock
             }
             case "one_monster_effect":
             {
-                // Each player's first monster effect this turn leaves a flag on this card; then that player is locked out.
+                // Each player's monster effects this turn leave a flag each on this card; when there are as many as allowed,
+                // that player is locked out.
                 var flags = new[] { $"id+{8420 + ctx.Script.Slot("onemonster")}", $"id+{8440 + ctx.Script.Slot("onemonster")}" };
-                foreach (var side in new[] { 0, 1 })
+                var n = ctx.Args.Int("count");
+                var sides = ctx.Args.Choice("whose") switch { "you" => new[] { 0 }, "opponent" => [1], _ => [0, 1] };
+                foreach (var side in sides)
                 {
                     var flag = flags[side];
                     var mine = side == 0 ? "ep~=tp" : "ep==tp";
@@ -378,7 +399,7 @@ public sealed class PlayerRulePassive : PassiveBlock
                         [$"if {mine} or not re:IsActiveType(TYPE_MONSTER) then return end", $"e:GetHandler():RegisterFlagEffect({flag},RESET_EVENT+0x3ff0000+RESET_PHASE+PHASE_END,0,1)"]);
                     ctx.Effect.AddPassive(v => [$"{v}:SetType(EFFECT_TYPE_FIELD+EFFECT_TYPE_CONTINUOUS)", $"{v}:SetCode(EVENT_CHAINING)", $"{v}:SetRange({range})",
                         $"{v}:SetProperty(EFFECT_FLAG_CANNOT_DISABLE)", $"{v}:SetOperation({count})"]);
-                    var con = ctx.Script.AddFunction("onecon", "e", [$"return e:GetHandler():GetFlagEffect({flag})~=0"]);
+                    var con = ctx.Script.AddFunction("onecon", "e", [n == 1 ? $"return e:GetHandler():GetFlagEffect({flag})~=0" : $"return e:GetHandler():GetFlagEffect({flag})>={n}"]);
                     var limit = ctx.Script.AddFunction("onelimit", "e,re,tp", ["return re:IsActiveType(TYPE_MONSTER)"]);
                     ctx.Effect.AddPassive(v => [.. Player(v, "EFFECT_CANNOT_ACTIVATE", side == 0 ? "1" : "0", side == 0 ? "0" : "1", limit), $"{v}:SetCondition({con})"]);
                 }
@@ -409,6 +430,18 @@ public sealed class PlayerRulePassive : PassiveBlock
                     $"{v}:SetType(EFFECT_TYPE_FIELD+EFFECT_TYPE_CONTINUOUS)", $"{v}:SetProperty(EFFECT_FLAG_CANNOT_DISABLE)", $"{v}:SetCode(EVENT_ATTACK_ANNOUNCE)",
                     $"{v}:SetRange({range})", $"{v}:SetOperation({check})", $"{v}:SetLabelObject(oneatk)",
                 ]);
+                break;
+            }
+            case "one_per_chain":
+            {
+                // Each activation leaves a flag on this card for its player until the Chain ends; that player then can't
+                // activate another card or effect in that Chain (Angelechy Castellan's script).
+                var flag = $"id+{8490 + 2 * ctx.Script.Slot("oneperchain")}";
+                var mark = ctx.Script.AddFunction("chainmark", "e,tp,eg,ep,ev,re,r,rp", [$"e:GetHandler():RegisterFlagEffect({flag}+rp,RESET_EVENT+RESETS_STANDARD+RESET_CHAIN,0,1)"]);
+                ctx.Effect.AddPassive(v => [$"{v}:SetType(EFFECT_TYPE_FIELD+EFFECT_TYPE_CONTINUOUS)", $"{v}:SetProperty(EFFECT_FLAG_CANNOT_DISABLE)", $"{v}:SetCode(EVENT_CHAINING)",
+                    $"{v}:SetRange({range})", $"{v}:SetOperation({mark})"]);
+                var limit = ctx.Script.AddFunction("chainlimitval", "e,re,tp", [$"return e:GetHandler():GetFlagEffect({flag}+tp)~=0"]);
+                ctx.Effect.AddPassive(v => Player(v, "EFFECT_CANNOT_ACTIVATE", "1", "1", limit));
                 break;
             }
             case "opp_no_bp_activate":

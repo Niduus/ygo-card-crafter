@@ -373,12 +373,15 @@ public static class CardRefs
             "ref_orig_level" => "c:GetOriginalLevel()>0 and c:GetOriginalLevel()==rc:GetOriginalLevel()",
             "ref_orig_name" => "c:IsOriginalCodeRule(rc:GetOriginalCodeRule())",
             "ref_mentioned" => "(aux.IsMaterialListCode(rc,c:GetCode()) or aux.IsCodeListed(rc,c:GetCode()))",
+            // Beside, behind or in front of it (Angelechy Disturbance's "its adjacent Monster Zones and/or Spell & Trap Zones").
+            "ref_adjacent" => "aux.AdjacentFilter(c,aux.GetFieldIndex(rc))",
+            "ref_column" => "c~=rc and aux.GetColumn(c)>=0 and aux.GetColumn(c)==aux.GetColumn(rc)",
             _ => "c:IsAttackBelow(rc:GetAttack())",
         };
         // "A different Attribute from that monster": there must be that monster to differ from.
         var test = not ? $"rg:GetCount()>0 and not rg:IsExists(function(rc) return {same} end,1,nil)" : $"rg:IsExists(function(rc) return {same} end,1,nil)";
         // A face-down card on the field has no Type, Attribute, Level or name to share with the activated monster.
-        if (that == CardRef.Activated && key != "ref_atk_le") test = $"(not c:IsOnField() or c:IsFaceup()) and {test}";
+        if (that == CardRef.Activated && key is not ("ref_atk_le" or "ref_adjacent" or "ref_column")) test = $"(not c:IsOnField() or c:IsFaceup()) and {test}";
         return $"(function(rg) if not rg then return true end return {test} end)({GuardedGroup(that)})";
     }
 

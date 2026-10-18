@@ -493,7 +493,10 @@ public sealed class ThisCardAction : ActionBlock
             new("deck", "Shuffle into the Deck", "Shuffle into the Deck (an Extra Deck monster: return to the Extra Deck)"),
             new("discard", "Discard"),
             // Mimighoul: "Give control of this card to your opponent".
-            new("control", "Give control to your opponent")),
+            new("control", "Give control to your opponent"),
+            // Angelechy Enlisted: "give control of this card to your opponent by moving it to one of their Main Monster Zones
+            // in this card's adjacent columns".
+            new("control_adjacent", "Give control to your opponent, in this card's adjacent columns", "Give control to your opponent, moving it to one of their Main Monster Zones in this card's adjacent columns")),
     ];
 
     public override IReadOnlyList<MenuShortcut> Shortcuts { get; } =
@@ -516,6 +519,7 @@ public sealed class ThisCardAction : ActionBlock
         "grave" => "send this card to the GY",
         "discard" => "discard this card",
         "control" => "give control of this card to your opponent",
+        "control_adjacent" => "give control of this card to your opponent by moving it to one of their Main Monster Zones in this card's adjacent columns",
         // A Fusion, Synchro, Xyz or Link Monster goes back to the Extra Deck, and cards say so.
         _ when args.Card?.IsExtraDeck == true => "return this card to the Extra Deck",
         _ => "shuffle this card into the Deck",
@@ -532,6 +536,9 @@ public sealed class ThisCardAction : ActionBlock
             "discard" => ("CATEGORY_HANDES", "e:GetHandler():IsDiscardable(REASON_EFFECT)", "Duel.SendtoGrave(c,REASON_EFFECT+REASON_DISCARD)"),
             // It moves to the opponent's field as official Mimighoul do: no check, as it may be applied in sequence.
             "control" => ("CATEGORY_CONTROL", null, "Duel.GetControl(c,1-tp)"),
+            // The zones beside this card's column, on the opponent's side (their columns count the other way), as Angelechy
+            // Enlisted's script finds them; it stays if none of them is free.
+            "control_adjacent" => ("CATEGORY_CONTROL", "e:GetHandler():IsControlerCanBeChanged(true)", AdjacentControl(ctx)),
             _ => ("CATEGORY_TOHAND", "e:GetHandler():IsAbleToHand()", "Duel.SendtoHand(c,nil,REASON_EFFECT)"),
         };
         var r = ctx.Effect.NewLocal("r");
@@ -539,6 +546,22 @@ public sealed class ThisCardAction : ActionBlock
         if (check is not null) ctx.Effect.TargetChecks.Add(check);
         ctx.Effect.TargetLines.Add($"Duel.SetOperationInfo(0,{category},e:GetHandler(),1,0,0)");
         ctx.Effect.AddStep([$"local {r}=0", "if c:IsRelateToEffect(e) then", $"\t{r}={call}", "end"], r, ctx.Link);
+    }
+
+    /// <summary>Gives control of this card (c) to the opponent, in one of their Main Monster Zones in its adjacent columns.</summary>
+    private static string AdjacentControl(BlockContext ctx)
+    {
+        if (!ctx.Card.IsMonster) ctx.Effect.Error("\"In this card's adjacent columns\" moves a monster: this card must be a monster.");
+        var fn = ctx.Script.AddFunction("adjcontrol", "c,tp",
+        [
+            "if not c:IsLocation(LOCATION_MZONE) then return 0 end",
+            "local col=4-aux.GetColumn(c,tp)",
+            "local zone=0",
+            "if col>0 then zone=zone|(1<<(col-1)) end",
+            "if col<4 then zone=zone|(1<<(col+1)) end",
+            "return Duel.GetControl(c,1-tp,0,0,zone)",
+        ]);
+        return $"{fn}(c,tp)";
     }
 }
 

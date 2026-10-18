@@ -573,7 +573,9 @@ public sealed class ChooseEffectsAction : ActionBlock
             new("list", "", "a \"●\" list, 1 of them is chosen"),
             new("instead", "", "\"X, or, if ..., you can Y instead\" (1 is chosen)"),
             new("sequence", "", "\"Apply these effects in sequence\" (each that can be)"),
-            new("sent_from", "", "\"based on where it was sent from\" (the option for where this card was)")),
+            new("sent_from", "", "\"based on where it was sent from\" (the option for where this card was)"),
+            // Angelechy Verdict: "Apply this effect based on the number of "Angelechy" Monster Cards on the field. ● 1 to 4: ... ● 5+: ...".
+            new("count", "", "\"based on the number of ...\" (the option for how many there are, as it resolves)")),
     ];
 
     /// <summary>Where the header is among the DO blocks: first, or after the "Target cards" blocks the options share; -1 without one.</summary>
@@ -599,10 +601,41 @@ public sealed class ChooseEffectsAction : ActionBlock
     /// <summary>"list", "instead", "sequence" or "sent_from": how the options are written and used; "list" without a header.</summary>
     public static string Style(IReadOnlyList<BlockInstance> blocks) => Header(blocks)?.Values.GetValueOrDefault("style", "list") switch
     {
-        "instead" => "instead", "sequence" => "sequence", "sent_from" => "sent_from", _ => "list",
+        "instead" => "instead", "sequence" => "sequence", "sent_from" => "sent_from", "count" => "count", _ => "list",
     };
 
-    private static bool Listed(BlockInstance header) => header.Values.GetValueOrDefault("style", "list") is not ("sequence" or "sent_from");
+    private static bool Listed(BlockInstance header) => header.Values.GetValueOrDefault("style", "list") is not ("sequence" or "sent_from" or "count");
+
+    /// <summary>
+    /// "1 to 4", "5+", "3": how many cards an option of "based on the number of ..." is for, from the IF block that starts
+    /// it (there are N or more cards, or the number of cards is between N and M); null for another block.
+    /// </summary>
+    public static string? CountLabel(BlockInstance b)
+    {
+        string N(string key, string def) => b.Values.GetValueOrDefault(key, def);
+        static int I(string s) => int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) ? v : 0;
+        if (b.BlockId == "if.cards_exist")
+        {
+            var n = I(N("count", "1"));
+            return N("cmp", "at_least") switch { "exactly" => Num(n), "at_most" => $"{Num(n)} or less", _ => $"{Num(n)}+" };
+        }
+        if (b.BlockId != CompareValuesCondition.BlockId || N("value", "") != "count" || N("right", "number") != "number" && N("op", "ge") is not ("between" or "outside")) return null;
+        var (a, c) = (I(N("amount", "2000")), I(N("amount2", "4000")));
+        return N("op", "ge") switch
+        {
+            "between" => $"{Num(Math.Min(a, c))} to {Num(Math.Max(a, c))}",
+            "eq" => Num(a),
+            "le" => $"{Num(a)} or less",
+            "lt" => $"{Num(a - 1)} or less",
+            "gt" => $"{Num(a + 1)}+",
+            "ge" => $"{Num(a)}+",
+            _ => null,
+        };
+    }
+
+    /// <summary>The cards an option of "based on the number of ..." counts: its IF block's picker.</summary>
+    private static CardFilter? Counted(BlockInstance b) =>
+        b.Filters.TryGetValue(b.BlockId == "if.cards_exist" ? "cards" : ValueSources.CardsKey, out var f) ? f : null;
 
     /// <summary>"Activate 1 or both of these effects".</summary>
     public static bool Both(BlockInstance header) =>
@@ -629,7 +662,7 @@ public sealed class ChooseEffectsAction : ActionBlock
     /// chooses ...", "Apply these effects in sequence.". <paramref name="target"/> is the targets the options share.
     /// Null without a header.
     /// </summary>
-    public static string? Lead(EffectEvent effect, string costs, string? target, bool optional, string cardName)
+    public static string? Lead(EffectEvent effect, string costs, string? target, bool optional, string cardName, CardPack? pack = null)
     {
         if (Header(effect.Do) is not { } h) return null;
         var once = h.Values.GetValueOrDefault("once_each") == "true";
@@ -644,6 +677,11 @@ public sealed class ChooseEffectsAction : ActionBlock
             case "sent_from":
                 choose = "activate this effect based on where it was sent from";
                 return Said(before.Length == 0 ? choose : $"{before}{(target is null ? ", then" : ";")} {choose}", optional) + ";";
+            case "count":
+                // "Apply this effect based on the number of "Angelechy" Monster Cards on the field."
+                var counted = Options(effect.Do).FirstOrDefault() is { } first && Counted(first) is { } cards ? CardCounts.Group(cards, pack) : "cards";
+                choose = $"apply this effect based on the number of {counted}";
+                return Said(before.Length == 0 ? (optional ? "activate this effect; " + choose : choose) : $"{before}{(target is null ? ", then" : ";")} {choose}", optional) + ".";
         }
         if (Opponent(h))
         {
@@ -714,8 +752,11 @@ public sealed class ChooseEffectsAction : ActionBlock
         e.OptionsOnResolution = Resolving(header);
         e.OptionChooser = Opponent(header) ? "1-tp" : "tp";
         e.OptionsInSequence = style == "sequence";
-        // Where this card was sent from decides the option: there is nothing to choose.
-        e.OptionsAutomatic = style == "sent_from";
+        // Where this card was sent from, or how many cards there are as it resolves, decides the option: there is nothing to choose.
+        e.OptionsAutomatic = style is "sent_from" or "count";
+        if (style == "count") e.OptionsOnResolution = true;
+        if (style == "count" && options.Where((b, i) => i == 0 || b.Link == ActionLink.Option).Any(b => CountLabel(b) is null))
+            e.Error("\"Based on the number of ...\": start each option with an IF block that counts the cards: \"There are cards somewhere\" (at least, exactly or at most N), or \"Compare values\" with the number of cards picked below (\"● 1 to 4: ...\").");
         if (ctx.Args.Bool("once_each")) e.OptionFlag = branch => Flag(e, branch);
         if (style == "sent_from" && options.Where((b, i) => i == 0 || b.Link == ActionLink.Option).Any(b => b.BlockId != SentFromCondition.BlockId))
             e.Error("\"Based on where it was sent from\": start each option with a \"Where this card was sent from\" IF block (\"● Field: ...\").");

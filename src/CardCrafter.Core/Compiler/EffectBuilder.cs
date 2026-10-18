@@ -529,9 +529,11 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
         }
         if (OptionsOnResolution)
         {
-            // Chosen now, among the options that can be applied now.
+            // Chosen now, among the options that can be applied now ("based on the number of ...": the one that applies).
             foreach (var n in Branches.Keys) body.Add($"local b{n}={OptionCheck(n)}");
-            body.Add($"local op=aux.SelectFromOptions({OptionChooser},{string.Join(",", Branches.Select(x => $"{{b{x.Key},aux.Stringid(id,{x.Value.StringIndex}),{x.Key}}}"))})");
+            body.Add(OptionsAutomatic
+                ? "local op=" + string.Join(" or ", Branches.Keys.Select(n => $"b{n} and {n}")) + " or nil"
+                : $"local op=aux.SelectFromOptions({OptionChooser},{string.Join(",", Branches.Select(x => $"{{b{x.Key},aux.Stringid(id,{x.Value.StringIndex}),{x.Key}}}"))})");
         }
         else body.Add("local _,op=e:GetLabel()");
         var first = true;

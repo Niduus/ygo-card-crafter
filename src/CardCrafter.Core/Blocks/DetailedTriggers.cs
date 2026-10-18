@@ -354,7 +354,7 @@ public sealed class AttackDeclaredTrigger : BlockDefinition
             .ShowIf(b => b.Values.GetValueOrDefault("how") != "involving"),
         ParamSpec.Choice("how", "Attack", new("any", "an attack"), new("direct", "a direct attack"), new("targeting", "an attack targeting:"),
             new("involving", "an attack involving:", "an attack involving your monster:"), new("targeted", "is targeted for an attack:", "a monster is targeted for an attack:")),
-        ParamSpec.Cards("target", "Targeting", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster }, Zone.MonsterZone)
+        ParamSpec.Cards("target", "Targeting", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster }, Zone.MonsterZone, thisCard: true)
             .ShowIf(b => b.Values.GetValueOrDefault("how") is "targeting" or "targeted"),
         ParamSpec.Cards("mine", "Your monster", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster }, Zone.MonsterZone)
             .ShowIf(b => b.Values.GetValueOrDefault("how") == "involving"),
@@ -367,6 +367,7 @@ public sealed class AttackDeclaredTrigger : BlockDefinition
     /// <summary>"an opponent's monster", "a "HERO" monster you control", "a monster".</summary>
     private static string Monster(CardFilter f, CardPack? pack)
     {
+        if (f.ThisCard) return "this card";
         var noun = FilterText.Describe(f, pack, false, "", withLocation: false);
         if (f.Owner == CardOwner.Opponent) return $"an opponent's {noun}";
         var a = noun.StartsWith("other ", StringComparison.Ordinal) ? "another " + noun[6..] : (!noun.StartsWith('"') && "AEIOUaeiou".Contains(noun[0]) ? "an " : "a ") + noun;
@@ -383,6 +384,11 @@ public sealed class AttackDeclaredTrigger : BlockDefinition
                 return "an attack is declared involving this card";
             case "involving":
                 return $"an attack is declared involving your {FilterText.Describe(args.Cards("mine"), args.Pack, false, "", withLocation: false)}";
+            // Angelechy Seneschal: "If an "Angelechy" monster targets this card for an attack".
+            case "targeted" when args.Cards("target").ThisCard:
+                var attacker = Monster(a, args.Pack);
+                if (attacker.StartsWith("a \"", StringComparison.Ordinal) && "AEIOUaeiou".Contains(attacker[3])) attacker = "an " + attacker[2..];
+                return $"{(Plain(a) && a.Owner != CardOwner.You ? "an opponent's monster" : attacker)} targets this card for an attack";
             case "targeted":
                 var quiet = Plain(a) && (a.Owner == CardOwner.Either || a.Owner == CardOwner.Opponent && args.Cards("target").Owner == CardOwner.You);
                 var by = quiet ? "" : $" by {Monster(a, args.Pack)}";
@@ -452,6 +458,11 @@ public sealed class AttackDeclaredTrigger : BlockDefinition
         switch (how)
         {
             case "direct": tests.Add("Duel.GetAttackTarget()==nil"); break;
+            // This card itself is the attack's target.
+            case "targeting" or "targeted" when ctx.Args.Cards("target").ThisCard:
+                Zones.RequireMonster(ctx, "This card is targeted for an attack");
+                tests.Add("Duel.GetAttackTarget()==e:GetHandler()");
+                break;
             case "targeting" or "targeted":
             {
                 var t = ctx.Args.Cards("target");
