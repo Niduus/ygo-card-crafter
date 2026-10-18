@@ -105,10 +105,16 @@ public static class MaterialText
     }
 
     /// <summary>"For this card's Synchro Summon, you can treat 1 Link-1 monster you control as a Level 1 Tuner."; "" without it.</summary>
-    public static string SynchroLinkTuner(CardProject project) =>
-        project.Card.IsExtraDeck && project.Procedure is { Kind: SummonProcedureKind.Synchro, SynchroLinkAsTuner: true }
-            ? "For this card's Synchro Summon, you can treat 1 Link-1 monster you control as a Level 1 Tuner."
-            : "";
+    public static string SynchroLinkTuner(CardProject project, CardPack? pack = null) =>
+        !project.Card.IsExtraDeck || project.Procedure.Kind != SummonProcedureKind.Synchro ? ""
+        : project.Procedure.SynchroLinkAsTuner ? "For this card's Synchro Summon, you can treat 1 Link-1 monster you control as a Level 1 Tuner."
+        // Junora the Power Patron of Tuning: "For this card's Synchro Summon, you can treat 1 monster in your center Main Monster Zone as a Tuner."
+        : project.Procedure.SynchroAsTuner ? $"For this card's Synchro Summon, you can treat 1 {AsTunerText(project.Procedure.SynchroAsTunerFilter, pack)} as a Tuner."
+        : "";
+
+    /// <summary>"monster in your center Main Monster Zone", "WIND monster you control".</summary>
+    private static string AsTunerText(CardFilter f, CardPack? pack) =>
+        f.CenterZone || f.Zones != Zone.MonsterZone ? FilterText.Describe(f, pack, preposition: "in") : Blocks.CardCounts.Group(f, pack, plural: false);
 
     /// <summary>" with different names", " with different Types and different Attributes"..., or "".</summary>
     private static string RuleText(MaterialGroupRule rule) => rule switch

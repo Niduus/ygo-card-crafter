@@ -555,23 +555,42 @@ public sealed class MoveZoneAction : ActionBlock
     public override string Id => "do.move_zone";
     public override string Group => "Cards";
     public override string Name => "Move a monster to another zone";
-    public override string Sentence => "{what}";
+    public override string Sentence => "{what} {cards}";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Choice("what", "What",
             new("self", "Move this card to another of your Main Monster Zones"),
             new("monster", "Move 1 face-up monster you control to another of your Main Monster Zones"),
             new("to_center", "Move this card to your center Main Monster Zone"),
-            new("swap_center", "Switch the locations of this card and the monster in your center Main Monster Zone")),
+            new("swap_center", "Switch the locations of this card and the monster in your center Main Monster Zone"),
+            // Elfnotes: Aristeia of Trust, World Legacy Guardragon.
+            new("target", "Target 1 monster you control (picked below); move that monster to another of your Main Monster Zones")),
+        ParamSpec.Cards("cards", "The monster targeted", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster, FaceUpOnly = true }, Zone.MonsterZone)
+            .WhenUsed().ShowIf(b => b.Values.GetValueOrDefault("what") == "target"),
     ];
+
+    /// <summary>The monster the "target" way targets: one you control in a Monster Zone, as the picker says what it is.</summary>
+    private static CardFilter Targeted(BlockArgs args)
+    {
+        var f = (args.Instance.Filters.TryGetValue("cards", out var picked) ? picked : new CardFilter { CardType = FilterCardType.Monster, FaceUpOnly = true }).Clone();
+        f.Owner = CardOwner.You;
+        f.Zones = Zone.MonsterZone;
+        return f;
+    }
 
     public override string Describe(BlockArgs args) => args.Choice("what") switch
     {
         "monster" => "move 1 face-up monster you control to another of your Main Monster Zones",
         "to_center" => "move this card to your center Main Monster Zone",
         "swap_center" => "switch the locations of this card in your Main Monster Zone and the monster in your center Main Monster Zone",
+        "target" => "target 1 " + FilterText.Describe(Targeted(args), args.Pack, ownName: args.CardName) + "; move that monster you control to another of your Main Monster Zones",
         _ => "move this card to another of your Main Monster Zones",
     };
+
+    /// <summary>"Target 1 face-up monster you control; move that monster you control to another of your Main Monster Zones".</summary>
+    public override (string Target, string Action)? DescribeTargeting(BlockArgs args) => args.Choice("what") == "target"
+        ? ("target 1 " + FilterText.Describe(Targeted(args), args.Pack, ownName: args.CardName), "move that monster you control to another of your Main Monster Zones")
+        : null;
 
     public override void Compile(BlockContext ctx)
     {
@@ -581,6 +600,23 @@ public sealed class MoveZoneAction : ActionBlock
         const string mine = "c:IsRelateToEffect(e) and c:IsControler(tp) and c:IsLocation(LOCATION_MZONE)";
         switch (ctx.Args.Choice("what"))
         {
+            case "target":
+            {
+                // As Elfnotes: Aristeia of Trust's script moves it: a free Main Monster Zone of yours, chosen as it resolves.
+                var f = ctx.Script.Filter(Targeted(ctx.Args));
+                e.SetChkc(f.ChkcCheck);
+                e.TargetChecks.Add($"Duel.IsExistingTarget({f.Function},tp,LOCATION_MZONE,0,1,{f.Exclude},e,tp) and Duel.GetLocationCount(tp,LOCATION_MZONE,PLAYER_NONE,0)>0");
+                e.TargetLines.Add("Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_TARGET)");
+                e.TargetLines.Add($"Duel.SelectTarget(tp,{f.Function},tp,LOCATION_MZONE,0,1,1,{f.Exclude},e,tp)");
+                lines.Add("local mc=Duel.GetFirstTarget()");
+                lines.Add("if mc and mc:IsRelateToEffect(e) and mc:IsLocation(LOCATION_MZONE) and mc:IsControler(tp) and Duel.GetLocationCount(tp,LOCATION_MZONE,PLAYER_NONE,0)>0 then");
+                lines.Add("\tDuel.Hint(HINT_SELECTMSG,tp,HINTMSG_TOZONE)");
+                lines.Add("\tlocal seq=Duel.SelectDisableField(tp,1,LOCATION_MZONE,0,0)");
+                lines.Add("\tDuel.MoveSequence(mc,math.log(seq,2))");
+                lines.Add($"\t{r}=1");
+                lines.Add("end");
+                break;
+            }
             case "swap_center":
                 Zones.RequireMonster(ctx, Name);
                 e.TargetChecks.Add("Duel.GetFieldCard(tp,LOCATION_MZONE,2)~=nil and e:GetHandler():GetSequence()<5 and e:GetHandler():GetSequence()~=2");

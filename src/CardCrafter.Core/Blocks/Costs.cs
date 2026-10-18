@@ -47,8 +47,10 @@ public sealed class DiscardCost : CostBlock
         }
         filter.Owner = CardOwner.You;
         filter.Zones = Zone.Hand;
-        var f = ctx.Script.Filter(filter, "c:IsDiscardable()", "discardfilter");
         var n = ctx.Args.Int("count");
+        // Only a card a DO block can then be used with ("with the same Type as the discarded monster"), for 1 card.
+        var pair = n == 1 && ctx.Args.Choice("mode") == "exact" ? CardRefs.PairCheck(ctx, CardRef.Cost) : null;
+        var f = ctx.Script.Filter(filter, "c:IsDiscardable()" + (pair is null ? "" : " and " + pair), "discardfilter");
         // The card being activated doesn't count ("discard 1 card; Special Summon this card"), unless the cost names it:
         // "discard 1 "Sundering - Inferno"" on Sundering - Inferno can discard this very card.
         var namesItself = filter.CardCode == ctx.Card.Id || filter.AltCodes.Contains(ctx.Card.Id);
@@ -311,8 +313,9 @@ public sealed class TributeCost : CostBlock
         }
         filter.Owner = CardOwner.You;
         filter.Zones = Zone.MonsterZone;
-        var f = ctx.Script.Filter(filter, null, "tributefilter");
         var n = ctx.Args.Int("count");
+        // The Book of the Law: only a monster a DO block can then be used with ("with a different original Attribute"), for 1 monster.
+        var f = ctx.Script.Filter(filter, n == 1 ? CardRefs.PairCheck(ctx, CardRef.Cost) : null, "tributefilter");
         var g = ctx.Effect.NewLocal("g");
         if (ctx.Args.Choice("from") == "hand_or_field")
         {
@@ -430,6 +433,8 @@ public sealed class MoveCardsCost : CostBlock
         var repeat = RepeatValue(ctx.Args.Choice("no_repeat"));
         var key = $"{ctx.Effect.Index}";
         if (repeat is not null) able += $" and not (s.ccused and s.ccused[tp] and s.ccused[tp][Duel.GetTurnCount()] and s.ccused[tp][Duel.GetTurnCount()][\"{key}:\"..{repeat}])";
+        // Elfnotes: Welcome Home: only a card a DO block can then be used with ("with a different original Attribute"), for 1 card.
+        if (ctx.Args.Int("count") == 1 && ctx.Args.Choice("mode") == "exact" && CardRefs.PairCheck(ctx, CardRef.Cost) is { } pair) able += " and " + pair;
         var f = ctx.Script.Filter(filter, able, how + "costfilter");
         var function = sameType
             ? ctx.Script.AddFunction(how + "typefilter", "c,e,tp,rtype", [$"return {string.Join(" and ", FilterCompiler.Conditions(filter).Append(able).Append("c:IsType(rtype)"))}"])

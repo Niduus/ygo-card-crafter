@@ -80,9 +80,10 @@ public class CardRefTests
         var p = Theosis();
         Assert.Equal("Target 1 monster you control; Special Summon 1 monster with a different Attribute from your Deck in Defense Position.", Text(p));
         var lua = Compiles(p);
-        // The target is chosen; the Summon has no activation check on the target's Attribute, which isn't known yet.
+        // The target is chosen; as the official script does, only one with a monster of another Attribute in the Deck.
         Assert.Contains("Duel.SelectTarget(tp,", lua);
         Assert.Contains("CHAININFO_TRIGGERING_EFFECT,CHAININFO_TARGET_CARDS", lua);
+        Assert.Contains("s.ccpairtarget=Group.FromCards(c)", lua);
     }
 
     [EngineFact]
@@ -95,10 +96,11 @@ public class CardRefTests
     }
 
     [EngineFact]
-    public void TargetThenADifferentAttribute_SummonsNothingOfTheSameAttribute()
+    public void TargetThenADifferentAttribute_NeedsAMonsterOfAnotherAttribute()
     {
+        // Only EARTH Warriors in the Deck: the EARTH Warrior can't be targeted, so it can't be activated.
         Duel(Theosis()).Card(Id, 0, "hand").Card(Warrior, 0, "mzone").Card(Warrior, 0, "deck", 4)
-            .Activate(Id).ExpectActivations(1).Check("Duel.GetFieldGroupCount(0,LOCATION_MZONE,0)==1").AssertPasses();
+            .Activate(Id).ExpectActivations(0).Check("Duel.GetFieldGroupCount(0,LOCATION_MZONE,0)==1").AssertPasses();
     }
 
     /// <summary>Machina Citadel: "target 1 Machine monster you control; destroy it and all monsters your opponent controls with ATK less than or equal to it".</summary>

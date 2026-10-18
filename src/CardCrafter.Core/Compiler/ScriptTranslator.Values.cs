@@ -266,6 +266,7 @@ public static partial class ScriptTranslator
             ":GetSum(Card.GetAttack)" => "sum_atk",
             ":GetSum(Card.GetDefense)" => "sum_def",
             ":GetSum(Card.GetLevel)" => "sum_level",
+            ":GetSum(Card.GetBaseAttack)" => "sum_orig_atk",
             _ => null,
         });
         if (source is null) return null;

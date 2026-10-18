@@ -173,6 +173,7 @@ public static class BlockRegistry
         new ImmunePassive(),
         new SelfRulePassive(),
         new CardsRulePassive(),
+        new QuickEffectsPassive(),
         new PlayerRulePassive(),
         new EquippedPassive(),
         new SelfStatsPerCardPassive(),

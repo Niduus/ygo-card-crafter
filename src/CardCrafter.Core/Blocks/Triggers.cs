@@ -463,9 +463,16 @@ public sealed class IgnitionTrigger : BlockDefinition
     public override BlockKind Kind => BlockKind.Trigger;
     public override string Group => "You choose";
     public override string Name => "You activate it (Main Phase)";
-    public override string Sentence => "You activate it during your Main Phase, {zone}";
-    public override string Help => "An Ignition effect: the player activates it during their own Main Phase.";
-    public override IReadOnlyList<ParamSpec> Params { get; } = [ParamSpec.Choice("zone", "From", Zones.RangeChoices)];
+    public override string Sentence => "You activate it during your Main Phase, {zone} {quick_by}";
+    public override string Help => "An Ignition effect: the player activates it during their own Main Phase. \"A Quick Effect while ... lets you\" makes it one " +
+                                   "while a card like Ars Magna \"Citrinitas\" (its passcode) lets you activate it as a Quick Effect; card text doesn't say it.";
+    public override IReadOnlyList<ParamSpec> Params { get; } =
+    [
+        ParamSpec.Choice("zone", "From", Zones.RangeChoices),
+        // The "Ars Magna" monsters: "You can activate the effects of ... as Quick Effects" (Ars Magna "Citrinitas" 37279096,
+        // Orcustrated Babel 90351981, Golden Allure Queen 95937545, or a card made with that block). Saved before: never.
+        ParamSpec.Int("quick_by", "A Quick Effect while the card with this passcode lets you (0: never)", 0, 0, int.MaxValue),
+    ];
 
     public override string Describe(BlockArgs args) => "";
 
@@ -473,6 +480,7 @@ public sealed class IgnitionTrigger : BlockDefinition
     {
         ctx.Effect.Types.Add("EFFECT_TYPE_IGNITION");
         ctx.Effect.Range = Zones.Resolve(ctx.Args.Choice("zone"), ctx.Card);
+        if (ctx.Args.Int("quick_by") is var code and > 0) QuickEffectsPassive.BecomesQuick(ctx.Effect, code);
     }
 }
 

@@ -185,29 +185,73 @@ public sealed class CardsRulePassive : PassiveBlock
             new("direct", "can attack directly"),
             new("cannot_direct", "cannot attack directly"),
             // Lethargisaurus, Infinitrack Road Roller: "Face-up monsters your opponent controls are changed to Defense Position".
-            new("to_defense", "are changed to Defense Position")),
+            new("to_defense", "are changed to Defense Position"),
+            // Elfnotes: Quatrain of Succession, Crystron Cluster.
+            new("cannot_banish_opp", "cannot be banished by your opponent's card effects")),
     ];
 
     public override string Describe(BlockArgs args)
     {
-        if (args.Cards("cards").ThisCard)
+        var cards = args.Cards("cards");
+        // "this card has its effects negated", "this card is unaffected by ...", "this card inflicts piercing battle damage".
+        string One() => args.Choice("rule") switch
         {
-            // "this card has its effects negated", "this card is unaffected by ...", "this card inflicts piercing battle damage".
-            var rule = args.Choice("rule") switch
-            {
-                "negated" => "has its effects negated",
-                "unaffected" => "is unaffected by your opponent's card effects",
-                "pierce" => "inflicts piercing battle damage",
-                _ => args.Describe("rule"),
-            };
-            return "this card " + rule;
+            "negated" => "has its effects negated",
+            "unaffected" => "is unaffected by your opponent's card effects",
+            "pierce" => "inflicts piercing battle damage",
+            "to_defense" => "is changed to Defense Position",
+            _ => args.Describe("rule"),
+        };
+        if (cards.ThisCard) return "this card " + One();
+        // "The monster in your center Main Monster Zone cannot be banished by ...": a zone that holds 1 monster.
+        if (OneZone(cards)) return $"the {FilterText.Describe(cards, args.Pack, preposition: "")} {One()}";
+        return $"{FilterText.Describe(cards, args.Pack, plural: true, preposition: "")} {args.Describe("rule")}";
+    }
+
+    /// <summary>The picker names one player's center Main Monster Zone, which holds 1 monster: "the monster in your center ...".</summary>
+    public static bool OneZone(CardFilter f) => f is { CenterZone: true, Owner: CardOwner.You or CardOwner.Opponent };
+
+    /// <summary>
+    /// "... cannot be banished by your opponent's card effects": a rule on the players (EFFECT_CANNOT_REMOVE) for the
+    /// cards the picker allows, while they are in the Monster Zone, as Elfnotes: Quatrain of Succession writes it.
+    /// </summary>
+    private static void CannotBanish(BlockContext ctx, CardFilter filter)
+    {
+        var test = new List<string>();
+        if (filter.ThisCard) test.Add("c==e:GetHandler()");
+        else
+        {
+            var f = ctx.Script.Filter(filter);
+            if (filter.Owner == CardOwner.You) test.Add("c:IsControler(tp)");
+            if (filter.Owner == CardOwner.Opponent) test.Add("c:IsControler(1-tp)");
+            test.Add($"{f.Function}(c,e,tp)");
+            if (filter.ExcludeThisCard) test.Add("c~=e:GetHandler()");
         }
-        return $"{FilterText.Describe(args.Cards("cards"), args.Pack, plural: true, preposition: "")} {args.Describe("rule")}";
+        test.Add("c:IsLocation(LOCATION_MZONE)");
+        test.Add("r&REASON_EFFECT~=0 and r&REASON_REDIRECT==0 and rp==1-tp");
+        var target = ctx.Script.AddFunction("rmlimit", "e,c,rp,r,re", ["local tp=e:GetHandlerPlayer()", $"return {string.Join(" and ", test)}"]);
+        var range = RangeOf(ctx);
+        ctx.Effect.AddPassive(v =>
+        [
+            $"{v}:SetType(EFFECT_TYPE_FIELD)",
+            $"{v}:SetCode(EFFECT_CANNOT_REMOVE)",
+            $"{v}:SetRange({range})",
+            $"{v}:SetProperty(EFFECT_FLAG_PLAYER_TARGET)",
+            $"{v}:SetTargetRange(1,1)",
+            $"{v}:SetTarget({target})",
+        ]);
     }
 
     public override void Compile(BlockContext ctx)
     {
         var filter = ctx.Args.Cards("cards").Clone();
+        if (ctx.Args.Choice("rule") == "cannot_banish_opp")
+        {
+            if (filter.ThisCard) Zones.RequireMonster(ctx, Name);
+            filter.Zones = Zone.MonsterZone;
+            CannotBanish(ctx, filter);
+            return;
+        }
         if (filter.ThisCard)
         {
             var (selfCodes, selfValue) = ctx.Args.Choice("rule") switch

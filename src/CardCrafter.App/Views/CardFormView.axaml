@@ -323,6 +323,13 @@
               </Button>
               <CheckBox Content="you can treat 1 Link-1 monster you control as a Level 1 Tuner" IsChecked="{Binding SynchroLinkAsTuner}" Margin="0,4,0,0"
                         ToolTip.Tip="Like Lollipo★Yummy Way: for this card's Synchro Summon, a Link-1 monster is a Level 1 Tuner." />
+              <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
+                <CheckBox Content="you can treat 1 monster like this as a Tuner:" IsChecked="{Binding SynchroAsTuner}" VerticalAlignment="Center"
+                          ToolTip.Tip="Like Junora the Power Patron of Tuning: for this card's Synchro Summon, you can treat 1 monster in your center Main Monster Zone as a Tuner." />
+                <Button Classes="chip" Content="{Binding SynchroAsTunerFilter.Summary}" IsEnabled="{Binding SynchroAsTuner}">
+                  <Button.Flyout><Flyout><views:FilterEditorView DataContext="{Binding SynchroAsTunerFilter}" /></Flyout></Button.Flyout>
+                </Button>
+              </StackPanel>
             </StackPanel>
 
             <!-- Synchro non-Tuners, Xyz and Link materials -->

@@ -100,6 +100,9 @@ public abstract partial class CardGroupAction : ActionBlock
     protected abstract string Hint { get; }
     /// <summary>A Lua check each card must pass, e.g. "c:IsAbleToHand()", or null.</summary>
     protected virtual string? AbleCheck(BlockContext ctx) => null;
+
+    /// <summary>The same check, for another block that pairs its card with this block's (<see cref="CardRefs.PairCheck"/>).</summary>
+    internal string? PairAble(BlockContext ctx) => AbleCheck(ctx);
     /// <summary>The Lua call that applies the action to a group, returning how many cards it affected.</summary>
     protected abstract string Apply(string group, BlockContext ctx);
     protected virtual IEnumerable<string> After(string group, FilterRef f) => [];
@@ -463,16 +466,34 @@ public sealed class SpecialSummonAction : CardGroupAction
 
     public override string Describe(BlockArgs args)
     {
-        var text = base.Describe(args);
+        var text = AsMany(args) ? ManyText(args) : base.Describe(args);
         // Buster Blader: "Special Summon that monster to your field": the opponent's monster it destroyed by battle.
         if (args.Cards("cards").That == CardRef.BattleTarget) text = text.Replace("that monster", "that monster to your field", StringComparison.Ordinal);
         return text + (args.Bool("ignore") && !Selection.OpponentPicks(args) ? ", ignoring its Summoning conditions" : "") + Negated(args);
     }
 
+    /// <summary>
+    /// "Special Summon as many Dragon Synchro Monsters from your GY as possible" (Crimson Dragon Quetzalcoatl): one for each
+    /// free Monster Zone, the player's choice when there are more.
+    /// </summary>
+    private static bool AsMany(BlockArgs args) => args.Bool("as_many");
+
+    private static string ManyText(BlockArgs args)
+    {
+        var cards = FilterText.Describe(args.Cards("cards"), args.Pack, plural: true, ownName: args.CardName, withExcept: false);
+        var text = $"Special Summon as many {cards} as possible";
+        foreach (var key in new[] { "position", "zone" })
+            if (args.Describe(key) is { Length: > 0 } d) text += " " + d;
+        return text + args.ExceptText();
+    }
+
+    /// <summary>The block Summons several monsters: its count, "as many as possible", or this card with them.</summary>
+    private static bool Several(BlockArgs args) => args.IsPlural || AsMany(args) || CardRefs.Plus(args) == "this";
+
     /// <summary>", but negate its effects", ", but negate their effects", ", but it cannot be used as Link Material".</summary>
     private static string Negated(BlockArgs args)
     {
-        var plural = args.IsPlural || CardRefs.Plus(args) == "this";
+        var plural = Several(args);
         var text = !args.Bool("negate") ? "" : plural ? ", but negate their effects" : ", but negate its effects";
         // Ars Magna Academic Arcane Apparition Acropolis: "Special Summon that monster ..., but it cannot be used as Link Material".
         if (args.Bool("no_link")) text += text.Length > 0 ? (plural ? ", also they cannot be used as Link Material" : ", also it cannot be used as Link Material")
@@ -482,8 +503,19 @@ public sealed class SpecialSummonAction : CardGroupAction
 
     protected override bool Together => true;
 
-    /// <summary>"(This is treated as a Fusion Summon.)"</summary>
-    public override string Afterword(BlockArgs args) => TreatedAsSummon.Afterword(args.Choice("as"));
+    /// <summary>
+    /// "(This is treated as a Fusion Summon.)"; "Your opponent cannot activate cards or effects when that monster is Special
+    /// Summoned." (Theorealize Past Lull).
+    /// </summary>
+    public override string Afterword(BlockArgs args)
+    {
+        var treated = TreatedAsSummon.Afterword(args.Choice("as"));
+        if (!args.Bool("no_response")) return treated;
+        var noResponse = Several(args) ? "Your opponent cannot activate cards or effects when those monsters are Special Summoned."
+            : "Your opponent cannot activate cards or effects when that monster is Special Summoned.";
+        return treated.Length > 0 ? treated + " " + noResponse : noResponse;
+    }
+
     protected override string Category => "CATEGORY_SPECIAL_SUMMON";
     protected override string Hint => "HINTMSG_SPSUMMON";
     protected override int MaxCount => 5;
@@ -491,18 +523,24 @@ public sealed class SpecialSummonAction : CardGroupAction
 
     protected override IReadOnlyList<ParamSpec> BuildParams() =>
     [
-        .. base.BuildParams(),
+        // "As many as possible" says how many itself.
+        .. base.BuildParams().Select(p => p.Key is "count" or "mode" ? ValueSources.Also(p, b => b.Values.GetValueOrDefault("as_many") != "true") : p),
         ParamSpec.Choice("position", "Position",
             new("faceup", "", "face-up"),
             new("attack", "in Attack Position"),
             new("defense", "in Defense Position"),
             new("facedown", "in face-down Defense Position")),
-        ParamSpec.Choice("zone", "Zone", new("any", "", "to any zone"), new("pointed", "to a zone this card points to")),
+        // Theorealize Past Lull: "Special Summon it to your zone a Link Monster points to" (Duel.GetLinkedZone).
+        ParamSpec.Choice("zone", "Zone", new("any", "", "to any zone"), new("pointed", "to a zone this card points to"),
+            new("linked", "to your zone a Link Monster points to")),
         ParamSpec.Flag("ignore", "ignoring its Summoning conditions", false),
         TreatedAsSummon.Param,
         // Saved before this was offered: the Summoned monsters keep their effects.
         ParamSpec.Flag("negate", "but negate its effects", false),
         ParamSpec.Flag("no_link", "but it cannot be used as Link Material", false),
+        // Saved before these were offered: the count says how many, and the opponent can respond to the Summon.
+        ParamSpec.Flag("as_many", "as many as possible (one for each free Monster Zone)", false),
+        ParamSpec.Flag("no_response", "your opponent cannot activate cards or effects when it is Special Summoned", false),
     ];
 
     protected override string TargetedAction(BlockArgs args, string pronoun, bool single)
@@ -572,18 +610,21 @@ public sealed class SpecialSummonAction : CardGroupAction
         return FaceDown(ctx) ? $"c:IsCanBeSpecialSummoned(e,0,tp,{Ignore(ctx)},false,POS_FACEDOWN_DEFENSE)" : $"c:IsCanBeSpecialSummoned(e,0,tp,{Ignore(ctx)},false)";
     }
 
-    protected override string Apply(string g, BlockContext ctx)
+    protected override string Apply(string g, BlockContext ctx) => NoResponse(ctx, Summon(g, ctx));
+
+    private static string Summon(string g, BlockContext ctx)
     {
+        var zone = PointsTo(ctx) ? ZoneLua(ctx) : null;
         if (As(ctx) != "none")
         {
             var position = ctx.Args.Choice("position") switch { "attack" => "POS_FACEUP_ATTACK", "defense" => "POS_FACEUP_DEFENSE", _ => "POS_FACEUP" };
-            return TreatedAsSummon.Apply(ctx, g, As(ctx), Ignore(ctx), position, PointsTo(ctx) ? "e:GetHandler():GetLinkedZone(tp)" : null);
+            return TreatedAsSummon.Apply(ctx, g, As(ctx), Ignore(ctx), position, zone);
         }
         // Face-down: the opponent is shown the Summoned cards, as official cards do.
         if (FaceDown(ctx))
             return ctx.Script.AddFunction("spfacedown", "g,e,tp",
             [
-                $"local n=Duel.SpecialSummon(g,{(ctx.Args.Cards("cards").ThisCard ? "SUMMON_VALUE_SELF" : "0")},tp,tp,{Ignore(ctx)},false,POS_FACEDOWN_DEFENSE{(PointsTo(ctx) ? ",e:GetHandler():GetLinkedZone(tp)" : "")})",
+                $"local n=Duel.SpecialSummon(g,{(ctx.Args.Cards("cards").ThisCard ? "SUMMON_VALUE_SELF" : "0")},tp,tp,{Ignore(ctx)},false,POS_FACEDOWN_DEFENSE{(zone is null ? "" : "," + zone)})",
                 "if n>0 then Duel.ConfirmCards(1-tp,g) end",
                 "return n",
             ]) + $"({g},e,tp)";
@@ -597,15 +638,40 @@ public sealed class SpecialSummonAction : CardGroupAction
         // "This card itself" is Special Summoned by its own effect: SUMMON_VALUE_SELF, as official cards do.
         var value = ctx.Args.Cards("cards").ThisCard ? "SUMMON_VALUE_SELF" : "0";
         if (ctx.Args.Bool("negate") || ctx.Args.Bool("no_link"))
-            return NegatedSummon(ctx.Script, g, value, Ignore(ctx), "false", pos, PointsTo(ctx) ? "e:GetHandler():GetLinkedZone(tp)" : null, ctx.Args.Bool("negate"), ctx.Args.Bool("no_link"));
-        return PointsTo(ctx)
-            ? $"Duel.SpecialSummon({g},{value},tp,tp,{Ignore(ctx)},false,{pos},e:GetHandler():GetLinkedZone(tp))"
+            return NegatedSummon(ctx.Script, g, value, Ignore(ctx), "false", pos, zone, ctx.Args.Bool("negate"), ctx.Args.Bool("no_link"));
+        return zone is not null
+            ? $"Duel.SpecialSummon({g},{value},tp,tp,{Ignore(ctx)},false,{pos},{zone})"
             : $"Duel.SpecialSummon({g},{value},tp,tp,{Ignore(ctx)},false,{pos})";
+    }
+
+    /// <summary>
+    /// "Your opponent cannot activate cards or effects when that monster is Special Summoned": when the chain the Summon
+    /// resolved in ends, only its player can activate until the next chain ends, as Theorealize Past Lull does it. The
+    /// Summon's call, returning how many were Special Summoned.
+    /// </summary>
+    private static string NoResponse(BlockContext ctx, string call)
+    {
+        if (!ctx.Args.Bool("no_response")) return call;
+        var limit = ctx.Script.AddFunction("spchainlm", "e,ep,tp", ["return ep==tp"]);
+        var end = ctx.Script.AddFunction("splimitop", "e,tp,eg,ep,ev,re,r,rp", [$"Duel.SetChainLimitTillChainEnd({limit})"]);
+        return ctx.Script.AddFunction("spnoresponse", "e,tp,n",
+        [
+            "if n>0 and Duel.GetCurrentChain()==1 then",
+            "\tlocal e1=Effect.CreateEffect(e:GetHandler())",
+            "\te1:SetType(EFFECT_TYPE_FIELD+EFFECT_TYPE_CONTINUOUS)",
+            "\te1:SetCode(EVENT_CHAIN_END)",
+            $"\te1:SetOperation({end})",
+            "\te1:SetCountLimit(1)",
+            "\te1:SetReset(RESET_PHASE+PHASE_END)",
+            "\tDuel.RegisterEffect(e1,tp)",
+            "end",
+            "return n",
+        ]) + $"(e,tp,{call})";
     }
 
     protected override string? SpaceCheck(int count, CardFilter f, BlockContext ctx)
     {
-        if (PointsTo(ctx)) return $"Duel.GetLocationCount(tp,LOCATION_MZONE,tp,LOCATION_REASON_TOFIELD,e:GetHandler():GetLinkedZone(tp))>={count}";
+        if (PointsTo(ctx)) return $"Duel.GetLocationCount(tp,LOCATION_MZONE,tp,LOCATION_REASON_TOFIELD,{ZoneLua(ctx)})>={count}";
         if (As(ctx) != "none") return TreatedAsSummon.SpaceCheck(ctx, As(ctx), f.Zones);
         // "Tribute this card; Special Summon ...": the zone this card leaves for the cost counts, as official scripts check.
         var leaving = TreatedAsSummon.CostFreesThisCard(ctx) ? "e:GetHandler()" : null;
@@ -614,11 +680,15 @@ public sealed class SpecialSummonAction : CardGroupAction
             : leaving is null ? $"Duel.GetLocationCount(tp,LOCATION_MZONE)>={count}" : $"Duel.GetMZoneCount(tp,{leaving})>={count}";
     }
 
-    private static bool PointsTo(BlockContext ctx) => ctx.Args.Choice("zone") == "pointed";
+    /// <summary>To the zones this card points to, or those a Link Monster of the player points to.</summary>
+    private static bool PointsTo(BlockContext ctx) => ctx.Args.Choice("zone") is "pointed" or "linked";
+
+    /// <summary>Those zones (0 when there are none).</summary>
+    private static string ZoneLua(BlockContext ctx) => ctx.Args.Choice("zone") == "linked" ? "Duel.GetLinkedZone(tp)" : "e:GetHandler():GetLinkedZone(tp)";
 
     public override void Compile(BlockContext ctx)
     {
-        if (PointsTo(ctx) && !ctx.Card.IsLink)
+        if (ctx.Args.Choice("zone") == "pointed" && !ctx.Card.IsLink)
             ctx.Effect.Error("\"To a zone this card points to\" needs this card to be a Link monster.");
         if (As(ctx) != "none" && !TreatedAsSummon.Check(ctx, Name, ctx.Args.Cards("cards").ThisCard ? 1 : ctx.Args.Int("count"), FaceDown(ctx))) return;
         if ((ctx.Args.Bool("negate") || ctx.Args.Bool("no_link")) && (As(ctx) != "none" || FaceDown(ctx)))
@@ -626,7 +696,56 @@ public sealed class SpecialSummonAction : CardGroupAction
             ctx.Effect.Error($"\"{Name}\": \"but negate its effects\" and \"cannot be used as Link Material\" are for monsters Special Summoned face-up, not {(FaceDown(ctx) ? "face-down" : "treated as another Summon")}.");
             return;
         }
+        if (AsMany(ctx.Args))
+        {
+            CompileAsMany(ctx);
+            return;
+        }
         base.Compile(ctx);
+    }
+
+    /// <summary>
+    /// "Special Summon as many ... as possible": 1 must be there when it is activated; as it resolves, all of them, or as
+    /// many as there are free zones (1 while only 1 can be Summoned at a time), chosen by the player, as Crimson Dragon
+    /// Quetzalcoatl does it.
+    /// </summary>
+    private void CompileAsMany(BlockContext ctx)
+    {
+        var e = ctx.Effect;
+        var filter = ctx.Args.Cards("cards");
+        if (filter.ThisCard || filter.That != CardRef.None || ctx.Args.Bool("target") || CardRefs.Plus(ctx.Args) != "none" || Selection.Applies(ctx.Args))
+        {
+            e.Error($"\"{Name}\": \"as many as possible\" takes the cards the picker finds, without targeting, picking rules or other cards with them.");
+            return;
+        }
+        if (filter.Zones == Zone.None || filter.Zones.HasFlag(Zone.ExtraDeck) || As(ctx) != "none")
+        {
+            e.Error($"\"{Name}\": \"as many as possible\" Summons from the hand, Deck, GY or banishment (not the Extra Deck, nor treated as another Summon).");
+            return;
+        }
+        var f = ctx.Script.Filter(filter, AbleCheck(ctx));
+        var room = PointsTo(ctx) ? $"Duel.GetLocationCount(tp,LOCATION_MZONE,tp,LOCATION_REASON_TOFIELD,{ZoneLua(ctx)})" : "Duel.GetLocationCount(tp,LOCATION_MZONE)";
+        e.AddCategory(Category);
+        e.TargetChecks.Add($"{room}>0");
+        e.TargetChecks.Add($"Duel.IsExistingMatchingCard({f.Function},tp,{f.Self},{f.Opp},1,{f.Exclude},e,tp)");
+        e.TargetLines.Add($"Duel.SetOperationInfo(0,{Category},nil,1,{f.InfoPlayer},{f.InfoLocation})");
+        var g = e.NewLocal("g");
+        var r = e.NewLocal("r");
+        var ft = e.NewLocal("ft");
+        e.AddStep(
+        [
+            $"local {r}=0",
+            $"local {ft}={room}",
+            $"local {g}=Duel.GetMatchingGroup({f.ForSelection},tp,{f.Self},{f.Opp},{f.Exclude},e,tp)",
+            $"if {ft}>0 and {g}:GetCount()>0 then",
+            $"\tif Duel.IsPlayerAffectedByEffect(tp,59822133) then {ft}=1 end",
+            $"\tif {g}:GetCount()>{ft} then",
+            "\t\tDuel.Hint(HINT_SELECTMSG,tp,HINTMSG_SPSUMMON)",
+            $"\t\t{g}={g}:Select(tp,{ft},{ft},nil)",
+            "\tend",
+            $"\t{r}={Apply(g, ctx)}",
+            "end",
+        ], r, ctx.Link);
     }
 }
 

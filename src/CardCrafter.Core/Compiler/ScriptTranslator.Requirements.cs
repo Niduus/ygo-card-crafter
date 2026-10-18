@@ -737,8 +737,10 @@ public static partial class ScriptTranslator
                 }
             }
         }
-        // A material can come from elsewhere than a Monster Zone, where its sequence means something else.
-        if (piece.Procedure is { } proc && typeof(SummonProcedure).GetProperties().Where(p => p.PropertyType == typeof(CardFilter)).Select(p => (CardFilter?)p.GetValue(proc))
+        // A material can come from elsewhere than a Monster Zone, where its sequence means something else. The monster treated
+        // as a Tuner is one in the Monster Zone, as the blocks check it.
+        if (piece.Procedure is { } proc && typeof(SummonProcedure).GetProperties().Where(p => p.PropertyType == typeof(CardFilter) && p.Name != nameof(SummonProcedure.SynchroAsTunerFilter))
+                .Select(p => (CardFilter?)p.GetValue(proc))
                 .Any(f => f is not null && (f.CenterZone || f.Requirements.Any(r => r.Property == "extra_zone"))))
             throw No(ZoneBySequence);
         return piece;
