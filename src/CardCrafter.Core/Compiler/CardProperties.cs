@@ -143,6 +143,9 @@ public static class CardProperties
         new("material_archetype", "Mentions an archetype's monster as material (Fusion)", PropertyKind.Archetype, "aux.IsMaterialListSetCard(c,{0})", "material archetype",
             IsText: "that mentions a {0} monster as material", IsNotText: "that does not mention a {0} monster as material"),
         new("name", "Card name", PropertyKind.CardName, "", "name", IsText: "that is {0}", IsNotText: "that is not {0}"),
+        // Thunderforce Attack: "If you control a monster whose original name is "Slifer the Sky Dragon"": the printed name,
+        // whatever the card is treated as now (Card.IsOriginalCodeRule).
+        new("orig_name", "Original name", PropertyKind.CardName, "IsOriginalCodeRule", "original name", IsText: "whose original name is {0}", IsNotText: "whose original name is not {0}"),
         // ---- states
         new("negated", "Its effects are negated", PropertyKind.State, "c:IsDisabled()", "", IsText: "whose effects are negated", IsNotText: "whose effects are not negated"),
         new("summoned_turn", "Summoned this turn", PropertyKind.State, "c:IsStatus(STATUS_SUMMON_TURN+STATUS_FLIP_SUMMON_TURN+STATUS_SPSUMMON_TURN)", "",
@@ -320,7 +323,7 @@ public static class CardProperties
             {
                 var codes = r.Values.Where(v => v != 0).ToList();
                 if (codes.Count == 0) return null;
-                test = $"c:IsCode({string.Join(",", codes.Select(code => code.ToString(CultureInfo.InvariantCulture)))})";
+                test = $"c:{(p.Lua.Length > 0 ? p.Lua : "IsCode")}({string.Join(",", codes.Select(code => code.ToString(CultureInfo.InvariantCulture)))})";
                 break;
             }
             default:

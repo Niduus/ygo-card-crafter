@@ -33,6 +33,23 @@ public static partial class EffectTextGenerator
     }
 
     /// <summary>
+    /// "You cannot activate both of this card's effects in the same Chain." (Sun God Unification), "You cannot activate these
+    /// effects of "Elfnotes: Aristeia of Trust" in the same Chain.": one sentence for each group, at the end of the text.
+    /// Printed cards name the card when one of the effects is limited by name already.
+    /// </summary>
+    private static IEnumerable<string> SameChainLimits(CardProject project, List<EffectEvent> effects)
+    {
+        foreach (var group in effects.Where(e => e.SameChainGroup > 0).GroupBy(e => e.SameChainGroup))
+        {
+            var members = group.ToList();
+            var named = members.Any(e => e.Limit is OncePerTurn.Hard or OncePerTurn.Duel or OncePerTurn.SoftAndHard or OncePerTurn.FaceUpAndHard);
+            yield return members.Count == 2 && !named
+                ? "You cannot activate both of this card's effects in the same Chain."
+                : $"You cannot activate these effects of \"{project.Card.Name}\" in the same Chain.";
+        }
+    }
+
+    /// <summary>
     /// The card's limited activation when other effects follow it: printed cards close with its "You can only activate 1
     /// "X" per turn." after them (Cyber Emergency, Artifact Sanctum). Null when the activation's text ends the card.
     /// </summary>

@@ -188,13 +188,15 @@ public sealed class UntargetablePassive : PassiveBlock
     [
         ParamSpec.Choice("who", "By",
             new("opponent", "Your opponent cannot target this card with card effects", "by your opponent's card effects"),
-            new("any", "This card cannot be targeted by card effects", "by any card effects (Dragoon)")),
+            new("any", "This card cannot be targeted by card effects", "by any card effects (Dragoon)"),
+            // Obelisk the Tormentor: the same rule, as it words it.
+            new("neither", "Neither player can target this card with card effects", "by any card effects, worded \"Neither player can target this card\" (Obelisk)")),
     ];
 
     public override void Compile(BlockContext ctx)
     {
         var range = RangeOf(ctx);
-        ctx.Effect.AddPassive(v => SelfEffect(v, range, "EFFECT_CANNOT_BE_EFFECT_TARGET", ctx.Args.Choice("who") == "any" ? "1" : "aux.tgoval"));
+        ctx.Effect.AddPassive(v => SelfEffect(v, range, "EFFECT_CANNOT_BE_EFFECT_TARGET", ctx.Args.Choice("who") is "any" or "neither" ? "1" : "aux.tgoval"));
     }
 }
 

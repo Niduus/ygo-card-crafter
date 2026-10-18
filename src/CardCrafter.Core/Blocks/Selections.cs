@@ -421,6 +421,7 @@ public abstract partial class CardGroupAction
     /// <summary>"Your opponent chooses 1 monster in your GY, and you Special Summon it."</summary>
     public override string Describe(BlockArgs args)
     {
+        if (Spares(args)) return SpareText(args, base.Describe(args));
         if (!Selection.OpponentPicks(args)) return base.Describe(args) + Selection.EachText(args);
         var single = !args.IsPlural && !(args.CountMode == "up_to" && args.Int("count") > 1);
         // Their own cards: "your opponent chooses 1 card in their Extra Deck".

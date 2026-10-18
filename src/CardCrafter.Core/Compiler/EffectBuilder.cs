@@ -76,7 +76,9 @@ public sealed class EffectBuilder(ScriptBuilder script, EffectEvent source, int 
     /// <summary>1-based position of the effect on the card.</summary>
     public int Index { get; } = index;
     public string Var => $"e{Index}";
-    public CardData Card => Script.Card;
+    public CardData Card => CardOverride ?? Script.Card;
+    /// <summary>The card the effect's blocks see as "this card", when it isn't the card itself: a monster given the effect (Blaze Cannon).</summary>
+    public CardData? CardOverride { get; set; }
 
     // Effect object settings, filled in by the trigger block.
     public List<string> Types { get; } = [];

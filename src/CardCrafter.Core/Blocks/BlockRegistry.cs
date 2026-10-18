@@ -231,6 +231,8 @@ public static class BlockRegistry
         new RevealAction(), new AfterActivationCost(),
         // "Cannot be destroyed by that battle", and negating activated effects as they resolve (BattleAndNegation.cs)
         new BattleSafeAction(), new NegateActivatedPassive(),
+        // The Egyptian Gods: 3 Tributes to Normal Summon, the Tributed monsters' stats, effects a monster gains for the turn (DivineBeasts.cs)
+        new TributeSummonPassive(), new TributedStatsAction(), new GrantEffectsAction(),
     ];
 
     private static readonly Dictionary<string, BlockDefinition> ById = All.ToDictionary(b => b.Id);

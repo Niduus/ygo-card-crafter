@@ -109,6 +109,12 @@ internal static class Locks
     public static string ExceptText(string what, CardFilter f, BlockArgs args)
     {
         if (!HasExcept(what, f)) return "";
+        // Ra's Disciple: "You cannot Special Summon monsters, except by the effect of "Ra's Disciple"".
+        if (ByEffect(args, what))
+        {
+            var by = FilterText.Describe(f, args.Pack, plural: false, withLocation: false, ownName: args.CardName);
+            return $", except by the effect of {(by.StartsWith('"') ? by : SummonWording.Article(by) + " " + by)}";
+        }
         var cards = FilterText.Describe(f, args.Pack, plural: true, withLocation: false, ownName: args.CardName);
         return what switch
         {
@@ -119,6 +125,18 @@ internal static class Locks
             _ => $", except those of {cards}",
         };
     }
+
+    /// <summary>Special Summon locks whose exception can be the card whose effect Summons the monster.</summary>
+    public static bool BySource(string what) => what is "special" or "special_extra" or "special_hand" or "special_deck" or "special_gy";
+
+    /// <summary>
+    /// "Except by the effect of "Ra's Disciple"": the block's exception is whose effect Summons the monster, not what the
+    /// monster is. Blocks saved before it was offered have none.
+    /// </summary>
+    public static ParamSpec ByEffectParam => ParamSpec.Flag("by_effect", "the exception is the card whose effect Summons them (\"except by the effect of ...\")", false)
+        .ShowIf(b => BySource(b.Values.GetValueOrDefault("what", "special")));
+
+    public static bool ByEffect(BlockArgs args, string what) => BySource(what) && args.Definition.Param("by_effect") is not null && args.Bool("by_effect");
 
     /// <summary>"neither player can Special Summon monsters, except WIND monsters" (no capital, no period).</summary>
     public static string Sentence(string who, string what, CardFilter except, BlockArgs args)
@@ -180,7 +198,8 @@ internal static class Locks
         var f = HasExcept(what, except) || Names(what) ? ctx.Script.MaterialFilter(except, "lockfilter") : "nil";
         var (self, opp) = who switch { "both" => ("1", "1"), "opponent" => ("0", "1"), _ => ("1", "0") };
         // Most locks spare the picked monsters; "of" locks hit only them.
-        string Not(string card) => f == "nil" ? "" : Names(what) ? $" and {f}({card})" : $" and not {f}({card})";
+        var bySource = ByEffect(ctx.Args, what) && f != "nil";
+        string Not(string card) => f == "nil" ? "" : Names(what) ? $" and {f}({card})" : bySource ? $" and (se==nil or not {f}(se:GetHandler()))" : $" and not {f}({card})";
         var lines = new List<string> { $"{v}:SetType(EFFECT_TYPE_FIELD)" };
         string Props(string flags) => property is null ? flags : $"{flags}+{property}";
         void Player(string code)
@@ -240,7 +259,7 @@ internal static class Locks
                 Player("EFFECT_CANNOT_SPECIAL_SUMMON");
                 var test = what == "special_extra" ? "c:IsLocation(LOCATION_EXTRA)" + Not("c")
                     : what == "special_of" ? (f == "nil" ? null : $"{f}(c)")
-                    : f == "nil" ? null : $"not {f}(c)";
+                    : f == "nil" ? null : bySource ? $"se==nil or not {f}(se:GetHandler())" : $"not {f}(c)";
                 if (test is not null) lines.Add($"{v}:SetTarget({ctx.Script.AddFunction("sumlimit", "e,c,sump,sumtype,sumpos,targetp,se", [$"return {test}"])})");
                 break;
             }
@@ -377,6 +396,7 @@ public sealed class LockPassive : PassiveBlock
         ParamSpec.Choice("who", "Who", [.. Locks.Who, new("holder", "Any player who controls", "Any player who controls these cards:")]),
         ParamSpec.Choice("what", "Cannot", Locks.What),
         ParamSpec.Cards("cards", "Except (plain monsters for none)", () => new CardFilter { CardType = FilterCardType.Monster }, Zone.MonsterZone),
+        Locks.ByEffectParam,
         ParamSpec.Cards("holder", "Who controls", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster, FaceDownOnly = true }, Zone.Field)
             .Unprinted().WhenUsed().ShowIf(b => b.Values.GetValueOrDefault("who") == "holder"),
     ];

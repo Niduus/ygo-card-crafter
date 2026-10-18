@@ -440,13 +440,18 @@ public static class CardRefs
             "cost_atk" => (CardRef.Cost, "(tc:IsPreviousLocation(LOCATION_MZONE) and tc:GetPreviousAttackOnField() or tc:GetAttack())"),
             "cost_def" => (CardRef.Cost, "(tc:IsPreviousLocation(LOCATION_MZONE) and tc:GetPreviousDefenseOnField() or tc:GetDefense())"),
             "cost_level" => (CardRef.Cost, "(tc:IsPreviousLocation(LOCATION_MZONE) and tc:GetPreviousLevelOnField() or tc:GetLevel())"),
+            "cost_orig_atk" => (CardRef.Cost, "tc:GetTextAttack()"),
+            "cost_orig_def" => (CardRef.Cost, "tc:GetTextDefense()"),
             // Number 39: Utopia Roots: "this card gains ATK equal to that monster's Rank x 500" (the monster whose attack was negated).
             "attacker_atk" => (CardRef.Attacker, "tc:GetAttack()"),
             "attacker_rank" => (CardRef.Attacker, "tc:GetRank()"),
+            "battle_atk" => (CardRef.BattleTarget, "tc:GetAttack()"),
             _ => (CardRef.None, ""),
         };
         if (that == CardRef.None) return null;
         if (GroupLua(ctx, that) is not { } group) return "0";
+        // Read in a function of its own, where "c" isn't this card: the monster this card is battling is its handler's.
+        if (that == CardRef.BattleTarget) group = group.Replace("c:GetBattleTarget()", "e:GetHandler():GetBattleTarget()", StringComparison.Ordinal);
         var fn = ctx.Script.AddFunction("refstat", "g", ["local n=0", "for tc in aux.Next(g) do", $"\tn=n+math.max(0,{stat})", "end", "return n"]);
         return $"{fn}({group})";
     }

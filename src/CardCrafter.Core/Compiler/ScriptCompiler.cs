@@ -53,6 +53,8 @@ public static class ScriptCompiler
         for (int i = 0; i < project.Effects.Count; i++)
         {
             var effect = new EffectBuilder(script, project.Effects[i], i + 1);
+            // Blaze Cannon: an effect given to a monster is compiled as that monster's own.
+            if (project.Effects[i].Granted) effect.CardOverride = GrantEffectsAction.Receiver(card);
             CompileEffect(effect, pack);
             built.Add(effect);
         }
@@ -90,8 +92,20 @@ public static class ScriptCompiler
             foreach (var branch in effect.Branches.Values)
                 branch.StringIndex = nextString < 16 ? nextString++ : Math.Min(effect.Index, 16) - 1;
         var limits = CountLimits(card, built, script.Diagnostics);
+        var granted = new List<string>();
         foreach (var effect in built)
-            init.AddRange(effect.Build(limits[effect.Index]));
+        {
+            // Given to a monster: written in the function that gives it, not registered on this card.
+            if (effect.Source.Granted) granted.AddRange(GrantEffectsAction.GrantLines(effect.Build(limits[effect.Index])));
+            else init.AddRange(effect.Build(limits[effect.Index]));
+        }
+        if (granted.Count > 0)
+        {
+            if (!project.Effects.Any(e => e.Do.Any(b => b.BlockId == GrantEffectsAction.BlockId)))
+                script.Diagnostics.Add(new(Severity.Warning, "Some effects are \"given to a monster\", but no effect gives them (\"Monsters gain the following effects\"), so nothing has them."));
+            var name = script.AddFunction(GrantEffectsAction.GrantFunction[2..], "c,tc", granted);
+            if (name != GrantEffectsAction.GrantFunction) script.Diagnostics.Add(new(Severity.Error, "The given effects' function could not be named."));
+        }
 
         var lines = new List<string>
         {
@@ -381,6 +395,15 @@ public static class ScriptCompiler
                 effect.Error("\"Once while face-up on the field\" is for effects of a card already on the field, not its activation or a Summon procedure.");
             effect.AddProperty("EFFECT_FLAG_NO_TURN_RESET");
         }
+        // "You cannot activate both of this card's effects in the same Chain": a flag on the card for the Chain, set as one
+        // of them is activated (as Sun God Unification's script sets it in its costs).
+        if (src.SameChainGroup > 0)
+        {
+            if (effect.IsSummonProcedure) effect.Error("A Summon procedure doesn't start a Chain, so \"not in the same Chain\" can't apply to it.");
+            var flag = SameChainFlag(src.SameChainGroup);
+            effect.CostChecks.Add($"e:GetHandler():GetFlagEffect({flag})==0");
+            effect.CostLines.Insert(0, $"e:GetHandler():RegisterFlagEffect({flag},RESET_CHAIN,0,1)");
+        }
         if (src.Limit == OncePerTurn.SoftAndHard)
         {
             if (effect.IsSummonProcedure) { effect.Error("A Summon procedure can't have \"once per turn\" for each copy beside its limit by name."); return; }
@@ -602,6 +625,9 @@ public static class ScriptCompiler
 
     /// <summary>How many uses an effect's limit allows ("twice per turn"): 1 to 9.</summary>
     public static int Times(EffectEvent e) => Math.Clamp(e.Times, 1, 9);
+
+    /// <summary>The flag that keeps the effects of a "not in the same Chain" group out of one Chain.</summary>
+    public static string SameChainFlag(int group) => $"id+{(8700 + group).ToString(System.Globalization.CultureInfo.InvariantCulture)}";
 
     /// <summary>The flag that keeps "once per turn" for each copy beside a limit by card name (Perfect Toon World).</summary>
     public static string CopyFlag(int index) => $"id+{(8250 + index).ToString(System.Globalization.CultureInfo.InvariantCulture)}";

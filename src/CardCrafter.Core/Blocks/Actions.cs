@@ -129,8 +129,33 @@ public abstract partial class CardGroupAction : ActionBlock
 
     /// <summary>The block's blanks: its picker also offers "that card", and "together with this card / the target" follows.</summary>
     public override IReadOnlyList<ParamSpec> Params => _params ??=
-        [.. BuildParams().Select(p => p is { Key: "cards", Type: ParamType.Cards } ? p.ThatCards() : p), CardRefs.PlusParam];
+        [.. BuildParams().Select(p => p is { Key: "cards", Type: ParamType.Cards } ? p.ThatCards() : p), CardRefs.PlusParam, .. OffersSpare ? SpareParams : []];
     private IReadOnlyList<ParamSpec>? _params;
+
+    /// <summary>
+    /// Whether "all" cards can spare one the player chooses first: "Choose 1 "The Winged Dragon of Ra" in your Monster Zone
+    /// and send all other monsters on the field to the GY" (Dangers of the Divine). The chosen card isn't targeted.
+    /// </summary>
+    protected virtual bool OffersSpare => false;
+
+    private static ParamSpec[] SpareParams =>
+    [
+        ParamSpec.Flag("spare", "except 1 card you choose first (\"Choose 1 ... and send all other ...\")", false).ShowIf(b => b.Values.GetValueOrDefault("mode") == "all"),
+        ParamSpec.Cards("spare_cards", "The card you choose (spared)", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster, FaceUpOnly = true })
+            .Unprinted().WhenUsed().ShowIf(b => b.Values.GetValueOrDefault("mode") == "all" && b.Values.GetValueOrDefault("spare") == "true"),
+    ];
+
+    /// <summary>"Choose 1 ... and send all other ...": the block spares a card the player chooses as it resolves.</summary>
+    protected static bool Spares(BlockArgs args) => args.Definition.Param("spare") is not null && args.CountMode == "all" && args.Bool("spare") && !args.Cards("cards").IsSpecific();
+
+    /// <summary>"choose 1 "The Winged Dragon of Ra" in your Monster Zone and send all other monsters on the field to the GY".</summary>
+    protected static string SpareText(BlockArgs args, string action)
+    {
+        var chosen = FilterText.Describe(args.Cards("spare_cards"), args.Pack, plural: false, preposition: "in", ownName: args.CardName);
+        var at = action.IndexOf("all ", StringComparison.Ordinal);
+        if (at >= 0 && !action[(at + 4)..].StartsWith("other ", StringComparison.Ordinal)) action = action[..(at + 4)] + "other " + action[(at + 4)..];
+        return $"choose 1 {chosen} and {SentenceCase.Lower(action)}";
+    }
 
     /// <summary>Whether the card picker offers "This card itself" (move, destroy or Summon this exact card).</summary>
     protected virtual bool AllowsThisCard => false;
@@ -211,6 +236,11 @@ public abstract partial class CardGroupAction : ActionBlock
         if (Category.Length > 0) e.TargetLines.Add($"Duel.SetOperationInfo(0,{Category},{ig},{ig}:GetCount(),0,0)");
         var g = e.NewLocal("g");
         var r = e.NewLocal("r");
+        if (Spares(ctx.Args))
+        {
+            CompileSpare(ctx, f, g, r);
+            return;
+        }
         var body = new List<string>
         {
             $"local {r}=0",
@@ -219,6 +249,35 @@ public abstract partial class CardGroupAction : ActionBlock
         };
         body.AddRange(ApplyLines(g, r, ctx).Select(l => "\t" + l));
         body.AddRange(After(g, f).Select(l => "\t" + l));
+        body.Add("end");
+        e.AddStep(body, r, ctx.Link);
+    }
+
+    /// <summary>
+    /// "Choose 1 "The Winged Dragon of Ra" in your Monster Zone and send all other monsters on the field to the GY": the
+    /// card is chosen as it resolves (not targeted), and the others are what the action takes; with none to choose,
+    /// nothing happens, as Dangers of the Divine's script does it.
+    /// </summary>
+    private void CompileSpare(BlockContext ctx, FilterRef f, string g, string r)
+    {
+        var e = ctx.Effect;
+        var spare = ctx.Script.Filter(ctx.Args.Cards("spare_cards"), null, "sparefilter");
+        if (!e.IsMandatory) e.TargetChecks.Add($"Duel.IsExistingMatchingCard({spare.Function},tp,{spare.Self},{spare.Opp},1,{spare.Exclude},e,tp)");
+        var sg = e.NewLocal("sg");
+        var body = new List<string>
+        {
+            $"local {r}=0",
+            "Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_OPERATECARD)",
+            $"local {sg}=Duel.SelectMatchingCard(tp,{spare.ForSelection},tp,{spare.Self},{spare.Opp},1,1,{spare.Exclude},e,tp)",
+            $"if {sg}:GetCount()>0 then",
+            $"\tDuel.HintSelection({sg})",
+        };
+        if (f.Exclude != "nil") body.Add($"\t{sg}:AddCard({f.Exclude})");
+        body.Add($"\tlocal {g}=Duel.GetMatchingGroup({f.ForSelection},tp,{f.Self},{f.Opp},{sg},e,tp)");
+        body.Add($"\tif {g}:GetCount()>0 then");
+        body.AddRange(ApplyLines(g, r, ctx).Select(l => "\t\t" + l));
+        body.AddRange(After(g, f).Select(l => "\t\t" + l));
+        body.Add("\tend");
         body.Add("end");
         e.AddStep(body, r, ctx.Link);
     }
@@ -633,11 +692,12 @@ public sealed class SpecialSummonAction : CardGroupAction
 public sealed class DestroyAction : CardGroupAction
 {
     protected override bool OffersSelections => true;
+    protected override bool OffersSpare => true;
     protected override bool AllowsThisCard => true;
     protected override string TargetedWording => "destroy {0}";
     public override string Id => "do.destroy";
     public override string Name => "Destroy cards";
-    public override string Sentence => "Destroy {amount} {count_cards} {count} {cards} {pick} {pick2} {pick3} {sum} {inc_cards} {target} {chooser}";
+    public override string Sentence => "Destroy {amount} {count_cards} {count} {cards} {pick} {pick2} {pick3} {sum} {inc_cards} {target} {chooser} {spare_cards}";
     protected override string Category => "CATEGORY_DESTROY";
     protected override string Hint => "HINTMSG_DESTROY";
     protected override Func<CardFilter> DefaultCards => () => CardFilter.OpponentField();
@@ -647,11 +707,12 @@ public sealed class DestroyAction : CardGroupAction
 public sealed class BanishAction : CardGroupAction
 {
     protected override bool OffersSelections => true;
+    protected override bool OffersSpare => true;
     protected override bool AllowsThisCard => true;
     protected override string TargetedWording => "banish {0}";
     public override string Id => "do.banish";
     public override string Name => "Banish cards";
-    public override string Sentence => "Banish {amount} {count_cards} {count} {cards} {pick} {pick2} {pick3} {sum} {inc_cards} {target} {facedown} {until} {chooser}";
+    public override string Sentence => "Banish {amount} {count_cards} {count} {cards} {pick} {pick2} {pick3} {sum} {inc_cards} {target} {facedown} {until} {chooser} {spare_cards}";
     protected override string Category => "CATEGORY_REMOVE";
     protected override string Hint => "HINTMSG_REMOVE";
     protected override Func<CardFilter> DefaultCards => () => CardFilter.OpponentField();
@@ -740,11 +801,12 @@ public sealed class BanishAction : CardGroupAction
 public sealed class SendToGraveAction : CardGroupAction
 {
     protected override bool OffersSelections => true;
+    protected override bool OffersSpare => true;
     protected override bool AllowsThisCard => true;
     protected override string TargetedWording => "send {0} to the GY";
     public override string Id => "do.send_to_gy";
     public override string Name => "Send cards to the GY";
-    public override string Sentence => "Send {amount} {count_cards} {count} {cards} {pick} {pick2} {pick3} {sum} {inc_cards} to the GY {target} {chooser}";
+    public override string Sentence => "Send {amount} {count_cards} {count} {cards} {pick} {pick2} {pick3} {sum} {inc_cards} to the GY {target} {chooser} {spare_cards}";
     protected override string Category => "CATEGORY_TOGRAVE";
     protected override string Hint => "HINTMSG_TOGRAVE";
     protected override Func<CardFilter> DefaultCards => () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Deck };
@@ -755,11 +817,12 @@ public sealed class SendToGraveAction : CardGroupAction
 public sealed class ReturnToHandAction : CardGroupAction
 {
     protected override bool OffersSelections => true;
+    protected override bool OffersSpare => true;
     protected override bool AllowsThisCard => true;
     protected override string TargetedWording => "return {0} to the hand";
     public override string Id => "do.return_to_hand";
     public override string Name => "Return cards to the hand (bounce)";
-    public override string Sentence => "Return {amount} {count_cards} {count} {cards} {pick} {pick2} {pick3} {sum} {inc_cards} to the hand {target} {chooser}";
+    public override string Sentence => "Return {amount} {count_cards} {count} {cards} {pick} {pick2} {pick3} {sum} {inc_cards} to the hand {target} {chooser} {spare_cards}";
     protected override string Category => "CATEGORY_TOHAND";
     protected override string Hint => "HINTMSG_RTOHAND";
     protected override Func<CardFilter> DefaultCards => () => CardFilter.OpponentField();
@@ -770,11 +833,12 @@ public sealed class ReturnToHandAction : CardGroupAction
 public sealed class ShuffleIntoDeckAction : CardGroupAction
 {
     protected override bool OffersSelections => true;
+    protected override bool OffersSpare => true;
     protected override bool AllowsThisCard => true;
     protected override string TargetedWording => "shuffle {0} into the Deck";
     public override string Id => "do.shuffle_into_deck";
     public override string Name => "Shuffle cards into the Deck";
-    public override string Sentence => "Shuffle {amount} {count_cards} {count} {cards} {pick} {pick2} {pick3} {sum} {inc_cards} into the Deck {target} {chooser}";
+    public override string Sentence => "Shuffle {amount} {count_cards} {count} {cards} {pick} {pick2} {pick3} {sum} {inc_cards} into the Deck {target} {chooser} {spare_cards}";
     protected override string Category => "CATEGORY_TODECK";
     protected override string Hint => "HINTMSG_TODECK";
     protected override Func<CardFilter> DefaultCards => () => new CardFilter { Owner = CardOwner.You, Zones = Zone.Graveyard };
@@ -819,12 +883,50 @@ public sealed class DrawAction : ActionBlock
             // Mimighoul Fork: "Send it to the GY, then its owner draws 2 cards": the owner of the card the step before affected.
             new("owner", "Its owner", "Its owner (of the card the step before affected)")),
         ParamSpec.Int("count", "How many", 1, 1, 10),
-        PerParam,
+        // Thunderforce Attack: "draw cards equal to the number of monsters destroyed by this effect and sent to your opponent's GY".
+        ParamSpec.Choice("per", "For each", [.. PerParam.Choices,
+            new("per_sent_opp", "for each of those cards sent to your opponent's GY", "for each card the action before affected that is now in your opponent's GY")]),
+        // The Revived Sky God: "each player draws until they have 6 cards in their hand".
+        ParamSpec.Flag("until", "until they have this many cards in their hand", false).ShowIf(b => b.Values.GetValueOrDefault("who", "you") is "you" or "opponent" or "each"),
     ];
+
+    private static bool Until(BlockArgs args) => args.Bool("until") && args.Choice("who") is "you" or "opponent" or "each";
+
+    /// <summary>"the number of monsters destroyed by this effect and sent to your opponent's GY": what the step before sent there.</summary>
+    private static string SentToOpponent(BlockArgs args)
+    {
+        var dos = args.Effect?.Do;
+        var at = dos?.FindIndex(b => ReferenceEquals(b, args.Instance)) ?? -1;
+        var before = at > 0 ? dos!.Take(at).LastOrDefault(b => BlockRegistry.Find(b.BlockId) is ActionBlock and not OnlyIfAction) : null;
+        var monsters = before is not null && before.Filters.TryGetValue("cards", out var f) && (f.CardType == FilterCardType.Monster || f.Zones == Zone.MonsterZone);
+        var noun = monsters ? "monsters" : "cards";
+        return before?.BlockId == "do.destroy"
+            ? $"the number of {noun} destroyed by this effect and sent to your opponent's GY"
+            : $"the number of {noun} sent to your opponent's GY by this effect";
+    }
 
     public override string Describe(BlockArgs args)
     {
         var n = args.Int("count");
+        if (Until(args))
+            return args.Choice("who") switch
+            {
+                "each" => $"each player draws until they have {n} cards in their hand",
+                "opponent" => $"your opponent draws until they have {n} cards in their hand",
+                _ => $"draw until you have {n} cards in your hand",
+            };
+        if (args.Choice("per") == "per_sent_opp")
+        {
+            var equal = $"cards equal to {SentToOpponent(args)}" + (n == 1 ? "" : $" x {n}");
+            return args.Choice("who") switch
+            {
+                "each" => $"each player draws {equal}",
+                "opponent_may" => $"your opponent can draw {equal}",
+                "owner" => $"its owner draws {equal}",
+                "opponent" => $"your opponent draws {equal}",
+                _ => $"draw {equal}",
+            };
+        }
         var cards = n == 1 ? "1 card" : $"{n} cards";
         var text = args.Choice("who") switch
         {
@@ -845,6 +947,20 @@ public sealed class DrawAction : ActionBlock
         var per = Multiplier(ctx);
         var r = ctx.Effect.NewLocal("r");
         ctx.Effect.AddCategory("CATEGORY_DRAW");
+        if (Until(ctx.Args))
+        {
+            CompileUntil(ctx, n, r);
+            return;
+        }
+        if (ctx.Args.Choice("per") == "per_sent_opp")
+        {
+            // How many the step before sent to the opponent's GY, counted right after it.
+            if (ctx.Effect.LastResultStep is not { } step) { ctx.Effect.Error("\"For each of those cards sent to your opponent's GY\" needs a DO block before it that destroys or sends cards."); return; }
+            var dc = $"dc{ctx.Effect.Index}";
+            var keep = $"local {dc}=Duel.GetOperatedGroup():FilterCount({ctx.Script.AddFunction("sentoppfilter", "c,tp", ["return c:IsLocation(LOCATION_GRAVE) and c:IsControler(1-tp)"])},nil,tp)";
+            if (!step.Lines.Contains(keep)) step.Lines.Add(keep);
+            per = "*" + dc;
+        }
         if (ctx.Args.Choice("who") == "owner")
         {
             // Known once the step before has moved the card, as official scripts read it (GetOwner).
@@ -874,9 +990,26 @@ public sealed class DrawAction : ActionBlock
                 ], r, ctx.Link);
                 return;
         }
-        ctx.Effect.TargetChecks.Add($"Duel.IsPlayerCanDraw({p},{n})");
+        // "For each card sent to your opponent's GY": how many is only known as it resolves.
+        if (ctx.Args.Choice("per") != "per_sent_opp") ctx.Effect.TargetChecks.Add($"Duel.IsPlayerCanDraw({p},{n})");
         ctx.Effect.TargetLines.Add($"Duel.SetOperationInfo(0,CATEGORY_DRAW,nil,0,{p},{n})");
         ctx.Effect.AddStep([$"local {r}=Duel.Draw({p},{n}{per},REASON_EFFECT)"], r, ctx.Link);
+    }
+
+    /// <summary>"Each player draws until they have 6 cards in their hand", as The Revived Sky God's script draws.</summary>
+    private static void CompileUntil(BlockContext ctx, int n, string r)
+    {
+        var who = ctx.Args.Choice("who");
+        var players = who switch { "each" => new[] { "tp", "1-tp" }, "opponent" => ["1-tp"], _ => ["tp"] };
+        string Need(string p) => $"{n}-Duel.GetFieldGroupCount({p},LOCATION_HAND,0)";
+        foreach (var p in players) ctx.Effect.TargetChecks.Add($"{Need(p)}>0 and Duel.IsPlayerCanDraw({p},{Need(p)})");
+        ctx.Effect.TargetLines.Add($"Duel.SetOperationInfo(0,CATEGORY_DRAW,nil,0,{(who == "each" ? "PLAYER_ALL" : players[0])},1)");
+        var lines = new List<string> { $"local {r}=0" };
+        foreach (var p in players)
+        {
+            lines.Add($"if {Need(p)}>0 then {r}={r}+Duel.Draw({p},{Need(p)},REASON_EFFECT) end");
+        }
+        ctx.Effect.AddStep(lines, r, ctx.Link);
     }
 }
 

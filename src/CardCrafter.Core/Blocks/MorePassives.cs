@@ -112,7 +112,7 @@ public sealed class SelfRulePassive : PassiveBlock
     public override string Id => "passive.self_rule";
     public override string Group => "This card";
     public override string Name => "This card can't attack / be attacked / be Tributed...";
-    public override string Sentence => "{rule}";
+    public override string Sentence => "{rule} {cards}";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Choice("rule", "Rule",
@@ -129,13 +129,56 @@ public sealed class SelfRulePassive : PassiveBlock
             new("opp_no_battle_damage", "Your opponent takes no battle damage from attacks involving this card"),
             new("reflect_battle", "Your opponent takes any battle damage you would have taken from battles involving this card"),
             // Heart of the Blue-Eyes.
-            new("control_fixed", "Control of this card cannot switch")),
+            new("control_fixed", "Control of this card cannot switch"),
+            // The Egyptian Gods: "This card's Normal Summon cannot be negated." (EFFECT_CANNOT_DISABLE_SUMMON).
+            new("summon_not_negated", "This card's Normal Summon cannot be negated"),
+            new("spsummon_not_negated", "This card's Special Summon cannot be negated"),
+            // Obelisk the Tormentor: "When Normal Summoned, cards and effects cannot be activated." The Winged Dragon of Ra:
+            // "When Normal Summoned, other cards and effects cannot be activated." (a chain limit on its Summon).
+            new("summon_no_chain", "When Normal Summoned, cards and effects cannot be activated"),
+            new("summon_no_chain_other", "When Normal Summoned, other cards and effects cannot be activated"),
+            // Ra's Disciple: "Cannot be Tributed, except for the Tribute Summon of "Slifer the Sky Dragon", ...".
+            new("tribute_only_for", "Cannot be Tributed, except for the Tribute Summon of", "Cannot be Tributed, except for the Tribute Summon of these monsters:")),
+        new ParamSpec
+        {
+            Key = "cards", Label = "For the Tribute Summon of", Type = ParamType.Cards, WhereFromBlock = true,
+            DefaultFilter = () => new CardFilter { CardType = FilterCardType.Monster, Zones = Zone.None },
+        }.Unprinted().WhenUsed().ShowIf(b => b.Values.GetValueOrDefault("rule") == "tribute_only_for"),
     ];
+
+    public override string Describe(BlockArgs args)
+    {
+        if (args.Choice("rule") != "tribute_only_for") return args.Describe("rule");
+        var f = args.Cards("cards").Clone();
+        f.Zones = Zone.None;
+        var names = FilterText.Describe(f, args.Pack, plural: true, withLocation: false, ownName: args.CardName);
+        return $"cannot be Tributed, except for the Tribute Summon of {names}";
+    }
+
+    /// <summary>The rules about this card's own Summon, which apply while it is being Summoned (from the hand), not from a zone.</summary>
+    private static bool OnItsSummon(string rule) => rule is "summon_not_negated" or "spsummon_not_negated" or "summon_no_chain" or "summon_no_chain_other";
 
     public override void Compile(BlockContext ctx)
     {
         Zones.RequireMonster(ctx, Name);
         var range = RangeOf(ctx);
+        var rule = ctx.Args.Choice("rule");
+        if (OnItsSummon(rule))
+        {
+            SummonRule(ctx, rule);
+            return;
+        }
+        if (rule == "tribute_only_for")
+        {
+            // Ra's Disciple: only those monsters' Tribute Summons can Tribute it; nothing else can.
+            var f = ctx.Args.Cards("cards").Clone();
+            f.Zones = Zone.None;
+            var mf = ctx.Script.MaterialFilter(f, "relfilter");
+            var sumval = ctx.Script.AddFunction("relval", "e,c", [mf == "nil" ? "return false" : $"return not {mf}(c)"]);
+            ctx.Effect.AddPassive(v => SelfEffect(v, range, "EFFECT_UNRELEASABLE_NONSUM", "1"));
+            ctx.Effect.AddPassive(v => SelfEffect(v, range, "EFFECT_UNRELEASABLE_SUM", sumval));
+            return;
+        }
         if (ctx.Args.Choice("rule") == "battle_safe")
         {
             // Dark-Eyes Illusionist Faceless Mage: this card and the monster it battles both survive the battle.
@@ -160,6 +203,28 @@ public sealed class SelfRulePassive : PassiveBlock
             _ => [("EFFECT_CANNOT_ATTACK", "1")],
         };
         foreach (var (code, value) in codes) ctx.Effect.AddPassive(v => SelfEffect(v, range, code, value));
+    }
+
+    /// <summary>
+    /// "This card's Normal Summon cannot be negated" (EFFECT_CANNOT_DISABLE_SUMMON) and "When Normal Summoned, (other)
+    /// cards and effects cannot be activated" (a chain limit set as its Normal Summon succeeds), as the Egyptian Gods'
+    /// scripts write them: effects of the card itself, that no zone or IF block holds back.
+    /// </summary>
+    private static void SummonRule(BlockContext ctx, string rule)
+    {
+        if (ctx.Effect.Conditions.Count > 0) ctx.Effect.Warn($"\"{ctx.Args.Describe("rule")}\" always applies; the IF blocks were ignored.");
+        ctx.Effect.Conditions.Clear();
+        if (rule is "summon_not_negated" or "spsummon_not_negated")
+        {
+            var code = rule == "summon_not_negated" ? "EFFECT_CANNOT_DISABLE_SUMMON" : "EFFECT_CANNOT_DISABLE_SPSUMMON";
+            ctx.Effect.AddPassive(v => [$"{v}:SetType(EFFECT_TYPE_SINGLE)", $"{v}:SetCode({code})", $"{v}:SetProperty(EFFECT_FLAG_CANNOT_DISABLE+EFFECT_FLAG_UNCOPYABLE)"]);
+            return;
+        }
+        // Ra: only its own effects can be activated in response; Obelisk and Slifer: nothing at all.
+        var lm = rule == "summon_no_chain" ? "aux.FALSE"
+            : ctx.Script.AddFunction("sumchainlm", "c", ["return function(e,rp,tp) return e:GetHandler()==c end"]) + "(e:GetHandler())";
+        var op = ctx.Script.AddFunction("sumsuc", "e,tp,eg,ep,ev,re,r,rp", [$"Duel.SetChainLimitTillChainEnd({lm})"]);
+        ctx.Effect.AddPassive(v => [$"{v}:SetType(EFFECT_TYPE_SINGLE+EFFECT_TYPE_CONTINUOUS)", $"{v}:SetCode(EVENT_SUMMON_SUCCESS)", $"{v}:SetOperation({op})"]);
     }
 }
 
@@ -610,7 +675,9 @@ public sealed class SummonedByCondition : ConditionBlock
             new("normal", "Normal Summoned"), new("tribute", "Tribute Summoned"), new("from_hand", "Special Summoned from the hand"),
             new("from_gy", "Special Summoned from the GY"), new("from_extra", "Special Summoned from the Extra Deck"),
             new("self", "Special Summoned by its own effect", "Special Summoned by its own effect or procedure (\"this way\")"),
-            new("by_synchro_effect", "Special Summoned by the effect of a Synchro Monster")),
+            new("by_synchro_effect", "Special Summoned by the effect of a Synchro Monster"),
+            // The Egyptian Gods: "Once per turn, during the End Phase, if this card was Special Summoned: Send it to the GY."
+            new("special", "Special Summoned")),
     ];
 
     public override string Describe(BlockArgs args) => $"this card was {args.Describe("how")}";
@@ -629,6 +696,7 @@ public sealed class SummonedByCondition : ConditionBlock
         "from_extra" => "e:GetHandler():IsSummonType(SUMMON_TYPE_SPECIAL) and e:GetHandler():IsSummonLocation(LOCATION_EXTRA)",
         "self" => "e:GetHandler():GetSummonType()==SUMMON_TYPE_SPECIAL+SUMMON_VALUE_SELF",
         "by_synchro_effect" => "s.cc_bysynchro(e:GetHandler())",
+        "special" => "e:GetHandler():IsSummonType(SUMMON_TYPE_SPECIAL)",
         _ => "e:GetHandler():IsSummonType(SUMMON_TYPE_LINK)",
     };
 
