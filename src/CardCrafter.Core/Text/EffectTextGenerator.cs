@@ -69,6 +69,9 @@ public static partial class EffectTextGenerator
         string Said(EffectEvent e)
         {
             var text = Describe(e, project.Card, pack, limitSentence: (combined is null || !UsesCombinedLimit(e)) && !ReferenceEquals(e, late));
+            // Blaze Cannon: "... gains the following effects until the end of this turn. ● ...": the effects it gives, listed under it.
+            if (e.Do.Any(b => b.BlockId == GrantEffectsAction.BlockId))
+                text += string.Concat(project.Effects.Where(g => g.Granted).Select(g => OptionLine + Describe(g, project.Card, pack, limitSentence: true)));
             // A "This card is always treated as" block's own reminder is the card's line instead (none when the name says it).
             return project.Card.ArchetypeReminder ? ArchetypeReminder.WithoutReminder(text) : text;
         }
@@ -79,9 +82,10 @@ public static partial class EffectTextGenerator
         if (project.Card.OnlyOneOnField) paragraph.Add($"You can only control 1 \"{project.Card.Name}\".");
         if (SpiritText(project) is { Length: > 0 } spirit) paragraph.Add(spirit);
         if (GeminiText(project, pack, combined) is { Length: > 0 } gemini) paragraph.Add(gemini);
-        paragraph.AddRange(effects.Where(e => !GeminiCondition.Has(e) && !Procedure(e)).Select(Said).Where(s => s.Length > 0));
+        paragraph.AddRange(effects.Where(e => !GeminiCondition.Has(e) && !Procedure(e) && !e.Granted).Select(Said).Where(s => s.Length > 0));
         if (late is not null) paragraph.Add(ActivationLimit(late, project.Card.Name));
         if (combined is not null) paragraph.Add(combined);
+        paragraph.AddRange(SameChainLimits(project, effects));
         // The materials, then "(This card is always treated as a "X" card.)", each on its own line.
         return string.Join("\n", new[] { MaterialText.Describe(project, pack), reminder, Join(paragraph) }.Where(s => s.Length > 0));
     }
@@ -196,8 +200,9 @@ public static partial class EffectTextGenerator
         {
             text = head.Length == 0 ? SentenceCase.Upper(actions) : $"{SentenceCase.Upper(head)}, {actions}";
             // "Unaffected by other cards' effects.", "Cannot be used as Fusion Material.": this card's own rules, as printed cards start them.
+            // An effect given to a monster says "this card" in full: "● This card is unaffected by your opponent's card effects."
             foreach (var (said, printed) in new[] { ("This card is unaffected by ", "Unaffected by "), ("This card cannot be used as ", "Cannot be used as ") })
-                if (head.Length == 0 && text.StartsWith(said, StringComparison.Ordinal)) text = printed + text[said.Length..];
+                if (head.Length == 0 && !effect.Granted && text.StartsWith(said, StringComparison.Ordinal)) text = printed + text[said.Length..];
             // "If this card attacks, ... until the end of the Damage Step."
             foreach (var b in effect.If)
                 if (BlockRegistry.Find(b.BlockId) is ConditionBlock cd && cd.Until(new BlockArgs(cd, b, pack) { Effect = effect, CardName = card.Name }) is { Length: > 0 } until)

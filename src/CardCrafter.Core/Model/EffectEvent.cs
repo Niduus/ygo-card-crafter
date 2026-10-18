@@ -121,4 +121,18 @@ public sealed class EffectEvent
     /// "once". For <see cref="OncePerTurn.SoftAndHard"/> it is the uses by card name; each copy still has one.
     /// </summary>
     public int Times { get; set; } = 1;
+
+    /// <summary>
+    /// "You cannot activate both of this card's effects in the same Chain" (Sun God Unification): effects with the same
+    /// group number can't be activated in one Chain, besides their own limits. 0 means none.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public int SameChainGroup { get; set; }
+
+    /// <summary>
+    /// Given to a monster by another effect of this card ("1 "The Winged Dragon of Ra" you control gains the following
+    /// effects until the end of this turn", Blaze Cannon): not this card's own effect, and "this card" in it is that monster.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Granted { get; set; }
 }

@@ -126,6 +126,20 @@ public sealed partial class EffectViewModel : ObservableObject
         set { if (Model.SharedLimitGroup == (int)(value ?? 0)) return; Model.SharedLimitGroup = (int)(value ?? 0); OnPropertyChanged(); _changed(); }
     }
 
+    /// <summary>"You cannot activate both of this card's effects in the same Chain": effects with the same number. 0 = none.</summary>
+    public decimal? SameChainGroup
+    {
+        get => Model.SameChainGroup;
+        set { if (Model.SameChainGroup == (int)(value ?? 0)) return; Model.SameChainGroup = (int)(value ?? 0); OnPropertyChanged(); _changed(); }
+    }
+
+    /// <summary>Given to a monster by another effect of this card ("... gains the following effects"), not this card's own.</summary>
+    public bool Granted
+    {
+        get => Model.Granted;
+        set { if (Model.Granted == value) return; Model.Granted = value; OnPropertyChanged(); _changed(); }
+    }
+
     /// <summary>Blocks offered by each "+" menu. Lasting effects only offer lasting DO blocks.</summary>
     public IEnumerable<BlockDefinition> Available(BlockKind kind) => kind switch
     {

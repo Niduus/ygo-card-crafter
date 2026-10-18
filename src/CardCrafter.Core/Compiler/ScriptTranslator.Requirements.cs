@@ -532,6 +532,8 @@ public static partial class ScriptTranslator
             return Plain(Req("archetype", isOp, values: [.. m.Groups[1].Value.Split(',').Select(x => long.Parse(x[2..], NumberStyles.HexNumber, CultureInfo.InvariantCulture))]));
         if ((m = Regex.Match(t, @"^c:IsCode\((\d+(?:,\d+)*)\)$")).Success)
             return Plain(Req("name", isOp, values: [.. m.Groups[1].Value.Split(',').Select(Int64)]));
+        if ((m = Regex.Match(t, @"^c:IsOriginalCodeRule\((\d+(?:,\d+)*)\)$")).Success)
+            return Plain(Req("orig_name", isOp, values: [.. m.Groups[1].Value.Split(',').Select(Int64)]));
         if ((m = Regex.Match(t, @"^c:IsSummonType\((SUMMON_TYPE_\w+)\)$")).Success && SummonKinds.TryGetValue(m.Groups[1].Value, out var how))
             return Plain(Req("summon", isOp, values: how));
         if ((m = Regex.Match(t, @"^c:IsSummonLocation\(([\w+|]+)\)$")).Success && Mask(m.Groups[1].Value, SummonPlaces) is { } from)

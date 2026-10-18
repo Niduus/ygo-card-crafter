@@ -69,6 +69,13 @@
                         <NumericUpDown Value="{Binding SharedGroup}" Minimum="0" Maximum="16" FormatString="0" Width="56" ShowButtonSpinner="False"
                                        ToolTip.Tip="Effects with the same number share one use per turn (&quot;you can only use 1 of these effects per turn&quot;; for &quot;once per turn&quot; effects, each copy's one use). 0 = its own." />
                       </StackPanel>
+                      <StackPanel Orientation="Horizontal" IsVisible="{Binding ShowCosts}" Margin="8,0,0,0">
+                        <TextBlock Text="not in same Chain" VerticalAlignment="Center" FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,0,4,0" />
+                        <NumericUpDown Value="{Binding SameChainGroup}" Minimum="0" Maximum="16" FormatString="0" Width="48" ShowButtonSpinner="False"
+                                       ToolTip.Tip="Effects with the same number can't be activated in the same Chain (&quot;You cannot activate both of this card's effects in the same Chain&quot;). 0 = no such limit." />
+                      </StackPanel>
+                      <CheckBox Content="given to a monster" IsChecked="{Binding Granted}" Margin="8,0,0,0" FontSize="12"
+                                ToolTip.Tip="Not this card's own effect: a &quot;Monsters gain the following effects&quot; block of another effect gives it to a monster until the end of the turn, and &quot;this card&quot; in it is that monster (Blaze Cannon)." />
                     </StackPanel>
                     <StackPanel Grid.Column="4" Orientation="Horizontal" Margin="8,0,0,0">
                       <Button Classes="icon" Content="↑" Command="{Binding MoveUpCommand}" ToolTip.Tip="Move effect up" />

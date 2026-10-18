@@ -1141,7 +1141,9 @@ public sealed class CardsDetailTrigger : BlockDefinition
         ParamSpec.Choice("now", "Now they are", ThisCardDetailTrigger.Destinations.Select(d => new ChoiceOption(d.Key, d.Text, d.Key == "any" ? "anywhere" : d.Text)).ToArray()),
         ParamSpec.Choice("other", "This card", new("any", "", "may be one of them"), new("other", "another", "one of them is another card"),
             new("not_this", "another", "this card isn't one of them"), new("other_not_this", "another", "another card, and this card isn't one of them")),
-        ParamSpec.Choice("count", "How many", new("any", "", "any number"), new("one", "", "exactly 1 card"), new("two", "", "exactly 2 cards (at the same time)")),
+        ParamSpec.Choice("count", "How many", new("any", "", "any number"), new("one", "", "exactly 1 card"), new("two", "", "exactly 2 cards (at the same time)"),
+            // The Breaking Ruin God: "If you Tribute 2 or more monsters you control at the same time to activate your card or effect".
+            new("two_plus", "", "2 or more cards (at the same time)")),
         // A card that left the field may not be what it was there (an effect changed its Type, or it was face-down).
         ParamSpec.Flag("previous", "check what they were on the field (name, archetype, Type, Attribute, Level, ATK, DEF)", false)
             .ShowIf(b => !IsSummon(b.Values.GetValueOrDefault("event") ?? "special")),
@@ -1209,7 +1211,15 @@ public sealed class CardsDetailTrigger : BlockDefinition
         // Card text says "another" both when one of them is another card and when this card isn't one of them.
         var other = args.Choice("other") is not "any";
         var one = args.Choice("count") == "one";
-        var two = args.Choice("count") == "two";
+        var two = args.Choice("count") is "two" or "two_plus";
+        // Slifer the Sky Dragon: "If a monster(s) is Normal or Special Summoned to your opponent's field in Attack Position".
+        var position = "";
+        if (IsSummon(ev.Key) && !f.AnyRequirement && f.Requirements is [{ Property: "position", Op: RequirementOp.Is } pr] && pr.Values is [var pv and (0x3 or 0xc)])
+        {
+            position = pv == 0x3 ? " in Attack Position" : " in Defense Position";
+            f = f.Clone();
+            f.Requirements = [];
+        }
         var noun = FilterText.Describe(f, args.Pack, false, "", withLocation: false, withExcept: false);
         if (noun.StartsWith("other ", StringComparison.Ordinal)) noun = noun[6..];
         // "your monster this card points to inflicts battle damage to your opponent".
@@ -1219,7 +1229,11 @@ public sealed class CardsDetailTrigger : BlockDefinition
             var many = "2 " + FilterText.Describe(f, args.Pack, true, "", withLocation: false, withExcept: false);
             if (many.StartsWith("2 other ", StringComparison.Ordinal)) many = "2 " + many[8..];
             if (args.Choice("face") is var face2 && face2 != "any") many = "2 " + (face2 == "up" ? "face-up " : "Set ") + many[2..];
+            if (args.Choice("count") == "two_plus") many = "2 or more " + many[2..];
             noun = many;
+            // "If you Tribute 2 or more monsters you control at the same time to activate your card or effect".
+            if (args.Choice("count") == "two_plus" && ev.Key == "tributed" && args.Choice("by") == "cost" && args.Choice("player") == "you" && f.Owner == CardOwner.You)
+                return $"you Tribute {noun} you control at the same time to activate your card or effect";
         }
         // "a face-up "Raidraptor" card(s)", "a Set card(s)": how they were before they moved.
         if (args.Choice("face") is var face && face != "any" && !noun.StartsWith("face-", StringComparison.Ordinal))
@@ -1246,7 +1260,7 @@ public sealed class CardsDetailTrigger : BlockDefinition
             // Qliphort Genius: "Special Summoned at the same time to the zones this card points to".
             var to = f.PointedToByThisCard ? " to the zones this card points to"
                 : f.Owner switch { CardOwner.You => " to your field", CardOwner.Opponent => " to your opponent's field", _ => "" };
-            return $"{noun} {be} {kind} Summoned{together}{sf}{to}{tail}";
+            return $"{noun} {be} {kind} Summoned{together}{sf}{to}{position}{tail}";
         }
         string owner = !SaysControl(args) ? "" : f.Owner == CardOwner.You ? " you control" : " your opponent controls";
         var gy = whose != "before" && f.Owner != CardOwner.Either ? (f.Owner == CardOwner.You ? "your GY" : "your opponent's GY") : "the GY";
@@ -1419,7 +1433,17 @@ public sealed class CardsDetailTrigger : BlockDefinition
         var other = ctx.Args.Choice("other");
         var fn = ctx.Script.AddFunction("evcards", "c,e,tp", [$"return {(parts.Count == 0 ? "true" : string.Join(" and ", parts))}"]);
         var exclude = other is "other" or "other_not_this" ? "e:GetHandler()" : "nil";
-        var tests = new List<string> { ctx.Args.Choice("count") == "two" ? $"eg:FilterCount({fn},{exclude},e,tp)==2" : $"eg:IsExists({fn},1,{exclude},e,tp)" };
+        var tests = new List<string>
+        {
+            ctx.Args.Choice("count") switch
+            {
+                "two" => $"eg:FilterCount({fn},{exclude},e,tp)==2",
+                "two_plus" => $"eg:IsExists({fn},2,{exclude},e,tp)",
+                _ => $"eg:IsExists({fn},1,{exclude},e,tp)",
+            },
+        };
+        // "To activate your card or effect": Tributed for the cost of an activated card or effect.
+        if (ctx.Args.Choice("count") == "two_plus" && ev.Key == "tributed" && ctx.Args.Choice("by") == "cost") tests.Add("re and re:IsActivated()");
         if (other is "not_this" or "other_not_this") tests.Add("not eg:IsContains(e:GetHandler())");
         if (ctx.Args.Choice("count") == "one") tests.Add("eg:GetCount()==1");
         if (ev.Key == "battle_damage") tests.Add("ep~=tp");

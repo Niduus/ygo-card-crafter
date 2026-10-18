@@ -463,6 +463,9 @@ public class RequirementMatrixChoiceTests
         Row("stat", true, IsNot("archetype", RequirementMatrix.OtherArch)), Row("effect", false, Is("archetype", RequirementMatrix.Arch)),
         Row("stat", true, Is("name", RequirementMatrix.S)), Row("stat", false, Is("name", RequirementMatrix.Other)), Row("stat", true, Is("name", RequirementMatrix.Other, RequirementMatrix.S)),
         Row("stat", false, IsNot("name", RequirementMatrix.S)), Row("stat", false, IsNot("name", RequirementMatrix.Other, RequirementMatrix.S)), Row("stat", true, IsNot("name", RequirementMatrix.Other)),
+        // The original name: the subject's printed one.
+        Row("stat", true, Is("orig_name", RequirementMatrix.S)), Row("stat", false, Is("orig_name", RequirementMatrix.Other)),
+        Row("stat", false, IsNot("orig_name", RequirementMatrix.S)), Row("stat", true, IsNot("orig_name", RequirementMatrix.Other)),
         // The archetypes a Fusion Monster's materials name.
         Row("fusion_mentions", true, Is("material_archetype", RequirementMatrix.Arch)), Row("fusion_mentions", false, Is("material_archetype", RequirementMatrix.OtherArch)),
         Row("fusion_mentions", false, IsNot("material_archetype", RequirementMatrix.Arch)), Row("fusion_mentions", true, IsNot("material_archetype", RequirementMatrix.OtherArch)),
@@ -606,6 +609,7 @@ public class RequirementMatrixTextTests
         [Is("material_archetype", 0x7a1), "that mentions an \"Ember\" monster as material"],
         [Is("name", RequirementMatrix.S), "that is \"Subject\""],
         [IsNot("name", RequirementMatrix.S, RequirementMatrix.Other), "that is neither \"Subject\" nor \"Other\""],
+        [Is("orig_name", RequirementMatrix.S), "whose original name is \"Subject\""],
         [Is("negated"), "whose effects are negated"],
         [Is("can_have_counter", 0x6e), "that you can place a Season Counter on"],
         [IsNot("summoned_turn"), "that was not Summoned this turn"],

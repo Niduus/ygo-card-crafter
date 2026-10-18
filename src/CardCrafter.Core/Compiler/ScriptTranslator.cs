@@ -264,6 +264,8 @@ public static partial class ScriptTranslator
         if (PendulumScalePieceOf(piece, sets, fns) is { } scales) return scales;
         // A Toon monster's rules (ScriptTranslator.Chance.cs).
         if (ToonPieceOf(piece, sets, fns) is { } toon) return toon;
+        // The Egyptian Gods' Summoning rules (ScriptTranslator.Divine.cs).
+        if (DivinePieceOf(piece, sets, fns) is { } divine) return divine;
 
         // "Treated as" a name, archetype, Attribute, Type or Normal Monster, and material treatments (ScriptTranslator.TreatedAs.cs).
         if (TreatedAsPieceOf(piece, sets, fns, card) is { } treatedAs) return treatedAs;
@@ -1579,6 +1581,8 @@ public static partial class ScriptTranslator
         ["return e:GetHandler():IsSummonType(SUMMON_TYPE_FUSION)"] = "fusion",
         ["return e:GetHandler():IsSummonType(SUMMON_TYPE_RITUAL)"] = "ritual",
         ["return e:GetHandler():IsSummonType(SUMMON_TYPE_PENDULUM)"] = "pendulum",
+        // The Egyptian Gods: "during the End Phase, if this card was Special Summoned".
+        ["return e:GetHandler():IsSummonType(SUMMON_TYPE_SPECIAL)"] = "special",
     };
 
     /// <summary>

@@ -65,8 +65,13 @@ public static class ValueSources
         new("cost_atk", "the cost monster's ATK", "the ATK of the card used for the cost"),
         new("cost_def", "the cost monster's DEF", "the DEF of the card used for the cost"),
         new("cost_level", "the cost monster's Level", "the Level of the card used for the cost"),
+        // Blaze Cannon: "this card gains ATK equal to the Tributed monsters' combined original ATK".
+        new("cost_orig_atk", "the cost monsters' combined original ATK", "the combined original ATK of the cards used for the cost"),
+        new("cost_orig_def", "the cost monsters' combined original DEF", "the combined original DEF of the cards used for the cost"),
         new("attacker_atk", "the attacking monster's ATK", "the attacking monster's ATK (whose attack this effect answers)"),
         new("attacker_rank", "the attacking monster's Rank", "the attacking monster's Rank (whose attack this effect answers, or negated)"),
+        // Guardian Slime: "gain DEF equal to that opponent's monster's ATK": the monster this card is battling.
+        new("battle_atk", "that opponent's monster's ATK", "the ATK of the monster this card is battling"),
         // Reindsurm Giriakarma: "double this card's ATK".
         new("its_atk", "its ATK", "its ATK (now)"),
         new("its_def", "its DEF", "its DEF (now)"),
@@ -92,7 +97,7 @@ public static class ValueSources
 
     /// <summary>Values about this effect's target(s) or the card(s) used for its cost ("the targeted monster's ATK").</summary>
     public static bool OfThatCard(string source) => source != "cost_count"
-        && (source.StartsWith("target_", StringComparison.Ordinal) || source.StartsWith("cost_", StringComparison.Ordinal) || source.StartsWith("attacker_", StringComparison.Ordinal));
+        && (source.StartsWith("target_", StringComparison.Ordinal) || source.StartsWith("cost_", StringComparison.Ordinal) || source.StartsWith("attacker_", StringComparison.Ordinal) || source.StartsWith("battle_", StringComparison.Ordinal));
 
     /// <summary>Values about the card(s) the DO step before affected ("that monster's original ATK").</summary>
     public static bool Affected(string source) => source.StartsWith("that_", StringComparison.Ordinal);
@@ -154,6 +159,8 @@ public static class ValueSources
         "cost_atk" => $"{CardRefs.Whose(CardRef.Cost, effect)} ATK",
         "cost_def" => $"{CardRefs.Whose(CardRef.Cost, effect)} DEF",
         "cost_level" => $"{CardRefs.Whose(CardRef.Cost, effect)} Level",
+        // "the Tributed monsters' combined original ATK", "the discarded card's original ATK".
+        "cost_orig_atk" or "cost_orig_def" => CombinedCost(effect, source == "cost_orig_atk" ? "ATK" : "DEF"),
         "count" => $"the number of {CardCounts.Group(cards, pack)}",
         "different_attr" => $"the number of different Attributes among the {CardCounts.Group(cards, pack)}",
         "different_race" => $"the number of different Types among the {CardCounts.Group(cards, pack)}",
@@ -179,6 +186,15 @@ public static class ValueSources
         "event" => "that amount",
         var s => Sources.First(o => o.Value == s).Label,
     };
+
+    /// <summary>"the Tributed monsters' combined original ATK" (a cost of several cards), or "the Tributed monster's original ATK".</summary>
+    private static string CombinedCost(EffectEvent? effect, string stat)
+    {
+        var cost = effect?.Cost.FirstOrDefault(b => b.BlockId is "cost.discard" or "cost.tribute" or "cost.move_cards");
+        var several = cost is not null && (cost.Values.GetValueOrDefault("mode") is "any" or "up_to"
+            || int.TryParse(cost.Values.GetValueOrDefault("count", "1"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) && n > 1);
+        return several ? $"{CardRefs.CostNoun(effect, plural: true)}' combined original {stat}" : $"{CardRefs.Whose(CardRef.Cost, effect)} original {stat}";
+    }
 
     /// <summary>True when the amount reads "300 ... for each card in your hand": a count, used "for each".</summary>
     public static bool ForEach(BlockArgs args) => args.Choice("how") == "per" && IsCountable(args.Choice("value")) && !HasPlus(args);

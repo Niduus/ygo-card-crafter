@@ -278,6 +278,23 @@ public sealed class NegateCardEffectsAction : CardGroupAction
         return args.Describe("duration") is { Length: > 0 } d ? $"{text} {d}" : text;
     }
 
+    /// <summary>
+    /// Fist of Fate: "Negate the effects of 1 Effect Monster your opponent controls, and if you do, destroy it": negating
+    /// doesn't keep the cards as the operated group, so they are kept here for the step after.
+    /// </summary>
+    private const string Negated = "s.ccnegated";
+
+    private static bool Keeps(BlockContext ctx) => CardRefs.NextUsesAffected(ctx.Effect.Source, ctx.Args.Instance);
+
+    public override void Compile(BlockContext ctx)
+    {
+        var steps = ctx.Effect.StepCount;
+        base.Compile(ctx);
+        if (!Keeps(ctx) || ctx.Effect.StepCount == steps) return;
+        if (!ctx.Effect.OperationPrologue.Contains($"{Negated}={{}}")) ctx.Effect.OperationPrologue.Add($"{Negated}={{}}");
+        ctx.Effect.LastResultStep!.Affected = $"Group.FromCards(table.unpack({Negated}))";
+    }
+
     // An Effect Monster, or one that is originally one (a Gemini monster that is a Normal Monster for now), as aux.NegateMonsterFilter.
     protected override string? AbleCheck(BlockContext ctx) =>
         "c:IsFaceup() and not c:IsDisabled() and (c:IsType(TYPE_EFFECT) or c:GetOriginalType()&TYPE_EFFECT~=0 or c:IsType(TYPE_SPELL+TYPE_TRAP))";
@@ -303,6 +320,7 @@ public sealed class NegateCardEffectsAction : CardGroupAction
             "\t\tlocal e2=e1:Clone()",
             "\t\te2:SetCode(EFFECT_DISABLE_EFFECT)",
             "\t\ttc:RegisterEffect(e2)",
+            .. Keeps(ctx) ? [$"\t\tif {Negated} then table.insert({Negated},tc) end"] : Array.Empty<string>(),
             "\t\tn=n+1",
             "\tend",
             "\ttc=g:GetNext()",
@@ -339,7 +357,16 @@ public sealed class ChangeStatsAction : CardGroupAction
         ParamSpec.Choice("stat", "Stat", new("atk", "ATK"), new("def", "DEF"), new("both", "ATK/DEF")),
         ParamSpec.Choice("duration", "Until", Resets.Duration),
         KeptParam,
+        // Slifer the Sky Dragon: "That monster(s) loses 2000 ATK, then if its ATK has been reduced to 0 as a result, destroy it."
+        ParamSpec.Flag("destroy_zero", "then destroy those whose ATK was reduced to 0 as a result", false)
+            .ShowIf(b => b.Values.GetValueOrDefault("dir") == "lose" && b.Values.GetValueOrDefault("stat", "atk") != "def"),
     ];
+
+    private static bool DestroysZero(BlockArgs args) => args.Bool("destroy_zero") && args.Choice("dir") == "lose" && args.Choice("stat") != "def";
+
+    /// <summary>", then if its ATK has been reduced to 0 as a result, destroy it", or "".</summary>
+    private static string ZeroText(BlockArgs args, bool single) => !DestroysZero(args) ? ""
+        : single ? ", then if its ATK has been reduced to 0 as a result, destroy it" : ", then destroy those whose ATK has been reduced to 0 as a result";
 
     public override string Describe(BlockArgs args)
     {
@@ -347,13 +374,19 @@ public sealed class ChangeStatsAction : CardGroupAction
         var verb = args.Choice("dir") == "gain" ? (one ? "gains" : "gain") : (one ? "loses" : "lose");
         var tail = $"{verb} {args.Int("amount")} {args.Describe("stat")} {args.Describe("duration")}".TrimEnd();
         // "all face-up monsters you control gain 500 ATK".
-        return $"{Subject(args)} {tail}{args.ExceptText()}";
+        return $"{Subject(args)} {tail}{args.ExceptText()}{ZeroText(args, one)}";
     }
 
     protected override string TargetedAction(BlockArgs args, string pronoun, bool single)
     {
         var verb = args.Choice("dir") == "gain" ? (single ? "gains" : "gain") : (single ? "loses" : "lose");
-        return $"{pronoun} {verb} {args.Int("amount")} {args.Describe("stat")} {args.Describe("duration")}".TrimEnd();
+        return $"{pronoun} {verb} {args.Int("amount")} {args.Describe("stat")} {args.Describe("duration")}".TrimEnd() + ZeroText(args, single);
+    }
+
+    public override void Compile(BlockContext ctx)
+    {
+        if (DestroysZero(ctx.Args)) ctx.Effect.AddCategory("CATEGORY_DESTROY");
+        base.Compile(ctx);
     }
 
     protected override string? AbleCheck(BlockContext ctx) => "c:IsFaceup()";
@@ -368,7 +401,10 @@ public sealed class ChangeStatsAction : CardGroupAction
             "both" => ["EFFECT_UPDATE_ATTACK", "EFFECT_UPDATE_DEFENSE"],
             _ => ["EFFECT_UPDATE_ATTACK"],
         };
+        var zero = DestroysZero(ctx.Args);
         var body = new List<string> { "local c=e:GetHandler()", "local n=0", "local tc=g:GetFirst()", "while tc do", "\tif tc:IsFaceup() then" };
+        // The monsters whose ATK this reduced to 0, which are then destroyed (as Slifer's script checks it).
+        if (zero) { body.Insert(2, "local dg=Group.CreateGroup()"); body.Add("\t\tlocal preatk=tc:GetAttack()"); }
         foreach (var (code, i) in codes.Select((c, i) => (c, i)))
         {
             body.Add($"\t\tlocal e{i + 1}=Effect.CreateEffect(c)");
@@ -379,7 +415,10 @@ public sealed class ChangeStatsAction : CardGroupAction
             body.Add($"\t\te{i + 1}:SetReset({reset})");
             body.Add($"\t\ttc:RegisterEffect(e{i + 1})");
         }
-        body.AddRange(["\t\tn=n+1", "\tend", "\ttc=g:GetNext()", "end", "return n"]);
+        if (zero) body.Add("\t\tif preatk~=0 and tc:IsAttack(0) then dg:AddCard(tc) end");
+        body.AddRange(["\t\tn=n+1", "\tend", "\ttc=g:GetNext()", "end"]);
+        if (zero) body.Add("if dg:GetCount()>0 then Duel.Destroy(dg,REASON_EFFECT) end");
+        body.Add("return n");
         var fn = ctx.Script.AddFunction("changestats", "g,e", body);
         return $"{fn}({group},e)";
     }

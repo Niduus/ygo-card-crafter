@@ -84,16 +84,18 @@ public sealed class PayLifePointsCost : CostBlock
     public override string Id => "cost.pay_lp";
     public override string Group => "Life Points";
     public override string Name => "Pay Life Points";
-    public override string Sentence => "Pay {how} {amount} {step} {max} LP";
+    public override string Sentence => "Pay {how} {amount} {left} {step} {max} LP";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Choice("how", "How much", new("amount", "", "a number"), new("half", "half your", "half your LP"),
             new("multiple", "LP in multiples of", "any multiple of (the LP paid can be used as an amount)"),
-            // The Winged Dragon of Ra, Sun God of Darkness: "pay LP so that you only have 1 left" (the LP paid can be used as an amount).
-            new("to_one", "LP so that you only have 1 left", "so that you only have 1 left (the LP paid can be used as an amount)"),
+            // The Winged Dragon of Ra, Sun God of Darkness: "pay LP so that you only have 1 left"; The Winged Dragon of Ra:
+            // "so that you only have 100 left" (the LP paid can be used as an amount). Saved before "left" was offered: 1.
+            new("to_one", "LP so that you only have", "so that you only have a number left (the LP paid can be used as an amount)"),
             // Ultimate Sky: "Target ... and pay 800 LP for each target": paid as the targets are chosen, which the LP caps.
             new("per_target", "", "a number for each target (of the DO block that targets)")),
         ParamSpec.Int("amount", "Amount", 1000, 1, 99999).ShowIf(b => b.Values.GetValueOrDefault("how", "amount") is "amount" or "per_target"),
+        ParamSpec.Int("left", "LP left", 1, 1, 99999).ShowIf(b => b.Values.GetValueOrDefault("how", "amount") == "to_one"),
         ParamSpec.Choice("step", "Multiples of", new("100", "100"), new("500", "500"), new("1000", "1000")).ShowIf(Multiple),
         ParamSpec.Int("max", "At most (0: as much as you have)", 0, 0, 99999).ShowIf(Multiple),
     ];
@@ -105,7 +107,7 @@ public sealed class PayLifePointsCost : CostBlock
         "half" => "pay half your LP",
         // Psychic Blade: "Pay LP in multiples of 100 (max. 2000)".
         "multiple" => $"pay LP in multiples of {args.Choice("step")}" + (args.Int("max") > 0 ? $" (max. {args.Int("max")})" : ""),
-        "to_one" => "pay LP so that you only have 1 left",
+        "to_one" => $"pay LP so that you only have {args.Int("left")} left",
         "per_target" => $"pay {args.Int("amount")} LP for each target",
         _ => $"pay {args.Int("amount")} LP",
     };
@@ -131,7 +133,7 @@ public sealed class PayLifePointsCost : CostBlock
             ctx.Effect.LpPerTarget = each;
             return;
         }
-        // "Pay LP so that you only have 1 left": all but 1, kept for "the LP paid" (as Cost.PayLP(1,true) keeps it).
+        // "Pay LP so that you only have 100 left": all but that many, kept for "the LP paid" (as Ra's script keeps it).
         if (ctx.Args.Choice("how") == "to_one")
         {
             if (ctx.Effect.Source.Cost.Any(b => b.BlockId == "cost.move_cards") || ctx.Effect.Source.Cost.Count(b => b.BlockId == Id && b.Values.GetValueOrDefault("how") is "multiple" or "to_one") > 1)
@@ -139,8 +141,9 @@ public sealed class PayLifePointsCost : CostBlock
                 ctx.Effect.Error("Only one COST block of an effect can keep its amount: paying LP so that you have 1 left can't go with another cost that counts its cards, or a second one.");
                 return;
             }
-            ctx.Effect.CostChecks.Add("Duel.GetLP(tp)>1 and Duel.CheckLPCost(tp,Duel.GetLP(tp)-1)");
-            ctx.Effect.CostLines.AddRange(["local lpc=Duel.GetLP(tp)-1", "Duel.PayLPCost(tp,lpc)", "e:SetLabel(lpc)"]);
+            var left = ctx.Args.Int("left").ToString(System.Globalization.CultureInfo.InvariantCulture);
+            ctx.Effect.CostChecks.Add($"Duel.GetLP(tp)>{left} and Duel.CheckLPCost(tp,Duel.GetLP(tp)-{left})");
+            ctx.Effect.CostLines.AddRange([$"local lpc=Duel.GetLP(tp)-{left}", "Duel.PayLPCost(tp,lpc)", "e:SetLabel(lpc)"]);
             return;
         }
         // "Pay half your LP": rounded down, as the game does.
@@ -286,10 +289,12 @@ public sealed class TributeCost : CostBlock
     public override string Id => "cost.tribute";
     public override string Group => "Cards";
     public override string Name => "Tribute monsters";
-    public override string Sentence => "Tribute {count} {cards} {from}";
+    public override string Sentence => "Tribute {mode} {count} {cards} {from}";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
-        ParamSpec.Int("count", "How many", 1, 1, 5),
+        // Blaze Cannon: "Tribute any number of other monsters ...; this card gains ATK equal to the Tributed monsters' combined original ATK".
+        ParamSpec.Choice("mode", "Exactly / any number", new("exact", "", "exactly"), new("any", "any number of", "any number of (at least 1; \"that many\" and their combined stats can be used)")),
+        ParamSpec.Int("count", "How many", 1, 1, 5).ShowIf(b => b.Values.GetValueOrDefault("mode", "exact") != "any"),
         ParamSpec.Cards("cards", "Which monsters", () => new CardFilter { Owner = CardOwner.You, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster }, Zone.MonsterZone, thisCard: true),
         ParamSpec.Choice("from", "From", new("field", "", "you control"), new("hand_or_field", "from your hand or field")),
     ];
@@ -297,9 +302,12 @@ public sealed class TributeCost : CostBlock
     public override string Describe(BlockArgs args)
     {
         if (args.Cards("cards").ThisCard) return "Tribute this card";
+        var any = args.Choice("mode") == "any";
         var n = args.Int("count");
-        var cards = Text.FilterText.Describe(args.Cards("cards"), args.Pack, n != 1, withLocation: args.Choice("from") != "hand_or_field");
-        return args.Choice("from") == "hand_or_field" ? $"Tribute {n} {cards} from your hand or field" : $"Tribute {n} {cards}";
+        // "Tribute any number of other monsters that did not declare an attack this turn": a Tribute is of your own monsters, as printed cards leave it unsaid.
+        var cards = Text.FilterText.Describe(args.Cards("cards"), args.Pack, any || n != 1, withLocation: args.Choice("from") != "hand_or_field" && !any);
+        var count = any ? "any number of" : n.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return args.Choice("from") == "hand_or_field" ? $"Tribute {count} {cards} from your hand or field" : $"Tribute {count} {cards}";
     }
 
     public override void Compile(BlockContext ctx)
@@ -313,22 +321,26 @@ public sealed class TributeCost : CostBlock
         }
         filter.Owner = CardOwner.You;
         filter.Zones = Zone.MonsterZone;
-        var n = ctx.Args.Int("count");
+        var any = ctx.Args.Choice("mode") == "any";
+        var n = any ? 1 : ctx.Args.Int("count");
+        var max = any ? "99" : n.ToString(System.Globalization.CultureInfo.InvariantCulture);
         // The Book of the Law: only a monster a DO block can then be used with ("with a different original Attribute"), for 1 monster.
-        var f = ctx.Script.Filter(filter, n == 1 ? CardRefs.PairCheck(ctx, CardRef.Cost) : null, "tributefilter");
+        var f = ctx.Script.Filter(filter, n == 1 && !any ? CardRefs.PairCheck(ctx, CardRef.Cost) : null, "tributefilter");
         var g = ctx.Effect.NewLocal("g");
         if (ctx.Args.Choice("from") == "hand_or_field")
         {
             // Mitsurugi: Tributing from the hand as well as the field.
             ctx.Effect.CostChecks.Add($"Duel.CheckReleaseGroupEx(tp,{f.Function},{n},REASON_COST,true,{f.Exclude},e,tp)");
-            ctx.Effect.CostLines.Add($"local {g}=Duel.SelectReleaseGroupEx(tp,{f.Function},{n},{n},REASON_COST,true,{f.Exclude},e,tp)");
+            ctx.Effect.CostLines.Add($"local {g}=Duel.SelectReleaseGroupEx(tp,{f.Function},{n},{max},REASON_COST,true,{f.Exclude},e,tp)");
         }
         else
         {
             ctx.Effect.CostChecks.Add($"Duel.CheckReleaseGroup(tp,{f.Function},{n},{f.Exclude},e,tp)");
-            ctx.Effect.CostLines.Add($"local {g}=Duel.SelectReleaseGroup(tp,{f.Function},{n},{n},{f.Exclude},e,tp)");
+            ctx.Effect.CostLines.Add($"local {g}=Duel.SelectReleaseGroup(tp,{f.Function},{n},{max},{f.Exclude},e,tp)");
         }
-        ctx.Effect.CostLines.Add($"Duel.Release({g},REASON_COST)");
+        // "Any number": how many is kept, for "that many" (CostCounts).
+        ctx.Effect.CostLines.Add(any ? $"e:SetLabel(Duel.Release({g},REASON_COST))" : $"Duel.Release({g},REASON_COST)");
+        if (any) ctx.Effect.CostCounts = true;
     }
 }
 

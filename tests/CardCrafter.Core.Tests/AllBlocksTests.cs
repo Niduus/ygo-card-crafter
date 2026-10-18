@@ -186,6 +186,18 @@ public class AllBlocksTests
                 project.Card.Kind = CardKind.Trap;
                 project.Effects[0].When = new BlockInstance("when.activate");
                 break;
+            // Blaze Cannon: the effects it gives, marked "given to a monster".
+            case GrantEffectsAction.BlockId:
+                project.Effects.Add(new EffectEvent
+                {
+                    Granted = true, When = new BlockInstance("when.while_face_up"),
+                    Do = [BlockRegistry.Find("passive.immune")!.CreateInstance().With("cards", new CardFilter { ThisCard = true, Zones = Zone.MonsterZone })],
+                });
+                break;
+            // "Draw cards equal to the number of monsters destroyed by this effect and sent to your opponent's GY": after the block that destroys them.
+            case "do.draw" when inst.Values.GetValueOrDefault("per") == "per_sent_opp":
+                project.Effects[0].Do.Insert(0, BlockRegistry.Find("do.destroy")!.CreateInstance());
+                break;
             // "..., but destroy it during the End Phase": after the block that Summons it.
             case EndPhaseAction.BlockId:
                 project.Effects[0].Do.Insert(0, BlockRegistry.Find("do.special_summon")!.CreateInstance());

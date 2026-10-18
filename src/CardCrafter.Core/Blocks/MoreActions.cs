@@ -17,6 +17,8 @@ internal static class Resets
     [
         new("turn", "until the end of this turn"), new("always", "", "while face-up"),
         new("opp_turn", "until the end of your opponent's turn"), new("next", "until the end of the next turn"),
+        // Guardian Slime: "... gain DEF equal to that opponent's monster's ATK during that damage calculation only".
+        new("damage_calc", "during that damage calculation only"),
     ];
 
     /// <summary>
@@ -31,6 +33,7 @@ internal static class Resets
         "turn" => EndOfTurn + extra,
         "opp_turn" => EndOfTurn + extra + ",Duel.GetTurnPlayer()==e:GetHandlerPlayer() and 2 or 1",
         "next" => EndOfTurn + extra + ",2",
+        "damage_calc" => WhileFaceUp + extra + "+RESET_PHASE+PHASE_DAMAGE_CAL",
         _ => WhileFaceUp + extra,
     };
 }
@@ -986,7 +989,9 @@ public sealed class BattleRuleAction : CardGroupAction
             new("unaffected_other", "is unaffected by other cards' effects"),
             new("tuner", "is treated as a Tuner"),
             new("cannot_direct", "cannot attack directly"),
-            new("cannot_be_destroyed_opp", "cannot be destroyed by your opponent's card effects")),
+            new("cannot_be_destroyed_opp", "cannot be destroyed by your opponent's card effects"),
+            // The Breaking Ruin God: "Special Summon 1 "Obelisk the Tormentor" ..., and if you do, it is unaffected by your opponent's card effects this turn".
+            new("unaffected_opp", "is unaffected by your opponent's card effects")),
         KeptParam,
     ];
 
@@ -1006,6 +1011,7 @@ public sealed class BattleRuleAction : CardGroupAction
         "tuner" => [("EFFECT_ADD_TYPE", "TYPE_TUNER")],
         "cannot_direct" => [("EFFECT_CANNOT_DIRECT_ATTACK", "1")],
         "cannot_be_destroyed_opp" => [("EFFECT_INDESTRUCTABLE_EFFECT", "aux.indoval")],
+        "unaffected_opp" => [("EFFECT_IMMUNE_EFFECT", "@unaffected_opp")],
         _ => [("EFFECT_CANNOT_ATTACK", "1")],
     };
 
@@ -1031,7 +1037,13 @@ public sealed class BattleRuleAction : CardGroupAction
         var i = 0;
         foreach (var (code, rawValue) in Rule(ctx.Args.Choice("rule")))
         {
-            var value = rawValue == "@unaffected" ? ctx.Script.AddFunction("unaffval", "e,re", ["return e:GetHandler()~=re:GetOwner()"]) : rawValue;
+            var value = rawValue switch
+            {
+                "@unaffected" => ctx.Script.AddFunction("unaffval", "e,re", ["return e:GetHandler()~=re:GetOwner()"]),
+                // The effect's owner is the player whose effect gave it.
+                "@unaffected_opp" => ctx.Script.AddFunction("unaffoppval", "e,re", ["return e:GetOwnerPlayer()~=re:GetOwnerPlayer()"]),
+                _ => rawValue,
+            };
             var v = $"e{++i}";
             body.AddRange([$"\t\tlocal {v}=Effect.CreateEffect(e:GetHandler())", $"\t\t{v}:SetType(EFFECT_TYPE_SINGLE)", .. KeptLines(ctx, v, "\t\t"), $"\t\t{v}:SetCode({code})",
                 $"\t\t{v}:SetValue({value})", $"\t\t{v}:SetReset({Resets.EndOfTurn})", $"\t\ttc:RegisterEffect({v})"]);
@@ -1104,10 +1116,32 @@ public sealed class SummonRestrictionAction : ActionBlock
             // Angelechy Opening to e4: until the End Phase of your next turn (this one, then yours after it, when used in your opponent's turn: theirs ends first).
             new("your_next", "Until the end of your next turn")),
         ParamSpec.Choice("who", "Who", new("you", "you"), new("opponent", "your opponent"), new("both", "neither player")),
-        ParamSpec.Choice("what", "Cannot", Locks.What),
+        ParamSpec.Choice("what", "Cannot", [.. Locks.What,
+            // Thunderforce Attack: "also you can only attack with 1 monster this turn".
+            new("attack_one", "attack with more than 1 monster", "attack with more than 1 monster (\"you can only attack with 1 monster\")"),
+            // Trap Trick: "You can only activate 1 Trap Card for the rest of this turn after this card resolves."
+            new("trap_one", "activate more than 1 Trap Card", "activate more than 1 Trap Card (\"you can only activate 1 Trap Card\")")]),
         ParamSpec.Cards("cards", "Except / which (plain monsters for none)", () => new CardFilter { CardType = FilterCardType.Monster, Attribute = CardAttribute.Dark }, Zone.MonsterZone),
+        Locks.ByEffectParam,
         ParamSpec.Flag("from_hand", "only if this card was activated from the hand", false),
     ];
+
+    /// <summary>The limits on how many: "you can only attack with 1 monster", "you can only activate 1 Trap Card".</summary>
+    private static bool OnlyOne(string what) => what is "attack_one" or "trap_one";
+
+    /// <summary>"you can only attack with 1 monster this turn", "you can only activate 1 Trap Card for the rest of this turn after this card resolves".</summary>
+    private static string OnlyOneText(BlockArgs args, string what)
+    {
+        var who = args.Choice("who") switch { "opponent" => "your opponent can", "both" => "each player can", _ => "you can" };
+        var after = DetailedTriggers.ActivatesThisCard(args.Effect) ? " after this card resolves" : "";
+        var duration = args.Choice("duration") switch
+        {
+            "next" => "until the end of the next turn",
+            "duel" => "for the rest of this Duel",
+            _ => what == "attack_one" ? "this turn" : $"for the rest of this turn{after}",
+        };
+        return what == "attack_one" ? $"{who} only attack with 1 monster {duration}" : $"{who} only activate 1 Trap Card {duration}";
+    }
 
     private static string Duration(BlockArgs args) => args.Choice("duration") switch
     {
@@ -1121,6 +1155,7 @@ public sealed class SummonRestrictionAction : ActionBlock
     {
         if (args.Bool("from_hand")) return "";
         var what = Locks.WhatOf(args);
+        if (OnlyOne(what)) return OnlyOneText(args, what);
         // After another action: "..., also you cannot Special Summon from the Extra Deck for the rest of this turn, except ...",
         // as most printed cards add it.
         if (args.Effect?.Do is { } dos && dos.IndexOf(args.Instance) > 0 && args.Instance.Link is ActionLink.And or ActionLink.AlsoAfterThat && what != "search")
@@ -1162,6 +1197,13 @@ public sealed class SummonRestrictionAction : ActionBlock
     {
         var what = Locks.WhatOf(ctx.Args);
         var lines = new List<string>();
+        if (OnlyOne(what))
+        {
+            if (ctx.Args.Bool("from_hand")) ctx.Effect.Error("\"Only if activated from the hand\" isn't offered for this limit.");
+            lines.AddRange(what == "attack_one" ? AttackOne(ctx) : TrapOne(ctx));
+            ctx.Effect.AddStep(lines, null, ctx.Link);
+            return;
+        }
         for (var part = 0; part < Locks.Parts(what); part++)
         {
             var v = part == 0 ? "sl" : $"sl{part + 1}";
@@ -1185,6 +1227,93 @@ public sealed class SummonRestrictionAction : ActionBlock
             return;
         }
         ctx.Effect.AddStep(lines, null, ctx.Link);
+    }
+
+    /// <summary>The players a limit "on how many" applies to.</summary>
+    private static string[] Players(BlockContext ctx) => ctx.Args.Choice("who") switch { "opponent" => ["1-tp"], "both" => ["tp", "1-tp"], _ => ["tp"] };
+
+    private static string Reset(BlockContext ctx) => ctx.Args.Choice("duration") switch { "next" => "RESET_PHASE+PHASE_END,2", "duel" => "", _ => "RESET_PHASE+PHASE_END" };
+
+    /// <summary>
+    /// "You can only attack with 1 monster this turn": once a monster declares an attack, the player's other monsters
+    /// can't, as Thunderforce Attack's script writes it (the first attacker is kept by its field ID).
+    /// </summary>
+    private static List<string> AttackOne(BlockContext ctx)
+    {
+        var flag = $"id+{8740 + ctx.Script.Slot("attackone")}";
+        var con = ctx.Script.AddFunction("atkonecon", "e", [$"return Duel.GetFlagEffect(e:GetHandlerPlayer(),{flag})~=0"]);
+        var tg = ctx.Script.AddFunction("atkonetg", "e,c", ["return c:GetFieldID()~=e:GetLabel()"]);
+        var check = ctx.Script.AddFunction("atkonecheck", "e,tp,eg,ep,ev,re,r,rp",
+            ["local tc=eg:GetFirst()", $"if not tc:IsControler(tp) or Duel.GetFlagEffect(tp,{flag})~=0 then return end", $"Duel.RegisterFlagEffect(tp,{flag},RESET_PHASE+PHASE_END,0,1)", "e:GetLabelObject():SetLabel(tc:GetFieldID())"]);
+        var reset = Reset(ctx);
+        var lines = new List<string>();
+        foreach (var p in Players(ctx))
+        {
+            lines.AddRange(
+            [
+                "local al=Effect.CreateEffect(e:GetHandler())",
+                "al:SetType(EFFECT_TYPE_FIELD)",
+                "al:SetProperty(EFFECT_FLAG_IGNORE_IMMUNE)",
+                "al:SetCode(EFFECT_CANNOT_ATTACK_ANNOUNCE)",
+                "al:SetTargetRange(LOCATION_MZONE,0)",
+                $"al:SetCondition({con})",
+                $"al:SetTarget({tg})",
+                .. reset.Length > 0 ? [$"al:SetReset({reset})"] : Array.Empty<string>(),
+                $"Duel.RegisterEffect(al,{p})",
+                "local ac=Effect.CreateEffect(e:GetHandler())",
+                "ac:SetType(EFFECT_TYPE_FIELD+EFFECT_TYPE_CONTINUOUS)",
+                "ac:SetProperty(EFFECT_FLAG_CANNOT_DISABLE)",
+                "ac:SetCode(EVENT_ATTACK_ANNOUNCE)",
+                $"ac:SetOperation({check})",
+                "ac:SetLabelObject(al)",
+                .. reset.Length > 0 ? [$"ac:SetReset({reset})"] : Array.Empty<string>(),
+                $"Duel.RegisterEffect(ac,{p})",
+            ]);
+        }
+        return lines;
+    }
+
+    /// <summary>
+    /// "You can only activate 1 Trap Card for the rest of this turn": once the player activates a Trap Card (and it isn't
+    /// negated), they can't activate another, as Trap Trick's script counts them.
+    /// </summary>
+    private static List<string> TrapOne(BlockContext ctx)
+    {
+        var flag = $"id+{8760 + ctx.Script.Slot("trapone")}";
+        var counted = ctx.Script.AddFunction("traponeop", "e,tp,eg,ep,ev,re,r,rp",
+            ["if ep~=tp or not re:IsHasType(EFFECT_TYPE_ACTIVATE) or not re:IsActiveType(TYPE_TRAP) then return end", $"Duel.RegisterFlagEffect(tp,{flag},RESET_PHASE+PHASE_END,0,1)"]);
+        var negated = ctx.Script.AddFunction("traponeneg", "e,tp,eg,ep,ev,re,r,rp",
+            ["if ep~=tp or not re:IsHasType(EFFECT_TYPE_ACTIVATE) or not re:IsActiveType(TYPE_TRAP) then return end", $"Duel.ResetFlagEffect(tp,{flag})"]);
+        var con = ctx.Script.AddFunction("traponecon", "e", [$"return Duel.GetFlagEffect(e:GetHandlerPlayer(),{flag})~=0"]);
+        var val = ctx.Script.AddFunction("traponeval", "e,re,tp", ["return re:IsActiveType(TYPE_TRAP) and re:IsHasType(EFFECT_TYPE_ACTIVATE)"]);
+        var reset = Reset(ctx);
+        var lines = new List<string>();
+        foreach (var p in Players(ctx))
+        {
+            lines.AddRange(
+            [
+                "local tw=Effect.CreateEffect(e:GetHandler())",
+                "tw:SetType(EFFECT_TYPE_FIELD+EFFECT_TYPE_CONTINUOUS)",
+                "tw:SetCode(EVENT_CHAINING)",
+                $"tw:SetOperation({counted})",
+                .. reset.Length > 0 ? [$"tw:SetReset({reset})"] : Array.Empty<string>(),
+                $"Duel.RegisterEffect(tw,{p})",
+                "local tn=tw:Clone()",
+                "tn:SetCode(EVENT_CHAIN_NEGATED)",
+                $"tn:SetOperation({negated})",
+                $"Duel.RegisterEffect(tn,{p})",
+                "local tl=Effect.CreateEffect(e:GetHandler())",
+                "tl:SetType(EFFECT_TYPE_FIELD)",
+                "tl:SetProperty(EFFECT_FLAG_PLAYER_TARGET)",
+                "tl:SetCode(EFFECT_CANNOT_ACTIVATE)",
+                "tl:SetTargetRange(1,0)",
+                $"tl:SetCondition({con})",
+                $"tl:SetValue({val})",
+                .. reset.Length > 0 ? [$"tl:SetReset({reset})"] : Array.Empty<string>(),
+                $"Duel.RegisterEffect(tl,{p})",
+            ]);
+        }
+        return lines;
     }
 }
 

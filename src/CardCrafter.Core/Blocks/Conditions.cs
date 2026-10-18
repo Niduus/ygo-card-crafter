@@ -265,6 +265,8 @@ public sealed class PhaseCondition : ConditionBlock
     [
         ParamSpec.Choice("phase", "Phase",
             new("main", "Main Phase", "Main Phase (1 or 2)"),
+            // Thunderforce Attack: "then, if you activated this card during your Main Phase, ...".
+            new("your_main", "your Main Phase", "your Main Phase (1 or 2)"),
             new("main1", "Main Phase 1"),
             new("main2", "Main Phase 2"),
             new("battle", "Battle Phase"),
@@ -274,7 +276,15 @@ public sealed class PhaseCondition : ConditionBlock
         ParamSpec.Choice("is", "Is it", new("is", "is"), new("not", "is not", "is not (\"except during the ...\")")),
     ];
 
-    public override string Describe(BlockArgs args) => args.Choice("is") == "not" ? $"except during the {args.Describe("phase")}" : $"during the {args.Describe("phase")}";
+    public override string Describe(BlockArgs args)
+    {
+        var phase = args.Choice("phase") == "your_main" ? "your Main Phase" : $"the {args.Describe("phase")}";
+        if (args.Choice("is") == "not") return $"except during {phase}";
+        // Among the DO blocks it gates the steps after it: the phase is the one the effect was activated in.
+        if (args.Effect?.Do.Any(b => ReferenceEquals(b, args.Instance)) == true)
+            return DetailedTriggers.ActivatesThisCard(args.Effect) ? $"if you activated this card during {phase}" : $"if it is {phase}";
+        return $"during {phase}";
+    }
 
     public override void Compile(BlockContext ctx)
     {
@@ -286,6 +296,7 @@ public sealed class PhaseCondition : ConditionBlock
             "main1" => "Duel.GetCurrentPhase()==PHASE_MAIN1",
             "main2" => "Duel.GetCurrentPhase()==PHASE_MAIN2",
             "draw" => "Duel.GetCurrentPhase()==PHASE_DRAW",
+            "your_main" => "(Duel.GetTurnPlayer()==tp and (Duel.GetCurrentPhase()==PHASE_MAIN1 or Duel.GetCurrentPhase()==PHASE_MAIN2))",
             _ => "(Duel.GetCurrentPhase()==PHASE_MAIN1 or Duel.GetCurrentPhase()==PHASE_MAIN2)",
         };
         if (ctx.Args.Choice("is") != "not") { ctx.Effect.Conditions.Add(check); return; }
