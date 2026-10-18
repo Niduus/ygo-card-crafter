@@ -136,6 +136,8 @@ public class AllBlocksTests
                 inst.Values["token"] = TokenId.ToString(System.Globalization.CultureInfo.InvariantCulture);
                 // "The combined original ATK/DEF of the Tributed monsters": after a block that Tributes.
                 if (inst.Values.GetValueOrDefault("stats") == "tributed") project.Effects[0].Do.Insert(0, BlockRegistry.Find("do.tribute")!.CreateInstance());
+                // "With the declared Level": after a block that declares a Level.
+                if (inst.Values.GetValueOrDefault("level") == "declared") project.Effects[0].Do.Insert(0, BlockRegistry.Find(DeclareAction.BlockId)!.CreateInstance().With("what", "level"));
                 break;
             // "Instead of conducting your normal draw" is for the Draw Phase.
             case "when.phase" when inst.Values.GetValueOrDefault("instead") == "true":

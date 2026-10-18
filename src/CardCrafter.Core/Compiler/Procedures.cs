@@ -144,6 +144,20 @@ internal static class Procedures
         var non = script.MaterialFilter(proc.MaterialFilter, "nontunerfilter", SummonProcedureKind.Synchro);
         if (proc.MaterialRule != MaterialGroupRule.None)
             script.Diagnostics.Add(new(Severity.Warning, "Synchro materials can't be checked as a group (\"with different names\"...); the rule is left out."));
+        // Junora the Power Patron of Tuning: "you can treat 1 monster in your center Main Monster Zone as a Tuner": the mixed
+        // procedure, whose Tuner is a Tuner or such a monster.
+        if (proc.SynchroAsTuner && !proc.SynchroLinkAsTuner)
+        {
+            // A material filter says what the monster is; where it is ("in your center Main Monster Zone") is checked here.
+            var asTuner = script.MaterialFilter(proc.SynchroAsTunerFilter, "astunerfilter", SummonProcedureKind.Synchro);
+            var at = new List<string>();
+            if (proc.SynchroAsTunerFilter.CenterZone) at.Add("c:IsLocation(LOCATION_MZONE) and c:GetSequence()==2");
+            if (asTuner != "nil") at.Add($"{asTuner}(c)");
+            var mat = script.AddFunction("synmatfilter", "c,syncard",
+                [$"return c:IsTuner(syncard){(tuner == "nil" ? "" : $" and {tuner}(c)")} or {(at.Count == 0 ? "true" : string.Join(" and ", at))}"]);
+            yield return $"aux.AddSynchroMixProcedure(c,{mat},nil,nil,aux.NonTuner({non}),{Math.Max(1, proc.MinMaterials)},{(proc.MaxMaterials > 0 ? proc.MaxMaterials : 99)})";
+            yield break;
+        }
         if (!proc.SynchroLinkAsTuner)
         {
             var max = proc.MaxMaterials > 0 ? "," + proc.MaxMaterials : "";

@@ -562,8 +562,10 @@ public sealed class ProtectCardsPassive : PassiveBlock
             new("opponent_effect", "by your opponent's card effects")),
     ];
 
+    // Elfnotes: Welcome Home: "The monster in your center Main Monster Zone cannot be destroyed by card effects".
     public override string Describe(BlockArgs args) =>
-        $"{(args.Cards("cards").ThisCard ? "this card" : FilterText.Describe(args.Cards("cards"), args.Pack, plural: true, preposition: ""))} cannot be destroyed {args.Describe("by")}";
+        $"{(args.Cards("cards").ThisCard ? "this card" : CardsRulePassive.OneZone(args.Cards("cards")) ? "the " + FilterText.Describe(args.Cards("cards"), args.Pack, preposition: "")
+            : FilterText.Describe(args.Cards("cards"), args.Pack, plural: true, preposition: ""))} cannot be destroyed {args.Describe("by")}";
 
     public override void Compile(BlockContext ctx)
     {

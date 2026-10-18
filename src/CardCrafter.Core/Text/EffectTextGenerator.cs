@@ -57,7 +57,7 @@ public static partial class EffectTextGenerator
         // Printed cards keep the materials on their own line; everything else is one paragraph.
         var paragraph = new List<string>();
         if (MaterialText.Alternate(project, pack) is { Length: > 0 } alternate) paragraph.Add(alternate);
-        if (MaterialText.SynchroLinkTuner(project) is { Length: > 0 } tuner) paragraph.Add(tuner);
+        if (MaterialText.SynchroLinkTuner(project, pack) is { Length: > 0 } tuner) paragraph.Add(tuner);
         if (EquipText(project, pack) is { Length: > 0 } equip) paragraph.Add(equip);
         if (ContactFusion.Text(project) is { Length: > 0 } contact) paragraph.Add(contact);
         else if (RuleText(project) is { Length: > 0 } rule) paragraph.Add(rule);

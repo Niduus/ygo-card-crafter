@@ -341,9 +341,10 @@ public static class CardRefs
     /// </summary>
     public static string GuardedGroup(CardRef that) => that switch
     {
-        CardRef.Target => "(function(te,tg) if te~=e or not tg then return nil end return tg:Filter(Card.IsRelateToEffect,nil,e) end)(Duel.GetChainInfo(0,CHAININFO_TRIGGERING_EFFECT,CHAININFO_TARGET_CARDS))",
+        // While a target or a cost card is being picked, the card it would be (PairCheck).
+        CardRef.Target => $"(function(te,tg) if {PairField(CardRef.Target)} then return {PairField(CardRef.Target)} end if te~=e or not tg then return nil end return tg:Filter(Card.IsRelateToEffect,nil,e) end)(Duel.GetChainInfo(0,CHAININFO_TRIGGERING_EFFECT,CHAININFO_TARGET_CARDS))",
         CardRef.Affected => "(function(te) if te~=e then return nil end return Duel.GetOperatedGroup() end)(Duel.GetChainInfo(0,CHAININFO_TRIGGERING_EFFECT))",
-        CardRef.Cost => "(function(te) if te~=e then return nil end return e:GetLabelObject() end)(Duel.GetChainInfo(0,CHAININFO_TRIGGERING_EFFECT))",
+        CardRef.Cost => $"(function(te) if {PairField(CardRef.Cost)} then return {PairField(CardRef.Cost)} end if te~=e then return nil end return e:GetLabelObject() end)(Duel.GetChainInfo(0,CHAININFO_TRIGGERING_EFFECT))",
         // The card whose activation is the last chain link while this effect checks whether it can respond (Omega
         // Vidolium's "while they control 2 or more monsters with the same Type as that monster"); none for its own link.
         CardRef.Activated => "(function(te) if not te or te==e then return nil end return Group.FromCards(te:GetHandler()) end)(Duel.GetChainInfo(0,CHAININFO_TRIGGERING_EFFECT))",
@@ -353,6 +354,41 @@ public static class CardRefs
         // The equipped monster and a battling monster are known whenever the effect is used.
         _ => $"(function(bc) return bc and Group.FromCards(bc) or nil end)({Card(that)})",
     };
+
+    /// <summary>Where <see cref="PairCheck"/> puts the card a target or cost card would be, while it checks it.</summary>
+    private static string PairField(CardRef that) => that == CardRef.Target ? "s.ccpairtarget" : "s.ccpaircost";
+
+    /// <summary>
+    /// "Send 1 monster to the GY; Special Summon 1 "Elfnote" monster with a different original Attribute from your Deck"
+    /// (Elfnotes: Welcome Home), "target 1 Synchro Monster; ... Special Summon 1 Dragon Synchro Monster with the same Level as
+    /// the targeted monster" (Crimson Dragon): a test on card c, the cost card or target being picked, that a DO block after
+    /// comparing its cards with it ("with a different original Attribute from that monster's") has one to use, as the official
+    /// scripts pick them. Null when no DO block compares with <paramref name="that"/>.
+    /// </summary>
+    public static string? PairCheck(BlockContext ctx, CardRef that, BlockInstance? after = null)
+    {
+        var dos = ctx.Effect.Source.Do;
+        var from = after is null ? 0 : dos.FindIndex(b => ReferenceEquals(b, after)) + 1;
+        foreach (var b in dos.Skip(from))
+        {
+            if (!b.Filters.TryGetValue("cards", out var f) || f.That != CardRef.None || f.ThisCard || f.Zones == Zone.None) continue;
+            if (!f.Requirements.Any(r => IsRequirement(r.Property) && r.Values.FirstOrDefault() == (long)that)) continue;
+            if (BlockRegistry.Find(b.BlockId) is not CardGroupAction def) return null;
+            var args = new BlockArgs(def, b, ctx.Args.Pack) { Effect = ctx.Effect.Source, CardName = ctx.Args.CardName };
+            var filter = ctx.Script.Filter(f, def.PairAble(new BlockContext(args, ctx.Effect)));
+            var exists = b.Values.GetValueOrDefault("target") == "true" ? "Duel.IsExistingTarget" : "Duel.IsExistingMatchingCard";
+            var field = PairField(that);
+            var fn = ctx.Script.AddFunction(that == CardRef.Target ? "pairtarget" : "paircost", "c,e,tp",
+            [
+                $"{field}=Group.FromCards(c)",
+                $"local ok={exists}({filter.Function},tp,{filter.Self},{filter.Opp},1,{filter.Exclude},e,tp)",
+                $"{field}=nil",
+                "return ok",
+            ]);
+            return $"{fn}(c,e,tp)";
+        }
+        return null;
+    }
 
     /// <summary>
     /// The picker requirements that compare a card with "that card": same/different Attribute, Type, Level, name, original
@@ -487,7 +523,9 @@ public sealed class TargetCardsAction : ActionBlock
             e.Error($"\"{Name}\": targets are cards on the field, in the GY or banished. Pick those places.");
             return;
         }
-        var f = ctx.Script.Filter(filter);
+        // Only a target a DO block after it can be used with ("with the same Level as the targeted monster"), for 1 target.
+        var pair = ctx.Args.Int("count") == 1 ? CardRefs.PairCheck(ctx, CardRef.Target, ctx.Args.Instance) : null;
+        var f = ctx.Script.Filter(filter, pair);
         var n = ctx.Args.Int("count");
         var min = ctx.Args.Choice("mode") == "up_to" ? 1 : n;
         e.SetChkc(min == 1 ? f.ChkcCheck : "false");

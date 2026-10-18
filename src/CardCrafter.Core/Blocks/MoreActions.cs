@@ -345,8 +345,9 @@ public sealed class TokenAction : ActionBlock
     public override string Id => "do.tokens";
     public override string Group => "Monsters";
     public override string Name => "Special Summon Tokens";
-    public override string Sentence => "Special Summon {count} {max} Token(s) (passcode {token}) {position} {side} {stats}";
-    public override string Help => "Make the Token as its own card in this pack (Monster, frame \"Token\") and enter its passcode here; its Level, Type, Attribute, ATK and DEF come from that card.";
+    public override string Sentence => "Special Summon {count} {max} Token(s) (passcode {token}) {position} {side} {stats} {level} {lock} {except}";
+    public override string Help => "Make the Token as its own card in this pack (Monster, frame \"Token\") and enter its passcode here; its Level, Type, Attribute, ATK and DEF come from that card. " +
+                                   "\"With the declared Level\" needs a \"Declare a Level\" block before it (Elfnotes: Quatrain of Succession).";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Int("count", "How many", 1, 1, 5),
@@ -358,9 +359,17 @@ public sealed class TokenAction : ActionBlock
         // Nibiru, the Primal Being: "(this Token's ATK/DEF become the combined original ATK/DEF of the Tributed monsters)".
         ParamSpec.Choice("stats", "ATK/DEF", new("own", "", "its own (the Token card's)"),
             new("tributed", "(this Token's ATK/DEF become the combined original ATK/DEF of the Tributed monsters)", "the combined original ATK/DEF of the monsters a step before Tributed")),
+        // Saved before these were offered: the Token card's Level, and no lock.
+        ParamSpec.Choice("level", "Level", new("own", "", "its own (the Token card's)"), new("declared", "with the declared Level", "the declared Level (\"Declare a Level\" before it)")),
+        // Swordsoul of Mo Ye, Elfnotes: Quatrain of Succession: a lock that lasts while the Token is on the field.
+        ParamSpec.Flag("lock", "While that Token is in the Monster Zone, the player who Summoned it cannot Special Summon from the Extra Deck", false),
+        ParamSpec.Cards("except", "Except (plain monsters for none)", () => new CardFilter { CardType = FilterCardType.Monster, MonsterKind = MonsterKind.Synchro })
+            .WhenUsed().Unprinted().ShowIf(b => b.Values.GetValueOrDefault("lock") == "true"),
     ];
 
     private static bool Tributed(BlockArgs args) => args.Choice("stats") == "tributed";
+
+    private static bool Declared(BlockArgs args) => args.Choice("level") == "declared";
 
     /// <summary>Where the Tributed monsters' combined original ATK and DEF are kept while the effect resolves.</summary>
     public const string TributedAtk = "s.cctributeatk", TributedDef = "s.cctributedef";
@@ -372,9 +381,13 @@ public sealed class TokenAction : ActionBlock
     {
         var n = args.Int("count");
         var t = TokenCard(args);
+        // "(Wyrm/Tuner/WATER/Level 4/ATK 0/DEF 0)", and no Level when it is the declared one.
+        var kind = t is null ? "" : $"{args.Pack!.TypeName(t.Race)}{(t.Abilities.HasFlag(MonsterAbility.Tuner) ? "/Tuner" : "")}/{EnumNames.Display(t.Attribute)}";
+        var level = t is null || Declared(args) ? "" : $"/Level {t.Level}";
         var stats = t is null ? "" : Tributed(args)
-            ? $" ({args.Pack!.TypeName(t.Race)}/{EnumNames.Display(t.Attribute)}/Level {t.Level}/ATK ?/DEF ?)"
-            : $" ({args.Pack!.TypeName(t.Race)}/{EnumNames.Display(t.Attribute)}/Level {t.Level}/ATK {t.Atk}/DEF {t.Def})";
+            ? $" ({kind}{level}/ATK ?/DEF ?)"
+            : $" ({kind}{level}/ATK {t.Atk}/DEF {t.Def})";
+        if (Declared(args)) stats += " with the declared Level";
         var tail = Tributed(args) ? " " + args.Describe("stats") : "";
         var name = t is null ? "Token" : $"\"{t.Name}\"";
         if (t is not null && !t.Name.Contains("Token", StringComparison.OrdinalIgnoreCase)) name += " Token";
@@ -384,6 +397,30 @@ public sealed class TokenAction : ActionBlock
         var many = name.EndsWith('"') ? name[..^1] + "s\"" : name + "s";
         if (args.Bool("max")) return $"Special Summon as many {many}{stats} as possible{(pos.Length > 0 ? " " + pos : "")}{side}{tail}";
         return $"Special Summon {(n == 1 ? "1" : n.ToString(CultureInfo.InvariantCulture))} {name}{(n == 1 ? "" : "s")}{stats}{(pos.Length > 0 ? " " + pos : "")}{side}{tail}";
+    }
+
+    /// <summary>"While that Token is in the Monster Zone, the player who Summoned it cannot Special Summon from the Extra Deck, except Synchro Monsters."</summary>
+    public override string Afterword(BlockArgs args)
+    {
+        if (!args.Bool("lock")) return "";
+        var token = args.Bool("max") || args.Int("count") > 1 ? "those Tokens are" : "that Token is";
+        var except = Locks.ExceptText("special_extra", Except(args), args);
+        return $"While {token} in the Monster Zone, the player who Summoned it cannot Special Summon from the Extra Deck{except}.";
+    }
+
+    private static CardFilter Except(BlockArgs args) =>
+        args.Instance.Filters.TryGetValue("except", out var f) ? f : new CardFilter { CardType = FilterCardType.Monster, MonsterKind = MonsterKind.Synchro };
+
+    /// <summary>
+    /// The lock each Token carries: a rule on the player who Summoned it (EFFECT_CANNOT_SPECIAL_SUMMON with an absolute
+    /// range, so it stays theirs), lost when the Token leaves the Monster Zone, as Swordsoul of Mo Ye's script does it.
+    /// </summary>
+    private static string LockFunction(BlockContext ctx)
+    {
+        var lines = Locks.Lines(ctx, "le", "you", "special_extra", Except(ctx.Args), "LOCATION_MZONE")
+            .Select(l => l == "le:SetTargetRange(1,0)" ? "le:SetAbsoluteRange(tp,1,0)" : l);
+        return ctx.Script.AddFunction("tokenlock", "token,c,tp",
+            ["local le=Effect.CreateEffect(c)", .. lines, "le:SetReset(RESET_EVENT+RESETS_STANDARD)", "token:RegisterEffect(le,true)"]);
     }
 
     public override void Compile(BlockContext ctx)
@@ -398,11 +435,38 @@ public sealed class TokenAction : ActionBlock
         var n = ctx.Args.Int("count");
         var p = ctx.Args.Choice("side") == "opponent" ? "1-tp" : "tp";
         var pos = ctx.Args.Choice("position") switch { "attack" => "POS_FACEUP_ATTACK", "defense" => "POS_FACEUP_DEFENSE", _ => "POS_FACEUP" };
-        var check = $"Duel.IsPlayerCanSpecialSummonMonster(tp,{t.Id},0,TYPES_TOKEN_MONSTER,{t.Atk},{t.Def},{t.Level},{EnumNames.LuaConstant(t.Race)},{EnumNames.LuaConstant(t.Attribute)},{pos},{p})";
+        string Check(string level) => $"Duel.IsPlayerCanSpecialSummonMonster(tp,{t.Id},0,TYPES_TOKEN_MONSTER,{t.Atk},{t.Def},{level},{EnumNames.LuaConstant(t.Race)},{EnumNames.LuaConstant(t.Attribute)},{pos},{p})";
+        var check = Check(t.Level.ToString(CultureInfo.InvariantCulture));
+        // "With the declared Level": the Level declared as the effect was activated, kept with its chain link; the Token is
+        // given it before it is Summoned (EFFECT_CHANGE_LEVEL), as Elfnotes: Quatrain of Succession does it.
+        var resolveCheck = check;
+        var declared = "";
+        var levelCall = "";
+        if (Declared(ctx.Args))
+        {
+            if (Chance.Declared(e) != "level")
+            {
+                e.Error($"\"{Name}\": \"with the declared Level\" needs a \"Declare a Level\" block before it in this effect.");
+                return;
+            }
+            var lv = e.NewLocal("lv");
+            declared = $"local {lv}=Duel.GetChainInfo(0,CHAININFO_TARGET_PARAM)";
+            resolveCheck = Check(lv);
+            var level = ctx.Script.AddFunction("tokenlevel", "token,c,lv",
+            [
+                "local e1=Effect.CreateEffect(c)",
+                "e1:SetType(EFFECT_TYPE_SINGLE)",
+                "e1:SetCode(EFFECT_CHANGE_LEVEL)",
+                "e1:SetReset(RESET_EVENT+RESETS_STANDARD-RESET_TOFIELD)",
+                "e1:SetValue(lv)",
+                "token:RegisterEffect(e1,true)",
+            ]);
+            levelCall = $" {level}(token,c,{lv})";
+        }
         e.AddCategory("CATEGORY_SPECIAL_SUMMON");
         e.AddCategory("CATEGORY_TOKEN");
         // "This Token's ATK/DEF become the combined original ATK/DEF of the Tributed monsters": the Tribute step keeps them.
-        var create = $"local token=Duel.CreateToken(tp,{t.Id})";
+        var create = $"local token=Duel.CreateToken(tp,{t.Id})" + levelCall;
         if (Tributed(ctx.Args))
         {
             if (ctx.Effect.TributeStep is not { } tributed)
@@ -436,6 +500,7 @@ public sealed class TokenAction : ActionBlock
             ]);
             create += $" {stats}(token,c)";
         }
+        var locked = ctx.Args.Bool("lock") ? $" {LockFunction(ctx)}(token,c,tp)" : "";
         if (ctx.Args.Bool("max"))
         {
             // One for each free Monster Zone, or 1 while only 1 monster can be Summoned at a time (Blue-Eyes Spirit Dragon).
@@ -449,12 +514,13 @@ public sealed class TokenAction : ActionBlock
             e.AddStep(
             [
                 $"local {rm}=0",
+                .. declared.Length > 0 ? new[] { declared } : [],
                 $"local ft=Duel.GetLocationCount({p},LOCATION_MZONE,tp)",
                 "if Duel.IsPlayerAffectedByEffect(tp,59822133) then ft=math.min(ft,1) end",
-                $"if ft>0 and {check} then",
+                $"if ft>0 and {resolveCheck} then",
                 "\tfor i=1,ft do",
                 $"\t\t{create}",
-                $"\t\tif Duel.SpecialSummonStep(token,0,tp,{p},false,false,{pos}) then {rm}={rm}+1 end",
+                $"\t\tif Duel.SpecialSummonStep(token,0,tp,{p},false,false,{pos}) then {rm}={rm}+1{locked} end",
                 "\tend",
                 "\tDuel.SpecialSummonComplete()",
                 "end",
@@ -470,10 +536,11 @@ public sealed class TokenAction : ActionBlock
         e.AddStep(
         [
             $"local {r}=0",
-            $"if Duel.GetLocationCount({p},LOCATION_MZONE,tp)>={n} and {check}{(n > 1 ? " and not Duel.IsPlayerAffectedByEffect(tp,59822133)" : "")} then",
+            .. declared.Length > 0 ? new[] { declared } : [],
+            $"if Duel.GetLocationCount({p},LOCATION_MZONE,tp)>={n} and {resolveCheck}{(n > 1 ? " and not Duel.IsPlayerAffectedByEffect(tp,59822133)" : "")} then",
             $"\tfor i=1,{n} do",
             $"\t\t{create}",
-            $"\t\tif Duel.SpecialSummonStep(token,0,tp,{p},false,false,{pos}) then {r}={r}+1 end",
+            $"\t\tif Duel.SpecialSummonStep(token,0,tp,{p},false,false,{pos}) then {r}={r}+1{locked} end",
             "\tend",
             "\tDuel.SpecialSummonComplete()",
             "end",

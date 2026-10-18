@@ -354,6 +354,20 @@ public static partial class ScriptTranslator
         var value = set.GetValueOrDefault("Value");
         // "While face-up on the field, this card is also DARK-Attribute", "this card's name is also treated as ..." (ScriptTranslator.TreatedAs.cs).
         if (TreatedAsLasting(effect, type, code, set, fns, card)) return true;
+        // Elfnotes: Quatrain of Succession: "The monster in your center Main Monster Zone cannot be banished by your opponent's
+        // card effects": a rule on the players for your monsters in the Monster Zone (not cards elsewhere on the field).
+        if (type.SetEquals(["EFFECT_TYPE_FIELD"]) && code == "EFFECT_CANNOT_REMOVE" && range is not null && HasFlags(set, "EFFECT_FLAG_PLAYER_TARGET") && Setting(set, "TargetRange") == "1,1"
+            && Only(set, "Code", "Range", "Property", "TargetRange", "Target", "Condition") && set.GetValueOrDefault("Target") is { } rt
+            && Regex.Match(Body(rt, fns), @"^return c:IsControler\(tp\) and (.*)c:IsLocation\(LOCATION_MZONE\)(.*) and r&REASON_EFFECT~=0 and r&REASON_REDIRECT==0 and rp==1-tp$") is { Success: true } rm)
+        {
+            var cards = new CardFilter { Owner = CardOwner.You, Zones = Model.Zone.MonsterZone, CardType = FilterCardType.Monster };
+            var rest = string.Join(" and ", new[] { rm.Groups[1].Value, rm.Groups[2].Value }.Select(t => t.Trim()).Select(t => t.EndsWith(" and", StringComparison.Ordinal) ? t[..^4] : t)
+                .Select(t => t.StartsWith("and ", StringComparison.Ordinal) ? t[4..] : t).Where(t => t.Length > 0));
+            if (rest.Length > 0 && !Conjunction(rest, cards)) throw No("it picks the monsters that can't be banished in a way the blocks can't");
+            cards.Zones = Model.Zone.MonsterZone;
+            effect.Do.Add(Block("passive.cards_rule").With("rule", "cannot_banish_opp").With("cards", cards));
+            return true;
+        }
         // An Equip Spell's "The equipped monster gains 300 DEF".
         if (type.SetEquals(["EFFECT_TYPE_EQUIP"]) && !(card.Kind == CardKind.Spell && card.SpellKind != SpellKind.Equip) && code == "EFFECT_UPDATE_DEFENSE"
             && int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var def) && def != 0 && Only(set, "Code", "Value", "Condition"))

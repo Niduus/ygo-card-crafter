@@ -29,6 +29,8 @@ public static class ValueSources
         new("sum_atk", "the total ATK of these cards:", "total ATK of the cards picked below"),
         new("sum_def", "the total DEF of these cards:", "total DEF of the cards picked below"),
         new("sum_level", "the total Levels of these cards:", "total Levels of the cards picked below"),
+        // Crimson Dragon Quetzalcoatl: "the total original ATK of all other Synchro Monsters you control".
+        new("sum_orig_atk", "the total original ATK of these cards:", "total original ATK of the cards picked below"),
         new("sum_counters", "the number of counters on these cards:", "counters on the cards picked below"),
         new("its_level", "its Level"),
         new("its_rank", "its Rank"),
@@ -106,7 +108,7 @@ public static class ValueSources
         new("per", "x / for each (amount below)"),
     ];
 
-    public static bool UsesCards(string source) => source is "count" or "different_attr" or "different_race" or "different_name" or "sum_atk" or "sum_def" or "sum_level" or "sum_counters";
+    public static bool UsesCards(string source) => source is "count" or "different_attr" or "different_race" or "different_name" or "sum_atk" or "sum_def" or "sum_level" or "sum_counters" or "sum_orig_atk";
 
     /// <summary>Values that count counters, which say which counter.</summary>
     public static bool UsesCounter(string source) => source is "its_counters" or "sum_counters";
@@ -159,6 +161,7 @@ public static class ValueSources
         "sum_atk" => $"the total ATK of the {CardCounts.Group(cards, pack)}",
         "sum_def" => $"the total DEF of the {CardCounts.Group(cards, pack)}",
         "sum_level" => $"the total Levels of the {CardCounts.Group(cards, pack)}",
+        "sum_orig_atk" => $"the total original ATK of all {CardCounts.Group(cards, pack)}",
         "its_level" => $"{Poss(owner)} Level",
         "its_rank" => $"{Poss(owner)} Rank",
         "its_link" => $"{Poss(owner)} Link Rating",
@@ -197,7 +200,7 @@ public static class ValueSources
             // "monsters currently in your GY", "monsters you currently control".
             group = group.EndsWith(" you control", StringComparison.Ordinal) ? group[..^" you control".Length] + " you currently control"
                 : group.Replace(" in your ", " currently in your ", StringComparison.Ordinal);
-            var stat = source switch { "sum_def" => "DEF", "sum_level" => "Levels", _ => "ATK" };
+            var stat = source switch { "sum_def" => "DEF", "sum_level" => "Levels", "sum_orig_atk" => "original ATK", _ => "ATK" };
             return $"the total {stat} of all {group}";
         }
         return source == "cost_count" ? "the number of " + CostNoun(args.Effect, plural: true)
@@ -246,6 +249,8 @@ public static class ValueSources
     /// </summary>
     public static string Phrase(BlockArgs args, string unit, string owner = "it", bool forEach = true)
     {
+        // "This card's original ATK becomes 3000" (Elfnote Seraphim Strelitzia): a plain number.
+        if (args.Choice("value") == NumberSource) return args.Int("number").ToString(CultureInfo.InvariantCulture) + unit;
         var of = args.Choice("value") == "cost_count" ? "the number of " + CostNoun(args.Effect, plural: true)
             : Of(args.Choice("value"), args.Cards(CardsKey), args.Pack, owner, Counters.Name(args), args.Effect);
         // The Winged Dragon of Ra, Sun God of Darkness: "equal to the amount of LP paid and the total ATK of all "Sun God"
@@ -277,6 +282,7 @@ public static class ValueSources
         string counterSuffix = "")
     {
         var source = ctx.Args.Choice(valueKey);
+        if (source == NumberSource) return ctx.Args.Int("number").ToString(CultureInfo.InvariantCulture);
         var counter = Counters.Id(ctx.Args, counterSuffix);
         string Group()
         {
@@ -297,6 +303,7 @@ public static class ValueSources
             "sum_atk" => $"{Group()}:GetSum(Card.GetAttack)",
             "sum_def" => $"{Group()}:GetSum(Card.GetDefense)",
             "sum_level" => $"{Group()}:GetSum(Card.GetLevel)",
+            "sum_orig_atk" => $"{Group()}:GetSum(Card.GetBaseAttack)",
             "sum_counters" => Counters.SumOf(ctx.Script, Group(), counter),
             "its_level" => $"{card}:GetLevel()",
             "its_rank" => $"{card}:GetRank()",
@@ -440,6 +447,9 @@ public static class ValueSources
     public static ParamSpec MemoryParam(string valueKey = "value", string suffix = "") =>
         Memory.SlotParam("mem" + suffix).ShowIf(b => Remembered(b.Values.GetValueOrDefault(valueKey, "lp_diff")));
 
+    /// <summary>A plain number (the "number" blank) instead of a value, offered by the lasting stat block.</summary>
+    public const string NumberSource = "number";
+
     /// <summary>The value's parameters, for blocks that use one.</summary>
     /// <param name="withEvent">Offer "that amount": only effects that resolve after damage or an LP change have one.</param>
     public static IEnumerable<ParamSpec> Params(int amountDefault = 300, bool withEvent = true) =>
@@ -557,14 +567,21 @@ public sealed class StatsFromValuePassive : PassiveBlock
     public override string Id => BlockId;
     public override string Group => "Monsters";
     public override string Name => "Gains ATK/DEF/Level equal to a live value (LP difference, cards, materials...)";
-    public override string Sentence => "{cards} {dir} {stat} {how} {amount} {value} {mem} {counter} {counter_id} {of}";
+    public override string Sentence => "{cards} {dir} {stat} {how} {amount} {value} {number} {mem} {counter} {counter_id} {of}";
     public override string Help => "The amount changes as the game does: LP, cards counted by the picker, the monster's own Level or materials, damage taken this turn...";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Cards("cards", "Which monsters", () => new CardFilter { ThisCard = true, Owner = CardOwner.You, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster }, Zone.MonsterZone, thisCard: true),
         ParamSpec.Choice("dir", "Gains / loses / becomes", ValueSources.Dirs),
         ParamSpec.Choice("stat", "Stat", ValueSources.Stats),
-        .. ValueSources.Params(withEvent: false),
+        // "This card's original ATK becomes 3000, while in the center Main Monster Zone": a plain number is one of the values.
+        .. ValueSources.Params(withEvent: false).Select(p => p.Key switch
+        {
+            "value" => ParamSpec.Choice("value", p.Label, [.. p.Choices, new(ValueSources.NumberSource, "", "a number (below)")]),
+            "how" or "amount" => ValueSources.Also(p, b => b.Values.GetValueOrDefault("value") != ValueSources.NumberSource),
+            _ => p,
+        }),
+        ParamSpec.Int("number", "Number", 0, 0, 99999).ShowIf(b => b.Values.GetValueOrDefault("value") == ValueSources.NumberSource),
     ];
 
     public override string Describe(BlockArgs args)

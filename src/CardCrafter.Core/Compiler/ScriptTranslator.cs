@@ -767,6 +767,14 @@ public static partial class ScriptTranslator
                 }
                 return proc;
             }
+            // Junora the Power Patron of Tuning: "For this card's Synchro Summon, you can treat 1 monster in your center Main
+            // Monster Zone as a Tuner".
+            case "AddSynchroMixProcedure" when args.Count == 6 && Absent(1) && Absent(2) && Regex.Replace(Body(args[0], fns), @"\s+", " ") == "return c:IsTuner(syncard) or c:GetSequence()==2":
+            {
+                var non = TunerSide(args[3], "NonTuner", fns) ?? throw No("its non-Tuners are picked in a way the blocks can't");
+                var max = Num(5);
+                return new SummonProcedure { Kind = SummonProcedureKind.Synchro, MaterialFilter = non, MinMaterials = Num(4), MaxMaterials = max >= 99 ? 0 : max, SynchroAsTuner = true };
+            }
             // "For this card's Synchro Summon, you can treat 1 Link-1 monster you control as a Level 1 Tuner" (Yummy Way):
             // the Level the Link monster has for it is its own effect (EFFECT_SYNCHRO_LEVEL_EX), which the Card tab writes too.
             case "AddSynchroMixProcedure" when args.Count == 6 && Absent(1) && Absent(2):
@@ -1535,6 +1543,8 @@ public static partial class ScriptTranslator
         "return e:GetHandler():IsStatus(STATUS_EFFECT_ENABLED)" => [Block(AlreadyFaceUpCondition.BlockId)],
         "return e:GetHandler():IsAttackPos()" => [Block("if.position").With("pos", "attack")],
         "return e:GetHandler():IsDefensePos()" => [Block("if.position").With("pos", "defense")],
+        // Elfnote Seraphim Strelitzia: "while in the center Main Monster Zone" (a monster's lasting effect).
+        "return e:GetHandler():GetSequence()==2" => [Block("if.zone").With("zone", "center")],
         var b when SummonTypes.TryGetValue(b, out var how) => [Block("if.summoned_by").With("how", how)],
         var other => throw No($"its condition isn't one the blocks have ({Short(other)})"),
     };
@@ -2942,6 +2952,11 @@ public static partial class ScriptTranslator
                         .With("stat", code == "EFFECT_UPDATE_ATTACK" ? "atk" : "def").With("per", per.Per);
                     if (per.Counter is { } perCounter) perBlock.WithCounter(perCounter);
                     effect.Do.Add(per.Filter is null ? perBlock : perBlock.With("cards", per.Filter));
+                    return effect;
+                // Elfnote Seraphim Strelitzia: "This card's original ATK becomes 3000".
+                case "EFFECT_SET_BASE_ATTACK" or "EFFECT_SET_BASE_DEFENSE" when value is not null && Regex.IsMatch(value, @"^\d+$") && range is not null:
+                    effect.Do.Add(Block(StatsFromValuePassive.BlockId).With("cards", new CardFilter { ThisCard = true, Owner = CardOwner.You, Zones = Model.Zone.MonsterZone, CardType = FilterCardType.Monster })
+                        .With("dir", "becomes").With("stat", code == "EFFECT_SET_BASE_ATTACK" ? "orig_atk" : "orig_def").With("value", ValueSources.NumberSource).With("number", Int(value)));
                     return effect;
                 case "EFFECT_UPDATE_ATTACK" or "EFFECT_UPDATE_DEFENSE" when value is not null && Regex.IsMatch(value, @"^-?\d+$") && range is not null:
                     var n = Int(value);

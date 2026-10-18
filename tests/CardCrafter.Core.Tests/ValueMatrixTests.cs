@@ -93,6 +93,9 @@ public class ValueMatrixTests
         // The opponent's Warrior (1500) and Dragon (1600).
         new("sum_atk", 3100, 1000, null, [], OppMonsters, s => s.Card(Id, 0, "mzone").Card(Warrior, 1, "mzone").Card(Dragon, 1, "mzone"), Nothing),
         new("sum_def", 4000, 1000, null, [], YourGy, GyMix, Nothing),
+        // Their original ATK, 1500 and 1600, though each has lost 500 ATK.
+        new("sum_orig_atk", 3100, 1000, null, [], OppMonsters, s => s.Card(Id, 0, "mzone").Card(Warrior, 1, "mzone").Card(Dragon, 1, "mzone")
+            .Setup("for tc in aux.Next(Duel.GetFieldGroup(1,LOCATION_MZONE,0)) do local le=Effect.CreateEffect(tc) le:SetType(EFFECT_TYPE_SINGLE) le:SetCode(EFFECT_UPDATE_ATTACK) le:SetValue(-500) tc:RegisterEffect(le) end"), Nothing),
         new("sum_level", 16, 1000, null, [], YourGy, GyMix, Nothing),
         new("its_level", 5, 1000, new CardData { Frame = MonsterFrame.Effect, Level = 5, Atk = 1000, Def = 1200 }, [], null, Alone, Nothing),
         new("its_rank", 4, 2000, XyzData, [], null, Alone, Nothing),

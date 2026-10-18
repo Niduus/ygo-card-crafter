@@ -52,6 +52,7 @@ public sealed partial class CardViewModel : ObservableObject
         TunerFilter = new FilterEditorViewModel(project.Procedure.TunerFilter, Zone.None, true, pack, Changed);
         IncludeFilter = new FilterEditorViewModel(project.Procedure.IncludeFilter, Zone.None, true, pack, Changed);
         XyzAlternateFilter = new FilterEditorViewModel(project.Procedure.XyzAlternateFilter, Zone.None, true, pack, Changed);
+        SynchroAsTunerFilter = new FilterEditorViewModel(project.Procedure.SynchroAsTunerFilter, Zone.MonsterZone, true, pack, Changed);
         EquipFilter = new FilterEditorViewModel(project.EquipFilter, Zone.MonsterZone, true, pack, Changed, ownerChoice: true);
         LoadFusionSlots();
         RebuildArchetypes();
@@ -583,6 +584,15 @@ public sealed partial class CardViewModel : ObservableObject
         set { if (Project.Procedure.SynchroLinkAsTuner == value) return; Project.Procedure.SynchroLinkAsTuner = value; OnPropertyChanged(); Changed(); }
     }
 
+    /// <summary>Synchro: "you can treat 1 monster in your center Main Monster Zone as a Tuner" (the monster picked in <see cref="SynchroAsTunerFilter"/>).</summary>
+    public bool SynchroAsTuner
+    {
+        get => Project.Procedure.SynchroAsTuner;
+        set { if (Project.Procedure.SynchroAsTuner == value) return; Project.Procedure.SynchroAsTuner = value; OnPropertyChanged(); Changed(); }
+    }
+
+    public FilterEditorViewModel SynchroAsTunerFilter { get; private set; }
+
     /// <summary>"with different names", "with different Types and different Attributes": the materials as a group.</summary>
     public IReadOnlyList<Option<MaterialGroupRule>> MaterialRuleOptions { get; } = Options.Of(
         (MaterialGroupRule.None, "any materials together"),
@@ -683,6 +693,7 @@ public sealed partial class CardViewModel : ObservableObject
         TunerFilter.RefreshArchetypes();
         IncludeFilter.RefreshArchetypes();
         XyzAlternateFilter.RefreshArchetypes();
+        SynchroAsTunerFilter.RefreshArchetypes();
         EquipFilter.RefreshArchetypes();
         foreach (var slot in FusionSlots) slot.Filter.RefreshArchetypes();
     }
@@ -698,6 +709,7 @@ public sealed partial class CardViewModel : ObservableObject
         TunerFilter.RefreshArchetypes();
         IncludeFilter?.RefreshArchetypes();
         XyzAlternateFilter?.RefreshArchetypes();
+        SynchroAsTunerFilter?.RefreshArchetypes();
         EquipFilter?.RefreshArchetypes();
         foreach (var slot in FusionSlots) slot.Filter.RefreshArchetypes();
     }
@@ -836,6 +848,7 @@ public sealed partial class CardViewModel : ObservableObject
         TunerFilter = new FilterEditorViewModel(Project.Procedure.TunerFilter, Zone.None, true, _pack, Changed);
         IncludeFilter = new FilterEditorViewModel(Project.Procedure.IncludeFilter, Zone.None, true, _pack, Changed);
         XyzAlternateFilter = new FilterEditorViewModel(Project.Procedure.XyzAlternateFilter, Zone.None, true, _pack, Changed);
+        SynchroAsTunerFilter = new FilterEditorViewModel(Project.Procedure.SynchroAsTunerFilter, Zone.MonsterZone, true, _pack, Changed);
         EquipFilter = new FilterEditorViewModel(Project.EquipFilter, Zone.MonsterZone, true, _pack, Changed, ownerChoice: true);
         LoadFusionSlots();
         RebuildArchetypes();

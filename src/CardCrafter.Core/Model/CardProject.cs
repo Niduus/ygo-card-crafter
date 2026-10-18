@@ -45,6 +45,12 @@ public sealed class SummonProcedure
     /// <summary>Synchro: "For this card's Synchro Summon, you can treat 1 Link-1 monster you control as a Level 1 Tuner." (Lollipo★Yummy Way).</summary>
     public bool SynchroLinkAsTuner { get; set; }
     /// <summary>
+    /// Synchro: "For this card's Synchro Summon, you can treat 1 monster in your center Main Monster Zone as a Tuner" (Junora
+    /// the Power Patron of Tuning): a monster <see cref="SynchroAsTunerFilter"/> allows can be its Tuner.
+    /// </summary>
+    public bool SynchroAsTuner { get; set; }
+    public CardFilter SynchroAsTunerFilter { get; set; } = new() { Owner = CardOwner.You, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster, CenterZone = true };
+    /// <summary>
     /// Xyz: "You can also Xyz Summon this card by using 1 <see cref="XyzAlternateFilter"/> you control" (its materials go to
     /// this card), as on Number C39 or Divine Arsenal AA-ZEUS - Sky Thunder.
     /// </summary>
