@@ -183,24 +183,24 @@ public static class ComboText
         string Name(long id) => catalog.Name(id, combo.Names);
         var replay = ComboReplay.Run(combo, catalog);
         var sb = new StringBuilder();
-        sb.AppendLine($"**{combo.Name}**");
-        if (combo.Notes.Trim().Length > 0) sb.AppendLine(combo.Notes.Trim());
-        sb.AppendLine();
+        sb.Append($"**{combo.Name}**").Append('\n');
+        if (combo.Notes.Trim().Length > 0) sb.Append(combo.Notes.Trim()).Append('\n');
+        sb.Append('\n');
         var hand = replay.Start.Hand.Select(c => Name(c.Code)).ToList();
-        sb.AppendLine((combo.RandomHand ? "Opening hand (drawn at random): " : "Opening hand: ") + (hand.Count > 0 ? string.Join(", ", hand) : "(none)"));
-        sb.AppendLine();
+        sb.Append((combo.RandomHand ? "Opening hand (drawn at random): " : "Opening hand: ") + (hand.Count > 0 ? string.Join(", ", hand) : "(none)")).Append('\n');
+        sb.Append('\n');
         for (int i = 0; i < combo.Steps.Count; i++)
         {
             var step = combo.Steps[i];
-            sb.AppendLine($"{i + 1}. {Describe(step, Name)}");
+            sb.Append($"{i + 1}. {Describe(step, Name)}").Append('\n');
             if (step.Note.Trim().Length > 0)
-                foreach (var line in step.Note.Trim().Split('\n')) sb.AppendLine($"   {line.TrimEnd()}");
+                foreach (var line in step.Note.Trim().Split('\n')) sb.Append($"   {line.TrimEnd()}").Append('\n');
         }
         var end = EndBoard(replay.End, Name);
         if (end.Length > 0)
         {
-            sb.AppendLine();
-            sb.AppendLine("End board:");
+            sb.Append('\n');
+            sb.Append("End board:").Append('\n');
             sb.Append(end);
         }
         return sb.ToString().TrimEnd() + "\n";
@@ -218,10 +218,10 @@ public static class ComboText
             if (s.Card.Materials.Count > 0) line += $" with {s.Card.Materials.Count} material{(s.Card.Materials.Count == 1 ? "" : "s")}";
             return line;
         }).ToList();
-        if (field.Count > 0) sb.AppendLine("- Field: " + string.Join(", ", field));
-        if (board.Hand.Count > 0) sb.AppendLine("- Hand: " + string.Join(", ", board.Hand.Select(c => name(c.Code))));
-        if (board.Graveyard.Count > 0) sb.AppendLine("- GY: " + string.Join(", ", board.Graveyard.Select(c => name(c.Code))));
-        if (board.Banished.Count > 0) sb.AppendLine("- Banished: " + string.Join(", ", board.Banished.Select(c => name(c.Code))));
+        if (field.Count > 0) sb.Append("- Field: " + string.Join(", ", field)).Append('\n');
+        if (board.Hand.Count > 0) sb.Append("- Hand: " + string.Join(", ", board.Hand.Select(c => name(c.Code)))).Append('\n');
+        if (board.Graveyard.Count > 0) sb.Append("- GY: " + string.Join(", ", board.Graveyard.Select(c => name(c.Code)))).Append('\n');
+        if (board.Banished.Count > 0) sb.Append("- Banished: " + string.Join(", ", board.Banished.Select(c => name(c.Code)))).Append('\n');
         return sb.ToString();
     }
 }

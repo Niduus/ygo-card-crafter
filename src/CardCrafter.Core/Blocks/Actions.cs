@@ -1264,7 +1264,7 @@ public sealed class DrawAction : ActionBlock
     public override string Id => "do.draw";
     public override string Group => "Cards";
     public override string Name => "Draw cards";
-    public override string Sentence => "{who} draw(s) {count} card(s)";
+    public override string Sentence => "{who} draw(s) {count} card(s) " + AmountX.SentenceKeys;
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Choice("who", "Who", new("you", "You"), new("opponent", "Your opponent"), new("each", "Each player"),
@@ -1272,15 +1272,30 @@ public sealed class DrawAction : ActionBlock
             new("opponent_may", "Your opponent can", "Your opponent can (if they choose to)"),
             // Mimighoul Fork: "Send it to the GY, then its owner draws 2 cards": the owner of the card the step before affected.
             new("owner", "Its owner", "Its owner (of the card the step before affected)")),
-        ParamSpec.Int("count", "How many", 1, 1, 10),
+        ParamSpec.Int("count", "How many", 1, 1, 10).ShowIf(b => !UntilX(b)),
         // Thunderforce Attack: "draw cards equal to the number of monsters destroyed by this effect and sent to your opponent's GY".
         ParamSpec.Choice("per", "For each", [.. PerParam.Choices,
             new("per_sent_opp", "for each of those cards sent to your opponent's GY", "for each card the action before affected that is now in your opponent's GY")]),
         // The Revived Sky God: "each player draws until they have 6 cards in their hand".
         ParamSpec.Flag("until", "until they have this many cards in their hand", false).ShowIf(b => b.Values.GetValueOrDefault("who", "you") is "you" or "opponent" or "each"),
+        // "Draw until you have X cards": X set here, declared by the player, or a value ("as many as your opponent has").
+        .. AmountX.Params(Until, inCost: false, min: 1, max: 6, step: 1),
     ];
 
     private static bool Until(BlockArgs args) => args.Bool("until") && args.Choice("who") is "you" or "opponent" or "each";
+
+    private static bool Until(BlockInstance b) => b.Values.GetValueOrDefault("until") == "true" && b.Values.GetValueOrDefault("who", "you") is "you" or "opponent" or "each";
+
+    /// <summary>X is declared or a value, so "How many" isn't used.</summary>
+    private static bool UntilX(BlockInstance b) => Until(b) && AmountX.Mode(b) != AmountX.Number;
+
+    /// <summary>"6 cards", "that many cards" (declared), "cards equal to the number of cards in your opponent's hand".</summary>
+    private static (string Prefix, string You, string They) UntilText(BlockArgs args) => AmountX.Mode(args) switch
+    {
+        AmountX.Declare => (AmountX.DeclareText(args, "a number") + ", then ", "that many cards in your hand", "that many cards in their hand"),
+        AmountX.Value => ("", "cards in your hand equal to " + AmountX.ValueText(args), "cards in their hand equal to " + AmountX.ValueText(args)),
+        _ => ("", $"{args.Int("count")} cards in your hand", $"{args.Int("count")} cards in their hand"),
+    };
 
     /// <summary>"the number of monsters destroyed by this effect and sent to your opponent's GY": what the step before sent there.</summary>
     private static string SentToOpponent(BlockArgs args)
@@ -1299,12 +1314,15 @@ public sealed class DrawAction : ActionBlock
     {
         var n = args.Int("count");
         if (Until(args))
-            return args.Choice("who") switch
+        {
+            var (prefix, you, they) = UntilText(args);
+            return prefix + args.Choice("who") switch
             {
-                "each" => $"each player draws until they have {n} cards in their hand",
-                "opponent" => $"your opponent draws until they have {n} cards in their hand",
-                _ => $"draw until you have {n} cards in your hand",
+                "each" => $"each player draws until they have {they}",
+                "opponent" => $"your opponent draws until they have {they}",
+                _ => $"draw until you have {you}",
             };
+        }
         if (args.Choice("per") == "per_sent_opp")
         {
             var equal = $"cards equal to {SentToOpponent(args)}" + (n == 1 ? "" : $" x {n}");
@@ -1391,10 +1409,42 @@ public sealed class DrawAction : ActionBlock
     {
         var who = ctx.Args.Choice("who");
         var players = who switch { "each" => new[] { "tp", "1-tp" }, "opponent" => ["1-tp"], _ => ["tp"] };
-        string Need(string p) => $"{n}-Duel.GetFieldGroupCount({p},LOCATION_HAND,0)";
-        foreach (var p in players) ctx.Effect.TargetChecks.Add($"{Need(p)}>0 and Duel.IsPlayerCanDraw({p},{Need(p)})");
-        ctx.Effect.TargetLines.Add($"Duel.SetOperationInfo(0,CATEGORY_DRAW,nil,0,{(who == "each" ? "PLAYER_ALL" : players[0])},1)");
+        string Hand(string p) => $"Duel.GetFieldGroupCount({p},LOCATION_HAND,0)";
+        var x = n.ToString(System.Globalization.CultureInfo.InvariantCulture);
         var lines = new List<string> { $"local {r}=0" };
+        switch (AmountX.Mode(ctx.Args))
+        {
+            case AmountX.Declare:
+            {
+                // Declared as it is activated and kept with the chain link, as official cards keep a declared number.
+                if (ctx.Effect.TargetLines.Any(l => l.StartsWith("Duel.SetTargetParam(", StringComparison.Ordinal)))
+                    ctx.Effect.Error($"\"Draw cards\": only one block of an effect can keep a declared number.");
+                var max = ctx.Args.Int("x_max").ToString(System.Globalization.CultureInfo.InvariantCulture);
+                // A number that makes someone draw: more than the fewest cards a drawing player holds.
+                var fewest = players.Length > 1 ? $"math.min({Hand("tp")},{Hand("1-tp")})" : Hand(players[0]);
+                ctx.Effect.TargetChecks.Add($"{max}>{fewest} and ({string.Join(" or ", players.Select(p => $"Duel.IsPlayerCanDraw({p},1)"))})");
+                var d = ctx.Effect.NewLocal("dx");
+                ctx.Effect.TargetLines.AddRange([.. AmountX.DeclareLines(ctx, d, $"i>{fewest}"), $"Duel.SetTargetParam({d})"]);
+                x = ctx.Effect.NewLocal("x");
+                lines.Add($"local {x}=Duel.GetChainInfo(0,CHAININFO_TARGET_PARAM)");
+                break;
+            }
+            case AmountX.Value:
+            {
+                var value = AmountX.ValueLua(ctx);
+                // Worked out once as it resolves, so a player's draw doesn't change the number the next player draws to.
+                if (AmountX.AtResolution(ctx.Args)) ctx.Effect.TargetChecks.Add(string.Join(" or ", players.Select(p => $"Duel.IsPlayerCanDraw({p},1)")));
+                else ctx.Effect.TargetChecks.Add(string.Join(" or ", players.Select(p => $"(({value})-{Hand(p)}>0 and Duel.IsPlayerCanDraw({p},({value})-{Hand(p)}))")));
+                x = ctx.Effect.NewLocal("x");
+                lines.Add($"local {x}={value}");
+                break;
+            }
+            default:
+                foreach (var p in players) ctx.Effect.TargetChecks.Add($"{x}-{Hand(p)}>0 and Duel.IsPlayerCanDraw({p},{x}-{Hand(p)})");
+                break;
+        }
+        string Need(string p) => $"{x}-{Hand(p)}";
+        ctx.Effect.TargetLines.Add($"Duel.SetOperationInfo(0,CATEGORY_DRAW,nil,0,{(who == "each" ? "PLAYER_ALL" : players[0])},1)");
         foreach (var p in players)
         {
             lines.Add($"if {Need(p)}>0 then {r}={r}+Duel.Draw({p},{Need(p)},REASON_EFFECT) end");

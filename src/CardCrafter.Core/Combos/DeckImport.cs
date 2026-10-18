@@ -123,13 +123,13 @@ public static partial class DeckImport
     public static string ToYdk(ComboDeck deck)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("#created by YGO Card Crafter");
-        sb.AppendLine("#main");
-        foreach (var c in deck.Main) sb.AppendLine(c.ToString(CultureInfo.InvariantCulture));
-        sb.AppendLine("#extra");
-        foreach (var c in deck.Extra) sb.AppendLine(c.ToString(CultureInfo.InvariantCulture));
-        sb.AppendLine("!side");
-        foreach (var c in deck.Side) sb.AppendLine(c.ToString(CultureInfo.InvariantCulture));
+        sb.Append("#created by YGO Card Crafter").Append('\n');
+        sb.Append("#main").Append('\n');
+        foreach (var c in deck.Main) sb.Append(c.ToString(CultureInfo.InvariantCulture)).Append('\n');
+        sb.Append("#extra").Append('\n');
+        foreach (var c in deck.Extra) sb.Append(c.ToString(CultureInfo.InvariantCulture)).Append('\n');
+        sb.Append("!side").Append('\n');
+        foreach (var c in deck.Side) sb.Append(c.ToString(CultureInfo.InvariantCulture)).Append('\n');
         return sb.ToString();
     }
 

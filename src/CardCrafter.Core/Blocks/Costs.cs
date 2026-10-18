@@ -84,30 +84,42 @@ public sealed class PayLifePointsCost : CostBlock
     public override string Id => "cost.pay_lp";
     public override string Group => "Life Points";
     public override string Name => "Pay Life Points";
-    public override string Sentence => "Pay {how} {amount} {left} {step} {max} LP";
+    public override string Sentence => "Pay {how} {amount} {left} " + AmountX.SentenceKeys + " {step} {max} LP";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
         ParamSpec.Choice("how", "How much", new("amount", "", "a number"), new("half", "half your", "half your LP"),
             new("multiple", "LP in multiples of", "any multiple of (the LP paid can be used as an amount)"),
             // The Winged Dragon of Ra, Sun God of Darkness: "pay LP so that you only have 1 left"; The Winged Dragon of Ra:
             // "so that you only have 100 left" (the LP paid can be used as an amount). Saved before "left" was offered: 1.
-            new("to_one", "LP so that you only have", "so that you only have a number left (the LP paid can be used as an amount)"),
+            new("to_one", "LP so that you only have", "so that you only have X left (X: a number, declared, or a value; the LP paid can be used as an amount)"),
             // Ultimate Sky: "Target ... and pay 800 LP for each target": paid as the targets are chosen, which the LP caps.
             new("per_target", "", "a number for each target (of the DO block that targets)")),
         ParamSpec.Int("amount", "Amount", 1000, 1, 99999).ShowIf(b => b.Values.GetValueOrDefault("how", "amount") is "amount" or "per_target"),
-        ParamSpec.Int("left", "LP left", 1, 1, 99999).ShowIf(b => b.Values.GetValueOrDefault("how", "amount") == "to_one"),
+        ParamSpec.Int("left", "LP left", 1, 1, 99999).ShowIf(b => ToLeft(b) && AmountX.Mode(b) == AmountX.Number),
+        // "So that you only have X left": X set here, declared by the player as they pay, or a value ("your opponent's LP").
+        .. AmountX.Params(ToLeft, inCost: true, min: 100, max: 8000, step: 100),
         ParamSpec.Choice("step", "Multiples of", new("100", "100"), new("500", "500"), new("1000", "1000")).ShowIf(Multiple),
         ParamSpec.Int("max", "At most (0: as much as you have)", 0, 0, 99999).ShowIf(Multiple),
     ];
 
     private static bool Multiple(BlockInstance b) => b.Values.GetValueOrDefault("how", "amount") == "multiple";
 
+    private static bool ToLeft(BlockInstance b) => b.Values.GetValueOrDefault("how", "amount") == "to_one";
+
+    /// <summary>"Pay LP so that you only have 100 left", "declare an amount ..., then pay LP so that you only have that much left".</summary>
+    private static string LeftText(BlockArgs args) => AmountX.Mode(args) switch
+    {
+        AmountX.Declare => $"{AmountX.DeclareText(args, "an amount")}, then pay LP so that you only have that much left",
+        AmountX.Value => $"pay LP so that you only have LP equal to {AmountX.ValueText(args)} left",
+        _ => $"pay LP so that you only have {args.Int("left")} left",
+    };
+
     public override string Describe(BlockArgs args) => args.Choice("how") switch
     {
         "half" => "pay half your LP",
         // Psychic Blade: "Pay LP in multiples of 100 (max. 2000)".
         "multiple" => $"pay LP in multiples of {args.Choice("step")}" + (args.Int("max") > 0 ? $" (max. {args.Int("max")})" : ""),
-        "to_one" => $"pay LP so that you only have {args.Int("left")} left",
+        "to_one" => LeftText(args),
         "per_target" => $"pay {args.Int("amount")} LP for each target",
         _ => $"pay {args.Int("amount")} LP",
     };
@@ -140,6 +152,24 @@ public sealed class PayLifePointsCost : CostBlock
             {
                 ctx.Effect.Error("Only one COST block of an effect can keep its amount: paying LP so that you have 1 left can't go with another cost that counts its cards, or a second one.");
                 return;
+            }
+            switch (AmountX.Mode(ctx.Args))
+            {
+                case AmountX.Declare:
+                {
+                    // Only the amounts below the LP the player has: something is always paid.
+                    var min = ctx.Args.Int("x_min").ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    ctx.Effect.CostChecks.Add($"Duel.GetLP(tp)>{min} and Duel.CheckLPCost(tp,1)");
+                    ctx.Effect.CostLines.AddRange([.. AmountX.DeclareLines(ctx, "lpx", "i<Duel.GetLP(tp)"), "local lpc=Duel.GetLP(tp)-lpx", "Duel.PayLPCost(tp,lpc)", "e:SetLabel(lpc)"]);
+                    return;
+                }
+                case AmountX.Value:
+                {
+                    var x = AmountX.ValueLua(ctx);
+                    ctx.Effect.CostChecks.Add($"Duel.GetLP(tp)>({x}) and Duel.CheckLPCost(tp,Duel.GetLP(tp)-({x}))");
+                    ctx.Effect.CostLines.AddRange([$"local lpc=Duel.GetLP(tp)-({x})", "Duel.PayLPCost(tp,lpc)", "e:SetLabel(lpc)"]);
+                    return;
+                }
             }
             var left = ctx.Args.Int("left").ToString(System.Globalization.CultureInfo.InvariantCulture);
             ctx.Effect.CostChecks.Add($"Duel.GetLP(tp)>{left} and Duel.CheckLPCost(tp,Duel.GetLP(tp)-{left})");
