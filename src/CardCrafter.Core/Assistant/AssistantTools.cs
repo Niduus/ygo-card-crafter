@@ -23,7 +23,7 @@ public sealed record ToolOutcome(string Content, bool IsError = false, string? A
 /// uses (blocks, filters, card data), is checked against the block catalog, and comes back with the compiler's verdict, so
 /// the assistant sees the card text and any problems right away, just as the user does on the Effects tab.
 /// </summary>
-public sealed class AssistantTools(IAssistantWorkspace workspace)
+public sealed partial class AssistantTools(IAssistantWorkspace workspace)
 {
     private static readonly JsonSerializerOptions Json = PackSerializer.Options;
     private static readonly JsonSerializerOptions Compact = new(PackSerializer.Options) { WriteIndented = false };
@@ -103,6 +103,7 @@ public sealed class AssistantTools(IAssistantWorkspace workspace)
             + "Only for what no block can express; the script is checked against the engine's API.",
             """{"lua":{"type":"string","description":"The whole script, when use_blocks is false."},"use_blocks":{"type":"boolean"}}""",
             ["use_blocks"]),
+        .. ComboTools,
     ];
 
     /// <summary>Runs one tool. Errors come back as an error outcome the model can correct, never as an exception.</summary>
@@ -129,6 +130,10 @@ public sealed class AssistantTools(IAssistantWorkspace workspace)
                 "compile_card" => CompileCard(),
                 "translate_script" => TranslateScript(Str(input, "lua") ?? ""),
                 "set_script" => SetScript(input),
+                "list_combos" => ListCombos(),
+                "get_combo" => GetCombo(input),
+                "create_combo" => CreateCombo(input),
+                "replace_combo" => ReplaceCombo(input),
                 _ => new ToolOutcome($"There is no tool named \"{name}\".", true),
             };
         }

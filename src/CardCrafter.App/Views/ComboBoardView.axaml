@@ -1,0 +1,97 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CardCrafter.App.ViewModels"
+             x:Class="CardCrafter.App.Views.ComboBoardView"
+             x:DataType="vm:ComboBoardViewModel">
+  <UserControl.DataTemplates>
+    <!-- A zone: empty, or a name tile in the card's frame colour. Xyz Materials peek out under their monster. -->
+    <DataTemplate DataType="vm:ComboTileViewModel">
+      <Panel Width="68" Height="96" Margin="3" ToolTip.Tip="{Binding Tip}" ClipToBounds="False">
+        <Border IsVisible="{Binding HasSecondLayer}" Margin="7,7,-7,-7" CornerRadius="4" Background="{Binding MaterialLayer}" Opacity="0.35" />
+        <Border IsVisible="{Binding HasMaterials}" Margin="4,4,-4,-4" CornerRadius="4" Background="{Binding MaterialLayer}" Opacity="0.7" />
+        <Border Background="#1A1B22" CornerRadius="4" ClipToBounds="True"
+                BorderBrush="{Binding BorderBrush}" BorderThickness="{Binding BorderThickness}">
+          <Panel>
+            <TextBlock IsVisible="{Binding IsEmpty}" Text="{Binding ZoneLabel}" FontSize="9" Foreground="#5B5F6E"
+                       TextWrapping="Wrap" TextAlignment="Center" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="4" />
+            <Grid IsVisible="{Binding HasCard}" RowDefinitions="Auto,*,Auto" Background="{Binding Wash}">
+              <Border Grid.Row="0" Height="4" Background="{Binding Stripe}" />
+              <TextBlock Grid.Row="1" Text="{Binding Name}" FontSize="10" LineHeight="12" TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
+                         MaxLines="5" Margin="4,3,3,0" />
+              <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="3" Margin="3,0,3,3">
+                <Border IsVisible="{Binding HasBadge}" Background="#CC0B0C10" CornerRadius="3" Padding="3,0">
+                  <TextBlock Text="{Binding Badge}" FontSize="8" FontWeight="Bold" />
+                </Border>
+                <Border IsVisible="{Binding HasMaterials}" Background="#CC0B0C10" CornerRadius="3" Padding="3,0" ToolTip.Tip="{Binding MaterialNames}">
+                  <TextBlock Text="{Binding MaterialText}" FontSize="8" FontWeight="Bold" />
+                </Border>
+              </StackPanel>
+            </Grid>
+          </Panel>
+        </Border>
+      </Panel>
+    </DataTemplate>
+
+    <!-- A pile: its count and top card; clicking lists every card in it. -->
+    <DataTemplate DataType="vm:ComboPileViewModel">
+      <Button Width="68" Height="96" Margin="3" Padding="3" Background="#1A1B22" CornerRadius="4"
+              BorderBrush="{Binding BorderBrush}" BorderThickness="1" ToolTip.Tip="{Binding Tip}"
+              HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+        <Grid RowDefinitions="Auto,*,Auto">
+          <TextBlock Text="{Binding Label}" FontSize="9" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Center" />
+          <TextBlock Grid.Row="1" Text="{Binding Count}" FontSize="22" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+          <TextBlock Grid.Row="2" Text="{Binding TopName}" FontSize="8" TextTrimming="CharacterEllipsis" HorizontalAlignment="Center" />
+        </Grid>
+        <Button.Flyout>
+          <Flyout Placement="LeftEdgeAlignedTop">
+            <StackPanel Width="280" Spacing="4">
+              <TextBlock Text="{Binding Tip}" FontWeight="SemiBold" TextWrapping="Wrap" />
+              <ScrollViewer MaxHeight="380">
+                <ItemsControl ItemsSource="{Binding Cards}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="vm:ComboTileViewModel">
+                      <Border Background="{Binding Wash}" BorderBrush="{Binding BorderBrush}" BorderThickness="{Binding BorderThickness}"
+                              CornerRadius="3" Margin="0,1" ToolTip.Tip="{Binding Tip}">
+                        <Grid ColumnDefinitions="4,*,Auto">
+                          <Border Background="{Binding Stripe}" />
+                          <TextBlock Grid.Column="1" Text="{Binding Name}" Margin="8,4" TextTrimming="CharacterEllipsis" />
+                          <TextBlock Grid.Column="2" Text="{Binding Badge}" FontSize="10" Foreground="{StaticResource MutedBrush}" Margin="0,0,6,0" VerticalAlignment="Center" />
+                        </Grid>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </ScrollViewer>
+            </StackPanel>
+          </Flyout>
+        </Button.Flyout>
+      </Button>
+    </DataTemplate>
+  </UserControl.DataTemplates>
+
+  <Border Background="#121318" CornerRadius="10" Padding="8" BorderBrush="#2A2C36" BorderThickness="1">
+    <Grid ColumnDefinitions="74,370,74" RowDefinitions="102,102,102,Auto,Auto">
+      <!-- Extra Monster Zones, above the 2nd and 4th Main Monster Zones; banishment above the GY -->
+      <ContentControl Grid.Row="0" Grid.Column="1" Content="{Binding ExtraLeft}" Margin="74,0,0,0" HorizontalAlignment="Left" />
+      <ContentControl Grid.Row="0" Grid.Column="1" Content="{Binding ExtraRight}" Margin="0,0,74,0" HorizontalAlignment="Right" />
+      <ContentControl Grid.Row="0" Grid.Column="2" Content="{Binding Banished}" />
+
+      <ContentControl Grid.Row="1" Grid.Column="0" Content="{Binding FieldZone}" />
+      <ItemsControl Grid.Row="1" Grid.Column="1" ItemsSource="{Binding MonsterZones}">
+        <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+      </ItemsControl>
+      <ContentControl Grid.Row="1" Grid.Column="2" Content="{Binding Graveyard}" />
+
+      <ContentControl Grid.Row="2" Grid.Column="0" Content="{Binding ExtraDeck}" />
+      <ItemsControl Grid.Row="2" Grid.Column="1" ItemsSource="{Binding SpellTrapZones}">
+        <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+      </ItemsControl>
+      <ContentControl Grid.Row="2" Grid.Column="2" Content="{Binding Deck}" />
+
+      <TextBlock Grid.Row="3" Grid.ColumnSpan="3" Text="{Binding HandLabel}" FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="3,8,0,0" />
+      <ItemsControl Grid.Row="4" Grid.ColumnSpan="3" ItemsSource="{Binding Hand}" MinHeight="102">
+        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+      </ItemsControl>
+    </Grid>
+  </Border>
+</UserControl>

@@ -1,0 +1,414 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CardCrafter.App.ViewModels"
+             xmlns:views="using:CardCrafter.App.Views"
+             xmlns:combos="using:CardCrafter.Core.Combos"
+             x:Class="CardCrafter.App.Views.CombosView"
+             x:DataType="vm:CombosViewModel">
+  <UserControl.KeyBindings>
+    <KeyBinding Gesture="Ctrl+Z" Command="{Binding UndoCommand}" />
+  </UserControl.KeyBindings>
+  <UserControl.DataTemplates>
+    <!-- a card of the deck: copies, and buttons to change them or put one in the opening hand -->
+    <DataTemplate DataType="vm:ComboDeckEntry">
+      <Border Background="{Binding Wash}" CornerRadius="4" Margin="0,0,0,2" ClipToBounds="True" ToolTip.Tip="{Binding Tip}">
+        <Grid ColumnDefinitions="4,*,Auto,Auto,Auto,Auto">
+          <Border Background="{Binding Stripe}" />
+          <TextBlock Grid.Column="1" Text="{Binding Name}" Margin="8,4" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+          <TextBlock Grid.Column="2" Text="{Binding CountText}" Margin="6,0" VerticalAlignment="Center" FontWeight="SemiBold" />
+          <Button Grid.Column="3" Classes="icon" Content="−" ToolTip.Tip="One copy fewer"
+                  Command="{Binding $parent[UserControl].((vm:CombosViewModel)DataContext).RemoveCopyCommand}" CommandParameter="{Binding}" />
+          <Button Grid.Column="4" Classes="icon" Content="+" ToolTip.Tip="One more copy"
+                  Command="{Binding $parent[UserControl].((vm:CombosViewModel)DataContext).AddCopyCommand}" CommandParameter="{Binding}" />
+          <Button Grid.Column="5" Content="→ hand" IsVisible="{Binding InMain}" Padding="6,1" FontSize="11" Margin="2,2,4,2"
+                  ToolTip.Tip="Put a copy in the opening hand"
+                  Command="{Binding $parent[UserControl].((vm:CombosViewModel)DataContext).ToHandCommand}" CommandParameter="{Binding}" />
+        </Grid>
+      </Border>
+    </DataTemplate>
+  </UserControl.DataTemplates>
+  <UserControl.Styles>
+    <Style Selector="ToggleButton.mode">
+      <Setter Property="Padding" Value="12,4" />
+      <Setter Property="Margin" Value="0" />
+      <Setter Property="CornerRadius" Value="0" />
+    </Style>
+    <Style Selector="ToggleButton.mode.first"><Setter Property="CornerRadius" Value="6,0,0,6" /></Style>
+    <Style Selector="ToggleButton.mode.last"><Setter Property="CornerRadius" Value="0,6,6,0" /></Style>
+    <Style Selector="TextBlock.muted">
+      <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+  </UserControl.Styles>
+
+  <DockPanel Margin="0,6,0,0">
+    <!-- the combo, what to do with it, and the three views of it -->
+    <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,6" Orientation="Horizontal">
+      <WrapPanel.Styles>
+        <Style Selector="WrapPanel > Button, WrapPanel > ComboBox, WrapPanel > Border, WrapPanel > StackPanel">
+          <Setter Property="Margin" Value="0,0,6,6" />
+        </Style>
+      </WrapPanel.Styles>
+      <ComboBox Name="ComboList" ItemsSource="{Binding Items}" SelectedItem="{Binding Selected}" Width="210" IsVisible="{Binding !IsEmpty}"
+                PlaceholderText="No combos yet">
+        <ComboBox.ItemTemplate>
+          <DataTemplate DataType="vm:ComboListItem">
+            <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+          </DataTemplate>
+        </ComboBox.ItemTemplate>
+      </ComboBox>
+      <Button Content="+ New combo" Command="{Binding NewComboCommand}" ToolTip.Tip="A new combo, with the deck of the one open" />
+      <Button Classes="icon" Content="⧉" Command="{Binding DuplicateComboCommand}" IsEnabled="{Binding HasCombo}" ToolTip.Tip="Copy this combo" />
+      <Button Classes="icon" Content="🗑" Command="{Binding DeleteComboCommand}" IsEnabled="{Binding HasCombo}" ToolTip.Tip="Delete this combo" />
+      <Button Content="Share ▾" IsEnabled="{Binding HasCombo}">
+        <Button.Flyout>
+          <MenuFlyout>
+            <MenuItem Header="Copy as text (for Discord)" Command="{Binding CopyAsTextCommand}" />
+            <MenuItem Header="Export this combo (.yccombo)…" Command="{Binding ExportComboFileCommand}" />
+            <MenuItem Header="Save the deck as .ydk…" Command="{Binding ExportYdkCommand}" />
+          </MenuFlyout>
+        </Button.Flyout>
+      </Button>
+      <Button Content="Import…" Command="{Binding ImportComboFileCommand}" ToolTip.Tip="Open a combo someone shared (.yccombo)" />
+      <Button Content="↶ Undo" Command="{Binding UndoCommand}" ToolTip.Tip="Undo the last change to the combos (Ctrl+Z)" />
+      <StackPanel Orientation="Horizontal" IsVisible="{Binding HasCombo}">
+        <ToggleButton Classes="mode first" Content="Deck &amp; hand" IsChecked="{Binding IsDeckMode}" />
+        <ToggleButton Classes="mode" Content="Steps" IsChecked="{Binding IsStepsMode}" />
+        <ToggleButton Classes="mode last" Name="PlayModeButton" Content="▶ Play" IsChecked="{Binding IsPlayMode}" />
+      </StackPanel>
+    </WrapPanel>
+
+    <Panel>
+      <!-- ================= no combos yet ================= -->
+      <ScrollViewer IsVisible="{Binding IsEmpty}">
+        <Border Classes="effect" MaxWidth="640" HorizontalAlignment="Left" VerticalAlignment="Top">
+          <StackPanel Spacing="10">
+            <TextBlock Classes="h2" Margin="0" Text="Record a combo, or learn how a deck combos" />
+            <TextBlock TextWrapping="Wrap"
+                       Text="A combo is a deck, an opening hand and the plays, one step at a time: Normal Summon, activate an effect, Xyz Summon with its materials, send to the GY… The board follows every step, so you always see what is on the field, in hand and in the GY. Play steps through it with the notes, for you or anyone you share it with." />
+            <StackPanel Spacing="2">
+              <TextBlock TextWrapping="Wrap" Text="1. New combo." />
+              <TextBlock TextWrapping="Wrap" Text="2. On Deck &amp; hand, import the deck (a .ydk file, a pasted deck list, or this pack's cards) and pick the opening hand." />
+              <TextBlock TextWrapping="Wrap" Text="3. On Steps, add the plays and say why in each note. Play shows it back." />
+            </StackPanel>
+            <TextBlock Classes="muted"
+                       Text="The Assistant tab can draft a combo for your deck, or explain how a deck combos: paste the deck list and ask. Card Crafter comes with no combos for official decks: a line is only as good as whoever wrote it, so check it in a duel." />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Button Classes="accent" Content="+ New combo" Command="{Binding NewComboCommand}" />
+              <Button Content="Import a combo file…" Command="{Binding ImportComboFileCommand}" />
+            </StackPanel>
+          </StackPanel>
+        </Border>
+      </ScrollViewer>
+
+      <!-- ================= deck and opening hand ================= -->
+      <Grid IsVisible="{Binding ShowDeck}" ColumnDefinitions="*,14,330">
+        <ScrollViewer Grid.Column="0" HorizontalScrollBarVisibility="Disabled">
+          <StackPanel Margin="0,0,8,12">
+            <TextBlock Classes="label" Margin="0,0,0,2" Text="Combo name" />
+            <TextBox Text="{Binding ComboName}" />
+            <TextBlock Classes="label" Text="Notes: what the combo is for, what it needs, what it plays through" />
+            <TextBox Text="{Binding ComboNotes}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="56" />
+            <TextBlock Classes="muted" Margin="0,12,0,0" IsVisible="{Binding DeckIsEmpty}"
+                       Text="No deck yet: import one on the right." />
+            <TextBlock Classes="h2" Text="{Binding MainLabel}" />
+            <ItemsControl ItemsSource="{Binding MainDeck}" />
+            <TextBlock Classes="h2" Text="{Binding ExtraLabel}" />
+            <ItemsControl ItemsSource="{Binding ExtraDeck}" />
+            <TextBlock Classes="h2" Text="{Binding SideLabel}" />
+            <ItemsControl ItemsSource="{Binding SideDeck}" />
+          </StackPanel>
+        </ScrollViewer>
+        <ScrollViewer Grid.Column="2" HorizontalScrollBarVisibility="Disabled">
+          <StackPanel Spacing="6" Margin="0,0,8,12">
+            <TextBlock Classes="h2" Margin="0" Text="Import a deck" />
+            <WrapPanel>
+              <Button Content=".ydk file…" Command="{Binding ImportYdkCommand}" Margin="0,0,6,6" ToolTip.Tip="A deck saved by YGO Omega or another simulator" />
+              <Button Content="This pack's cards" Command="{Binding UsePackCardsCommand}" Margin="0,0,6,6" ToolTip.Tip="One copy of each card of the open pack" />
+            </WrapPanel>
+            <TextBox Name="PasteBox" Text="{Binding PasteText}" AcceptsReturn="True" TextWrapping="NoWrap" Height="130"
+                     Watermark="Or paste a deck list:&#x0a;Monster&#x0a;3 Ash Blossom &amp; Joyous Spring&#x0a;Spell&#x0a;…&#x0a;Extra&#x0a;Side" />
+            <Button Content="Import the list" Command="{Binding ImportPastedCommand}" HorizontalAlignment="Left" />
+            <TextBlock Classes="muted" Text="{Binding ImportReport}" IsVisible="{Binding HasImportReport}" />
+            <TextBlock Classes="label" Text="Add a card" />
+            <TextBox Text="{Binding DeckSearch}" Watermark="Search by name" />
+            <ItemsControl ItemsSource="{Binding DeckSearchResults}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="combos:ComboCard">
+                  <Button Content="{Binding Name}" Background="Transparent" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="6,3"
+                          Command="{Binding $parent[UserControl].((vm:CombosViewModel)DataContext).AddToDeckCommand}" CommandParameter="{Binding}"
+                          ToolTip.Tip="{Binding Text}" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <TextBlock Classes="h2" Text="{Binding HandLabel}" />
+            <ItemsControl ItemsSource="{Binding HandChips}">
+              <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="vm:ComboHandChip">
+                  <Border Background="#272934" CornerRadius="10" Margin="0,0,4,4" Padding="0,0,2,0" ClipToBounds="True">
+                    <StackPanel Orientation="Horizontal">
+                      <Border Width="4" Background="{Binding Stripe}" />
+                      <TextBlock Text="{Binding Name}" Margin="8,3,4,3" VerticalAlignment="Center" FontSize="12" />
+                      <Button Classes="icon" Content="✕" IsVisible="{Binding CanRemove}" Padding="4,0" MinWidth="20" FontSize="10"
+                              Command="{Binding $parent[UserControl].((vm:CombosViewModel)DataContext).RemoveFromHandCommand}" CommandParameter="{Binding}" />
+                    </StackPanel>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBlock Classes="muted" Text="Add cards with → hand on the Main Deck list." />
+            <TextBlock Text="{Binding HandProblems}" IsVisible="{Binding HasHandProblems}" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap" FontSize="12" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <CheckBox Content="Practice: draw" IsChecked="{Binding RandomHand}" ToolTip.Tip="The hand is drawn at random from the Main Deck: see if the combo works from it" />
+              <NumericUpDown Value="{Binding HandSize}" Minimum="1" Maximum="10" Increment="1" FormatString="0" Width="100" IsEnabled="{Binding RandomHand}" />
+              <TextBlock Text="at random" VerticalAlignment="Center" />
+            </StackPanel>
+            <WrapPanel>
+              <Button Content="Draw again" Command="{Binding RedrawCommand}" Margin="0,0,6,6" />
+              <Button Content="Keep this hand" Command="{Binding KeepHandCommand}" IsEnabled="{Binding RandomHand}" Margin="0,0,6,6"
+                      ToolTip.Tip="Make the random hand the combo's opening hand" />
+              <Button Content="Clear the hand" Command="{Binding ClearHandCommand}" Margin="0,0,6,6" />
+            </WrapPanel>
+          </StackPanel>
+        </ScrollViewer>
+      </Grid>
+
+      <!-- ================= steps (the maker) ================= -->
+      <Grid IsVisible="{Binding ShowSteps}" ColumnDefinitions="250,12,*">
+        <DockPanel Grid.Column="0">
+          <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,0,0,6">
+            <TextBlock Text="{Binding StepsSummary}" FontSize="12" Foreground="{StaticResource MutedBrush}" />
+            <StackPanel Orientation="Horizontal" Spacing="2">
+              <Button Name="AddStepButton" Classes="accent" Content="+ Add step" ToolTip.Tip="Adds a step after the selected one">
+                <Button.Flyout>
+                  <Flyout Placement="BottomEdgeAlignedLeft">
+                    <ItemsControl ItemsSource="{Binding StepKinds}" Width="360">
+                      <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="2" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate x:CompileBindings="False">
+                          <Button Content="{Binding Label}" Background="Transparent" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="8,4" Margin="1"
+                                  Command="{Binding $parent[UserControl].DataContext.AddStepCommand}" CommandParameter="{Binding}" />
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </Flyout>
+                </Button.Flyout>
+              </Button>
+              <Button Classes="icon" Content="↑" Command="{Binding MoveStepUpCommand}" ToolTip.Tip="Move the step up" />
+              <Button Classes="icon" Content="↓" Command="{Binding MoveStepDownCommand}" ToolTip.Tip="Move the step down" />
+              <Button Classes="icon" Content="⧉" Command="{Binding DuplicateStepCommand}" ToolTip.Tip="Copy the step" />
+              <Button Classes="icon" Content="🗑" Command="{Binding DeleteStepCommand}" ToolTip.Tip="Delete the step" />
+            </StackPanel>
+          </StackPanel>
+          <TextBlock DockPanel.Dock="Bottom" Classes="muted" Margin="0,6,0,0" FontSize="11"
+                     Text="The board shows the moment after the selected step. Change or delete a step and every later one follows; ⚠ marks a step that can't be played any more." />
+          <Panel>
+            <TextBlock Classes="muted" IsVisible="{Binding !HasSteps}" Margin="4,8" Text="No steps yet. + Add step starts with the first play." />
+            <ListBox Name="StepList" ItemsSource="{Binding StepRows}" SelectedIndex="{Binding SelectedStepIndex}" Background="Transparent">
+              <ListBox.Styles>
+                <Style Selector="ListBoxItem"><Setter Property="Padding" Value="6,5" /><Setter Property="Margin" Value="0,0,0,2" /></Style>
+              </ListBox.Styles>
+              <ListBox.ItemTemplate>
+                <DataTemplate DataType="vm:ComboStepRow">
+                  <Grid ColumnDefinitions="Auto,*,Auto">
+                    <Border Classes="number" VerticalAlignment="Top" Margin="0,0,8,0">
+                      <TextBlock Text="{Binding Number}" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="6,0" />
+                    </Border>
+                    <StackPanel Grid.Column="1">
+                      <TextBlock Text="{Binding Text}" FontSize="12" TextWrapping="Wrap" MaxLines="3" TextTrimming="CharacterEllipsis" />
+                      <TextBlock Text="{Binding Note}" IsVisible="{Binding HasNote}" FontSize="11" Foreground="{StaticResource MutedBrush}"
+                                 TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                    <TextBlock Grid.Column="2" Text="⚠" IsVisible="{Binding IsFlagged}" Foreground="{StaticResource ErrorBrush}" Margin="4,0,0,0"
+                               ToolTip.Tip="{Binding Problems}" VerticalAlignment="Top" />
+                  </Grid>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </Panel>
+        </DockPanel>
+
+        <ScrollViewer Grid.Column="2" HorizontalScrollBarVisibility="Disabled">
+          <StackPanel Margin="0,0,10,12" Spacing="8">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Classes="h2" Margin="0" Text="{Binding StepsBoardLabel}" VerticalAlignment="Center" />
+              <Button Grid.Column="1" Content="▶ Play from here" Command="{Binding PlayFromHereCommand}" />
+            </Grid>
+            <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left" MaxWidth="560">
+              <views:ComboBoardView DataContext="{Binding StepsBoard}" />
+            </Viewbox>
+            <TextBlock Classes="muted" IsVisible="{Binding !HasEditor}" Text="Select a step to edit it, or + Add step." />
+            <ContentControl Content="{Binding Editor}" IsVisible="{Binding HasEditor}">
+              <ContentControl.ContentTemplate>
+                <DataTemplate DataType="vm:ComboStepEditorViewModel">
+            <Border Classes="effect">
+              <StackPanel Spacing="2">
+                <TextBlock Text="{Binding Header}" FontWeight="SemiBold" />
+                <WrapPanel>
+                  <StackPanel Width="210" Margin="0,0,10,0">
+                    <TextBlock Classes="label" Text="What happens" />
+                    <ComboBox Name="KindBox" ItemsSource="{Binding Kinds}" SelectedItem="{Binding Kind}" HorizontalAlignment="Stretch" />
+                  </StackPanel>
+                  <StackPanel Width="290" IsVisible="{Binding NeedsCard}">
+                    <TextBlock Classes="label" Text="{Binding CardLabel}" />
+                    <TextBox Text="{Binding CardSearch}" IsVisible="{Binding ShowsSearch}" Watermark="Search any card by name" Margin="0,0,0,4" />
+                    <ComboBox Name="CardBox" ItemsSource="{Binding CardChoices}" SelectedItem="{Binding Card}" HorizontalAlignment="Stretch"
+                              PlaceholderText="Pick the card" />
+                  </StackPanel>
+                </WrapPanel>
+                <WrapPanel>
+                  <StackPanel Width="150" Margin="0,0,10,0" IsVisible="{Binding ShowFrom}">
+                    <TextBlock Classes="label" Text="From" />
+                    <ComboBox ItemsSource="{Binding FromChoices}" SelectedItem="{Binding From}" HorizontalAlignment="Stretch" />
+                  </StackPanel>
+                  <StackPanel Width="150" Margin="0,0,10,0" IsVisible="{Binding ShowTo}">
+                    <TextBlock Classes="label" Text="To" />
+                    <ComboBox ItemsSource="{Binding ToChoices}" SelectedItem="{Binding To}" HorizontalAlignment="Stretch" />
+                  </StackPanel>
+                  <StackPanel Width="120" Margin="0,0,10,0" IsVisible="{Binding ShowSlot}">
+                    <TextBlock Classes="label" Text="Zone" />
+                    <ComboBox ItemsSource="{Binding SlotChoices}" SelectedItem="{Binding Slot}" HorizontalAlignment="Stretch" />
+                  </StackPanel>
+                  <StackPanel Width="170" IsVisible="{Binding ShowPosition}">
+                    <TextBlock Classes="label" Text="Position" />
+                    <ComboBox ItemsSource="{Binding PositionChoices}" SelectedItem="{Binding Position}" HorizontalAlignment="Stretch" />
+                  </StackPanel>
+                </WrapPanel>
+                <StackPanel IsVisible="{Binding ShowEffect}">
+                  <TextBlock Classes="label" Text="Effect used" />
+                  <ComboBox ItemsSource="{Binding EffectChoices}" SelectedItem="{Binding Effect}" HorizontalAlignment="Stretch" MaxWidth="520" />
+                  <Border IsVisible="{Binding HasEffectText}" Background="#1AF59E0B" BorderBrush="#66F59E0B" BorderThickness="1" CornerRadius="6" Padding="8,5" Margin="0,4,0,0">
+                    <TextBlock Text="{Binding EffectText}" TextWrapping="Wrap" FontSize="12" />
+                  </Border>
+                </StackPanel>
+                <StackPanel IsVisible="{Binding ShowMaterials}">
+                  <TextBlock Classes="label" Text="{Binding MaterialsLabel}" />
+                  <ItemsControl ItemsSource="{Binding Materials}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate DataType="vm:ComboMaterialRowViewModel">
+                        <Grid ColumnDefinitions="*,6,108,6,108,2,Auto" Margin="0,2">
+                          <ComboBox ItemsSource="{Binding CardChoices}" SelectedItem="{Binding Card}" HorizontalAlignment="Stretch" />
+                          <ComboBox Grid.Column="2" ItemsSource="{Binding FromChoices}" SelectedItem="{Binding From}" HorizontalAlignment="Stretch" ToolTip.Tip="From" />
+                          <ComboBox Grid.Column="4" ItemsSource="{Binding ToChoices}" SelectedItem="{Binding To}" HorizontalAlignment="Stretch" ToolTip.Tip="To (Auto: the GY, or under the Xyz Monster)" />
+                          <Button Grid.Column="6" Classes="icon" Content="✕" Command="{Binding RemoveCommand}" ToolTip.Tip="Remove" />
+                        </Grid>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                  <Button Classes="add do" Content="+ Add a card" Command="{Binding AddMaterialCommand}" />
+                </StackPanel>
+                <TextBlock Classes="label" Text="Note: what the player reads (why this play, what it sets up)" />
+                <TextBox Text="{Binding Note}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="56" />
+                <TextBlock Classes="label" Text="What moved" IsVisible="{Binding HasMoved}" />
+                <TextBlock Text="{Binding Moved}" IsVisible="{Binding HasMoved}" FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" />
+                <TextBlock Text="{Binding Problems}" IsVisible="{Binding HasProblems}" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap" FontSize="12" Margin="0,6,0,0" />
+              </StackPanel>
+            </Border>
+                </DataTemplate>
+              </ContentControl.ContentTemplate>
+            </ContentControl>
+          </StackPanel>
+        </ScrollViewer>
+      </Grid>
+
+      <!-- ================= play (the viewer) ================= -->
+      <DockPanel IsVisible="{Binding ShowPlay}">
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,8">
+          <StackPanel Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+            <Button Classes="icon" Content="⏮" Command="{Binding PlayFirstCommand}" ToolTip.Tip="The opening hand" />
+            <Button Classes="icon" Content="◀" Command="{Binding PlayPreviousCommand}" ToolTip.Tip="The step before" />
+            <Button Classes="icon" Name="NextButton" Content="▶" Command="{Binding PlayNextCommand}" ToolTip.Tip="The next step" />
+            <Button Classes="icon" Content="⏭" Command="{Binding PlayLastCommand}" ToolTip.Tip="The last step" />
+          </StackPanel>
+          <Slider Grid.Column="1" Minimum="0" Maximum="{Binding PlayMax}" Value="{Binding PlaySlider}" TickFrequency="1" IsSnapToTickEnabled="True"
+                  Margin="12,0" VerticalAlignment="Center" />
+          <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+            <TextBlock Text="{Binding PlayHeader}" VerticalAlignment="Center" FontSize="12" />
+            <ToggleButton Content="End board" IsChecked="{Binding ShowEndBoard}" ToolTip.Tip="What the combo ends on: the field, the hand and the GY, with the cards' texts" />
+          </StackPanel>
+        </Grid>
+        <Grid ColumnDefinitions="*,12,320">
+          <ScrollViewer Grid.Column="0" HorizontalScrollBarVisibility="Disabled">
+            <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left" VerticalAlignment="Top">
+              <views:ComboBoardView DataContext="{Binding PlayBoard}" />
+            </Viewbox>
+          </ScrollViewer>
+          <ScrollViewer Grid.Column="2" HorizontalScrollBarVisibility="Disabled">
+            <Panel Margin="0,0,8,12">
+              <StackPanel Spacing="8" IsVisible="{Binding ShowStepDetail}">
+                <TextBlock Text="{Binding PlayTitle}" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding PlayProblems}" IsVisible="{Binding HasPlayProblems}" Foreground="{StaticResource ErrorBrush}" TextWrapping="Wrap" FontSize="12" />
+                <Border IsVisible="{Binding HasPlayNote}" Background="#1A3B82F6" BorderBrush="#333B82F6" BorderThickness="1" CornerRadius="8" Padding="10,8">
+                  <TextBlock Text="{Binding PlayNote}" TextWrapping="Wrap" />
+                </Border>
+                <views:CardFace Name="PlayFace" Width="210" HorizontalAlignment="Left" IsVisible="{Binding ShowPlayFace}" />
+                <Border IsVisible="{Binding ShowPlayTile}" Background="{Binding PlayWash}" CornerRadius="8" ClipToBounds="True">
+                  <Grid RowDefinitions="5,Auto">
+                    <Border Background="{Binding PlayStripe}" />
+                    <StackPanel Grid.Row="1" Margin="10,6,10,8">
+                      <TextBlock Text="{Binding PlayCard.Name, FallbackValue=''}" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" />
+                      <TextBlock Text="{Binding PlayCardLine}" FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                    </StackPanel>
+                  </Grid>
+                </Border>
+                <ItemsControl ItemsSource="{Binding PlayEffects}" IsVisible="{Binding HasPlayEffects}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="vm:ComboEffectLine">
+                      <Border Background="{Binding Background}" BorderBrush="{Binding BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="6,4" Margin="0,1">
+                        <Grid ColumnDefinitions="Auto,*">
+                          <Border Classes="number" IsVisible="{Binding HasNumber}" Height="20" MinWidth="20" Margin="0,0,8,0" VerticalAlignment="Top">
+                            <TextBlock Text="{Binding Number}" FontSize="10" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                          </Border>
+                          <TextBlock Grid.Column="1" Text="{Binding Text}" TextWrapping="Wrap" FontSize="12" Foreground="{Binding Foreground}" />
+                        </Grid>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Classes="label" Text="What moved" IsVisible="{Binding HasPlayMoves}" />
+                <ItemsControl ItemsSource="{Binding PlayMoves}" IsVisible="{Binding HasPlayMoves}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="x:String">
+                      <TextBlock Text="{Binding}" FontSize="12" TextWrapping="Wrap" Margin="0,1" />
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+              <StackPanel Spacing="4" IsVisible="{Binding ShowEndBoard}">
+                <TextBlock Classes="h2" Margin="0" Text="End board" />
+                <ItemsControl ItemsSource="{Binding EndGroups}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="vm:ComboEndGroup">
+                      <StackPanel Margin="0,4,0,6">
+                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" Margin="0,0,0,4" />
+                        <ItemsControl ItemsSource="{Binding Cards}">
+                          <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="vm:ComboEndCard">
+                              <Border Background="{Binding Wash}" CornerRadius="6" Margin="0,0,0,4" ClipToBounds="True">
+                                <Grid ColumnDefinitions="4,*">
+                                  <Border Background="{Binding Stripe}" />
+                                  <StackPanel Grid.Column="1" Margin="8,5">
+                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                    <TextBlock Text="{Binding Detail}" IsVisible="{Binding HasDetail}" FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                                    <TextBlock Text="{Binding Text}" IsVisible="{Binding HasText}" FontSize="11" TextWrapping="Wrap" Margin="0,3,0,0" />
+                                  </StackPanel>
+                                </Grid>
+                              </Border>
+                            </DataTemplate>
+                          </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                      </StackPanel>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </Panel>
+          </ScrollViewer>
+        </Grid>
+      </DockPanel>
+    </Panel>
+  </DockPanel>
+</UserControl>

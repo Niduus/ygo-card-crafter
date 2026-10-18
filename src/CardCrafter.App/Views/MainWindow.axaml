@@ -180,6 +180,9 @@
       <TabItem Header="Lists">
         <views:ListsView />
       </TabItem>
+      <TabItem Header="Combos">
+        <views:CombosView DataContext="{Binding Combos}" />
+      </TabItem>
       <TabItem Header="Omega">
         <views:OmegaView />
       </TabItem>

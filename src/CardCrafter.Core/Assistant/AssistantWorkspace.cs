@@ -1,4 +1,6 @@
+using CardCrafter.Core.Combos;
 using CardCrafter.Core.Model;
+using CardCrafter.Core.Omega;
 
 namespace CardCrafter.Core.Assistant;
 
@@ -18,6 +20,12 @@ public interface IAssistantWorkspace
 
     /// <summary>Selects the pack's card at that index (0-based).</summary>
     bool SelectCard(int index);
+
+    /// <summary>The cards combos can use: the pack's own and every card in YGO Omega's databases.</summary>
+    ComboCatalog ComboCards { get; }
+
+    /// <summary>Tells the Combos tab the pack's combos were changed outside it.</summary>
+    void CombosChanged();
 }
 
 /// <summary>A workspace that isn't attached to an editor: a pack in memory, for tests and tools.</summary>
@@ -30,6 +38,11 @@ public sealed class PackWorkspace(CardPack pack) : IAssistantWorkspace
     public int Changes { get; private set; }
 
     public void CardChanged() => Changes++;
+
+    /// <summary>The game's cards, for combos; without it combos only know the pack's cards.</summary>
+    public CardLibrary? Library { get; set; }
+    public ComboCatalog ComboCards => ComboCatalog.Build(Pack, Library);
+    public void CombosChanged() => Changes++;
 
     public CardProject AddCard(CardKind kind)
     {

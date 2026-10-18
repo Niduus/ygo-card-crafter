@@ -180,6 +180,7 @@ public sealed partial class MainViewModel : ObservableObject
         CustomTypes.Clear();
         foreach (var t in pack.CustomTypes) CustomTypes.Add(NewType(t));
         LoadBanlists();
+        _combos?.Reload();
         RefreshCatalogLists();
         SelectedCard = Cards.FirstOrDefault();
         IsDirty = false;

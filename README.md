@@ -367,6 +367,19 @@ it as Forbidden, Limited or Semi-Limited. **Scan YGO Omega** (or **Scan a databa
 already exist, with their cards, and **Copy into pack** makes an editable copy. Saving writes the banlists into the
 database's banlist tables, where YGO Omega lists them next to its own, and Export also writes an `lflist.conf`.
 
+**Combos tab: record and replay combos.** The **Combos** tab is a board sandbox for writing combos down, with your own
+decks or to learn how a deck plays. Import a deck from a `.ydk` file, a pasted deck list (sections Monster, Spell, Trap,
+Extra and Side with lines like `3 Ash Blossom & Joyous Spring`) or the pack's own cards; names are looked up in YGO
+Omega's databases and the pack, and the ones that aren't found are listed. Pick the opening hand (or practise with a
+random one), then add the plays one step at a time: Normal, Tribute and Special Summons, Fusion/Synchro/Xyz/Link/Ritual
+Summons with their materials, activating cards and effects (with the effect of the card text it used), searches, sending
+to the GY, banishing, attaching and detaching materials, the opponent's interruptions and notes. The board (Monster,
+Extra Monster, Spell & Trap, Pendulum and Field Zones, hand, GY, banishment, Deck and Extra Deck) is worked out by
+replaying the steps, so changing or deleting a step updates everything after it, and a step that can't be played any
+more is marked ⚠. **Play** steps through the combo with each card's text, the used effect lit up, your note and what
+moved, and ends on the end board. Combos are saved in the pack; **Share** copies one as text for Discord or exports it
+as a `.yccombo` file. The Assistant can write a combo for your deck or explain one, using only the deck's cards.
+
 **Archetypes and custom Types.** On the Lists tab, **Archetypes → Use one from Omega…** lists every archetype already
 in the game, with names guessed from their cards, so your cards can join an existing archetype. **New archetype** picks a
 code nothing in Omega uses. **Custom Types** adds monster Types beyond the standard ones; Types Omega already uses are
