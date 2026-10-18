@@ -162,6 +162,16 @@
               <ComboBox ItemsSource="{Binding ArchetypeOptions}" SelectedItem="{Binding Archetype}" IsVisible="{Binding IsArchetype}" HorizontalAlignment="Stretch" MaxDropDownHeight="320" />
               <AutoCompleteBox Text="{Binding CardText}" ItemsSource="{Binding CardNameChoices}" IsVisible="{Binding IsCardName}" Watermark="type a card name"
                                FilterMode="Contains" MinimumPrefixLength="2" MaxDropDownHeight="260" HorizontalAlignment="Stretch" />
+              <Border BorderBrush="#33FFFFFF" BorderThickness="1" CornerRadius="4" Padding="6" IsVisible="{Binding IsCards}"
+                      ToolTip.Tip="The cards it shares a column with: &quot;the &quot;Elfnote&quot; monster(s) you control&quot;">
+                <ContentControl Content="{Binding CardsEditor}">
+                  <ContentControl.ContentTemplate>
+                    <DataTemplate DataType="vm:FilterEditorViewModel">
+                      <local:FilterEditorView />
+                    </DataTemplate>
+                  </ContentControl.ContentTemplate>
+                </ContentControl>
+              </Border>
             </StackPanel>
           </Border>
         </DataTemplate>

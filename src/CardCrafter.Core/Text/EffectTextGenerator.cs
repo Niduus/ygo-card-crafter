@@ -218,7 +218,7 @@ public static partial class EffectTextGenerator
                 var body = costs.Length == 0 ? "activate 1 of these effects" : $"{costs}, then activate 1 of these effects";
                 body = optional ? "You can " + body : SentenceCase.Upper(body);
                 // "Apply 1 of these effects.", "your opponent chooses 1 of these effects for you to apply." (Selections.cs).
-                body = ChooseEffectsAction.Lead(effect, costs, target, optional, card.Name) ?? body + ";";
+                body = ChooseEffectsAction.Lead(effect, costs, target, optional, card.Name, pack) ?? body + ";";
                 text = head.Length == 0 ? body : $"{SentenceCase.Upper(head)}: {body}";
                 // Each option on its own line, as printed cards list them.
                 text += string.Concat(options.Select(o => OptionLine + OptionText(o, pack, effect))).TrimEnd('.');
@@ -242,6 +242,10 @@ public static partial class EffectTextGenerator
                 body = "activate this effect; " + body;
             // "You can activate this effect; this card gains 500 ATK": a first step that names what changes, not a verb.
             else if (optional && before.Length == 0 && StartsWithSubject(body))
+                body = "activate this effect; " + body;
+            // Angelechy Seneschal: "If this card is Special Summoned: Activate this effect; each player can Special Summon ...":
+            // a mandatory effect whose players choose is still activated.
+            else if (!optional && !activation && before.Length == 0 && head.Length > 0 && body.StartsWith("each player can ", StringComparison.Ordinal))
                 body = "activate this effect; " + body;
             body = optional ? "You can " + body : SentenceCase.Upper(body);
             text = head.Length == 0 ? body : $"{SentenceCase.Upper(head)}: {body}";
@@ -305,6 +309,9 @@ public static partial class EffectTextGenerator
         // "● Field: Target 1 card on the field; ...": the option for where this card was sent from.
         if (blocks.Count > 1 && blocks[0].BlockId == SentFromCondition.BlockId && ChooseEffectsAction.Style(effect.Do) == "sent_from")
             return $"{SentFromCondition.Label(blocks[0])}: {OptionText(blocks.Skip(1).ToList(), pack, effect)}";
+        // "● 1 to 4: Negate the effects of 1 face-up card your opponent controls.": the option for that many cards.
+        if (blocks.Count > 1 && ChooseEffectsAction.Style(effect.Do) == "count" && ChooseEffectsAction.CountLabel(blocks[0]) is { } many)
+            return $"{many}: {OptionText(blocks.Skip(1).ToList(), pack, effect)}";
         // "● If you control no monsters: Special Summon ...": an option's own condition under a "Choose 1 of these effects" block.
         if (blocks.Count > 1 && ChooseEffectsAction.IsOptionCondition(effect.Do, blocks[0]))
         {

@@ -227,17 +227,31 @@ public sealed class TurnCondition : ConditionBlock
 {
     public override string Id => "if.turn";
     public override string Group => "Turn";
-    public override string Name => "Whose turn it is";
-    public override string Sentence => "It is {whose} turn";
+    public override string Name => "Whose turn it is (or the first turn of the Duel)";
+    public override string Sentence => "It is {whose}";
+    public override string Help => "\"The first turn of the Duel\" is turn 1, whoever plays it: with \"your opponent's turn\" it is \"if your opponent goes first, ... " +
+                                   "during their first turn\" (Angelechy Opening to e4).";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
-        ParamSpec.Choice("whose", "Whose", new("your", "your"), new("opponent", "your opponent's")),
+        ParamSpec.Choice("whose", "Whose", new("your", "your turn"), new("opponent", "your opponent's turn"),
+            // Gravity Behemoth: "If it is not the first turn of the Duel".
+            new("first", "the first turn of the Duel"), new("not_first", "not the first turn of the Duel")),
     ];
 
-    public override string Describe(BlockArgs args) => $"during {args.Describe("whose")} turn";
+    public override string Describe(BlockArgs args) => args.Choice("whose") switch
+    {
+        "first" => "if it is the first turn of the Duel",
+        "not_first" => "if it is not the first turn of the Duel",
+        var w => $"during {(w == "your" ? "your" : "your opponent's")} turn",
+    };
 
-    public override void Compile(BlockContext ctx) =>
-        ctx.Effect.Conditions.Add(ctx.Args.Choice("whose") == "your" ? "Duel.GetTurnPlayer()==tp" : "Duel.GetTurnPlayer()==1-tp");
+    public override void Compile(BlockContext ctx) => ctx.Effect.Conditions.Add(ctx.Args.Choice("whose") switch
+    {
+        "your" => "Duel.GetTurnPlayer()==tp",
+        "first" => "Duel.GetTurnCount()==1",
+        "not_first" => "Duel.GetTurnCount()>1",
+        _ => "Duel.GetTurnPlayer()==1-tp",
+    });
 }
 
 public sealed class PhaseCondition : ConditionBlock

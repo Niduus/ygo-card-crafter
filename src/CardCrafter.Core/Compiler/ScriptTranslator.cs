@@ -76,6 +76,7 @@ public static partial class ScriptTranslator
         lua = NegatedSummonRewrite(lua);
         lua = BanishReturnRewrite(lua);
         lua = BanishUntilRewrite(lua);
+        lua = PlacedAsSpellRewrite(lua);
         var pieces = LuaPieces.Split(lua, id, strings);
         _ritualCalls = null;
         foreach (var piece in pieces)
@@ -1051,6 +1052,9 @@ public static partial class ScriptTranslator
                 case "EVENT_ATTACK_ANNOUNCE" when body is null: return (Block("when.this_card").With("event", "declares_attack").With("optional", optional), false);
                 case "EVENT_BE_BATTLE_TARGET" when body is null: return (Block("when.this_card").With("event", "attacked").With("optional", optional), false);
                 case "EVENT_BATTLE_START" when body is null: return (Block("when.this_card").With("event", "battle_start").With("optional", optional), false);
+                // Angelechy Bastion: "If this card is placed in the Spell & Trap Zone as a Continuous Spell" (PlacedAsSpellRewrite).
+                case PlacedAsSpellMarker when range == "LOCATION_SZONE" && body == ContinuousSpellBody:
+                    return (Block(ThisCardEventTrigger.BlockId).With("event", ThisCardEventTrigger.PlacedAsSpellKey).With("optional", optional), true);
             }
         }
         if (type.SetEquals(["EFFECT_TYPE_FIELD", optional ? "EFFECT_TYPE_TRIGGER_O" : "EFFECT_TYPE_TRIGGER_F"]))
@@ -1533,6 +1537,9 @@ public static partial class ScriptTranslator
             => ConditionMatch("return " + paren.Groups[1].Value),
         "return Duel.GetTurnPlayer()~=tp" or "return Duel.GetTurnPlayer()==1-tp" => [Block("if.turn").With("whose", "opponent")],
         "return Duel.GetTurnPlayer()==tp" => [Block("if.turn").With("whose", "your")],
+        // Angelechy Opening to e4: "If your opponent goes first, ... during the Standby Phase of their first turn"; Gravity Behemoth.
+        "return Duel.GetTurnCount()==1" => [Block("if.turn").With("whose", "first")],
+        "return Duel.GetTurnCount()~=1" or "return Duel.GetTurnCount()>1" => [Block("if.turn").With("whose", "not_first")],
         "return Duel.IsMainPhase()" or "return Duel.GetCurrentPhase()==PHASE_MAIN1 or Duel.GetCurrentPhase()==PHASE_MAIN2" => [Block("if.phase").With("phase", "main")],
         "return Duel.IsBattlePhase()" or "return Duel.GetCurrentPhase()>=PHASE_BATTLE_START and Duel.GetCurrentPhase()<=PHASE_BATTLE" => [Block("if.phase").With("phase", "battle")],
         "return Duel.GetCurrentPhase()==PHASE_STANDBY" => [Block("if.phase").With("phase", "standby")],
@@ -2897,7 +2904,8 @@ public static partial class ScriptTranslator
         }
         // "While ...": the same IF blocks, with the player being whoever controls this card.
         // (A Summon without Tributing reads its own condition: it is checked from the hand.)
-        if (set.GetValueOrDefault("Condition") is { } lastingCondition && !result.Do.Any(b => b.BlockId == NoTributeSummonPassive.BlockId))
+        // "While this card is treated as a Continuous Spell": the WHEN block says it (ScriptTranslator.MonsterCards.cs).
+        if (set.GetValueOrDefault("Condition") is { } lastingCondition && !result.Do.Any(b => b.BlockId == NoTributeSummonPassive.BlockId) && !TreatedAsSpell(result, set, range, fns))
             result.If.AddRange(Conditions(lastingCondition, fns));
         return result;
     }

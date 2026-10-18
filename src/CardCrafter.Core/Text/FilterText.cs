@@ -57,6 +57,21 @@ public static class FilterText
         {
             var main = f.Clone();
             main.OrCards = null;
+            // Angelechy Castellan: "1 monster your opponent controls in this card's adjacent column, or 1 Spell/Trap your opponent
+            // controls that is 2 columns away from this card's": with a column, each kind says where it is itself.
+            if (withLocation && IsFieldOnly(main) && !main.AnyRequirement && !alt.AnyRequirement && main.Requirements.Concat(alt.Requirements).Any(InColumn))
+            {
+                var kind = Compiler.FilterCompiler.Alternative(f, alt);
+                // Its own zone, when a requirement names one ("in a Spell & Trap Zone").
+                if (kind.Requirements.FirstOrDefault(r => r is { Property: "location", Op: RequirementOp.Is } && r.Values is [0x4 or 0x8]) is { } zone)
+                {
+                    kind.Zones = zone.Values[0] == 0x8 ? Zone.SpellTrapZone : Zone.MonsterZone;
+                    kind.Requirements.Remove(zone);
+                }
+                var first = Describe(main, pack, plural, preposition, true, ownName, withExcept: false);
+                var second = Describe(kind, pack, plural, preposition, true, ownName, withExcept: false);
+                return (plural ? $"{first} and/or {second}" : $"{first}, or 1 {second}") + (withExcept ? ExceptText(f, pack, ownName) : "");
+            }
             var one = Describe(main, pack, plural, preposition, withLocation: false, ownName, withExcept: false);
             var other = alt.Clone();
             other.OrCards = null;
@@ -192,7 +207,7 @@ public static class FilterText
         // "with the declared Type" comes after where they are, as cards say it: "all face-up monsters on the field with the
         // declared Type", but "1 card with the declared name from your Deck". So does "that was remembered".
         var declared = f.AnyRequirement || !withLocation || Location(f, preposition, plural).StartsWith("from ", StringComparison.Ordinal) ? []
-            : f.Requirements.Where(r => Compiler.CardProperties.IsDeclared(r.Property) || r.Property is "remembered" or "ref_mentioned").ToList();
+            : f.Requirements.Where(r => Compiler.CardProperties.IsDeclared(r.Property) || r.Property is "remembered" or "ref_mentioned" || InColumn(r)).ToList();
         var extra = f.Requirements.Except(prefixed).Except(described).Except(declared).Except(cardLevels).Where(r => !SaidAsExcept(f, r))
             .Select(r => Compiler.CardProperties.Text(r, pack)).Where(t => t.Length > 0)
             .Select(t => plural ? Plural(t) : t).ToList();
@@ -226,6 +241,8 @@ public static class FilterText
         if (withLocation)
         {
             var where = Location(f, preposition, plural);
+            // Angelechy Verdict: "1 "Angelechy" monster with a different name than the cards in your Spell & Trap Zone, from your Extra Deck".
+            if (where.StartsWith("from ", StringComparison.Ordinal) && words.Count > 0 && !f.AnyRequirement && f.Requirements.Any(r => r.Property == "unlike_names")) words[^1] += ",";
             if (where.Length > 0) words.Add(where);
         }
         words.AddRange(declared.Select(r => Compiler.CardProperties.Text(r, pack)).Where(t => t.Length > 0).Select(t => plural ? Plural(t) : t));
@@ -304,10 +321,17 @@ public static class FilterText
         }) + " Monster";
     }
 
+    /// <summary>
+    /// A requirement about where the card is beside others: "in this card's adjacent column", "in another column", "in the
+    /// same column as ...", "in its adjacent Monster Zones ...". Cards say it after who controls them.
+    /// </summary>
+    private static bool InColumn(CardRequirement r) => r.Property is Compiler.CardProperties.ColumnsAway or Compiler.CardProperties.SameColumn or "ref_adjacent" or "ref_column";
+
     /// <summary>A requirement's words for several cards: "that are face-down", "that were Summoned this turn".</summary>
     private static string Plural(string text)
     {
-        foreach (var (one, many) in new[] { ("that is ", "that are "), ("that was ", "that were "), ("that has ", "that have "), ("that does ", "that do "), ("that points ", "that point ") })
+        foreach (var (one, many) in new[] { ("that is ", "that are "), ("that was ", "that were "), ("that has ", "that have "), ("that does ", "that do "), ("that points ", "that point "),
+                     ("with a different name ", "with different names ") })
             text = text.Replace(one, many, StringComparison.Ordinal);
         return text;
     }
@@ -405,6 +429,8 @@ public static class FilterText
             {
                 CardOwner.You => "you control",
                 CardOwner.Opponent => "your opponent controls",
+                // Angelechy Destrier: "1 monster in another column": the column says where.
+                _ when !f.AnyRequirement && f.Requirements.Any(r => InColumn(r) && r.Op != RequirementOp.IsNot) => "",
                 _ => "on the field",
             };
         }

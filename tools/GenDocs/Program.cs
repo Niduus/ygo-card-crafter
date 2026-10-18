@@ -11,6 +11,9 @@ sb.AppendLine("Level, ATK, face-up, \"other than this card\", and \"only cards t
 sb.AppendLine("property (\"whose ATK equals its own DEF\", \"that cannot be Normal Summoned/Set\"); requirements with the same \"or\" group need only one");
 sb.AppendLine("of them. \"Or another kind of card\" lets a second kind count too (\"1 \"Ancient Gear\" monster or 1 \"Geartown\"\"), and a second");
 sb.AppendLine("Spell/Trap kind gives \"a Normal or Quick-Play Spell\". Kinds of cards can also be left out (\"except ... Monster Cards\").");
+sb.AppendLine("Requirements also place cards by column (\"in this card's adjacent column\", \"in another column\", \"in the same column as the");
+sb.AppendLine("\"Elfnote\" monster(s) you control\", picked in the requirement's own picker) and by name (\"with a different name from the cards in your");
+sb.AppendLine("Spell & Trap Zone\").");
 sb.AppendLine();
 foreach (var (kind, title, intro) in new[]
 {

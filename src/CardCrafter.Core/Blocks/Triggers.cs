@@ -328,6 +328,8 @@ public sealed class ThisCardEventTrigger : SelfTriggerBlock
         new("flipped", "flipped face-up", "EVENT_FLIP", Monster: true),
         new("position_changed", "this card's battle position is changed", "EVENT_CHANGE_POS", Monster: true, Kind: "if"),
         new("control_changed", "control of this card changes", "EVENT_CONTROL_CHANGED", Monster: true, Kind: "if"),
+        // The Angelechy Synchro Monsters: written as their official scripts are (PlacedAsSpell).
+        new(PlacedAsSpellKey, "placed in the Spell & Trap Zone as a Continuous Spell", PlacedAsSpellEvent, Monster: true),
         new("equipped", "equipped with an Equip Card", "EVENT_EQUIP", Monster: true),
         new("targeted", "targeted by a card effect", "EVENT_BECOME_TARGET"),
         new("targeted_opponent", "targeted by an opponent's card effect", "EVENT_BECOME_TARGET", "rp==1-tp"),
@@ -363,6 +365,62 @@ public sealed class ThisCardEventTrigger : SelfTriggerBlock
 
     public static ThisCardEvent Find(string key) => Events.FirstOrDefault(e => e.Key == key) ?? Events[0];
 
+    public const string PlacedAsSpellKey = "placed_as_spell";
+
+    /// <summary>The event this card raises for itself when it is placed as a Continuous Spell (not one the game has).</summary>
+    public const string PlacedAsSpellEvent = "EVENT_CUSTOM+id+8480";
+
+    /// <summary>The flag it keeps while it waits for the Chain that placed it to resolve.</summary>
+    private const string PlacedFlag = "id+8480";
+
+    /// <summary>
+    /// "If this card is placed in the Spell &amp; Trap Zone as a Continuous Spell": as the official Angelechy scripts write
+    /// it, this card watches its own moves (EVENT_MOVE). Placed outside a Chain, it raises its own event at once; placed by
+    /// a Chain link, it keeps a flag and raises the event once that link has resolved (EVENT_CHAIN_SOLVED), so the trigger
+    /// comes after the effect that placed it. The trigger itself works in the Spell &amp; Trap Zone, while this card is a
+    /// Continuous Spell.
+    /// </summary>
+    private static void PlacedAsSpell(BlockContext ctx)
+    {
+        var spell = ctx.Script.AddFunction("placedcon", "c", ["return c:IsLocation(LOCATION_SZONE) and c:GetType()==TYPE_SPELL+TYPE_CONTINUOUS"]);
+        var moved = ctx.Script.AddFunction("placedop", "e,tp,eg,ep,ev,re,r,rp",
+        [
+            "local c=e:GetHandler()",
+            // Moved from another Spell & Trap Zone, it was placed already (as Angelechy Castellan's script checks it).
+            $"if not {spell}(c) or c:IsPreviousLocation(LOCATION_SZONE) then return end",
+            "if Duel.GetCurrentChain()>0 then",
+            $"\tc:RegisterFlagEffect({PlacedFlag},RESET_EVENT+RESETS_STANDARD+RESET_CHAIN,0,1)",
+            "else",
+            $"\tDuel.RaiseSingleEvent(c,{PlacedAsSpellEvent},e,0,tp,tp,0)",
+            "end",
+        ]);
+        var solved = ctx.Script.AddFunction("placedraise", "e,tp,eg,ep,ev,re,r,rp",
+        [
+            "local c=e:GetHandler()",
+            $"if {spell}(c) and c:GetFlagEffect({PlacedFlag})~=0 then",
+            $"\tc:ResetFlagEffect({PlacedFlag})",
+            $"\tDuel.RaiseSingleEvent(c,{PlacedAsSpellEvent},e,0,tp,tp,0)",
+            "end",
+        ]);
+        ctx.Script.AddInitialLine(string.Join("\n\t",
+        [
+            "local pm=Effect.CreateEffect(c)",
+            "pm:SetType(EFFECT_TYPE_SINGLE+EFFECT_TYPE_CONTINUOUS)",
+            "pm:SetCode(EVENT_MOVE)",
+            "pm:SetProperty(EFFECT_FLAG_DELAY)",
+            $"pm:SetOperation({moved})",
+            "c:RegisterEffect(pm)",
+            "local pr=Effect.CreateEffect(c)",
+            "pr:SetType(EFFECT_TYPE_FIELD+EFFECT_TYPE_CONTINUOUS)",
+            "pr:SetCode(EVENT_CHAIN_SOLVED)",
+            "pr:SetRange(LOCATION_SZONE)",
+            $"pr:SetOperation({solved})",
+            "c:RegisterEffect(pr)",
+        ]));
+        ctx.Effect.Range = "LOCATION_SZONE";
+        ctx.Effect.Conditions.Add(WhileFaceUpTrigger.ContinuousSpellCheck);
+    }
+
     /// <summary>Battle damage combines on who inflicts it: "When this card or your monster this card points to inflicts battle damage to your opponent".</summary>
     public const string BattleDamageTemplate = "{0} inflicts battle damage to your opponent";
 
@@ -386,6 +444,7 @@ public sealed class ThisCardEventTrigger : SelfTriggerBlock
         var e = Find(ctx.Args.Choice("event"));
         if (e.Monster) Zones.RequireMonster(ctx, Name);
         Setup(ctx, e.Code);
+        if (e.Key == PlacedAsSpellKey) PlacedAsSpell(ctx);
         // "When ..." effects activate right away; only "If ..." ones can't miss their timing.
         if (!e.Delay) ctx.Effect.Properties.Remove("EFFECT_FLAG_DELAY");
         if (e.Check is not null) ctx.Effect.Conditions.Add(e.Check);
@@ -1289,16 +1348,21 @@ public sealed class WhileFaceUpTrigger : BlockDefinition
     public override string Sentence => "While this card is face-up {zone} {as} {xyz}";
     public override string Help => "A lasting effect that is always on and never activates, like an ATK boost or protection. \"An Xyz Monster that has this " +
                                    "card as material gains this effect\" gives it to the Xyz Monster this card is under instead (Infinitrack Goliath): " +
-                                   "\"this card\" in its DO blocks is that Xyz Monster.";
+                                   "\"this card\" in its DO blocks is that Xyz Monster. \"While this card is treated as a Continuous Spell\" is for a monster " +
+                                   "placed in the Spell & Trap Zone (the Angelechy Synchro Monsters).";
     public override IReadOnlyList<ParamSpec> Params { get; } =
     [
-        ParamSpec.Choice("zone", "Where", Zones.RangeChoices).ShowIf(b => b.Values.GetValueOrDefault("as") != "xyz"),
-        ParamSpec.Choice("as", "Whose effect", new("self", "", "this card's own"), new("xyz", "", "an Xyz Monster that has this card as material gains it")),
+        ParamSpec.Choice("zone", "Where", Zones.RangeChoices).ShowIf(b => b.Values.GetValueOrDefault("as") is not ("xyz" or "spell")),
+        ParamSpec.Choice("as", "Whose effect", new("self", "", "this card's own"), new("xyz", "", "an Xyz Monster that has this card as material gains it"),
+            new("spell", "", "this card's own, while it is treated as a Continuous Spell (a monster in the Spell & Trap Zone)")),
         ParamSpec.Cards("xyz", "The Xyz Monster", () => new CardFilter { Owner = CardOwner.Either, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster, MonsterKind = MonsterKind.Xyz }, Zone.MonsterZone)
             .WhenUsed().ShowIf(b => b.Values.GetValueOrDefault("as") == "xyz"),
     ];
 
-    public override string Describe(BlockArgs args) => "";
+    public override string Describe(BlockArgs args) => args.Choice("as") == "spell" ? "While this card is treated as a Continuous Spell" : "";
+
+    /// <summary>This card is in the Spell &amp; Trap Zone as a Continuous Spell (a monster placed there), as the official scripts check it.</summary>
+    public const string ContinuousSpellCheck = "e:GetHandler():GetType()==TYPE_SPELL+TYPE_CONTINUOUS";
 
     /// <summary>True when the effect is one an Xyz Monster gains while this card is its material (EFFECT_TYPE_XMATERIAL).</summary>
     public static bool ForXyz(BlockInstance? when) => when?.BlockId == "when.while_face_up" && when.Values.GetValueOrDefault("as") == "xyz";
@@ -1329,6 +1393,13 @@ public sealed class WhileFaceUpTrigger : BlockDefinition
             var fn = ctx.Script.AddFunction("xmatfilter", "c", [$"return {string.Join(" and ", parts)}"]);
             ctx.Effect.XyzMaterialCondition = $"{fn}(e:GetHandler())";
             ctx.Effect.Range = "LOCATION_MZONE";
+            return;
+        }
+        if (ctx.Args.Choice("as") == "spell")
+        {
+            Zones.RequireMonster(ctx, "While this card is treated as a Continuous Spell");
+            ctx.Effect.Range = "LOCATION_SZONE";
+            ctx.Effect.Conditions.Add(ContinuousSpellCheck);
             return;
         }
         ctx.Effect.Range = Zones.Resolve(ctx.Args.Choice("zone"), ctx.Card);

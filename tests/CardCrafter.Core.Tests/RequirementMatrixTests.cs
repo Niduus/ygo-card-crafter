@@ -532,7 +532,9 @@ public class RequirementMatrixChoiceTests
             .ToHashSet();
         // What an effect declared, and coin tossing and die rolling effects: ChanceAndDeclarationTests plays them; remembered cards, MemoryTests;
         // comparisons with "that card" (the target, the cost's card), CardRefTests.
-        foreach (var p in CardProperties.All.Where(p => !CardProperties.IsDeclared(p.Key) && !CardRefs.IsRequirement(p.Key) && p.Key is not ("coin_effect" or "dice_effect" or "remembered")))
+        // Columns and names compared with other cards in the Spell & Trap Zone or GY, AngelechyTests.
+        foreach (var p in CardProperties.All.Where(p => !CardProperties.IsDeclared(p.Key) && !CardRefs.IsRequirement(p.Key)
+                     && p.Key is not ("coin_effect" or "dice_effect" or "remembered" or CardProperties.ColumnsAway or CardProperties.SameColumn or "unlike_names")))
         {
             Assert.Contains(p.Key, tested);
             if (p.Kind == PropertyKind.Number) continue;
@@ -649,9 +651,28 @@ public class RequirementMatrixTextTests
         [Is("ref_atk_le", (long)CardRef.Target), "with ATK less than or equal to that monster's ATK"],
         [Is("ref_mentioned", (long)CardRef.Cost), "whose name is mentioned on that monster"],
         [Is("atk_eq_def"), "whose ATK equals its own DEF"],
+        [R(CardProperties.ColumnsAway, RequirementOp.Equal, 0), "in this card's column"],
+        [R(CardProperties.ColumnsAway, RequirementOp.Equal, 1), "in this card's adjacent column"],
+        [R(CardProperties.ColumnsAway, RequirementOp.Equal, 2), "that is 2 columns away from this card's"],
+        [R(CardProperties.ColumnsAway, RequirementOp.NotEqual, 0), "in another column"],
+        [R(CardProperties.ColumnsAway, RequirementOp.LessOrEqual, 1), "in this card's column or its adjacent columns"],
+        [SameColumn(RequirementOp.Is), "in the same column as the \"Ember\" monster(s) you control"],
+        [SameColumn(RequirementOp.IsNot), "not in the same column as the \"Ember\" monster(s) you control"],
+        [Is("unlike_names", 0), "with a different name from the cards in your Spell & Trap Zone"],
+        [Is("unlike_names", 1), "with a different name from the cards in your GY"],
+        [IsNot("unlike_names", 2), "with the same name as one of the cards you control"],
+        [Is("ref_adjacent", (long)CardRef.Affected), "in its adjacent Monster Zones and/or Spell & Trap Zones"],
+        [Is("ref_column", (long)CardRef.Target), "in the same column as that card"],
         [IsNot("not_summonable"), "that can be Normal Summoned/Set"],
         [Is("not_summonable"), "that cannot be Normal Summoned/Set"],
     ];
+
+    /// <summary>"In the same column as the "Ember" monster(s) you control".</summary>
+    private static CardRequirement SameColumn(RequirementOp op) => new()
+    {
+        Property = CardProperties.SameColumn, Op = op,
+        Cards = new CardFilter { Owner = CardOwner.You, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster, Archetype = 0x7a1 },
+    };
 
     private static CardPack Pack() => new()
     {
@@ -785,6 +806,8 @@ public class RequirementMatrixTextTests
                     _ => [],
                 };
                 var r = RequirementMatrix.R(p.Key, op, 2, 5, values);
+                // "In the same column as" the cards of its own picker.
+                if (p.Key == CardProperties.SameColumn) r.Cards = new CardFilter { Owner = CardOwner.You, Zones = Zone.MonsterZone, CardType = FilterCardType.Monster };
                 Assert.NotNull(CardProperties.Lua(r));
                 Assert.Equal(p.NeedsEffect, CardProperties.Lua(r, hasEffect: false) is null);
                 Assert.NotEqual("", CardProperties.Text(r, null));

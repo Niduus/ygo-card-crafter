@@ -150,7 +150,8 @@ public static class FilterCompiler
         string Material(string test) => material == SummonProcedureKind.None ? test : System.Text.RegularExpressions.Regex.Replace(test, @"\bc:Is(Type|Attribute|Race|SetCard|Code)\(",
             m => "c:" + m.Groups[1].Value switch { "Type" => isType, "Attribute" => isAttr, "Race" => isRace, "SetCard" => isSet, _ => isCode } + "(");
         string? Test(CardRequirement r) => CardProperties.Lua(r, hasEffect) is { } t
-            ? Material(card == "c" ? t : System.Text.RegularExpressions.Regex.Replace(t, @"\bc:", card + ":"))
+            // Every "c" of the test is the card ("aux.AtkEqualsDef(c)", "x~=c"), not only "c:".
+            ? Material(card == "c" ? t : System.Text.RegularExpressions.Regex.Replace(t, @"\bc\b", card))
             : null;
         if (f.AnyRequirement)
         {

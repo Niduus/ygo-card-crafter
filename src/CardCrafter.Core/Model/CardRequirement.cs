@@ -29,6 +29,11 @@ public sealed class CardRequirement
     /// lower, or a Tuner"), while each group, and every requirement in none, must hold.
     /// </summary>
     public int Group { get; set; }
+    /// <summary>
+    /// The other cards it is compared with, for requirements about them ("in the same column as the "Elfnote" monster(s) you
+    /// control"); null for the others.
+    /// </summary>
+    public CardFilter? Cards { get; set; }
 
-    public CardRequirement Clone() => new() { Property = Property, Op = Op, Value = Value, Value2 = Value2, Values = [.. Values], Group = Group };
+    public CardRequirement Clone() => new() { Property = Property, Op = Op, Value = Value, Value2 = Value2, Values = [.. Values], Group = Group, Cards = Cards?.Clone() };
 }

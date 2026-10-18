@@ -230,6 +230,14 @@ public class AllBlocksTests
                     new BlockInstance(SentFromCondition.BlockId).With("from", "hand").Linked(ActionLink.Option), new BlockInstance("do.gain_lp"),
                 ]);
                 break;
+            // "Based on the number of ...": each option starts with how many cards there are.
+            case ChooseEffectsAction.BlockId when inst.Values.GetValueOrDefault("style") == "count":
+                project.Effects[0].Do.AddRange(
+                [
+                    new BlockInstance("if.cards_exist").With("cmp", "at_most").With("count", 2), new BlockInstance("do.draw"),
+                    new BlockInstance("if.cards_exist").With("count", 3).Linked(ActionLink.Option), new BlockInstance("do.gain_lp"),
+                ]);
+                break;
             // Materials of this effect's target or of this card: an Xyz Monster.
             case FromMaterialsAction.BlockId:
                 project.Card.Frame = MonsterFrame.Xyz;
