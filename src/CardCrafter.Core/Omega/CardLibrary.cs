@@ -45,6 +45,8 @@ public sealed class CardLibrary
 {
     public List<LibraryCard> Cards { get; } = [];
     public List<string> Problems { get; } = [];
+    /// <summary>The passcodes of alternate artworks, which aren't listed, with the card each one is an artwork of.</summary>
+    public Dictionary<long, long> AltArts { get; } = [];
 
     public static CardLibrary Empty { get; } = new();
 
@@ -65,7 +67,11 @@ public sealed class CardLibrary
             foreach (var row in rows)
             {
                 // Alternate artworks repeat the original card; list each card once.
-                if (row.Alias != 0 && Math.Abs(row.Id - row.Alias) < 20) continue;
+                if (row.Alias != 0 && Math.Abs(row.Id - row.Alias) < 20)
+                {
+                    library.AltArts.TryAdd(row.Id, row.Alias);
+                    continue;
+                }
                 if (!seen.Add(row.Id)) continue;
                 library.Cards.Add(new LibraryCard(row, source, db));
             }

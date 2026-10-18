@@ -53,6 +53,9 @@
             <Button HorizontalAlignment="Stretch" Command="{Binding SuggestCommand}"
                     CommandParameter="Design a new Spell card that supports my archetype, then build it in a new card."
                     Content="Design a new card with me" />
+            <Button HorizontalAlignment="Stretch" Command="{Binding SuggestCommand}"
+                    CommandParameter="Write a combo for my deck on the Combos tab, step by step with a note for each play, using only the deck's cards. My deck list:&#x0a;"
+                    Content="Write a combo for my deck" />
           </StackPanel>
         </Panel>
       </Border>

@@ -182,6 +182,18 @@ public sealed class CardPack
     /// <summary>Banlists made with this pack, for any cards: official ones or this pack's.</summary>
     public List<PackBanlist> Banlists { get; set; } = [];
 
+    /// <summary>Combos written with this pack's Combos tab, for any deck.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public List<Combos.Combo> Combos { get; set; } = [];
+
+    /// <summary>The combos as saved: left out of the file while there are none, so packs without combos save as before.</summary>
+    [System.Text.Json.Serialization.JsonPropertyName("combos")]
+    public List<Combos.Combo>? SavedCombos
+    {
+        get => Combos.Count == 0 ? null : Combos;
+        set => Combos = value ?? [];
+    }
+
     /// <summary>The display name of a Type, including this pack's custom Types.</summary>
     public string TypeName(CardRace race) =>
         CustomTypes.FirstOrDefault(t => t.Value == (long)race)?.Name is { Length: > 0 } n ? n : EnumNames.Display(race);

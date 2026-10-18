@@ -57,7 +57,7 @@ public sealed partial class AssistantViewModel : ObservableObject
             : "This runs on your own computer (or a server you choose): nothing is billed, and nothing leaves the machine it runs on.",
         $"The key stays on this computer. It is sent only to {Host}, and never written into a pack or an export.",
         "What the assistant sees: your messages, Card Crafter's guide to its blocks (the same for everyone), and the cards it reads with its tools: the selected card first, others in the pack only when it looks them up. Nothing else on your computer.",
-        "What it can do: read and change the open pack's cards through the same blocks, card pickers and card fields you use. Every change appears in the editor at once and each one is listed in the chat. \"Undo the last changes\" puts the cards back. Nothing is saved until you save the pack.",
+        "What it can do: read and change the open pack's cards through the same blocks, card pickers and card fields you use, and write combos on the Combos tab with the cards of their deck. Every change appears in the editor at once and each one is listed in the chat. \"Undo the last changes\" puts the cards and combos back. Nothing is saved until you save the pack.",
         "How it builds: it looks up blocks and their options, places them, and reads back the card text and problems the app finds, the same ones you see on the Effects tab, then fixes what is wrong. For wording it isn't sure of, it can read an official card's script with the translator to see which blocks the app uses for it.",
         "Any service works if its model supports tools (function calling). The guide and tools were built and tested with Claude; other models may need more guidance.",
     ]);

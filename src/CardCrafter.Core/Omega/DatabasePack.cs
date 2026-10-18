@@ -97,6 +97,7 @@ public static class DatabasePack
             pack.Ot = saved.Ot;
             pack.Archetypes = saved.Archetypes;
             pack.CustomTypes = saved.CustomTypes;
+            pack.Combos = saved.Combos;
         }
         else if (rows.Count > 0)
         {

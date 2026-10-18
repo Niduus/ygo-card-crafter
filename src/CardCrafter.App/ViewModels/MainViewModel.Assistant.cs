@@ -1,4 +1,5 @@
 using CardCrafter.Core.Assistant;
+using CardCrafter.Core.Combos;
 using CardCrafter.Core.Model;
 
 namespace CardCrafter.App.ViewModels;
@@ -24,6 +25,14 @@ public sealed partial class MainViewModel : IAssistantWorkspace
         return SelectedCard!.Project;
     }
 
+    ComboCatalog IAssistantWorkspace.ComboCards => ComboCards;
+
+    void IAssistantWorkspace.CombosChanged()
+    {
+        MarkDirty();
+        _combos?.Reload(keepSelection: true);
+    }
+
     bool IAssistantWorkspace.SelectCard(int index)
     {
         if (index < 0 || index >= Cards.Count) return false;
@@ -31,9 +40,10 @@ public sealed partial class MainViewModel : IAssistantWorkspace
         return true;
     }
 
-    /// <summary>Every card of the pack as it is now, to put back with <see cref="RestoreCards"/>.</summary>
+    /// <summary>Every card and combo of the pack as it is now, to put back with <see cref="RestoreCards"/>.</summary>
     public CardsSnapshot SnapshotCards() =>
-        new(_pack, _pack.Cards.Select(c => (c, PackSerializer.Clone(c))).ToList(), SelectedCard is { } s ? Cards.IndexOf(s) : -1);
+        new(_pack, _pack.Cards.Select(c => (c, PackSerializer.Clone(c))).ToList(), SelectedCard is { } s ? Cards.IndexOf(s) : -1,
+            _pack.Combos.Select(PackSerializer.Clone).ToList());
 
     /// <summary>
     /// Puts every card back as the snapshot has it: changed cards get their old contents, cards added since go away.
@@ -48,10 +58,15 @@ public sealed partial class MainViewModel : IAssistantWorkspace
         Cards.Clear();
         foreach (var c in _pack.Cards) Cards.Add(NewCardViewModel(c));
         SelectedCard = snapshot.Selected >= 0 && snapshot.Selected < Cards.Count ? Cards[snapshot.Selected] : Cards.FirstOrDefault();
+        if (snapshot.Combos is { } combos)
+        {
+            _pack.Combos = combos.Select(PackSerializer.Clone).ToList();
+            _combos?.Reload();
+        }
         MarkDirty();
         return true;
     }
 }
 
-/// <summary>The pack's cards at one moment: each card with a copy of its contents then.</summary>
-public sealed record CardsSnapshot(CardPack Pack, IReadOnlyList<(CardProject Card, CardProject Copy)> Cards, int Selected);
+/// <summary>The pack's cards at one moment: each card with a copy of its contents then, and copies of the combos.</summary>
+public sealed record CardsSnapshot(CardPack Pack, IReadOnlyList<(CardProject Card, CardProject Copy)> Cards, int Selected, IReadOnlyList<Combo>? Combos = null);

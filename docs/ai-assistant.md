@@ -74,8 +74,13 @@ effects made of blocks, card pickers and the Summon procedure.
     wording;
   - **hand-written script:** as a last resort, give the card its own script, but only for what no block can do.
 
+- **Write combos:** list and read the pack's combos (with the deck's card texts, split into numbered effects), and
+  create or replace one: its deck (a pasted list or `.ydk` text, another combo's deck, or the pack's cards), opening hand
+  and steps with notes. Every step must use a card of the combo's deck (only an opponent's interruption may name another
+  card), and the answer is the replay: each step's problems and the end board.
+
 Every change appears in the editor at once, and each one is listed in the chat. **Undo the last changes** puts the
-cards back as they were before the assistant's last message that changed them; you can press it again to go further back.
+cards and combos back as they were before the assistant's last message that changed them; you can press it again to go further back.
 Nothing is saved until you save the pack yourself.
 
 ### Good things to ask
@@ -86,6 +91,8 @@ Nothing is saved until you save the pack yourself.
 - "Explain what the second effect does in a duel, step by step."
 - "Which block do I use for *during your opponent's turn*?"
 - "Design a Field Spell for my archetype that rewards Special Summoning, then build it."
+- "Here is my deck list: … Write a combo on the Combos tab from Snake-Eye Ash and one other card, with a note for each
+  play." (Card Crafter comes with no combos for official decks: check the assistant's lines in a duel.)
 
 ## How it works (for developers)
 
@@ -95,7 +102,7 @@ with `AssistantViewModel`.
 | File | What it does |
 |---|---|
 | `AssistantGuide.cs` | The system prompt. It explains cards, the event sheet, card pickers, compiling and translating, and how the model should work, followed by the whole block catalog built from `BlockRegistry`. It is generated from the app, so it always matches the blocks of that version. |
-| `AssistantTools.cs` | The tools: their JSON schemas and the code that runs them on an `IAssistantWorkspace`. |
+| `AssistantTools.cs` | The tools: their JSON schemas and the code that runs them on an `IAssistantWorkspace`. The combo tools are in `AssistantTools.Combos.cs`. |
 | `AssistantChat.cs` | `IAssistantChat`, one conversation, whichever service runs it. |
 | `AssistantSession.cs` | A conversation with Claude, through the official Anthropic C# SDK (`Anthropic` NuGet package). |
 | `OpenAiCompatibleSession.cs` | A conversation with any other service, through the OpenAI-compatible Chat Completions format with function calling (plain `HttpClient`). |

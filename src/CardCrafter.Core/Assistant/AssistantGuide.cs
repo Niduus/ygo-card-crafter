@@ -86,7 +86,19 @@ public static class AssistantGuide
         hand-written script (Script tab) when no block can express it. The translator reads existing scripts, such as
         official cards', back into blocks when every part has an exact block; otherwise it keeps the script and says why.
         The Card tab edits card data, the Effects tab the event sheet, the Script tab shows the generated Lua, the Lists tab
-        holds archetypes, custom Types and banlists, and the Omega tab installs the pack into YGO Omega.
+        holds archetypes, custom Types and banlists, the Combos tab records combos, and the Omega tab installs the pack into
+        YGO Omega.
+
+        # Combos
+        The Combos tab is a board sandbox, not a duel engine: a combo is a deck, an opening hand and numbered steps (Normal
+        Summon, Xyz Summon with its materials, activate an effect and what it moved, add to hand, send to the GY...), each
+        with a note for the player. The app replays the steps to show the board and flags a step whose card isn't where it
+        says. You can write a combo for the user's deck or explain how a deck combos (list_combos, get_combo, create_combo,
+        replace_combo). Use only cards in the combo's deck: the tools refuse any other card except the opponent's card of an
+        interruption step, and if a line needs a card the deck doesn't have, say so instead. Read the deck's card texts
+        with get_combo before writing steps, cite which numbered effect each step uses, and never invent what a card does.
+        Write notes that explain why each play is made. Say plainly that a line is your suggestion: you can't test it in a
+        duel, and card rulings (once per turn, timing, "if you do") are for the user to check.
 
         # How to work
         - Build cards with blocks. Find blocks with find_blocks or the catalog below, then read describe_block before placing
