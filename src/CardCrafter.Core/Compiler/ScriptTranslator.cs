@@ -2017,10 +2017,15 @@ public static partial class ScriptTranslator
             vars = null;
             parts = null;
         }
-        foreach (var raw in body)
+        var all = body.Select(l => l.Trim()).ToList();
+        for (var i = 0; i < all.Count; i++)
         {
-            var line = raw.Trim();
+            var line = all[i];
             Match m;
+            // A comment line ("--damage conversion") says nothing.
+            if (line.StartsWith("--", StringComparison.Ordinal)) continue;
+            // "if Duel.GetTurnPlayer()==tp then e1:SetReset(...,2) else e1:SetReset(...,1) end": how long a turn rule lasts.
+            if (vars is not null && TurnResetIdiom(all, i, vars) is { } consumed) { i += consumed - 1; continue; }
             if ((m = Regex.Match(line, @"^local (\w+)=Effect\.CreateEffect\((?:c|e:GetHandler\(\))\)$")).Success)
             {
                 if (vars is not null && parts!.Count > 0) Close();
@@ -2036,6 +2041,8 @@ public static partial class ScriptTranslator
                 if ((m = Regex.Match(line, @"^(c|tc|e:GetHandler\(\)):RegisterEffect\((\w+)(?:,true)?\)$")).Success && vars.TryGetValue(m.Groups[2].Value, out var reg))
                 { parts!.Add((reg, m.Groups[1].Value == "tc" ? "tc" : "c")); continue; }
                 if ((m = Regex.Match(line, @"^Duel\.RegisterEffect\((\w+),tp\)$")).Success && vars.TryGetValue(m.Groups[1].Value, out var preg)) { parts!.Add((preg, "player")); continue; }
+                // Hieroglyph Lithograph: registered to the player the effect targets ("local p=Duel.GetChainInfo(0,CHAININFO_TARGET_PLAYER)").
+                if ((m = Regex.Match(line, @"^Duel\.RegisterEffect\((\w+),p\)$")).Success && vars.TryGetValue(m.Groups[1].Value, out var treg)) { parts!.Add((treg, "p")); continue; }
                 Close();
             }
             lines.Add(line);
@@ -2344,6 +2351,8 @@ public static partial class ScriptTranslator
     /// <summary>A temporary effect from an operation, as a DO block.</summary>
     private static BlockInstance TempAction(TempEffect temp, TargetInfo target, bool targetCard, Functions fns)
     {
+        // Skipped phases, the hand size limit, damage turned into LP gain (ScriptTranslator.TurnRules.cs).
+        if (TurnRuleTemp(temp, target, fns) is { } turnRule) return turnRule;
         var parts = temp.Parts;
         var holder = parts[0].Holder;
         if (parts.Any(p => p.Holder != holder)) throw No("it puts effects on different cards at once");
