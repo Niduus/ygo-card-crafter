@@ -354,6 +354,8 @@ public static partial class ScriptTranslator
         var value = set.GetValueOrDefault("Value");
         // "While face-up on the field, this card is also DARK-Attribute", "this card's name is also treated as ..." (ScriptTranslator.TreatedAs.cs).
         if (TreatedAsLasting(effect, type, code, set, fns, card)) return true;
+        // Skipped phases, the hand size limit, LP rules, discards, the Deck and zones (ScriptTranslator.TurnRules.cs).
+        if (TurnRuleLasting(effect, type, code, set, range, fns)) return true;
         // Elfnotes: Quatrain of Succession: "The monster in your center Main Monster Zone cannot be banished by your opponent's
         // card effects": a rule on the players for your monsters in the Monster Zone (not cards elsewhere on the field).
         if (type.SetEquals(["EFFECT_TYPE_FIELD"]) && code == "EFFECT_CANNOT_REMOVE" && range is not null && HasFlags(set, "EFFECT_FLAG_PLAYER_TARGET") && Setting(set, "TargetRange") == "1,1"

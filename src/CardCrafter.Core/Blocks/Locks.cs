@@ -38,6 +38,8 @@ internal static class Locks
         new("search", "add cards from the Deck to the hand, except by drawing them"),
         new("sset", "Set Spells/Traps"),
         new("bp", "conduct the Battle Phase"),
+        // The engine's EFFECT_CANNOT_M2: the turn goes from the Battle Phase straight to the End Phase.
+        new("m2", "conduct Main Phase 2"),
         new("activate_cards", "activate Spell/Trap Cards"),
         new("activate_spell_cards", "activate Spell Cards"),
         new("activate_trap_cards", "activate Trap Cards"),
@@ -90,7 +92,7 @@ internal static class Locks
 
     /// <summary>True when the "except" filter picks some monsters, not every one: only then is there an exception.</summary>
     public static bool HasExcept(string what, CardFilter f) =>
-        what is not ("search" or "search_all" or "bp" or "activate_cards" or "activate_spell_cards" or "activate_trap_cards" or "activate_gy") && !Names(what) && (FilterCompiler.Conditions(f).Any(c => c != "c:IsType(TYPE_MONSTER)") || f.ExceptOwnName || f.ExceptCode != 0);
+        what is not ("search" or "search_all" or "bp" or "m2" or "activate_cards" or "activate_spell_cards" or "activate_trap_cards" or "activate_gy") && !Names(what) && (FilterCompiler.Conditions(f).Any(c => c != "c:IsType(TYPE_MONSTER)") || f.ExceptOwnName || f.ExceptCode != 0);
 
     /// <summary>Locks on activating monster effects, wherever they are activated from.</summary>
     private static bool MonsterEffects(string what) => what is "activate_monster" or "activate_monster_hand" or "activate_monster_field" or "activate_monster_gy"
@@ -165,6 +167,8 @@ internal static class Locks
         if (Names(what)) return $"{Subject(who)} {Named(what, except, args)}";
         if (what == "bp")
             return who switch { "both" => "neither player can conduct their Battle Phase", "opponent" => "your opponent cannot conduct their Battle Phase", _ => "you cannot conduct your Battle Phase" };
+        if (what == "m2")
+            return who switch { "both" => "neither player can conduct their Main Phase 2", "opponent" => "your opponent cannot conduct their Main Phase 2", _ => "you cannot conduct your Main Phase 2" };
         return $"{Subject(who)} {Verb(what)}{ExceptText(what, except, args)}";
     }
 
@@ -185,6 +189,7 @@ internal static class Locks
     /// <summary>"you cannot Special Summon from the Extra Deck" and ", except Xyz Monsters" apart, for wording that puts the turn between them.</summary>
     public static (string Head, string Except) Split(string what, CardFilter except, BlockArgs args) =>
         what == "bp" ? ("you cannot conduct your Battle Phase", "")
+        : what == "m2" ? ("you cannot conduct your Main Phase 2", "")
         : Names(what) ? ($"you cannot {Named(what, except, args)}", "") : ($"you cannot {Verb(what)}", ExceptText(what, except, args));
 
     /// <summary>
@@ -227,6 +232,9 @@ internal static class Locks
         {
             case "bp":
                 Player("EFFECT_CANNOT_BP");
+                break;
+            case "m2":
+                Player("EFFECT_CANNOT_M2");
                 break;
             case "sset":
                 Player("EFFECT_CANNOT_SSET");

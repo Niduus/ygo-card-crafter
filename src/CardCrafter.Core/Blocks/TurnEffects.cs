@@ -123,11 +123,21 @@ public sealed class TurnPlayerRuleAction : ActionBlock
             new("opp_no_battle", "your opponent takes no battle damage"),
             new("reveal_hand", "you must keep your hand revealed"),
             // The Secret Crane Princess Who Returns A Favor: "you must keep your hand revealed during this Main Phase".
-            new("reveal_hand_main", "you must keep your hand revealed during this Main Phase", "(this Main Phase only) you must keep your hand revealed")),
+            new("reveal_hand_main", "you must keep your hand revealed during this Main Phase", "(this Main Phase only) you must keep your hand revealed"),
+            // Rainbow Life: "until the end of this turn, each time you would take damage, gain that amount of LP instead".
+            new("reverse_damage", "each time you would take damage, gain that amount of LP instead"),
+            // D/D/D Rebel King Leonidas: "any effect that would inflict damage to a player this turn increases their LP by the same amount, instead".
+            new("reverse_effect_both", "any effect that would inflict damage to a player increases their LP by the same amount, instead"),
+            new("opp_reverse_recover", "any effect that would make your opponent gain LP inflicts the same amount of damage to them, instead")),
     ];
 
-    public override string Describe(BlockArgs args) =>
-        args.Choice("rule") == "reveal_hand_main" ? "you must keep your hand revealed during this Main Phase" : $"for the rest of this turn, {args.Describe("rule")}";
+    public override string Describe(BlockArgs args) => args.Choice("rule") switch
+    {
+        "reveal_hand_main" => "you must keep your hand revealed during this Main Phase",
+        "reverse_damage" => $"until the end of this turn, {args.Describe("rule")}",
+        "reverse_effect_both" => "any effect that would inflict damage to a player this turn increases their LP by the same amount, instead",
+        _ => $"for the rest of this turn, {args.Describe("rule")}",
+    };
 
     public override void Compile(BlockContext ctx)
     {
@@ -178,6 +188,10 @@ public sealed class TurnPlayerRuleAction : ActionBlock
             }
             case "opp_double_battle": Player("EFFECT_CHANGE_DAMAGE", "0", "1", Fn("doubledamval", "if bit.band(r,REASON_BATTLE)~=0 then return val*2 end return val")); break;
             case "opp_half_battle": Player("EFFECT_CHANGE_DAMAGE", "0", "1", Fn("halfbattleval", "if bit.band(r,REASON_BATTLE)~=0 then return math.floor(val/2) end return val")); break;
+            // Battle damage too, as Rainbow Life gives it.
+            case "reverse_damage": Player("EFFECT_REVERSE_DAMAGE", "1", "0", "1"); break;
+            case "reverse_effect_both": Player("EFFECT_REVERSE_DAMAGE", "1", "1", ctx.Script.AddFunction("revval", "e,re,r,rp,rc", ["return bit.band(r,REASON_EFFECT)~=0"])); break;
+            case "opp_reverse_recover": Player("EFFECT_REVERSE_RECOVER", "0", "1", "1"); break;
             default: Player("EFFECT_REFLECT_DAMAGE", "1", "0", Fn("reflectval", "return bit.band(r,REASON_EFFECT)~=0")); break;
         }
         ctx.Effect.AddStep(lines, null, ctx.Link);

@@ -396,7 +396,11 @@ public sealed class PlayerRulePassive : PassiveBlock
             new("one_monster_effect", "Each player can only attempt to activate 1 monster effect per turn", "Each player can only attempt to activate N monster effects per turn (whose and how many below)"),
             new("one_attacker", "Each player can only attack with 1 monster during each Battle Phase"),
             // Angelechy Castellan.
-            new("one_per_chain", "Each player can only activate 1 card or effect per Chain")),
+            new("one_per_chain", "Each player can only activate 1 card or effect per Chain"),
+            // D/D/D Oracle King d'Arc; Prime Material Dragon; Darklord Nurse Reficule, Bad Reaction to Simochi.
+            new("reverse_effect_damage", "Any effect that would inflict damage to you makes you gain that much LP, instead"),
+            new("reverse_effect_damage_both", "Any effect that would inflict damage to a player increases their LP by the same amount, instead"),
+            new("opp_reverse_recover", "Any effect that would make your opponent gain LP inflicts the same amount of damage to them, instead")),
         // Saved before these were offered: each player, 1 monster effect.
         ParamSpec.Choice("whose", "Whose (monster effects per turn)", new("each", "Each player"), new("opponent", "Your opponent"), new("you", "You"))
             .ShowIf(b => b.Values.GetValueOrDefault("rule") == "one_monster_effect").Unprinted(),
@@ -482,6 +486,16 @@ public sealed class PlayerRulePassive : PassiveBlock
             }
             case "opp_no_special":
                 ctx.Effect.AddPassive(v => Player(v, "EFFECT_CANNOT_SPECIAL_SUMMON", "0", "1"));
+                break;
+            case "reverse_effect_damage" or "reverse_effect_damage_both":
+            {
+                var both = ctx.Args.Choice("rule") == "reverse_effect_damage_both";
+                var fn = ctx.Script.AddFunction("revval", "e,re,r,rp,rc", ["return bit.band(r,REASON_EFFECT)~=0"]);
+                ctx.Effect.AddPassive(v => Player(v, "EFFECT_REVERSE_DAMAGE", "1", both ? "1" : "0", fn));
+                break;
+            }
+            case "opp_reverse_recover":
+                ctx.Effect.AddPassive(v => Player(v, "EFFECT_REVERSE_RECOVER", "0", "1", "1"));
                 break;
             case "opp_no_draw_extra":
                 ctx.Effect.AddPassive(v => Player(v, "EFFECT_CANNOT_TO_HAND", "0", "1", null, ctx.Script.AddFunction("thlimit", "e,c", ["return c:IsLocation(LOCATION_DECK)"])));
